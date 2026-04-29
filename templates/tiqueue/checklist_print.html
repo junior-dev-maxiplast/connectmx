@@ -1,0 +1,45 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body class="print-page">
+    <div class="print-actions">
+        <button class="queue-primary-btn" onclick="window.print()">Imprimir</button>
+        <a class="queue-secondary-btn" href="{% url 'checklistList' %}">Voltar</a>
+    </div>
+
+    <div class="print-container">
+        <div class="print-header">
+            <div>
+                <div class="print-title">{{ template.name }}</div>
+                <div class="print-subtitle">{{ entry.title|default:"Checklist" }}</div>
+            </div>
+            <div class="print-meta">
+                <div>Checklist #{{ entry.id }}</div>
+                <div>Criado em {{ entry.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+
+        {% for section in sections %}
+            <div class="print-section">
+                <div class="print-section-title">{{ section.title }}</div>
+                <div class="print-section-grid">
+                    {% for field in section.fields %}
+                        <div class="print-field">
+                            <div class="print-field-label">{{ field.label }}</div>
+                            <div class="print-field-value">{{ field.value }}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</body>

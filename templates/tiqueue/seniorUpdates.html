@@ -1,0 +1,288 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div id="overlay" onclick="closeSeniorModal()" style="display:none;"></div>
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Atualizacoes Senior</h1>
+                <div class="subtitle">Controle de versoes e aplicacoes dos sistemas</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{{ erp_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao ERP</a>
+                    <a class="queue-secondary-btn" href="{{ hcm_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao HCM</a>
+                    <a class="queue-secondary-btn" href="{{ sde_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao SDE</a>
+                    <button type="button" class="queue-primary-btn" onclick="openSeniorModal()">Nova atualizacao</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="queue">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 7%;">ERP</th>
+                        <th style="width: 7%;">HCM</th>
+                        <th style="width: 7%;">SDE</th>
+                        <th style="width: 10%;">Data lancamento</th>
+                        <th style="width: 10%;">Data download</th>
+                        <th style="width: 10%;">Data planejada aplicacao</th>
+                        <th style="width: 9%;">Data real aplicacao</th>
+                        <th style="width: 8%;">Producao</th>
+                        <th style="width: 8%;">Testes</th>
+                        <th style="width: 8%;">Simulacoes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                        <tr data-id="{{ r.id }}">
+                            <td class="senior-editable" data-field="erp_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.erp_version }}">{{ r.erp_version }}</td>
+                            <td class="senior-editable" data-field="hcm_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.hcm_version }}">{{ r.hcm_version }}</td>
+                            <td class="senior-editable" data-field="sde_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.sde_version }}">{{ r.sde_version }}</td>
+                            <td class="senior-editable" data-field="release_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.release_date %}{{ r.release_date|date:'Y-m-d' }}{% endif %}">{% if r.release_date %}{{ r.release_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td class="senior-editable" data-field="download_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.download_date %}{{ r.download_date|date:'Y-m-d' }}{% endif %}">{% if r.download_date %}{{ r.download_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td class="senior-editable" data-field="planned_apply_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.planned_apply_date %}{{ r.planned_apply_date|date:'Y-m-d' }}{% endif %}">{% if r.planned_apply_date %}{{ r.planned_apply_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td class="senior-editable" data-field="real_apply_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.real_apply_date %}{{ r.real_apply_date|date:'Y-m-d' }}{% endif %}">{% if r.real_apply_date %}{{ r.real_apply_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td>
+                                <input type="checkbox" {% if r.in_production %}checked{% endif %} onchange="toggleSeniorCheckbox('{{ r.id }}', 'in_production', this.checked)">
+                            </td>
+                            <td>
+                                <input type="checkbox" {% if r.in_test_base %}checked{% endif %} onchange="toggleSeniorCheckbox('{{ r.id }}', 'in_test_base', this.checked)">
+                            </td>
+                            <td>
+                                <input type="checkbox" {% if r.in_simulation_base %}checked{% endif %} onchange="toggleSeniorCheckbox('{{ r.id }}', 'in_simulation_base', this.checked)">
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="10">Nenhuma atualizacao cadastrada.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="seniorModal" class="formNewItemMain" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Nova atualizacao Senior</div>
+            <button type="button" class="modal-close" onclick="closeSeniorModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <div class="modal-grid">
+                <div class="field">
+                    <label for="erp_version">Versao ERP</label>
+                    <input id="erp_version" name="erp_version" type="text" required>
+                </div>
+                <div class="field">
+                    <label for="hcm_version">Versao HCM</label>
+                    <input id="hcm_version" name="hcm_version" type="text" required>
+                </div>
+                <div class="field">
+                    <label for="sde_version">Versao SDE</label>
+                    <input id="sde_version" name="sde_version" type="text" required>
+                </div>
+
+                <div class="field">
+                    <label for="release_date">Data de lancamento</label>
+                    <input id="release_date" name="release_date" type="date">
+                </div>
+                <div class="field">
+                    <label for="download_date">Data de download</label>
+                    <input id="download_date" name="download_date" type="date">
+                </div>
+                <div class="field">
+                    <label for="planned_apply_date">Data planejada aplicacao</label>
+                    <input id="planned_apply_date" name="planned_apply_date" type="date">
+                </div>
+                <div class="field">
+                    <label for="real_apply_date">Data real aplicacao</label>
+                    <input id="real_apply_date" name="real_apply_date" type="date">
+                </div>
+
+                <div class="field">
+                    <label class="queue-check queue-control">
+                        <input type="checkbox" name="in_production">
+                        <span>Em producao</span>
+                    </label>
+                </div>
+                <div class="field">
+                    <label class="queue-check queue-control">
+                        <input type="checkbox" name="in_test_base">
+                        <span>Em testes</span>
+                    </label>
+                </div>
+                <div class="field">
+                    <label class="queue-check queue-control">
+                        <input type="checkbox" name="in_simulation_base">
+                        <span>Em simulacoes</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeSeniorModal()">Cancelar</button>
+                <button type="submit" class="queue-primary-btn">Salvar</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function openSeniorModal() {
+        document.getElementById("overlay").style.display = "block";
+        document.getElementById("seniorModal").style.display = "block";
+    }
+
+    function closeSeniorModal() {
+        document.getElementById("overlay").style.display = "none";
+        document.getElementById("seniorModal").style.display = "none";
+    }
+
+    function initSeniorInlineEdit() {
+        const cells = document.querySelectorAll(".senior-editable");
+        cells.forEach((cell) => {
+            if (cell.dataset.bound === "1") return;
+            cell.dataset.bound = "1";
+            cell.addEventListener("click", () => startSeniorInlineEdit(cell));
+        });
+    }
+
+    function startSeniorInlineEdit(cell) {
+        if (cell.querySelector("input")) return;
+
+        const type = cell.dataset.type;
+        const field = cell.dataset.field;
+        const id = cell.dataset.id;
+        const iso = cell.dataset.iso || "";
+
+        const input = document.createElement("input");
+        input.type = type === "date" ? "date" : "text";
+        input.value = iso;
+        input.className = "queue-inline-input";
+
+        cell.textContent = "";
+        cell.appendChild(input);
+        input.focus();
+
+        const commit = () => {
+            const value = input.value || "";
+            saveSeniorInlineValue(id, field, value, type, cell);
+        };
+
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                restoreSeniorCell(cell, iso, type);
+            }
+        });
+    }
+
+    function restoreSeniorCell(cell, iso, type) {
+        if (type === "date" && iso) {
+            const [y, m, d] = iso.split("-");
+            cell.textContent = `${d}/${m}/${y}`;
+        } else if (type === "text") {
+            cell.textContent = iso || "-";
+        } else {
+            cell.textContent = "-";
+        }
+        cell.dataset.iso = iso || "";
+    }
+
+    function saveSeniorInlineValue(id, field, value, type, cell) {
+        const csrfToken = getCookie("csrftoken");
+        const formData = new FormData();
+        formData.append(field, value);
+
+        fetch(`/updates/senior/${id}/inline/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": csrfToken,
+            },
+            credentials: "same-origin",
+            body: formData,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error((data && data.message) || "Erro ao salvar");
+            }
+            return response.json();
+        })
+        .then(() => {
+            const iso = value || "";
+            if (type === "date" && iso) {
+                const [y, m, d] = iso.split("-");
+                cell.textContent = `${d}/${m}/${y}`;
+            } else if (type === "text") {
+                cell.textContent = iso || "-";
+            } else {
+                cell.textContent = "-";
+            }
+            cell.dataset.iso = iso;
+        })
+        .catch((err) => {
+            alert(err.message || "Erro ao salvar");
+            restoreSeniorCell(cell, cell.dataset.iso || "", type);
+        });
+    }
+
+    function toggleSeniorCheckbox(id, field, checked) {
+        const csrfToken = getCookie("csrftoken");
+        const formData = new FormData();
+        formData.append(field, checked ? "true" : "false");
+
+        fetch(`/updates/senior/${id}/inline/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": csrfToken,
+            },
+            credentials: "same-origin",
+            body: formData,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error((data && data.message) || "Erro ao salvar");
+            }
+            return response.json();
+        })
+        .catch((err) => {
+            alert(err.message || "Erro ao salvar");
+            window.location.reload();
+        });
+    }
+
+    initSeniorInlineEdit();
+</script>

@@ -1,0 +1,73 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>{{ template.name }}</h1>
+                <div class="subtitle">{{ entry|default:"Nova checklist" }}</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'checklistList' %}">Voltar para lista</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-form-card">
+            <form method="POST" class="checklist-form">
+                {% csrf_token %}
+
+                <div class="checklist-section">
+                    <div class="checklist-section-title">Identifica&#231;&#227;o</div>
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ form.entry_title.label_tag }}
+                            {{ form.entry_title }}
+                            {% if form.entry_title.errors %}
+                                <div class="field-error">{{ form.entry_title.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                {% for block in sections %}
+                    <div class="checklist-section">
+                        <div class="checklist-section-title">{{ block.section.title }}</div>
+                        <div class="checklist-section-grid">
+                            {% for item in block.fields %}
+                                <div class="field {% if item.field.field_type == 'textarea' %}span-2{% endif %}">
+                                    {{ item.bound_field.label_tag }}
+                                    {{ item.bound_field }}
+                                    {% if item.bound_field.help_text %}
+                                        <div class="field-help">{{ item.bound_field.help_text }}</div>
+                                    {% endif %}
+                                    {% if item.bound_field.errors %}
+                                        <div class="field-error">{{ item.bound_field.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+
+                <div class="modal-actions">
+                    <a class="queue-secondary-btn" href="{% url 'checklistList' %}">Voltar</a>
+                    <button type="submit" class="queue-primary-btn">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>

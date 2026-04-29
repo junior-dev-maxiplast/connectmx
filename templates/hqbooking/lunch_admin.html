@@ -1,0 +1,68 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Almocos</title>
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body>
+    <main class="hq-shell">
+        <section class="hq-card hq-admin-card">
+            <h1 class="hq-title">Reservas de Almoco</h1>
+            <p class="hq-subtitle">Visualizacao por data com lista de matriculas.</p>
+
+            <div class="hq-filter-row">
+                <label class="hq-label" for="dateFilter">Filtrar data</label>
+                <select id="dateFilter" class="hq-input" onchange="onDateFilterChange(this.value)">
+                    <option value="">Todas</option>
+                    {% for g in grouped %}
+                        <option value="{{ g.date_iso }}" {% if selected_date == g.date_iso %}selected{% endif %}>
+                            {{ g.date|date:"d/m/Y" }} ({{ g.count }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="hq-accordion-list">
+                {% for g in grouped %}
+                    <details class="hq-accordion-item" data-date="{{ g.date_iso }}" {% if selected_date == g.date_iso %}open{% endif %}>
+                        <summary class="hq-accordion-summary">
+                            {{ g.date|date:"d/m/Y" }} - {{ g.count }} reservas
+                        </summary>
+                        <ul class="hq-employee-list">
+                            {% for employee in g.employees %}
+                                <li>{{ employee }}</li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% empty %}
+                    <div class="hq-empty">Nenhuma reserva registrada.</div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    <script>
+        function onDateFilterChange(dateIso) {
+            const items = document.querySelectorAll(".hq-accordion-item");
+            items.forEach((item) => {
+                if (!dateIso) {
+                    item.style.display = "";
+                    item.open = false;
+                    return;
+                }
+                const sameDate = item.dataset.date === dateIso;
+                item.style.display = sameDate ? "" : "none";
+                item.open = sameDate;
+            });
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            const select = document.getElementById("dateFilter");
+            if (select) onDateFilterChange(select.value);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Projetos</h1>
+                <div class="subtitle">Visao geral com acesso rapido para Roadmap e Kanban</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-primary-btn" href="{% url 'manageProjects' %}">Cadastro de projetos</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="projects-catalog-grid">
+            {% for p in projects %}
+                <article class="projects-catalog-card">
+                    <header class="projects-catalog-head">
+                        <div class="projects-color" style="background-color: {{ p.color }};"></div>
+                        <div class="projects-title-wrap">
+                            <h2 class="projects-title">{{ p.name }}</h2>
+                            <span class="projects-status">{{ p.get_status_display }}</span>
+                        </div>
+                    </header>
+
+                    <p class="projects-desc">
+                        {% if p.description %}
+                            {{ p.description }}
+                        {% else %}
+                            Sem descricao informada.
+                        {% endif %}
+                    </p>
+
+                    <div class="projects-meta">
+                        <span>Inicio: {% if p.start_date %}{{ p.start_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
+                        <span>Fim: {% if p.end_date %}{{ p.end_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
+                    </div>
+
+                    <div class="projects-progress">
+                        <div class="queue-progress{% if p.roadmap_total == 0 %} is-hidden{% endif %}">
+                            <div class="queue-progress-bar">
+                                <div class="queue-progress-fill" style="width: {{ p.roadmap_progress_pct }}%;"></div>
+                            </div>
+                            <div class="queue-progress-meta">
+                                <span class="queue-progress-pct">{{ p.roadmap_progress_pct }}%</span>
+                                <span class="queue-progress-frac">({{ p.roadmap_done }}/{{ p.roadmap_total }})</span>
+                            </div>
+                        </div>
+                        {% if p.roadmap_total == 0 %}
+                            <div class="projects-small-muted">Nenhuma etapa de roadmap cadastrada.</div>
+                        {% endif %}
+                    </div>
+
+                    <footer class="projects-actions">
+                        <a class="queue-secondary-btn project-nav-btn" href="{% url 'projectRoadmapView' p.id %}">Roadmap</a>
+                        <a class="queue-secondary-btn project-nav-btn" href="{% url 'projectBoard' p.id %}">Kanban</a>
+                    </footer>
+                </article>
+            {% empty %}
+                <div class="queue-empty">Nenhum projeto cadastrado.</div>
+            {% endfor %}
+        </div>
+    </div>
+</body>

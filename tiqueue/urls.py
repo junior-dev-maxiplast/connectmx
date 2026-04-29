@@ -1,0 +1,65 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+
+    path('', views.index, name='index'),
+
+    path('queue/main/', views.queueMainPage, name='queueMainPage'),
+    path('queue/concluded/', views.queueConcludedPage, name='queueConcludedPage'),
+    path('queue/user/', views.queueUserPage, name='queueUserPage'),
+    path('queue/user/save/<int:id>', views.upQueuePosition, name='upQueuePosition'),
+    path('queue/user/save/drop/<int:id>', views.dropQueuePosition, name='dropQueuePosition'),
+    path('queue/user/duplicate/<int:id>/', views.duplicateQueueItem, name='duplicateQueueItem'),
+    path('queue/user/delete/<int:id>', views.deleteQueueItem, name='deleteQueueItem'),
+    path('queue/user/end/<int:id>', views.endQueueItem, name='endQueueItem'),
+    path('queue/user/list/', views.listQueueUpdate, name='listQueueUpdate'),
+    path('queue/user/item/<int:id>/', views.queueItemDetails, name='queueItemDetails'),
+    path('queue/user/update/<int:id>/', views.updateQueueItem, name='updateQueueItem'),
+    path('queue/user/current/<int:id>/', views.toggleCurrentTask, name='toggleCurrentTask'),
+    path('queue/user/sync-sm/', views.syncQueueWithSM, name='syncQueueWithSM'),
+    path('queue/user/link-project/<int:id>/', views.linkQueueItemToProject, name='linkQueueItemToProject'),
+    path('queue/user/reorder/', views.reorderQueueItems, name='reorderQueueItems'),
+    path('queue/user/details/<int:id>/', views.queueTaskDetailsList, name='queueTaskDetailsList'),
+    path('queue/user/details/<int:id>/add/', views.queueTaskDetailsAdd, name='queueTaskDetailsAdd'),
+    path('queue/user/details/<int:detail_id>/toggle/', views.queueTaskDetailsToggle, name='queueTaskDetailsToggle'),
+    path('queue/user/details/<int:detail_id>/delete/', views.queueTaskDetailsDelete, name='queueTaskDetailsDelete'),
+    path('queue/create/status/', views.listCreateStatus, name='listCreateStatus')
+    ,
+    path('queue/create/types/', views.manageTaskTypes, name='manageTaskTypes')
+    ,
+    path('hub/tools/', views.manageHubTools, name='manageHubTools')
+    ,
+    path('hub/tools/quick-add/', views.hubQuickAddItem, name='hubQuickAddItem')
+    ,
+    path('hub/tools/general/', views.manageHubTools, name='manageHubToolsGeneral')
+    ,
+    path('hub/tools/my/', views.manageMyHubTools, name='manageMyHubTools')
+    ,
+    path('updates/senior/', views.seniorUpdatesPage, name='seniorUpdatesPage'),
+    path('updates/senior/<int:update_id>/inline/', views.seniorUpdatesInlineUpdate, name='seniorUpdatesInlineUpdate'),
+    path('updates/wifi/', views.wifiVoucherPage, name='wifiVoucherPage'),
+    path('updates/wifi/<int:voucher_id>/deliver/', views.wifiVoucherDeliver, name='wifiVoucherDeliver'),
+    path('checklists/', views.checklistList, name='checklistList'),
+    path('checklists/create/', views.checklistEntryCreate, name='checklistEntryCreate'),
+    path('checklists/create/<int:template_id>/', views.checklistEntryCreate, name='checklistEntryCreateWithTemplate'),
+    path('checklists/<int:entry_id>/edit/', views.checklistEntryEdit, name='checklistEntryEdit'),
+    path('checklists/<int:entry_id>/print/', views.checklistEntryPrint, name='checklistEntryPrint'),
+    path('checklists/templates/', views.checklistTemplates, name='checklistTemplates'),
+    path('checklists/choices/', views.checklistChoices, name='checklistChoices')
+    ,
+    path('projects/', views.manageProjects, name='manageProjects')
+    ,
+    path('projects/catalog/', views.projectCatalogPage, name='projectCatalogPage')
+    ,
+    path('projects/<int:project_id>/board/', views.projectBoard, name='projectBoard'),
+    path('projects/<int:project_id>/roadmap/', views.projectRoadmapView, name='projectRoadmapView'),
+    path('projects/<int:project_id>/roadmap/add/', views.projectRoadmapItemCreate, name='projectRoadmapItemCreate'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/done/', views.projectRoadmapItemConclude, name='projectRoadmapItemConclude'),
+    path('projects/<int:project_id>/card/create/', views.projectCardCreate, name='projectCardCreate'),
+    path('projects/card/<int:card_id>/move/', views.projectCardMove, name='projectCardMove'),
+    path('projects/card/<int:card_id>/delete/', views.projectCardDelete, name='projectCardDelete')
+
+    
+
+]

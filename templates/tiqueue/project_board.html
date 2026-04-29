@@ -1,0 +1,176 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Kanban</h1>
+                <div class="subtitle">{{ project.name }}</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'projectCatalogPage' %}">Voltar</a>
+                    <a class="queue-secondary-btn project-nav-btn" href="{% url 'projectRoadmapView' project.id %}">Roadmap</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="kanban-board" data-project-id="{{ project.id }}">
+            {% for block in columns %}
+                <div class="kanban-col" data-col-id="{{ block.col.id }}">
+                    <div class="kanban-col-head" style="border-color: {{ block.col.color }};">
+                        <div class="kanban-col-title">{{ block.col.name }}</div>
+                        <button class="kanban-add" type="button" onclick="openNewCard('{{ block.col.id }}')" title="Novo card">+</button>
+                    </div>
+                    <div class="kanban-col-body" data-drop-col="{{ block.col.id }}">
+                        {% for card in block.cards %}
+                            <div class="kanban-card" draggable="true" data-card-id="{{ card.id }}">
+                                <div class="kanban-card-title">{{ card.title }}</div>
+                                {% if card.description %}
+                                    <div class="kanban-card-desc">{{ card.description }}</div>
+                                {% endif %}
+                                <div class="kanban-card-meta">
+                                    <span class="kanban-pill p{{ card.priority }}">P{{ card.priority }}</span>
+                                    {% if card.due_date %}<span class="kanban-date">{{ card.due_date|date:"d/m/Y" }}</span>{% endif %}
+                                    {% if not card.roadmap_item_id %}
+                                        <button class="kanban-del" type="button" onclick="deleteCard('{{ card.id }}')" title="Remover">&#x2715;</button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% empty %}
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="overlay" onclick="closeKanbanModal()" style="display:none;"></div>
+    <div id="kanbanModal" class="formNewItemMain" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Novo card</div>
+            <button type="button" class="modal-close" onclick="closeKanbanModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form class="modal-form" onsubmit="return submitNewCard(event)">
+            {% csrf_token %}
+            <input type="hidden" id="kanban_new_col">
+            <div class="modal-grid">
+                <div class="field span-2">
+                    <label for="kanban_new_title">Titulo</label>
+                    <input id="kanban_new_title" type="text" maxlength="160" placeholder="Ex: Criar dashboard...">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeKanbanModal()">Cancelar</button>
+                <button type="submit" class="queue-primary-btn">Adicionar</button>
+            </div>
+        </form>
+    </div>
+
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function postJson(url, payload) {
+        const csrfToken = getCookie('csrftoken');
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            credentials: 'same-origin',
+            body: payload ? JSON.stringify(payload) : null,
+        }).then(async (r) => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error((data && data.message) || 'Erro');
+            return data;
+        });
+    }
+
+    function openNewCard(colId) {
+        document.getElementById('kanban_new_col').value = colId;
+        document.getElementById('kanban_new_title').value = '';
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('kanbanModal').style.display = 'block';
+        setTimeout(() => document.getElementById('kanban_new_title').focus(), 0);
+    }
+
+    function closeKanbanModal() {
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('kanbanModal').style.display = 'none';
+    }
+
+    function submitNewCard(e) {
+        e.preventDefault();
+        const projectId = document.querySelector('.kanban-board').dataset.projectId;
+        const colId = document.getElementById('kanban_new_col').value;
+        const title = (document.getElementById('kanban_new_title').value || '').trim();
+        if (!title) return false;
+
+        postJson(`/projects/${projectId}/card/create/`, { column_id: colId, title })
+            .then(() => { window.location.reload(); })
+            .catch(err => alert(err.message || 'Erro'));
+
+        return false;
+    }
+
+    function deleteCard(cardId) {
+        postJson(`/projects/card/${cardId}/delete/`)
+            .then(() => window.location.reload())
+            .catch(err => alert(err.message || 'Erro'));
+    }
+
+    // Drag & drop move
+    let dragging = null;
+
+    document.addEventListener('dragstart', (e) => {
+        const card = e.target.closest('.kanban-card');
+        if (!card) return;
+        dragging = card;
+        card.classList.add('is-dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    });
+
+    document.addEventListener('dragend', () => {
+        if (dragging) dragging.classList.remove('is-dragging');
+        dragging = null;
+    });
+
+    document.querySelectorAll('.kanban-col-body').forEach((body) => {
+        body.addEventListener('dragover', (e) => {
+            if (!dragging) return;
+            e.preventDefault();
+        });
+
+        body.addEventListener('drop', (e) => {
+            if (!dragging) return;
+            e.preventDefault();
+            const colId = body.dataset.dropCol;
+            const cardId = dragging.dataset.cardId;
+            const projectId = document.querySelector('.kanban-board').dataset.projectId;
+            postJson(`/projects/card/${cardId}/move/`, { column_id: colId, sort_order: Date.now() })
+                .then(() => window.location.reload())
+                .catch(err => alert(err.message || 'Erro'));
+        });
+    });
+</script>

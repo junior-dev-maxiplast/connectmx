@@ -1,0 +1,159 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Op&#231;&#245;es de checklist</h1>
+                <div class="subtitle">Grupos e opcoes reutilizaveis para campos de multipla escolha</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'checklistList' %}">Voltar</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo grupo</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="group">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ group_form.name.label_tag }}
+                            {{ group_form.name }}
+                        </div>
+                        <div class="field span-2">
+                            {{ group_form.description.label_tag }}
+                            {{ group_form.description }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Nova op&#231;&#227;o</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="option">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ option_form.group.label_tag }}
+                            {{ option_form.group }}
+                        </div>
+                        <div class="field">
+                            {{ option_form.label.label_tag }}
+                            {{ option_form.label }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Grupos</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Grupo</th>
+                            <th>Descri&#231;&#227;o</th>
+                            <th>A&#231;&#227;o</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for g in groups %}
+                            <tr>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="name" value="{{ g.name }}" form="group-edit-{{ g.id }}">
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="description" value="{{ g.description|default:'' }}" form="group-edit-{{ g.id }}">
+                                </td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <form method="POST" id="group-edit-{{ g.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_group">
+                                            <input type="hidden" name="group_id" value="{{ g.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" class="queue-empty">Nenhum grupo cadastrado.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Op&#231;&#245;es</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Grupo</th>
+                            <th>Op&#231;&#227;o</th>
+                            <th>A&#231;&#227;o</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in options %}
+                            <tr>
+                                <td>
+                                    <select class="queue-input-sm table-input" name="group" form="option-edit-{{ o.id }}">
+                                        {% for g in groups %}
+                                            <option value="{{ g.id }}" {% if o.group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="label" value="{{ o.label }}" form="option-edit-{{ o.id }}">
+                                </td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <form method="POST" id="option-edit-{{ o.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_option">
+                                            <input type="hidden" name="option_id" value="{{ o.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="3" class="queue-empty">Nenhuma op&#231;&#227;o cadastrada.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>

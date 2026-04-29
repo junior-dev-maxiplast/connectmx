@@ -1,0 +1,178 @@
+{% load static %}
+
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/createUser.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div id="overlay" onclick="closeEditUserModal()" style="display:none;"></div>
+
+    <div class="queue_main user-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Usuarios</h1>
+                <div class="subtitle">Cadastro e edicao de usuarios</div>
+            </div>
+        </div>
+
+        {% if error_message %}
+            <div class="user-alert user-alert-error">{{ error_message }}</div>
+        {% endif %}
+        {% if success_message %}
+            <div class="user-alert user-alert-success">{{ success_message }}</div>
+        {% endif %}
+
+        <div class="user-layout">
+            <div class="user-card">
+                <div class="user-card-title">Novo usuario</div>
+                <form method="POST" class="user-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="create">
+
+                    <label for="create_userId">Matricula</label>
+                    <input id="create_userId" type="text" name="userId" placeholder="Ex: 10001" required>
+
+                    <label for="create_username">Usuario</label>
+                    <input id="create_username" type="text" name="username" placeholder="Ex: joao.silva" required>
+
+                    <label for="create_email">Email</label>
+                    <input id="create_email" type="email" name="email" placeholder="Ex: joao@empresa.com.br" required>
+
+                    <label for="create_nameUser">Nome</label>
+                    <input id="create_nameUser" type="text" name="nameUser" placeholder="Joao Silva" required>
+
+                    <label for="create_id_sm">ID SM</label>
+                    <input id="create_id_sm" type="text" name="id_sm" placeholder="Ex: SM-10001">
+
+                    <label for="create_password">Senha</label>
+                    <input id="create_password" type="password" name="password" placeholder="Senha" required>
+
+                    <button type="submit" class="queue-primary-btn user-submit-btn">Cadastrar</button>
+                </form>
+            </div>
+
+            <div class="user-card">
+                <div class="user-card-title">Usuarios cadastrados</div>
+                <div class="user-table-wrap">
+                    <table class="user-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 17%;">Matricula</th>
+                                <th style="width: 14%;">ID SM</th>
+                                <th style="width: 18%;">Usuario</th>
+                                <th style="width: 23%;">Nome</th>
+                                <th style="width: 20%;">Email</th>
+                                <th style="width: 8%;">Acoes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in users %}
+                                <tr>
+                                    <td>{{ u.userId }}</td>
+                                    <td>{{ u.id_sm|default:"-" }}</td>
+                                    <td>{{ u.username }}</td>
+                                    <td>{{ u.nameUser|default:"-" }}</td>
+                                    <td>{{ u.email }}</td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="queue-action-btn action-edit"
+                                            title="Editar"
+                                            aria-label="Editar"
+                                            onclick="openEditUserModal(this)"
+                                            data-user-pk="{{ u.pk }}"
+                                            data-user-id="{{ u.userId }}"
+                                            data-username="{{ u.username }}"
+                                            data-name-user="{{ u.nameUser|default:'' }}"
+                                            data-email="{{ u.email }}"
+                                            data-id-sm="{{ u.id_sm|default:'' }}"
+                                        >&#x270F;&#xFE0F;</button>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="6">Nenhum usuario cadastrado.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="editUserModal" class="formNewItemMain user-edit-modal" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Editar usuario</div>
+            <button type="button" class="modal-close" onclick="closeEditUserModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="edit">
+            <input type="hidden" id="edit_user_pk" name="user_pk">
+
+            <div class="modal-grid">
+                <div class="field">
+                    <label for="edit_userId">Matricula</label>
+                    <input id="edit_userId" type="text" name="userId" required>
+                </div>
+                <div class="field">
+                    <label for="edit_username">Usuario</label>
+                    <input id="edit_username" type="text" name="username" required>
+                </div>
+                <div class="field span-2">
+                    <label for="edit_nameUser">Nome</label>
+                    <input id="edit_nameUser" type="text" name="nameUser" required>
+                </div>
+                <div class="field span-2">
+                    <label for="edit_id_sm">ID SM</label>
+                    <input id="edit_id_sm" type="text" name="id_sm">
+                </div>
+                <div class="field span-2">
+                    <label for="edit_email">Email</label>
+                    <input id="edit_email" type="email" name="email" required>
+                </div>
+                <div class="field span-2">
+                    <label for="edit_password">Nova senha (opcional)</label>
+                    <input id="edit_password" type="password" name="password" placeholder="Deixe em branco para manter">
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeEditUserModal()">Cancelar</button>
+                <button type="submit" class="queue-primary-btn">Salvar</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+<script>
+    function openEditUserModal(button) {
+        if (!button) return;
+
+        document.getElementById('edit_user_pk').value = button.dataset.userPk || '';
+        document.getElementById('edit_userId').value = button.dataset.userId || '';
+        document.getElementById('edit_username').value = button.dataset.username || '';
+        document.getElementById('edit_nameUser').value = button.dataset.nameUser || '';
+        document.getElementById('edit_id_sm').value = button.dataset.idSm || '';
+        document.getElementById('edit_email').value = button.dataset.email || '';
+        document.getElementById('edit_password').value = '';
+
+        document.getElementById('overlay').style.display = 'block';
+        document.getElementById('editUserModal').style.display = 'block';
+    }
+
+    function closeEditUserModal() {
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('editUserModal').style.display = 'none';
+    }
+</script>

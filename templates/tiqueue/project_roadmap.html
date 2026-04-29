@@ -1,0 +1,353 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Roadmap</h1>
+                <div class="subtitle">{{ project.name }}</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'projectCatalogPage' %}">Voltar</a>
+                    <a class="queue-secondary-btn project-nav-btn" href="{% url 'projectBoard' project.id %}">Kanban</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="roadmap-wrap">
+            <div class="roadmap-hero">
+                <div class="roadmap-hero-title">Janela</div>
+                <div class="roadmap-hero-range">{{ window_start|date:"d/m/Y" }} - {{ window_end|date:"d/m/Y" }}</div>
+                <div class="roadmap-hero-progress">
+                    <div id="rmHeroProgress" class="queue-progress{% if total_count == 0 %} is-hidden{% endif %}">
+                        <div class="queue-progress-bar">
+                            <div id="rmHeroFill" class="queue-progress-fill" style="width: {{ progress_pct }}%;"></div>
+                        </div>
+                        <div class="queue-progress-meta">
+                            <span id="rmHeroPct" class="queue-progress-pct">{{ progress_pct }}%</span>
+                            <span id="rmHeroFrac" class="queue-progress-frac">({{ done_count }}/{{ total_count }})</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="roadmap-flow" id="roadmapFlow"></div>
+        </div>
+    </div>
+
+    <div id="overlay" onclick="closeRoadmapModal()" style="display:none;"></div>
+    <div id="roadmapModal" class="formNewItemMain roadmap-modal" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Nova etapa</div>
+            <button type="button" class="modal-close" onclick="closeRoadmapModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form class="modal-form" onsubmit="return submitRoadmapItem(event)">
+            {% csrf_token %}
+            <div class="modal-grid">
+                <div class="field span-2">
+                    <label for="rm_title">Titulo</label>
+                    <input id="rm_title" type="text" maxlength="180" placeholder="Ex: Planejar escopo...">
+                </div>
+                <div class="field span-2">
+                    <label for="rm_description">Descricao</label>
+                    <textarea id="rm_description" rows="2" placeholder="Opcional"></textarea>
+                </div>
+                <div class="field">
+                    <label for="rm_status">Status</label>
+                    <select id="rm_status" class="queue-select">
+                        <option value="planned">Planejado</option>
+                        <option value="doing">Em execucao</option>
+                        <option value="blocked">Bloqueado</option>
+                        <option value="done">Concluido</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="rm_start">Inicio</label>
+                    <input id="rm_start" type="date">
+                </div>
+                <div class="field">
+                    <label for="rm_end">Fim</label>
+                    <input id="rm_end" type="date">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeRoadmapModal()">Cancelar</button>
+                <button id="rm_submit" type="submit" class="queue-primary-btn">Adicionar</button>
+            </div>
+        </form>
+    </div>
+    {{ items|json_script:"roadmap-data" }}
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function postJson(url, payload) {
+        const csrfToken = getCookie('csrftoken');
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            credentials: 'same-origin',
+            body: payload ? JSON.stringify(payload) : null,
+        }).then(async (r) => {
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error((data && data.message) || 'Erro');
+            return data;
+        });
+    }
+
+    function openRoadmapModal() {
+        document.getElementById('rm_title').value = '';
+        document.getElementById('rm_description').value = '';
+        document.getElementById('rm_status').value = 'planned';
+        document.getElementById('rm_start').value = '';
+        document.getElementById('rm_end').value = '';
+
+        const overlay = document.getElementById('overlay');
+        const modal = document.getElementById('roadmapModal');
+        overlay.style.display = 'block';
+        modal.style.display = 'block';
+        overlay.classList.add('is-show');
+        modal.classList.add('is-show');
+        setTimeout(() => document.getElementById('rm_title').focus(), 0);
+    }
+
+    function closeRoadmapModal() {
+        const overlay = document.getElementById('overlay');
+        const modal = document.getElementById('roadmapModal');
+        overlay.classList.remove('is-show');
+        modal.classList.remove('is-show');
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            modal.style.display = 'none';
+        }, 180);
+    }
+
+    function submitRoadmapItem(e) {
+        e.preventDefault();
+        const title = (document.getElementById('rm_title').value || '').trim();
+        if (!title) return false;
+
+        const btn = document.getElementById('rm_submit');
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+
+        postJson(`/projects/{{ project.id }}/roadmap/add/`, {
+            title,
+            description: (document.getElementById('rm_description').value || '').trim(),
+            status: document.getElementById('rm_status').value,
+            start_date: document.getElementById('rm_start').value,
+            end_date: document.getElementById('rm_end').value,
+        })
+        .then((data) => {
+            if (data && data.status === "ok") {
+                roadmapItems.push({
+                    id: data.id,
+                    title,
+                    description: (document.getElementById('rm_description').value || '').trim(),
+                    status: document.getElementById('rm_status').value,
+                    start: document.getElementById('rm_start').value || "",
+                    end: document.getElementById('rm_end').value || "",
+                });
+                renderRoadmapFlow();
+            }
+            closeRoadmapModal();
+        })
+        .catch((err) => {
+            alert(err.message || 'Erro');
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.classList.remove('is-loading');
+        });
+
+        return false;
+    }
+
+    // RoadmapFlow: renders cards in a horizontal "S" pattern with arrows.
+    const roadmapItems = JSON.parse(document.getElementById("roadmap-data").textContent || "[]");
+
+    const STATUS_LABELS = {
+        planned: "Planejado",
+        doing: "Em execucao",
+        blocked: "Bloqueado",
+        done: "Concluido",
+    };
+
+    function fmtDate(iso) {
+        if (!iso) return "-";
+        const parts = iso.split("-");
+        if (parts.length !== 3) return iso;
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    function escapeHtml(str) {
+        return String(str || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function calcPerRow() {
+        const host = document.getElementById("roadmapFlow");
+        if (!host) return 1;
+        const styles = window.getComputedStyle(host);
+        const padL = parseFloat(styles.paddingLeft || "0") || 0;
+        const padR = parseFloat(styles.paddingRight || "0") || 0;
+        const w = Math.max(1, (host.clientWidth || 1) - padL - padR - 2);
+
+        const cardW = 160;
+        const arrowW = 14;
+        const gap = 6;
+        // Total width for N cards in this node sequence:
+        // N*card + (N-1)*arrow + (2N-2)*gap
+        // => N <= (w + arrow + 2*gap) / (card + arrow + 2*gap)
+        const numerator = w + arrowW + (2 * gap);
+        const denominator = cardW + arrowW + (2 * gap);
+        return Math.max(1, Math.floor(numerator / denominator));
+    }
+
+    function RoadmapCard(item) {
+        if (item && item.isAddCard) {
+            return `
+                <button class="roadmap-card roadmap-add-card" type="button" onclick="openRoadmapModal()" aria-label="Adicionar etapa">
+                    <span class="roadmap-add-plus">+</span>
+                </button>
+            `;
+        }
+
+        const isDone = item.status === "done";
+        const desc = (item.description || "").trim();
+        const dates = `${fmtDate(item.start)} -> ${fmtDate(item.end)}`;
+        return `
+            <div class="roadmap-card ${isDone ? "is-done" : ""}" data-item-id="${item.id}">
+                <div class="roadmap-card-head">
+                    <div class="roadmap-card-title">${escapeHtml(item.title)}</div>
+                    <span class="roadmap-status s-${escapeHtml(item.status)}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
+                </div>
+                ${desc ? `<div class="roadmap-card-desc">${escapeHtml(desc)}</div>` : ``}
+                <div class="roadmap-card-foot">
+                    <div class="roadmap-card-dates">${escapeHtml(dates)}</div>
+                    <button class="roadmap-done-btn ${isDone ? "is-disabled" : ""}" type="button" ${isDone ? "disabled" : ""} onclick="concludeRoadmapItem('${item.id}')">Concluir</button>
+                </div>
+            </div>
+        `;
+    }
+
+    function RoadmapRow(items, direction) {
+        const arrow = direction === "rtl" ? "&larr;" : "&rarr;";
+        const nodes = [];
+        items.forEach((it, idx) => {
+            nodes.push(RoadmapCard(it));
+            if (idx < items.length - 1) {
+                nodes.push(`<div class="roadmap-arrow a-${direction}" aria-hidden="true">${arrow}</div>`);
+            }
+        });
+        return `<div class="roadmap-rowflow d-${direction}">${nodes.join("")}</div>`;
+    }
+
+    function RoadmapTurn(direction) {
+        // A small down arrow at the end of each row to indicate continuation to the next row.
+        return `<div class="roadmap-turn t-${direction}" aria-hidden="true">&darr;</div>`;
+    }
+
+    function renderRoadmapFlow() {
+        const host = document.getElementById("roadmapFlow");
+        if (!host) return;
+
+        const visualItems = [...roadmapItems, { id: "__add__", isAddCard: true }];
+
+        const perRow = calcPerRow();
+        const rows = [];
+        for (let i = 0; i < visualItems.length; i += perRow) {
+            rows.push(visualItems.slice(i, i + perRow));
+        }
+
+        const blocks = [];
+        rows.forEach((rowItems, idx) => {
+            const dir = (idx % 2 === 0) ? "ltr" : "rtl";
+            const ordered = dir === "rtl" ? [...rowItems].reverse() : rowItems;
+            blocks.push(RoadmapRow(ordered, dir));
+            if (idx < rows.length - 1) blocks.push(RoadmapTurn(dir));
+        });
+
+        host.innerHTML = blocks.join("");
+
+        // Animate cards entrance
+        requestAnimationFrame(() => {
+            host.querySelectorAll(".roadmap-card").forEach((el) => el.classList.add("is-in"));
+        });
+    }
+
+    function updateHeroProgress(done, total) {
+        const hero = document.getElementById("rmHeroProgress");
+        const fill = document.getElementById("rmHeroFill");
+        const pctEl = document.getElementById("rmHeroPct");
+        const fracEl = document.getElementById("rmHeroFrac");
+        if (!hero || !fill || !pctEl || !fracEl) return;
+        if (!total) {
+            hero.classList.add("is-hidden");
+            return;
+        }
+        hero.classList.remove("is-hidden");
+        const pct = Math.round((done / total) * 100);
+        fill.style.width = `${pct}%`;
+        pctEl.textContent = `${pct}%`;
+        fracEl.textContent = `(${done}/${total})`;
+    }
+
+    function concludeRoadmapItem(itemId) {
+        const id = String(itemId);
+        const card = document.querySelector(`.roadmap-card[data-item-id="${id}"]`);
+        if (!card || card.classList.contains("is-done")) return;
+        card.classList.add("is-busy");
+
+        postJson(`/projects/{{ project.id }}/roadmap/item/${id}/done/`)
+            .then((data) => {
+                const idx = roadmapItems.findIndex(i => String(i.id) === id);
+                if (idx >= 0) roadmapItems[idx].status = "done";
+                card.classList.remove("is-busy");
+                card.classList.add("is-done");
+                card.classList.add("is-pulse");
+                const btn = card.querySelector(".roadmap-done-btn");
+                if (btn) { btn.disabled = true; btn.classList.add("is-disabled"); }
+                updateHeroProgress(data.done, data.total);
+                setTimeout(() => card.classList.remove("is-pulse"), 400);
+            })
+            .catch((err) => {
+                card.classList.remove("is-busy");
+                alert(err.message || "Erro");
+            });
+    }
+
+    window.addEventListener("resize", () => {
+        // Keep it snappy; recompute rows when width changes.
+        renderRoadmapFlow();
+    });
+
+    renderRoadmapFlow();
+</script>

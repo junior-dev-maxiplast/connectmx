@@ -1,0 +1,82 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Fila geral</h1>
+            </div>
+        </div>
+
+        <div class="queue">
+            <div class="queue-cards">
+                {% if cards %}
+                    {% for c in cards %}
+                        <div class="queue-card">
+                            <div class="queue-card-title">
+                                <span class="queue-card-user">{{ c.user_name }}</span>
+                                <span class="queue-card-label">trabalhando em:</span>
+                            </div>
+                            <div class="queue-card-task">
+                                {{ c.description }}
+                                {% if c.ticket %}
+                                    <span class="queue-card-ticket">({{ c.ticket }})</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="queue-card-progress">
+                                <div class="queue-progress{% if c.details_total|default:0 == 0 %} is-hidden{% endif %}">
+                                    <div class="queue-progress-bar">
+                                        <div class="queue-progress-fill" style="width: {{ c.progress_pct|default:0 }}%;"></div>
+                                    </div>
+                                    <div class="queue-progress-meta">
+                                        <span class="queue-progress-pct">{{ c.progress_pct|default:0 }}%</span>
+                                        <span class="queue-progress-frac">({{ c.details_done|default:0 }}/{{ c.details_total|default:0 }})</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="queue-card-subtasks">
+                                <div class="queue-card-subtitle">Pendentes</div>
+                                {% if c.pending_details %}
+                                    <ul class="queue-card-sublist">
+                                        {% for d in c.pending_details|slice:":4" %}
+                                            <li>{{ d }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% if c.pending_details|length > 4 %}
+                                        <div class="queue-card-submore">+{{ c.pending_details|length|add:"-4" }} outras</div>
+                                    {% endif %}
+                                {% else %}
+                                    <div class="queue-card-subempty">Sem subtarefas pendentes.</div>
+                                {% endif %}
+                            </div>
+                            <div class="queue-card-meta">
+                                <span class="queue-card-meta-label">Previsto:</span>
+                                <span class="queue-card-meta-value">
+                                    {% if c.pred_date_end %}{{ c.pred_date_end|date:"d/m/Y" }}{% else %}-{% endif %}
+                                    {% if c.pred_time_end %}{{ c.pred_time_end|time:"H:i" }}{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="queue-empty">Nenhuma demanda atual encontrada.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>

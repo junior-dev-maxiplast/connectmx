@@ -1,0 +1,102 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reserva da Sede - Agenda</title>
+    <link rel="stylesheet" href="{% static 'style/hqbooking.css' %}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body class="hqb-page">
+    <main class="hqb-calendar-wrap">
+        <header class="hqb-topbar">
+            <div>
+                <h1>Agenda Mensal da Sede</h1>
+                <div class="hqb-user">Matricula logada: <strong>{{ employee_id }}</strong></div>
+                <div id="hqbReservationCounter" class="hqb-counter"></div>
+            </div>
+            <div class="hqb-topbar-actions">
+                <a class="hqb-logout-btn" href="{% url 'hqbooking_admin_login' %}">Painel admin</a>
+                <form method="POST" action="{% url 'hqbooking_logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="hqb-logout-btn">Sair</button>
+                </form>
+            </div>
+        </header>
+
+        <section class="hqb-month-controls">
+            <button id="prevMonthBtn" type="button">&larr; Mes anterior</button>
+            <h2 id="monthLabel">...</h2>
+            <button id="nextMonthBtn" type="button">Proximo mes &rarr;</button>
+        </section>
+
+        <section class="hqb-legend">
+            <span class="hqb-tag available">Disponivel</span>
+            <span class="hqb-tag reserved">Reservado</span>
+            <span class="hqb-tag pending">Pendente</span>
+            <span class="hqb-tag mine">Minha reserva</span>
+            <span class="hqb-tag blocked">Indisponivel</span>
+            <span class="hqb-tag past">Passado</span>
+        </section>
+
+        <section class="hqb-weekdays">
+            <div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sab</div><div>Dom</div>
+        </section>
+
+        <section id="calendarGrid" class="hqb-grid"></section>
+    </main>
+
+    <div id="hqbReserveModal" class="hqb-modal" style="display:none;">
+        <div class="hqb-modal-card">
+            <div class="hqb-modal-head">
+                <strong>Nova reserva</strong>
+                <button type="button" id="hqbModalClose" class="hqb-modal-close">&times;</button>
+            </div>
+            <div class="hqb-modal-body">
+                <div class="hqb-modal-date">Data: <span id="hqbModalDateLabel">-</span></div>
+                <div class="hqb-modal-grid">
+                    <label>
+                        Inicio
+                        <input id="hqbStartTime" type="time" required>
+                    </label>
+                    <label>
+                        Termino
+                        <input id="hqbEndTime" type="time" required>
+                    </label>
+                </div>
+                <label class="hqb-modal-reason">
+                    Motivo da reserva
+                    <input id="hqbReason" type="text" maxlength="180" placeholder="Descricao curta do motivo" required>
+                </label>
+                <div class="hqb-env-section">
+                    <div class="hqb-env-head">
+                        <strong>Ambientes</strong>
+                        <div class="hqb-env-head-actions">
+                            <button type="button" id="hqbEnvAddBtn" class="hqb-mini-btn">+</button>
+                            <button type="button" id="hqbEnvAllBtn" class="hqb-mini-btn">Selecionar todos</button>
+                        </div>
+                    </div>
+                    <div id="hqbEnvPicker" class="hqb-env-picker" style="display:none;"></div>
+                    <div id="hqbSelectedEnvs" class="hqb-selected-envs"></div>
+                </div>
+                <div class="hqb-modal-actions">
+                    <button type="button" id="hqbModalCancelBtn" class="hqb-secondary">Cancelar</button>
+                    <button type="button" id="hqbModalConfirmBtn" class="hqb-primary">Confirmar reserva</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="hqbToast" class="hqb-toast"></div>
+
+    <script>
+        window.HQBOOKING_BOOTSTRAP = {
+            year: {{ today_year }},
+            month: {{ today_month }},
+            employeeId: "{{ employee_id|escapejs }}"
+        };
+    </script>
+    <script src="{% static 'js/hqbooking.js' %}"></script>
+</body>
+</html>

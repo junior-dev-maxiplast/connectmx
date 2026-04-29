@@ -1,0 +1,88 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Checklists</h1>
+                <div class="subtitle">Cadastro, edicao e impressao das checklists</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'checklistTemplates' %}">Modelos</a>
+                    <a class="queue-secondary-btn" href="{% url 'checklistChoices' %}">Op&#231;&#245;es</a>
+                    <select id="checklistTemplateSelect" class="queue-select">
+                        <option value="">Selecione um modelo</option>
+                        {% for t in templates %}
+                            <option value="{{ t.id }}">{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button class="queue-primary-btn" onclick="createChecklist()">Nova checklist</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Checklists cadastradas</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 8%;">ID</th>
+                            <th style="width: 20%;">Modelo</th>
+                            <th style="width: 26%;">Identificador</th>
+                            <th style="width: 17%;">Criado</th>
+                            <th style="width: 17%;">Atualizado</th>
+                            <th style="width: 12%;">A&#231;&#245;es</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in entries %}
+                            <tr>
+                                <td>{{ entry.id }}</td>
+                                <td>{{ entry.template.name }}</td>
+                                <td>{{ entry.title|default:"-" }}</td>
+                                <td>{{ entry.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ entry.updated_at|date:"d/m/Y H:i" }}</td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <a class="queue-action-btn action-edit" href="{% url 'checklistEntryEdit' entry.id %}" title="Editar" aria-label="Editar">&#9998;</a>
+                                        <a class="queue-action-btn action-done" href="{% url 'checklistEntryPrint' entry.id %}" title="Imprimir" aria-label="Imprimir">&#128438;</a>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="6" class="queue-empty">Nenhuma checklist cadastrada.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+
+<script>
+    function createChecklist() {
+        const select = document.getElementById("checklistTemplateSelect");
+        const templateId = select ? select.value : "";
+        if (templateId) {
+            window.location.href = `/checklists/create/${templateId}/`;
+        } else {
+            window.location.href = `/checklists/create/`;
+        }
+    }
+</script>

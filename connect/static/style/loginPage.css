@@ -1,0 +1,124 @@
+body {
+    background-color: var(--page-bg, #1c2242);
+    font-family: 'Open Sans';font-size: 13px;
+    color: var(--page-text, white);
+    height: 100%;
+    width: 100%;
+    font-size: 12px;
+}
+
+.mainBlock {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+.imageBlock {
+    width: 100%;
+    
+
+    display: flex;
+
+    justify-content: center;
+
+    padding-top: 5%;
+}
+
+.formBlock {
+    width: 35%;
+    display: flex;
+
+    align-items: center;
+}
+
+.formMainBlock {
+    background-color: var(--surface-1, #F7F7F7);
+    width: 100%;
+    
+    height: 70%;
+
+    border-radius: 0 60px 60px 0;
+}
+
+.imageLogo {
+    width: 60%;
+    height: auto;
+    display: block;
+}
+
+.spaceForFormBlock {
+    height: 60%;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+}
+
+.spaceForFormBlock form {
+
+    width: 100%;
+
+}
+
+.formFields {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.formFields span {
+    color: var(--title-text, black);
+    justify-content: left;
+    font-size: 14px;
+    font-weight: 700;
+    align-items: left;
+    text-align: left;
+    margin-top: 2%;
+    margin-bottom: 1%;
+}
+
+.formFields input {
+    width: 60%;
+    height: 35px;
+    
+
+    background-color: rgba(0, 0, 0, 0.10);
+    color: var(--page-text, #1c2242);
+
+    border: 2px;
+    border-color: rgb(167, 165, 165);
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.formFields input:focus {
+    background-color: rgba(0, 191, 99, 0.12);
+}
+
+.formFields button {
+    background-color: rgba(0, 191, 99, 0.95);
+    color: rgba(255, 255, 255, 0.96);
+    margin-top: 4%;
+    height: 35px;
+    width: 60%;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    text-align: center;
+
+    transition: background-color 0.2s ease;
+}
+
+.formFields button:hover {
+    background-color: rgba(0, 191, 99, 1);
+}

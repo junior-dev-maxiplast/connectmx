@@ -1,0 +1,239 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page task-types-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Tipos de tarefa</h1>
+                <div class="subtitle">Cadastre grupos e tipos com melhor organiza&ccedil;&atilde;o visual</div>
+            </div>
+        </div>
+
+        <div class="task-types-meta">
+            <div class="task-types-meta-item">
+                <span class="task-types-meta-label">Grupos</span>
+                <strong class="task-types-meta-value">{{ groups_page_obj.paginator.count }}</strong>
+            </div>
+            <div class="task-types-meta-item">
+                <span class="task-types-meta-label">Tipos</span>
+                <strong class="task-types-meta-value">{{ types_page_obj.paginator.count }}</strong>
+            </div>
+        </div>
+
+        <div class="checklist-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo grupo</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="group">
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ group_form.name.label_tag }}
+                            {{ group_form.name }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Adicionar grupo</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo tipo</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="type">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ type_form.group.label_tag }}
+                            {{ type_form.group }}
+                        </div>
+                        <div class="field">
+                            {{ type_form.name.label_tag }}
+                            {{ type_form.name }}
+                        </div>
+                        <div class="field">
+                            {{ type_form.color.label_tag }}
+                            {{ type_form.color }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Adicionar tipo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="task-types-header-row">
+                <div class="checklist-card-title">Grupos cadastrados</div>
+                <div class="task-types-counter">
+                    {{ groups_page_obj.start_index }}-{{ groups_page_obj.end_index }} de {{ groups_page_obj.paginator.count }}
+                </div>
+            </div>
+
+            <div class="checklist-table projects-table-wrap task-types-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Grupo</th>
+                            <th>A&ccedil;&otilde;es</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for g in groups %}
+                            <tr>
+                                <td>
+                                    <input class="queue-input-sm table-input" type="text" name="name" value="{{ g.name }}" form="group-edit-{{ g.id }}">
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <form method="POST" id="group-edit-{{ g.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_group">
+                                            <input type="hidden" name="group_id" value="{{ g.id }}">
+                                            <button type="submit" class="queue-secondary-btn project-nav-btn project-table-btn">Salvar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="2" class="queue-empty">Nenhum grupo cadastrado.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if groups_page_obj.paginator.num_pages > 1 %}
+                <div class="types-pager">
+                    {% if groups_page_obj.has_previous %}
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?groups_page=1&types_page={{ types_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">&laquo;</a>
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?groups_page={{ groups_page_obj.previous_page_number }}&types_page={{ types_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">Anterior</a>
+                    {% endif %}
+
+                    <div class="types-pager-numbers">
+                        {% for n in groups_page_obj.paginator.page_range %}
+                            {% if n >= groups_page_obj.number|add:"-2" and n <= groups_page_obj.number|add:"2" %}
+                                {% if n == groups_page_obj.number %}
+                                    <span class="types-pager-number is-current">{{ n }}</span>
+                                {% else %}
+                                    <a class="types-pager-number" href="?groups_page={{ n }}&types_page={{ types_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">{{ n }}</a>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+
+                    {% if groups_page_obj.has_next %}
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?groups_page={{ groups_page_obj.next_page_number }}&types_page={{ types_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">Pr&oacute;xima</a>
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?groups_page={{ groups_page_obj.paginator.num_pages }}&types_page={{ types_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">&raquo;</a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="checklist-card">
+            <div class="task-types-header-row">
+                <div class="checklist-card-title">Tipos por grupo</div>
+                <div class="task-types-counter">
+                    {{ types_page_obj.start_index }}-{{ types_page_obj.end_index }} de {{ types_page_obj.paginator.count }}
+                </div>
+            </div>
+
+            <form method="GET" class="types-filter-row">
+                <label for="types-group-filter" class="types-filter-label">Filtrar por grupo</label>
+                <select id="types-group-filter" class="queue-select types-filter-select" name="group" onchange="this.form.submit()">
+                    <option value="">Todos os grupos</option>
+                    {% for g in all_groups %}
+                        <option value="{{ g.id }}" {% if selected_group_id == g.id|stringformat:'s' %}selected{% endif %}>{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="hidden" name="groups_page" value="{{ groups_page_obj.number }}">
+                <input type="hidden" name="types_page" value="1">
+            </form>
+
+            <div class="checklist-table projects-table-wrap task-types-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Grupo</th>
+                            <th>Tipo</th>
+                            <th>Cor</th>
+                            <th>A&ccedil;&otilde;es</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in types %}
+                            <tr>
+                                <td>
+                                    <select name="group" class="queue-input-sm table-input" form="type-edit-{{ t.id }}">
+                                        {% for g in all_groups %}
+                                            <option value="{{ g.id }}" {% if g.id == t.group.id %}selected{% endif %}>{{ g.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="text" name="name" class="queue-input-sm table-input" value="{{ t.name }}" form="type-edit-{{ t.id }}">
+                                </td>
+                                <td>
+                                    <div class="types-color-cell">
+                                        <span class="type-badge" style="background: {{ t.color }};">{{ t.name }}</span>
+                                        <input type="color" name="color" class="queue-color" value="{{ t.color }}" form="type-edit-{{ t.id }}">
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <form method="POST" id="type-edit-{{ t.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_type">
+                                            <input type="hidden" name="type_id" value="{{ t.id }}">
+                                            <button type="submit" class="queue-secondary-btn project-nav-btn project-table-btn">Salvar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="queue-empty">Nenhum tipo cadastrado para este filtro.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if types_page_obj.paginator.num_pages > 1 %}
+                <div class="types-pager">
+                    {% if types_page_obj.has_previous %}
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?types_page=1&groups_page={{ groups_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">&laquo;</a>
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?types_page={{ types_page_obj.previous_page_number }}&groups_page={{ groups_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">Anterior</a>
+                    {% endif %}
+
+                    <div class="types-pager-numbers">
+                        {% for n in types_page_obj.paginator.page_range %}
+                            {% if n >= types_page_obj.number|add:"-2" and n <= types_page_obj.number|add:"2" %}
+                                {% if n == types_page_obj.number %}
+                                    <span class="types-pager-number is-current">{{ n }}</span>
+                                {% else %}
+                                    <a class="types-pager-number" href="?types_page={{ n }}&groups_page={{ groups_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">{{ n }}</a>
+                                {% endif %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+
+                    {% if types_page_obj.has_next %}
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?types_page={{ types_page_obj.next_page_number }}&groups_page={{ groups_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">Pr&oacute;xima</a>
+                        <a class="queue-secondary-btn project-table-btn types-pager-btn" href="?types_page={{ types_page_obj.paginator.num_pages }}&groups_page={{ groups_page_obj.number }}{% if selected_group_id %}&group={{ selected_group_id }}{% endif %}">&raquo;</a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</body>

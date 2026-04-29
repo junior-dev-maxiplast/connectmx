@@ -1,0 +1,270 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div id="overlay" onclick="closeHubQuickAddModal()" style="display:none;"></div>
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>HUB de Ferramentas</h1>
+                <div class="subtitle">Acesso rapido por categoria</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <select id="hubCategoryFilter" class="queue-select hub-filter-select" onchange="applyHubFilters()">
+                        <option value="">Todas as categorias (Geral)</option>
+                        {% for category in categories %}
+                            {% if category.active_tools %}
+                                <option value="{{ category.name }}">{{ category.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <a class="queue-secondary-btn" href="{% url 'manageHubTools' %}">Cadastro HUB geral</a>
+                    <a class="queue-primary-btn" href="{% url 'manageMyHubTools' %}">Cadastro Meu HUB</a>
+                </div>
+            </div>
+        </div>
+
+        <div id="hubGeneralGrid" class="hub-grid">
+            {% for category in categories %}
+                    <section class="hub-category-card hub-category-block" data-category-name="{{ category.name }}">
+                        <div class="hub-category-head">
+                            <div class="hub-category-title">{{ category.name }}</div>
+                            <button
+                                type="button"
+                                class="hub-add-btn"
+                                title="Adicionar ferramenta"
+                                aria-label="Adicionar ferramenta"
+                                onclick="openHubQuickAddModal('general', '{{ category.id }}', '{{ category.name|escapejs }}')"
+                            >+</button>
+                        </div>
+                        <div class="hub-tools">
+                            {% for tool in category.active_tools %}
+                                <a class="hub-tool-btn" href="{{ tool.link }}" target="_blank" rel="noopener noreferrer">
+                                    {% if tool.image_url %}
+                                        <img src="{{ tool.image_url }}" alt="{{ tool.name }}" class="hub-tool-img">
+                                    {% else %}
+                                        <div class="hub-tool-fallback">{{ tool.name|first|upper }}</div>
+                                    {% endif %}
+                                    <span class="hub-tool-name">{{ tool.name }}</span>
+                                </a>
+                            {% empty %}
+                                <div class="queue-empty">Nenhuma ferramenta nesta categoria.</div>
+                            {% endfor %}
+                        </div>
+                    </section>
+            {% empty %}
+                <div class="queue-empty">Nenhuma categoria/ferramenta cadastrada ainda.</div>
+            {% endfor %}
+        </div>
+        <div id="hubGeneralEmptyFilter" class="queue-empty hub-filter-empty" style="display:none;">Nenhuma ferramenta encontrada para este filtro no HUB Geral.</div>
+
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Meu HUB</h1>
+                <div class="subtitle">Ferramentas pessoais do usuario logado</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <select id="myHubCategoryFilter" class="queue-select hub-filter-select" onchange="applyHubFilters()">
+                        <option value="">Todas as categorias (Meu HUB)</option>
+                        {% for category in my_tools_grouped %}
+                            {% if category.tools %}
+                                <option value="{{ category.name }}">{{ category.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div id="hubMyGrid" class="hub-grid">
+            {% for category in my_tools_grouped %}
+                    <section class="hub-category-card hub-category-block" data-category-name="{{ category.name }}">
+                        <div class="hub-category-head">
+                            <div class="hub-category-title">{{ category.name }}</div>
+                            <button
+                                type="button"
+                                class="hub-add-btn"
+                                title="Adicionar ferramenta"
+                                aria-label="Adicionar ferramenta"
+                                onclick="openHubQuickAddModal('my', '{{ category.category_id|default_if_none:'' }}', '{{ category.name|escapejs }}')"
+                            >+</button>
+                        </div>
+                        <div class="hub-tools">
+                            {% for tool in category.tools %}
+                                <a class="hub-tool-btn" href="{{ tool.link }}" target="_blank" rel="noopener noreferrer">
+                                    {% if tool.image_url %}
+                                        <img src="{{ tool.image_url }}" alt="{{ tool.name }}" class="hub-tool-img">
+                                    {% else %}
+                                        <div class="hub-tool-fallback">{{ tool.name|first|upper }}</div>
+                                    {% endif %}
+                                    <span class="hub-tool-name">{{ tool.name }}</span>
+                                </a>
+                            {% empty %}
+                                <div class="queue-empty">Nenhuma ferramenta nesta categoria.</div>
+                            {% endfor %}
+                        </div>
+                    </section>
+            {% empty %}
+                <div class="queue-empty">Nenhuma ferramenta no Meu HUB ainda.</div>
+            {% endfor %}
+        </div>
+        <div id="hubMyEmptyFilter" class="queue-empty hub-filter-empty" style="display:none;">Nenhuma ferramenta encontrada para este filtro no Meu HUB.</div>
+    </div>
+
+    <div id="hubQuickAddModal" class="formNewItemMain" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Nova ferramenta</div>
+            <button type="button" class="modal-close" onclick="closeHubQuickAddModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form id="hubQuickAddForm" class="modal-form" onsubmit="return submitHubQuickAdd(event)">
+            {% csrf_token %}
+            <input type="hidden" id="hubQuickScope" name="scope">
+            <input type="hidden" id="hubQuickCategoryId" name="category_id">
+            <input type="hidden" id="hubQuickCategoryName" name="category_name">
+            <div class="modal-grid">
+                <div class="field span-2">
+                    <label>Categoria</label>
+                    <input id="hubQuickCategoryLabel" type="text" readonly>
+                </div>
+                <div class="field span-2">
+                    <label for="hubQuickName">Nome</label>
+                    <input id="hubQuickName" name="name" type="text" maxlength="120" required>
+                </div>
+                <div class="field span-2">
+                    <label for="hubQuickLink">Link</label>
+                    <input id="hubQuickLink" name="link" type="url" maxlength="500" placeholder="https://..." required>
+                </div>
+                <div class="field span-2">
+                    <label for="hubQuickImageUrl">Imagem (URL opcional)</label>
+                    <input id="hubQuickImageUrl" name="image_url" type="url" maxlength="500" placeholder="https://...">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeHubQuickAddModal()">Cancelar</button>
+                <button type="submit" id="hubQuickSubmitBtn" class="queue-primary-btn">Adicionar</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function normalizeCategory(value) {
+        return String(value || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .trim()
+            .toLowerCase();
+    }
+
+    function applyFilterToGrid(gridId, selectId, emptyId) {
+        const grid = document.getElementById(gridId);
+        const select = document.getElementById(selectId);
+        const empty = document.getElementById(emptyId);
+        if (!grid || !select || !empty) return;
+
+        const selected = normalizeCategory(select.value);
+        const blocks = Array.from(grid.querySelectorAll(".hub-category-block"));
+        let visibleCount = 0;
+
+        blocks.forEach((block) => {
+            const categoryName = normalizeCategory(block.dataset.categoryName || "");
+            const match = !selected || categoryName === selected;
+            block.style.display = match ? "" : "none";
+            if (match) visibleCount += 1;
+        });
+
+        empty.style.display = visibleCount === 0 && blocks.length > 0 ? "block" : "none";
+    }
+
+    function applyHubFilters() {
+        applyFilterToGrid("hubGeneralGrid", "hubCategoryFilter", "hubGeneralEmptyFilter");
+        applyFilterToGrid("hubMyGrid", "myHubCategoryFilter", "hubMyEmptyFilter");
+    }
+
+    function openHubQuickAddModal(scope, categoryId, categoryName) {
+        document.getElementById("hubQuickScope").value = scope || "";
+        document.getElementById("hubQuickCategoryId").value = categoryId || "";
+        document.getElementById("hubQuickCategoryName").value = categoryName || "";
+        document.getElementById("hubQuickCategoryLabel").value = categoryName || "-";
+        document.getElementById("hubQuickName").value = "";
+        document.getElementById("hubQuickLink").value = "";
+        document.getElementById("hubQuickImageUrl").value = "";
+
+        document.getElementById("overlay").style.display = "block";
+        document.getElementById("hubQuickAddModal").style.display = "block";
+        document.getElementById("hubQuickName").focus();
+    }
+
+    function closeHubQuickAddModal() {
+        const overlay = document.getElementById("overlay");
+        const modal = document.getElementById("hubQuickAddModal");
+        if (overlay) overlay.style.display = "none";
+        if (modal) modal.style.display = "none";
+    }
+
+    function submitHubQuickAdd(e) {
+        e.preventDefault();
+        const form = document.getElementById("hubQuickAddForm");
+        const btn = document.getElementById("hubQuickSubmitBtn");
+        if (!form) return false;
+
+        const csrfToken = getCookie("csrftoken");
+        const formData = new FormData(form);
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Salvando...";
+        }
+
+        fetch("/hub/tools/quick-add/", {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": csrfToken || "",
+            },
+            credentials: "same-origin",
+            body: formData,
+        })
+            .then(async (response) => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Erro ao adicionar ferramenta.");
+                }
+                window.location.reload();
+            })
+            .catch((err) => {
+                alert(err && err.message ? err.message : "Erro ao adicionar ferramenta.");
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Adicionar";
+                }
+            });
+
+        return false;
+    }
+
+    applyHubFilters();
+</script>

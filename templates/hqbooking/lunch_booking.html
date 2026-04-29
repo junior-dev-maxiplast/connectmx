@@ -1,0 +1,118 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <title>Reserva de Almoco</title>
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body>
+    <div class="theme-fab" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <main class="hq-shell">
+        <section class="hq-card hq-login-card">
+            <h1 class="hq-title">Reserva de Almoco</h1>
+            <p class="hq-subtitle">Informe sua matricula e reserve o almoco do proximo dia util.</p>
+
+            {% if error_message %}
+                <div class="hq-alert hq-alert-error">{{ error_message }}</div>
+            {% endif %}
+
+            <form method="POST" id="lunchForm" class="hq-form">
+                {% csrf_token %}
+                <label class="hq-label" for="employee_id">Matricula</label>
+                <input
+                    class="hq-input"
+                    id="employee_id"
+                    name="employee_id"
+                    type="text"
+                    maxlength="20"
+                    required
+                    autocomplete="off"
+                    placeholder="Ex: 991309"
+                >
+                <input type="hidden" id="friday_choice" name="friday_choice" value="">
+                <button type="button" class="hq-button" onclick="submitLunchReservation()">Reservar almoco do proximo dia</button>
+            </form>
+
+            <div class="hq-admin-link-wrap">
+                <a class="hq-admin-link" href="{% url 'lunch_booking_admin' %}">Acesso administrativo</a>
+            </div>
+        </section>
+    </main>
+
+    <div id="fridayModal" class="hq-modal-backdrop" style="display:none;">
+        <div class="hq-modal">
+            <h2 class="hq-modal-title">Reserva de sexta-feira</h2>
+            <p class="hq-modal-text">Deseja reservar o almoco para sabado ou segunda?</p>
+            <div class="hq-modal-actions">
+                <button type="button" class="hq-button hq-button-secondary" onclick="setFridayChoice('saturday')">Sabado</button>
+                <button type="button" class="hq-button" onclick="setFridayChoice('monday')">Segunda</button>
+            </div>
+        </div>
+    </div>
+
+    {% if success_date_label %}
+        <div id="successModal" class="hq-modal-backdrop" style="display:none;">
+            <div class="hq-modal hq-modal-success is-animated">
+                <h2 class="hq-modal-title">Reserva concluida</h2>
+                <p class="hq-modal-text">Reserva conclu&iacute;da com sucesso para a data {{ success_date_label }}.</p>
+                <div class="hq-modal-actions hq-modal-actions-center">
+                    <button type="button" class="hq-button" onclick="closeSuccessModal()">OK</button>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    <script>
+        const isFriday = {{ is_friday|yesno:"true,false" }};
+
+        function submitLunchReservation() {
+            const form = document.getElementById("lunchForm");
+            const employee = document.getElementById("employee_id");
+            if (!employee.value.trim()) {
+                employee.focus();
+                return;
+            }
+
+            if (isFriday) {
+                document.getElementById("fridayModal").style.display = "flex";
+                return;
+            }
+
+            document.getElementById("friday_choice").value = "";
+            form.submit();
+        }
+
+        function setFridayChoice(choice) {
+            document.getElementById("friday_choice").value = choice;
+            document.getElementById("fridayModal").style.display = "none";
+            document.getElementById("lunchForm").submit();
+        }
+
+        function closeSuccessModal() {
+            const modal = document.getElementById("successModal");
+            if (modal) modal.style.display = "none";
+        }
+
+        {% if success_date_label %}
+        window.addEventListener("DOMContentLoaded", () => {
+            const modal = document.getElementById("successModal");
+            if (modal) modal.style.display = "flex";
+        });
+        {% endif %}
+    </script>
+</body>
+</html>

@@ -1,0 +1,298 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div id="overlay" onclick="closeWifiModals()" style="display:none;"></div>
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Controle Wifi</h1>
+                <div class="subtitle">Gestao de vouchers por tempo, importacao por PDF e ciclo de uso</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <button type="button" class="queue-primary-btn" onclick="openFastDeliverModal()">Consultar agora</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="wifi-top-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo grupo</div>
+                <form method="POST" class="checklist-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="create_group">
+                    <input class="queue-input-sm" type="text" name="name" placeholder="Nome (opcional)">
+                    <input class="queue-input-sm" type="number" min="1" name="duration_hours" placeholder="Duracao (h)" required>
+                    <input class="queue-input-sm" type="number" min="0" name="expected_quantity" placeholder="Qtd planejada">
+                    <button class="queue-primary-btn" type="submit">Criar grupo</button>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Adicionar voucher manual</div>
+                <form method="POST" class="checklist-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="add_voucher">
+                    <select class="queue-select" name="group_id" required>
+                        <option value="">Grupo</option>
+                        {% for g in groups %}
+                            <option value="{{ g.id }}">{{ g.display_label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="queue-input-sm" type="text" name="voucher_code" placeholder="ID do voucher" required>
+                    <button class="queue-primary-btn" type="submit">Adicionar</button>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Importar PDF de vouchers</div>
+                <form method="POST" enctype="multipart/form-data" class="checklist-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="import_pdf">
+                    <select class="queue-select" name="group_id" required>
+                        <option value="">Grupo</option>
+                        {% for g in groups %}
+                            <option value="{{ g.id }}">{{ g.display_label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input class="queue-input-sm" type="file" name="voucher_pdf" accept="application/pdf" required>
+                    <button class="queue-primary-btn" type="submit">Importar arquivo</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="wifi-groups-wrap">
+            {% for card in group_cards %}
+                <details class="wifi-group-dropdown" {% if card.is_open %}open{% endif %}>
+                    <summary class="wifi-group-summary">
+                        <div class="wifi-summary-left">
+                            <span class="wifi-caret">&#x276F;</span>
+                            <span class="wifi-summary-title">{{ card.group.display_label }}</span>
+                        </div>
+                        <div class="wifi-summary-right">
+                            <span>{{ card.group.total_vouchers }} total</span>
+                            <span class="wifi-dot">|</span>
+                            <span>Disponiveis: {{ card.group.available_count }}</span>
+                            <span class="wifi-dot">|</span>
+                            <span>Pendentes: {{ card.group.pending_count }}</span>
+                            <span class="wifi-dot">|</span>
+                            <span>Usados: {{ card.group.used_count }}</span>
+                            {% if card.group.expected_quantity %}
+                                <span class="wifi-dot">|</span>
+                                <span>Planejado: {{ card.group.expected_quantity }}</span>
+                            {% endif %}
+                        </div>
+                    </summary>
+
+                    <div class="wifi-group-body">
+                        <div class="checklist-table projects-table-wrap wifi-table-wrap">
+                            <table class="projects-manage-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 16%;">ID voucher</th>
+                                        <th style="width: 12%;">Status</th>
+                                        <th style="width: 16%;">Inserido em</th>
+                                        <th style="width: 16%;">Entregue em</th>
+                                        <th style="width: 16%;">Expira em</th>
+                                        <th style="width: 12%;">Acoes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for v in card.page_obj.object_list %}
+                                        <tr>
+                                            <td>{{ v.voucher_code }}</td>
+                                            <td>
+                                                <span class="wifi-status-badge s-{{ v.status }}">{{ v.get_status_display }}</span>
+                                            </td>
+                                            <td>{{ v.inserted_at|date:"d/m/Y H:i" }}</td>
+                                            <td>{% if v.delivered_at %}{{ v.delivered_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+                                            <td>{% if v.expires_at %}{{ v.expires_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+                                            <td>
+                                                {% if v.status != "used" %}
+                                                    <button class="queue-primary-btn wifi-deliver-btn" type="button" onclick="deliverVoucher('{{ v.id }}')">Entregar</button>
+                                                {% else %}
+                                                    <span class="wifi-muted">Finalizado</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr>
+                                            <td colspan="6" class="queue-empty">Nenhum voucher neste grupo.</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {% if card.page_obj.paginator.num_pages > 1 %}
+                            <div class="wifi-pagination">
+                                {% if card.page_obj.has_previous %}
+                                    <a class="queue-secondary-btn" href="?open_group={{ card.group.id }}&{{ card.page_key }}={{ card.page_obj.previous_page_number }}">Anterior</a>
+                                {% endif %}
+
+                                {% for n in card.page_obj.paginator.page_range %}
+                                    {% if n == card.page_obj.number %}
+                                        <span class="wifi-page-chip is-active">{{ n }}</span>
+                                    {% else %}
+                                        <a class="wifi-page-chip" href="?open_group={{ card.group.id }}&{{ card.page_key }}={{ n }}">{{ n }}</a>
+                                    {% endif %}
+                                {% endfor %}
+
+                                {% if card.page_obj.has_next %}
+                                    <a class="queue-secondary-btn" href="?open_group={{ card.group.id }}&{{ card.page_key }}={{ card.page_obj.next_page_number }}">Proxima</a>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </details>
+            {% empty %}
+                <div class="checklist-table projects-table-wrap">
+                    <div class="queue-empty">Nenhum grupo criado ainda.</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div id="wifiFastModal" class="formNewItemMain" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Consulta rapida de vouchers</div>
+            <button type="button" class="modal-close" onclick="closeWifiModals()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="fast_deliver">
+            <div class="modal-grid">
+                <div class="field">
+                    <label for="fast_group_id">Grupo</label>
+                    <select class="queue-select" id="fast_group_id" name="group_id" required>
+                        <option value="">Selecione</option>
+                        {% for g in groups %}
+                            <option value="{{ g.id }}">{{ g.display_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="fast_qty">Quantidade</label>
+                    <input class="queue-input-sm" id="fast_qty" type="number" min="1" name="quantity" placeholder="Ex: 5" required>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeWifiModals()">Cancelar</button>
+                <button type="submit" class="queue-primary-btn">Consultar e entregar</button>
+            </div>
+        </form>
+    </div>
+
+    {% if fast_result %}
+        <div id="wifiResultModal" class="formNewItemMain" style="display:none;">
+            <div class="modal-header">
+                <div class="modal-title">Resultado da entrega rapida</div>
+                <button type="button" class="modal-close" onclick="closeWifiModals()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <div class="modal-form">
+                <div class="wifi-result-head">
+                    <div><strong>Grupo:</strong> {{ fast_result.group_label }}</div>
+                    <div><strong>Solicitado:</strong> {{ fast_result.requested_qty }}</div>
+                    <div><strong>Entregues:</strong> {{ fast_result.delivered_qty }}</div>
+                </div>
+                <div class="wifi-result-list-wrap">
+                    {% if fast_result.codes %}
+                        <ul class="wifi-result-list">
+                            {% for code in fast_result.codes %}
+                                <li>{{ code }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <div class="wifi-muted">Nenhum voucher disponivel para entrega.</div>
+                    {% endif %}
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-primary-btn" onclick="closeWifiModals()">Fechar</button>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function showOverlay() {
+        const overlay = document.getElementById("overlay");
+        if (overlay) overlay.style.display = "block";
+    }
+
+    function hideOverlay() {
+        const overlay = document.getElementById("overlay");
+        if (overlay) overlay.style.display = "none";
+    }
+
+    function openFastDeliverModal() {
+        const modal = document.getElementById("wifiFastModal");
+        showOverlay();
+        if (modal) modal.style.display = "block";
+    }
+
+    function closeWifiModals() {
+        hideOverlay();
+        const fast = document.getElementById("wifiFastModal");
+        const result = document.getElementById("wifiResultModal");
+        if (fast) fast.style.display = "none";
+        if (result) result.style.display = "none";
+    }
+
+    function deliverVoucher(voucherId) {
+        const csrfToken = getCookie("csrftoken");
+        fetch(`/updates/wifi/${voucherId}/deliver/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": csrfToken,
+            },
+            credentials: "same-origin",
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error((data && data.message) || "Erro ao entregar voucher");
+            }
+            return response.json();
+        })
+        .then(() => {
+            window.location.reload();
+        })
+        .catch((err) => {
+            alert(err.message || "Erro ao entregar voucher");
+        });
+    }
+
+    {% if fast_result %}
+    window.addEventListener("DOMContentLoaded", () => {
+        const modal = document.getElementById("wifiResultModal");
+        if (modal) {
+            showOverlay();
+            modal.style.display = "block";
+        }
+    });
+    {% endif %}
+</script>

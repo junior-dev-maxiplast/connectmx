@@ -1,0 +1,162 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Projetos</h1>
+            </div>
+        </div>
+
+        <div class="checklist-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo projeto</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="project">
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ project_form.name.label_tag }}
+                            {{ project_form.name }}
+                        </div>
+                        <div class="field span-2">
+                            {{ project_form.description.label_tag }}
+                            {{ project_form.description }}
+                        </div>
+                        <div class="field">
+                            {{ project_form.status.label_tag }}
+                            {{ project_form.status }}
+                        </div>
+                        <div class="field">
+                            {{ project_form.color.label_tag }}
+                            {{ project_form.color }}
+                        </div>
+                        <div class="field">
+                            {{ project_form.start_date.label_tag }}
+                            {{ project_form.start_date }}
+                        </div>
+                        <div class="field">
+                            {{ project_form.end_date.label_tag }}
+                            {{ project_form.end_date }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Nova etapa do roadmap</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="roadmap">
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ roadmap_form.project.label_tag }}
+                            {{ roadmap_form.project }}
+                        </div>
+                        <div class="field span-2">
+                            {{ roadmap_form.title.label_tag }}
+                            {{ roadmap_form.title }}
+                        </div>
+                        <div class="field span-2">
+                            {{ roadmap_form.description.label_tag }}
+                            {{ roadmap_form.description }}
+                        </div>
+                        <div class="field">
+                            {{ roadmap_form.status.label_tag }}
+                            {{ roadmap_form.status }}
+                        </div>
+                        <div class="field">
+                            {{ roadmap_form.sort_order.label_tag }}
+                            {{ roadmap_form.sort_order }}
+                        </div>
+                        <div class="field">
+                            {{ roadmap_form.start_date.label_tag }}
+                            {{ roadmap_form.start_date }}
+                        </div>
+                        <div class="field">
+                            {{ roadmap_form.end_date.label_tag }}
+                            {{ roadmap_form.end_date }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Projetos cadastrados</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Projeto</th>
+                            <th>Status</th>
+                            <th>Inicio</th>
+                            <th>Fim</th>
+                            <th>Cor</th>
+                            <th>A&#231;&#245;es</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in projects %}
+                            <tr>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="name" value="{{ p.name }}" form="project-form-{{ p.id }}">
+                                    <input type="hidden" name="description" value="{{ p.description|default:'' }}" form="project-form-{{ p.id }}">
+                                </td>
+                                <td>
+                                    <select class="queue-input-sm table-input" name="status" form="project-form-{{ p.id }}">
+                                        {% for v,l in p.STATUS_CHOICES %}
+                                            <option value="{{ v }}" {% if v == p.status %}selected{% endif %}>{{ l }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" type="date" name="start_date" value="{% if p.start_date %}{{ p.start_date|date:'Y-m-d' }}{% endif %}" form="project-form-{{ p.id }}">
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" type="date" name="end_date" value="{% if p.end_date %}{{ p.end_date|date:'Y-m-d' }}{% endif %}" form="project-form-{{ p.id }}">
+                                </td>
+                                <td>
+                                    <input class="queue-color" type="color" name="color" value="{{ p.color }}" form="project-form-{{ p.id }}">
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <form method="POST" id="project-form-{{ p.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_project">
+                                            <input type="hidden" name="project_id" value="{{ p.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                        <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectBoard' p.id %}">Kanban</a>
+                                        <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectRoadmapView' p.id %}">Roadmap</a>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="6" class="queue-empty">Nenhum projeto cadastrado.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>

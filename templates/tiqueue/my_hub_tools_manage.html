@@ -1,0 +1,194 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Cadastro Meu HUB</h1>
+                <div class="subtitle">Categorias e ferramentas pessoais do usuario logado</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'manageHubTools' %}">Ir para HUB geral</a>
+                    <a class="queue-secondary-btn" href="{% url 'index' %}">Abrir HUB</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Nova categoria do Meu HUB</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="my_category">
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ my_category_form.name.label_tag }}
+                            {{ my_category_form.name }}
+                        </div>
+                        <div class="field">
+                            {{ my_category_form.sort_order.label_tag }}
+                            {{ my_category_form.sort_order }}
+                        </div>
+                        <div class="field">
+                            <label class="checklist-inline-check">
+                                {{ my_category_form.is_active }}
+                                <span>Ativa</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar categoria</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Nova ferramenta do Meu HUB</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="my_tool">
+                    <div class="checklist-section-grid">
+                        <div class="field span-2">
+                            {{ my_tool_form.category.label_tag }}
+                            {{ my_tool_form.category }}
+                        </div>
+                        <div class="field span-2">
+                            {{ my_tool_form.name.label_tag }}
+                            {{ my_tool_form.name }}
+                        </div>
+                        <div class="field span-2">
+                            {{ my_tool_form.link.label_tag }}
+                            {{ my_tool_form.link }}
+                        </div>
+                        <div class="field span-2">
+                            {{ my_tool_form.image_url.label_tag }}
+                            {{ my_tool_form.image_url }}
+                        </div>
+                        <div class="field">
+                            {{ my_tool_form.sort_order.label_tag }}
+                            {{ my_tool_form.sort_order }}
+                        </div>
+                        <div class="field">
+                            <label class="checklist-inline-check">
+                                {{ my_tool_form.is_active }}
+                                <span>Ativa</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar ferramenta</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Categorias do Meu HUB</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th>Ordem</th>
+                            <th>Ativa</th>
+                            <th>Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in my_categories %}
+                            <tr>
+                                <td><input class="queue-input-sm table-input" name="name" value="{{ c.name }}" form="myhub-cat-form-{{ c.id }}"></td>
+                                <td><input class="queue-input-sm table-input" name="sort_order" type="number" value="{{ c.sort_order }}" form="myhub-cat-form-{{ c.id }}"></td>
+                                <td>
+                                    <label class="checklist-inline-check">
+                                        <input type="checkbox" name="is_active" {% if c.is_active %}checked{% endif %} form="myhub-cat-form-{{ c.id }}">
+                                        <span>Ativa</span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <form method="POST" id="myhub-cat-form-{{ c.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_my_category">
+                                            <input type="hidden" name="category_id" value="{{ c.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4" class="queue-empty">Nenhuma categoria cadastrada.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Ferramentas do Meu HUB</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th>Ferramenta</th>
+                            <th>Link</th>
+                            <th>Imagem</th>
+                            <th>Ordem</th>
+                            <th>Ativa</th>
+                            <th>Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in my_tools %}
+                            <tr>
+                                <td>
+                                    <select class="queue-input-sm table-input" name="category" form="myhub-tool-form-{{ t.id }}">
+                                        {% for c in my_categories %}
+                                            <option value="{{ c.id }}" {% if c.id == t.category_id %}selected{% endif %}>{{ c.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td><input class="queue-input-sm table-input" name="name" value="{{ t.name }}" form="myhub-tool-form-{{ t.id }}"></td>
+                                <td><input class="queue-input-sm table-input" name="link" value="{{ t.link }}" form="myhub-tool-form-{{ t.id }}"></td>
+                                <td><input class="queue-input-sm table-input" name="image_url" value="{{ t.image_url|default:'' }}" form="myhub-tool-form-{{ t.id }}"></td>
+                                <td><input class="queue-input-sm table-input" name="sort_order" type="number" value="{{ t.sort_order }}" form="myhub-tool-form-{{ t.id }}"></td>
+                                <td>
+                                    <label class="checklist-inline-check">
+                                        <input type="checkbox" name="is_active" {% if t.is_active %}checked{% endif %} form="myhub-tool-form-{{ t.id }}">
+                                        <span>Ativa</span>
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="table-actions">
+                                        <form method="POST" id="myhub-tool-form-{{ t.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_my_tool">
+                                            <input type="hidden" name="tool_id" value="{{ t.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="7" class="queue-empty">Nenhuma ferramenta cadastrada.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>

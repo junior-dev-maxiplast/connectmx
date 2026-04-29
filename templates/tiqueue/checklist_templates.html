@@ -1,0 +1,281 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Modelos de checklist</h1>
+                <div class="subtitle">Estruture modelos, secoes e campos com padrao visual unificado</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'checklistList' %}">Voltar</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-grid">
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo modelo</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="template">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ template_form.name.label_tag }}
+                            {{ template_form.name }}
+                        </div>
+                        <div class="field">
+                            {{ template_form.description.label_tag }}
+                            {{ template_form.description }}
+                        </div>
+                        <div class="field">
+                            <label>{{ template_form.is_active }} Ativo</label>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Nova se&#231;&#227;o</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="section">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ section_form.template.label_tag }}
+                            {{ section_form.template }}
+                        </div>
+                        <div class="field">
+                            {{ section_form.title.label_tag }}
+                            {{ section_form.title }}
+                        </div>
+                        <div class="field">
+                            {{ section_form.sort_order.label_tag }}
+                            {{ section_form.sort_order }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="checklist-card">
+                <div class="checklist-card-title">Novo campo</div>
+                <form method="POST" class="checklist-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="field">
+                    <div class="checklist-section-grid">
+                        <div class="field">
+                            {{ field_form.section.label_tag }}
+                            {{ field_form.section }}
+                        </div>
+                        <div class="field">
+                            {{ field_form.label.label_tag }}
+                            {{ field_form.label }}
+                        </div>
+                        <div class="field">
+                            {{ field_form.field_type.label_tag }}
+                            {{ field_form.field_type }}
+                        </div>
+                        <div class="field">
+                            {{ field_form.choice_group.label_tag }}
+                            {{ field_form.choice_group }}
+                        </div>
+                        <div class="field">
+                            {{ field_form.sort_order.label_tag }}
+                            {{ field_form.sort_order }}
+                        </div>
+                        <div class="field">
+                            <label>{{ field_form.required }} Obrigat&#243;rio</label>
+                        </div>
+                        <div class="field span-2">
+                            {{ field_form.help_text.label_tag }}
+                            {{ field_form.help_text }}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Modelos cadastrados</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Modelo</th>
+                            <th>Descri&#231;&#227;o</th>
+                            <th>Ativo</th>
+                            <th>A&#231;&#227;o</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in templates %}
+                            <tr>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="name" value="{{ t.name }}" form="template-edit-{{ t.id }}">
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="description" value="{{ t.description|default:'' }}" form="template-edit-{{ t.id }}">
+                                </td>
+                                <td>
+                                    <label class="checklist-inline-check checklist-inline-check-dark">
+                                        <input type="checkbox" name="is_active" form="template-edit-{{ t.id }}" {% if t.is_active %}checked{% endif %}>
+                                        Ativo
+                                    </label>
+                                </td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <form method="POST" id="template-edit-{{ t.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_template">
+                                            <input type="hidden" name="template_id" value="{{ t.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="4" class="queue-empty">Nenhum modelo cadastrado.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Se&#231;&#245;es</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Modelo</th>
+                            <th>Se&#231;&#227;o</th>
+                            <th>Ordem</th>
+                            <th>A&#231;&#227;o</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in sections %}
+                            <tr>
+                                <td>{{ s.template.name }}</td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="title" value="{{ s.title }}" form="section-edit-{{ s.id }}">
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="sort_order" type="number" value="{{ s.sort_order }}" form="section-edit-{{ s.id }}">
+                                </td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <form method="POST" id="section-edit-{{ s.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_section">
+                                            <input type="hidden" name="section_id" value="{{ s.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="4" class="queue-empty">Nenhuma se&#231;&#227;o cadastrada.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Campos</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Se&#231;&#227;o</th>
+                            <th>Campo</th>
+                            <th>Tipo</th>
+                            <th>Obrigat&#243;rio</th>
+                            <th>Ordem</th>
+                            <th>Op&#231;&#245;es</th>
+                            <th>A&#231;&#227;o</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in fields %}
+                            <tr>
+                                <td>{{ f.section.template.name }} / {{ f.section.title }}</td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="label" value="{{ f.label }}" form="field-edit-{{ f.id }}">
+                                </td>
+                                <td>
+                                    <select class="queue-input-sm table-input" name="field_type" form="field-edit-{{ f.id }}">
+                                        {% for value, label in f.FIELD_TYPES %}
+                                            <option value="{{ value }}" {% if value == f.field_type %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <label class="checklist-inline-check checklist-inline-check-dark">
+                                        <input type="checkbox" name="required" form="field-edit-{{ f.id }}" {% if f.required %}checked{% endif %}>
+                                        Sim
+                                    </label>
+                                </td>
+                                <td>
+                                    <input class="queue-input-sm table-input" name="sort_order" type="number" value="{{ f.sort_order }}" form="field-edit-{{ f.id }}">
+                                </td>
+                                <td>
+                                    <div class="checklist-inline-stack">
+                                        <select class="queue-input-sm table-input" name="choice_group" form="field-edit-{{ f.id }}">
+                                            <option value="">-</option>
+                                            {% for g in choice_groups %}
+                                                <option value="{{ g.id }}" {% if f.choice_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <input class="queue-input-sm table-input" name="help_text" value="{{ f.help_text|default:'' }}" placeholder="Ajuda" form="field-edit-{{ f.id }}">
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="table-actions checklist-actions">
+                                        <form method="POST" id="field-edit-{{ f.id }}">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_id" value="edit_field">
+                                            <input type="hidden" name="field_id" value="{{ f.id }}">
+                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="7" class="queue-empty">Nenhum campo cadastrado.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>

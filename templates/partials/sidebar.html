@@ -1,0 +1,204 @@
+{% load static %}
+
+<div class="sidebar">
+    <div class="sidebar_brand" aria-label="ConnectMX">
+        <div class="brand_mark" aria-hidden="true">CM</div>
+        <div class="brand_text">ConnectMX</div>
+    </div>
+
+    <div class="sidebar_theme" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+            <span class="sidebar_text">Tema</span>
+        </div>
+    </div>
+
+    <ul class="sidebar_menu">
+        <li class="dropdown">
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_user.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Usu&#225;rio</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'createUser' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Cadastro</span>
+                        </div>
+                    </a>
+                    <div class="dropdownIndividualItem">
+                        <span>Consulta</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_fila.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Fila</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'queueUserPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Minha fila</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'queueMainPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Geral</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'queueConcludedPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Concluidas</span>
+                        </div>
+                    </a>
+                    <div class="dropdownIndividualItem">
+                        <span>Outros</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Cadastro</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'listCreateStatus' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Status - fila</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'manageTaskTypes' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Tipos de tarefa</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'checklistList' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Checklists</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'checklistChoices' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Op&#231;&#245;es checklist</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'checklistTemplates' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Modelos checklist</span>
+                        </div>
+                    </a>
+                    <div class="dropdownIndividualItem">
+                        <span>Tipo - fila</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">HUB</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'manageHubTools' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Cadastro HUB geral</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'manageMyHubTools' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Cadastro Meu HUB</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Projetos</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'projectCatalogPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Projetos</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'manageProjects' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Cadastro</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Atualizacoes</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'seniorUpdatesPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Sistemas Senior</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Wifi</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'wifiVoucherPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Controle de vouchers</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </li>
+    </ul>
+
+    <div class="sidebar_footer">
+        <form method="POST" action="{% url 'logoutPage' %}">
+            {% csrf_token %}
+            <button type="submit" class="sidebar_logout_btn" title="Encerrar sessao">
+                <span class="sidebar_logout_icon" aria-hidden="true">&#x21AA;</span>
+                <span class="sidebar_text">Logoff</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+    const sidebar = document.querySelector(".sidebar");
+
+    sidebar.addEventListener("mouseleave", () => {
+        const dropdowns = sidebar.querySelectorAll(".dropdown_button");
+
+        dropdowns.forEach(el => {
+            el.classList.remove("active");
+        });
+    });
+
+    function toggleDrop(element) {
+        element.classList.toggle("active");
+    }
+</script>

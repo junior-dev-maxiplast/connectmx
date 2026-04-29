@@ -1,0 +1,1589 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+
+    <div id="overlay" onclick="fCloseAllOverlays()"></div>
+
+    {% include 'partials/sidebar.html' %}
+
+    <div id="queuePageRoot" class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Minha Fila</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <label class="queue-check queue-control queue-style-toggle">
+                        <input id="queueModernStyleToggle" type="checkbox" onchange="toggleQueueModernStyle(this.checked)">
+                        <span>Layout moderno</span>
+                    </label>
+                    <select id="queueTypeFilter" class="queue-select" onchange="onQueueTypeChange(this.value)">
+                        <option value="">Todos os tipos</option>
+                        {% for t in task_types %}
+                            <option value="{{ t.id }}">{{ t.group.name }} - {{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <label class="queue-check queue-control">
+                        <input id="queueTodayOnly" type="checkbox" onchange="onQueueTodayToggle(this.checked)">
+                        <span>Hoje</span>
+                    </label>
+                    <input id="queueDateFrom" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
+                    <input id="queueDateTo" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
+                    <input id="queueSearchTicket" class="queue-search" type="search" placeholder="Buscar chamado..." oninput="onQueueTicketInput(this.value)">
+                    <input id="queueSearch" class="queue-search" type="search" placeholder="Buscar descri&#231;&#227;o..." oninput="onQueueSearchInput(this.value)">
+                    <button type="button" onclick="syncWithSM()" id="syncSmButton" class="queue-secondary-btn">Sincronizar com SM</button>
+                    <button onclick="fCreateNewQueueItem()" id="newItemQueueButton" class="queue-primary-btn">Nova demanda</button>
+                </div>
+            </div>
+        </div>
+        <div class="queue-dashboard" id="queueDashboard">
+            <div class="queue-dashboard-card">
+                <span class="queue-dashboard-label">Em andamento</span>
+                <strong id="dashInProgress" class="queue-dashboard-value">0</strong>
+            </div>
+            <div class="queue-dashboard-card">
+                <span class="queue-dashboard-label">Em fila</span>
+                <strong id="dashBacklog" class="queue-dashboard-value">0</strong>
+            </div>
+            <div class="queue-dashboard-card">
+                <span class="queue-dashboard-label">Atrasadas</span>
+                <strong id="dashDelayed" class="queue-dashboard-value">0</strong>
+            </div>
+            <div class="queue-dashboard-card">
+                <span class="queue-dashboard-label">Horas</span>
+                <strong id="dashHours" class="queue-dashboard-value">0.00h</strong>
+            </div>
+            <div class="queue-dashboard-card">
+                <span class="queue-dashboard-label">Total visiveis</span>
+                <strong id="dashVisible" class="queue-dashboard-value">0</strong>
+            </div>
+        </div>
+        <div style="display: none;" id="popUpFormNewItem" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Nova tarefa</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form method="POST" class="modal-form">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    {% for field in form %}
+                        <div class="field {% if field.name == 'a_description' %}span-2{% endif %}">
+                            {{ field.label_tag }}
+                            {{ field }}
+                            {% if field.errors %}
+                                <div class="field-error">{{ field.errors }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button id="addNewitentoQueueButton" type="submit" class="queue-primary-btn">Adicionar</button>
+                </div>
+            </form>
+        </div>
+
+        <div style="display: none;" id="popUpFormEditItem" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Editar tarefa</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="editQueueItemForm" method="POST" class="modal-form" onsubmit="return submitEditQueueItem(event)">
+                {% csrf_token %}
+
+                <div class="modal-grid">
+                    <div class="field">
+                        <label for="edit_a_ticket">Chamado</label>
+                        <input type="text" name="a_ticket" id="edit_a_ticket">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_f_conclusion_rate">% Conclus&#227;o</label>
+                        <input type="number" step="0.01" name="f_conclusion_rate" id="edit_f_conclusion_rate">
+                    </div>
+
+                    <div class="field span-2">
+                        <label for="edit_a_description">Descri&#231;&#227;o</label>
+                        <input type="text" name="a_description" id="edit_a_description" maxlength="250">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_d_predicted_date_start">In&#237;cio (Data)</label>
+                        <input type="date" name="d_predicted_date_start" id="edit_d_predicted_date_start">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_t_predicted_time_start">In&#237;cio (Hora)</label>
+                        <input type="time" name="t_predicted_time_start" id="edit_t_predicted_time_start">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_d_predicted_date_end">Fim (Data)</label>
+                        <input type="date" name="d_predicted_date_end" id="edit_d_predicted_date_end">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_t_predicted_time_end">Fim (Hora)</label>
+                        <input type="time" name="t_predicted_time_end" id="edit_t_predicted_time_end">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_d_real_date_start">In&#237;cio real (Data)</label>
+                        <input type="date" name="d_real_date_start" id="edit_d_real_date_start">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_d_real_time_start">In&#237;cio real (Hora)</label>
+                        <input type="time" name="d_real_time_start" id="edit_d_real_time_start">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_d_real_date_end">Fim real (Data)</label>
+                        <input type="date" name="d_real_date_end" id="edit_d_real_date_end">
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_t_real_time_end">Fim real (Hora)</label>
+                        <input type="time" name="t_real_time_end" id="edit_t_real_time_end">
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Salvar</button>
+                </div>
+            </form>
+        </div>
+
+        <div style="display: none;" id="popUpPredictedEdit" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Atualizar previsto</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="editPredictedForm" class="modal-form" onsubmit="return submitPredictedEdit(event)">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field">
+                        <label for="pred_d_start">In&#237;cio (Data)</label>
+                        <input type="date" id="pred_d_start" name="d_predicted_date_start">
+                    </div>
+                    <div class="field">
+                        <label for="pred_t_start">In&#237;cio (Hora)</label>
+                        <input type="time" id="pred_t_start" name="t_predicted_time_start">
+                    </div>
+                    <div class="field">
+                        <label for="pred_d_end">Fim (Data)</label>
+                        <input type="date" id="pred_d_end" name="d_predicted_date_end">
+                    </div>
+                    <div class="field">
+                        <label for="pred_t_end">Fim (Hora)</label>
+                        <input type="time" id="pred_t_end" name="t_predicted_time_end">
+                    </div>
+                    <div class="field span-2">
+                        <label class="queue-check queue-control" style="justify-content:flex-start;">
+                            <input id="pred_keep_current" type="checkbox" checked>
+                            <span>Manter atuais</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Salvar</button>
+                </div>
+            </form>
+        </div>
+
+        <div style="display: none;" id="popUpLinkProject" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Vincular ao projeto</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="linkProjectForm" class="modal-form" onsubmit="return submitLinkProject(event)">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field span-2">
+                        <label for="link_project_id">Projeto</label>
+                        <select id="link_project_id" name="project_id" class="queue-select" required>
+                            <option value="">Selecione o projeto</option>
+                            {% for p in projects %}
+                                <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Vincular e criar passo</button>
+                </div>
+            </form>
+        </div>
+        <div id="container-queue">
+            {% include 'partials/queue.html' %}
+        </div>
+        <div class="headerMain queue-collapsible-header" onclick="toggleMyQueueKanban()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleMyQueueKanban();}">
+            <div class="headerTitle queue-collapsible-title">
+                <h1>Kanban da Minha Fila</h1>
+                <span id="myQueueKanbanChevron" class="queue-collapsible-chevron">&#9660;</span>
+            </div>
+        </div>
+        <div id="myQueueKanbanWrap" class="myq-kanban-wrap-container">
+            <div id="myQueueKanban" class="myq-kanban-wrap"></div>
+        </div>
+    </div>
+
+
+</body>
+
+<script>
+    function getCookie(name) {
+        const cookies = document.cookie ? document.cookie.split(';') : [];
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                return decodeURIComponent(cookie.substring(name.length + 1));
+            }
+        }
+        return null;
+    }
+
+    function postJson(url, payload) {
+        const csrfToken = getCookie('csrftoken');
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+            body: payload ? JSON.stringify(payload) : null,
+        }).then(response => response.json());
+    }
+
+    function getQueueSortValue(row, key) {
+        const cells = row.querySelectorAll("td");
+        const text = (v) => String(v || "").trim().toLowerCase();
+        const toNum = (v) => {
+            const n = parseFloat(String(v || "").replace(",", "."));
+            return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+        };
+        const dateToNum = (iso) => {
+            const s = String(iso || "").trim();
+            if (!s) return Number.POSITIVE_INFINITY;
+            const t = Date.parse(`${s}T00:00:00`);
+            return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY;
+        };
+        const timeToNum = (hhmm) => {
+            const s = String(hhmm || "").trim();
+            if (!s) return Number.POSITIVE_INFINITY;
+            const parts = s.split(":");
+            if (parts.length < 2) return Number.POSITIVE_INFINITY;
+            const h = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (!Number.isFinite(h) || !Number.isFinite(m)) return Number.POSITIVE_INFINITY;
+            return (h * 60) + m;
+        };
+
+        switch (key) {
+            case "position":
+                return toNum(cells[2] ? cells[2].textContent : "");
+            case "ticket":
+                return text(cells[3] ? cells[3].textContent : "");
+            case "description": {
+                const el = row.querySelector(".queue-desc-text");
+                return text(el ? el.textContent : (cells[4] ? cells[4].textContent : ""));
+            }
+            case "type": {
+                const badge = row.querySelector(".type-badge");
+                return text(badge ? badge.textContent : (cells[5] ? cells[5].textContent : ""));
+            }
+            case "pred_start_date":
+                return dateToNum(row.dataset.predStart || "");
+            case "pred_start_time":
+                return timeToNum(row.dataset.predStartTime || "");
+            case "pred_end_date":
+                return dateToNum(row.dataset.predEnd || "");
+            case "pred_end_time":
+                return timeToNum(row.dataset.predEndTime || "");
+            case "real_start_date":
+                return dateToNum(cells[10] ? cells[10].dataset.iso : "");
+            case "real_start_time":
+                return timeToNum(cells[11] ? cells[11].dataset.iso : "");
+            case "real_end_date":
+                return dateToNum(cells[12] ? cells[12].dataset.iso : "");
+            case "real_end_time":
+                return timeToNum(cells[13] ? cells[13].dataset.iso : "");
+            default:
+                return text(row.textContent || "");
+        }
+    }
+
+    function applyQueueSort(table, key, dir) {
+        if (!table || !key || !dir) return;
+        const tbody = table.querySelector("tbody");
+        if (!tbody) return;
+
+        const taskRows = Array.from(tbody.querySelectorAll("tr.queue-task-row[data-id]"));
+        if (!taskRows.length) return;
+
+        const pairs = taskRows.map((taskRow) => {
+            const next = taskRow.nextElementSibling;
+            const detailsRow = next && next.classList.contains("queue-details-row") ? next : null;
+            return { taskRow, detailsRow };
+        });
+
+        pairs.sort((a, b) => {
+            const va = getQueueSortValue(a.taskRow, key);
+            const vb = getQueueSortValue(b.taskRow, key);
+            let cmp = 0;
+            if (typeof va === "number" && typeof vb === "number") {
+                cmp = va - vb;
+            } else {
+                cmp = String(va).localeCompare(String(vb), "pt-BR", { sensitivity: "base" });
+            }
+            return dir === "asc" ? cmp : -cmp;
+        });
+
+        pairs.forEach(({ taskRow, detailsRow }) => {
+            tbody.appendChild(taskRow);
+            if (detailsRow) tbody.appendChild(detailsRow);
+        });
+    }
+
+    function refreshQueueSortHeaderState(table) {
+        if (!table) return;
+        const key = table.dataset.sortKey || "";
+        const dir = table.dataset.sortDir || "";
+        const headers = table.querySelectorAll(".queue-sortable");
+        headers.forEach((th) => {
+            th.classList.remove("is-sort-asc", "is-sort-desc");
+            if ((th.dataset.sortKey || "") === key) {
+                th.classList.add(dir === "asc" ? "is-sort-asc" : "is-sort-desc");
+            }
+        });
+    }
+
+    function initQueueHeaderSort() {
+        const tables = Array.from(document.querySelectorAll(".queue table"));
+        tables.forEach((table, tableIndex) => {
+            if (!table.dataset.sortKey) table.dataset.sortKey = "";
+            if (!table.dataset.sortDir) table.dataset.sortDir = "asc";
+
+            const headers = table.querySelectorAll(".queue-sortable");
+            headers.forEach((th) => {
+                if (th.dataset.sortBound === "1") return;
+                th.dataset.sortBound = "1";
+                th.addEventListener("click", () => {
+                    const key = th.dataset.sortKey || "";
+                    if (!key) return;
+
+                    const currentKey = table.dataset.sortKey || "";
+                    const currentDir = table.dataset.sortDir || "asc";
+                    const nextDir = currentKey === key && currentDir === "asc" ? "desc" : "asc";
+                    table.dataset.sortKey = key;
+                    table.dataset.sortDir = nextDir;
+                    applyQueueSort(table, key, nextDir);
+                    refreshQueueSortHeaderState(table);
+                    localStorage.setItem(stateKey, JSON.stringify({ key, dir: nextDir }));
+                });
+
+                th.addEventListener("dblclick", (e) => {
+                    e.preventDefault();
+                    // Reset to original order by queue position
+                    table.dataset.sortKey = "";
+                    table.dataset.sortDir = "asc";
+                    applyQueueSort(table, "position", "asc");
+                    refreshQueueSortHeaderState(table);
+                    localStorage.removeItem(stateKey);
+                });
+            });
+
+            // Keep table state after refresh
+            const stateKey = `queue_sort_state_${tableIndex}`;
+            const saved = localStorage.getItem(stateKey);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (parsed && parsed.key) {
+                        table.dataset.sortKey = parsed.key;
+                        table.dataset.sortDir = parsed.dir === "desc" ? "desc" : "asc";
+                        applyQueueSort(table, table.dataset.sortKey, table.dataset.sortDir);
+                    }
+                } catch (_) {}
+            }
+            refreshQueueSortHeaderState(table);
+
+        });
+    }
+
+    const QUEUE_STYLE_STORAGE_KEY = "queueModernStyleEnabled";
+    const MY_QUEUE_KANBAN_COLLAPSED_KEY = "myQueueKanbanCollapsed";
+    const CURRENT_QUEUE_SECTION_COLLAPSED_KEY = "currentQueueSectionCollapsed";
+    const BACKLOG_QUEUE_SECTION_COLLAPSED_KEY = "backlogQueueSectionCollapsed";
+
+    function applyQueueStyleFromStorage() {
+        const root = document.getElementById("queuePageRoot");
+        const toggle = document.getElementById("queueModernStyleToggle");
+        if (!root) return;
+
+        const enabled = localStorage.getItem(QUEUE_STYLE_STORAGE_KEY) === "1";
+        root.classList.toggle("queue-modern-style", enabled);
+        if (toggle) toggle.checked = enabled;
+    }
+
+    function toggleQueueModernStyle(enabled) {
+        const root = document.getElementById("queuePageRoot");
+        if (!root) return;
+        root.classList.toggle("queue-modern-style", !!enabled);
+        localStorage.setItem(QUEUE_STYLE_STORAGE_KEY, enabled ? "1" : "0");
+    }
+
+    function applyMyQueueKanbanCollapsedState() {
+        const wrap = document.getElementById("myQueueKanbanWrap");
+        const chevron = document.getElementById("myQueueKanbanChevron");
+        if (!wrap || !chevron) return;
+        const collapsed = localStorage.getItem(MY_QUEUE_KANBAN_COLLAPSED_KEY) === "1";
+        wrap.style.display = collapsed ? "none" : "block";
+        chevron.innerHTML = collapsed ? "&#9654;" : "&#9660;";
+    }
+
+    function toggleMyQueueKanban() {
+        const wrap = document.getElementById("myQueueKanbanWrap");
+        const chevron = document.getElementById("myQueueKanbanChevron");
+        if (!wrap || !chevron) return;
+        const isCollapsed = wrap.style.display === "none";
+        if (isCollapsed) {
+            wrap.style.display = "block";
+            chevron.innerHTML = "&#9660;";
+            localStorage.setItem(MY_QUEUE_KANBAN_COLLAPSED_KEY, "0");
+            renderMyQueueKanban();
+            return;
+        }
+        wrap.style.display = "none";
+        chevron.innerHTML = "&#9654;";
+        localStorage.setItem(MY_QUEUE_KANBAN_COLLAPSED_KEY, "1");
+    }
+
+    function initQueueDnD() {
+        const body = document.getElementById('queue-items');
+        if (!body) return;
+
+        let draggingRow = null;
+        let orderChanged = false;
+
+        function rows() {
+            return Array.from(body.querySelectorAll('tr.queue-item-row[data-id]'));
+        }
+
+        function persistOrder(movedId) {
+            const ids = rows().map(r => parseInt(r.dataset.id, 10)).filter(n => Number.isFinite(n));
+            if (!ids.length) return;
+            postJson('/queue/user/reorder/', { order: ids }).then(() => {
+                updateScreen();
+                if (movedId) openPredictedEdit(movedId);
+            });
+        }
+
+        body.addEventListener('dragstart', (e) => {
+            if (e.target.closest('button, a, input, select, textarea')) {
+                e.preventDefault();
+                return;
+            }
+            const row = e.target.closest('tr.queue-item-row');
+            if (!row) return;
+            draggingRow = row;
+            orderChanged = false;
+            row.classList.add('is-dragging');
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+            }
+        });
+
+        body.addEventListener('dragend', () => {
+            if (draggingRow) draggingRow.classList.remove('is-dragging');
+            const movedId = draggingRow ? draggingRow.dataset.id : null;
+            draggingRow = null;
+            if (orderChanged) persistOrder(movedId);
+        });
+
+        body.addEventListener('dragover', (e) => {
+            if (!draggingRow) return;
+            e.preventDefault();
+
+            const targetRow = e.target.closest('tr.queue-item-row');
+            if (!targetRow || targetRow === draggingRow) return;
+
+            const rect = targetRow.getBoundingClientRect();
+            const before = (e.clientY - rect.top) < (rect.height / 2);
+            if (before) {
+                body.insertBefore(draggingRow, targetRow);
+            } else {
+                body.insertBefore(draggingRow, targetRow.nextSibling);
+            }
+            orderChanged = true;
+        });
+
+        body.addEventListener('drop', (e) => {
+            if (!draggingRow) return;
+            e.preventDefault();
+        });
+    }
+
+    function initNewTaskTypeFilter() {
+        const root = document.getElementById("popUpFormNewItem");
+        if (!root) return;
+
+        const groupSelect = root.querySelector('select[name="task_group"]');
+        const typeSelect = root.querySelector('select[name="task_type"]');
+        if (!groupSelect || !typeSelect) return;
+        if (groupSelect.dataset.bound === "1") return;
+        groupSelect.dataset.bound = "1";
+
+        const apply = () => {
+            const groupId = (groupSelect.value || "").trim();
+            const options = Array.from(typeSelect.options || []);
+
+            options.forEach((opt) => {
+                if (!opt.value) return; // keep empty choice visible
+                const optGroup = (opt.dataset.groupId || "").trim();
+                const match = !groupId || optGroup === groupId;
+                opt.hidden = !match;
+                opt.disabled = !match;
+            });
+
+            // If current selection no longer matches, reset.
+            const selected = typeSelect.options[typeSelect.selectedIndex];
+            if (selected && selected.value) {
+                const selectedGroup = (selected.dataset.groupId || "").trim();
+                if (groupId && selectedGroup !== groupId) {
+                    typeSelect.value = "";
+                }
+            }
+        };
+
+        groupSelect.addEventListener("change", apply);
+        apply();
+    }
+
+    function fCreateNewQueueItem(){
+        divPopUpFormNewItem = document.getElementById("popUpFormNewItem");
+        document.getElementById("overlay").style.display = "block";
+        divPopUpFormNewItem.style.display = "block";
+        initNewTaskTypeFilter();
+    }
+
+    function fCloseAllOverlays(){
+        divPopUpFormNewItem = document.getElementById("popUpFormNewItem");
+        divPopUpFormEditItem = document.getElementById("popUpFormEditItem");
+        divPopUpPredictedEdit = document.getElementById("popUpPredictedEdit");
+        divPopUpLinkProject = document.getElementById("popUpLinkProject");
+        document.getElementById("overlay").style.display = "none";
+        divPopUpFormNewItem.style.display = "none";
+        if (divPopUpFormEditItem) divPopUpFormEditItem.style.display = "none";
+        if (divPopUpPredictedEdit) divPopUpPredictedEdit.style.display = "none";
+        if (divPopUpLinkProject) divPopUpLinkProject.style.display = "none";
+    }
+
+    let currentEditQueueItemId = null;
+
+    function openEditQueueItem(id) {
+        currentEditQueueItemId = id;
+        fetch(`/queue/user/item/${id}/`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("edit_a_ticket").value = data.a_ticket || "";
+                document.getElementById("edit_f_conclusion_rate").value = data.f_conclusion_rate || "";
+                document.getElementById("edit_a_description").value = data.a_description || "";
+
+                document.getElementById("edit_d_predicted_date_start").value = data.d_predicted_date_start || "";
+                document.getElementById("edit_t_predicted_time_start").value = data.t_predicted_time_start || "";
+                document.getElementById("edit_d_predicted_date_end").value = data.d_predicted_date_end || "";
+                document.getElementById("edit_t_predicted_time_end").value = data.t_predicted_time_end || "";
+
+                document.getElementById("edit_d_real_date_start").value = data.d_real_date_start || "";
+                document.getElementById("edit_d_real_time_start").value = data.d_real_time_start || "";
+                document.getElementById("edit_d_real_date_end").value = data.d_real_date_end || "";
+                document.getElementById("edit_t_real_time_end").value = data.t_real_time_end || "";
+
+                document.getElementById("overlay").style.display = "block";
+                document.getElementById("popUpFormEditItem").style.display = "block";
+            });
+    }
+
+    function submitEditQueueItem(e) {
+        e.preventDefault();
+        if (!currentEditQueueItemId) return false;
+
+        const form = document.getElementById("editQueueItemForm");
+        const csrfToken = getCookie('csrftoken');
+        const formData = new FormData(form);
+
+        fetch(`/queue/user/update/${currentEditQueueItemId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+            body: formData,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data && data.errors ? JSON.stringify(data.errors) : 'Erro ao salvar');
+            }
+            return response.json();
+        })
+        .then(() => {
+            currentEditQueueItemId = null;
+            fCloseAllOverlays();
+            updateScreen();
+        })
+        .catch((err) => {
+            alert(err.message || 'Erro ao salvar');
+        });
+
+        return false;
+    }
+
+    function upQueuePosition(id){
+        postJson(`/queue/user/save/${id}`)
+            .then(() => {updateScreen(); openPredictedEdit(id);})
+    }
+
+    function dropQueuePosition(id){
+        postJson(`/queue/user/save/drop/${id}`)
+            .then(() => {updateScreen(); openPredictedEdit(id);})
+    }
+
+    function endRegister(id){
+        postJson(`/queue/user/end/${id}`)
+            .then(data => {updateScreen()})
+    }
+
+    function deleteRegister(id) {
+        postJson(`/queue/user/delete/${id}`)
+            .then(data => {updateScreen()})
+    }
+
+    function duplicateQueueItem(id) {
+        postJson(`/queue/user/duplicate/${id}/`)
+            .then((data) => {
+                if (!data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Erro ao duplicar tarefa.");
+                }
+                updateScreen();
+            })
+            .catch((err) => {
+                alert(err && err.message ? err.message : "Erro ao duplicar tarefa.");
+            });
+    }
+
+    function toggleCurrent(checkbox, id) {
+        const isCurrent = !!checkbox.checked;
+        postJson(`/queue/user/current/${id}/`, { is_current: isCurrent })
+            .then(() => {updateScreen()})
+    }
+
+    function syncWithSM() {
+        const btn = document.getElementById("syncSmButton");
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Sincronizando...";
+        }
+
+        postJson('/queue/user/sync-sm/', {})
+            .then((data) => {
+                if (!data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Erro ao sincronizar com SM.");
+                }
+                alert(`Sincronizacao concluida.\nEncontrados: ${data.total_found}\nCriados: ${data.created}\nIgnorados: ${data.skipped}`);
+                updateScreen();
+            })
+            .catch((err) => {
+                alert(err && err.message ? err.message : "Erro ao sincronizar com SM.");
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Sincronizar com SM";
+                }
+            });
+    }
+
+    let currentLinkProjectItemId = null;
+
+    function openLinkProjectModal(id) {
+        currentLinkProjectItemId = String(id);
+        const row = document.querySelector(`tr.queue-task-row[data-id="${currentLinkProjectItemId}"]`);
+        const currentProjectId = row ? (row.dataset.projectId || "") : "";
+        const select = document.getElementById("link_project_id");
+        if (select) {
+            select.value = currentProjectId;
+        }
+
+        document.getElementById("overlay").style.display = "block";
+        document.getElementById("popUpLinkProject").style.display = "block";
+    }
+
+    function submitLinkProject(e) {
+        e.preventDefault();
+        if (!currentLinkProjectItemId) return false;
+
+        const select = document.getElementById("link_project_id");
+        const projectId = select ? (select.value || "").trim() : "";
+        if (!projectId) {
+            alert("Selecione um projeto.");
+            return false;
+        }
+
+        postJson(`/queue/user/link-project/${currentLinkProjectItemId}/`, { project_id: projectId })
+            .then((data) => {
+                if (!data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Erro ao vincular projeto");
+                }
+                currentLinkProjectItemId = null;
+                fCloseAllOverlays();
+                updateScreen();
+                alert(`Tarefa vinculada com sucesso ao projeto "${data.project_name}".`);
+            })
+            .catch((err) => {
+                alert(err && err.message ? err.message : "Erro ao vincular projeto.");
+            });
+
+        return false;
+    }
+
+    let currentPredictedEditId = null;
+
+    function openPredictedEdit(id) {
+        currentPredictedEditId = id;
+        const keep = document.getElementById("pred_keep_current");
+        if (keep) keep.checked = true;
+
+        fetch(`/queue/user/item/${id}/`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("pred_d_start").value = data.d_predicted_date_start || "";
+                document.getElementById("pred_t_start").value = data.t_predicted_time_start || "";
+                document.getElementById("pred_d_end").value = data.d_predicted_date_end || "";
+                document.getElementById("pred_t_end").value = data.t_predicted_time_end || "";
+
+                document.getElementById("overlay").style.display = "block";
+                document.getElementById("popUpPredictedEdit").style.display = "block";
+            });
+    }
+
+    function submitPredictedEdit(e) {
+        e.preventDefault();
+        if (!currentPredictedEditId) return false;
+
+        const keep = document.getElementById("pred_keep_current");
+        if (keep && keep.checked) {
+            fCloseAllOverlays();
+            currentPredictedEditId = null;
+            updateScreen();
+            return false;
+        }
+
+        const form = document.getElementById("editPredictedForm");
+        const csrfToken = getCookie('csrftoken');
+        const formData = new FormData(form);
+
+        fetch(`/queue/user/update/${currentPredictedEditId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+            body: formData,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data && data.errors ? JSON.stringify(data.errors) : 'Erro ao salvar');
+            }
+            return response.json();
+        })
+        .then(() => {
+            fCloseAllOverlays();
+            currentPredictedEditId = null;
+            updateScreen();
+        })
+        .catch((err) => {
+            alert(err.message || 'Erro ao salvar');
+        });
+
+        return false;
+    }
+
+    function updateScreen() {
+        fetch(`/queue/user/list/`)
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('container-queue').innerHTML = html;
+            applyQueueSectionsCollapsedState();
+            initQueueDnD();
+            initQueueHeaderSort();
+            applyQueueFilter();
+            initInlineRealEdit();
+            restoreExpandedDetails();
+            initTaskProgressBars();
+            updateQueueDashboard();
+            renderMyQueueKanban();
+        });
+    }
+
+    // Ensure DnD is wired on the initial render too.
+    applyQueueStyleFromStorage();
+    applyQueueSectionsCollapsedState();
+    applyMyQueueKanbanCollapsedState();
+    initQueueDnD();
+    initQueueHeaderSort();
+    initInlineRealEdit();
+    initTaskProgressBars();
+    updateQueueDashboard();
+    renderMyQueueKanban();
+    let currentQueueSearchQuery = "";
+    let currentQueueTicketQuery = "";
+    let currentQueueTypeFilter = "";
+    let currentDateFrom = "";
+    let currentDateTo = "";
+    let todayOnly = false;
+    const expandedDetails = new Set();
+    const detailsLoaded = new Set();
+
+    function onQueueSearchInput(value) {
+        currentQueueSearchQuery = (value || "").trim();
+        applyQueueFilter();
+    }
+
+    function onQueueTicketInput(value) {
+        currentQueueTicketQuery = (value || "").trim();
+        applyQueueFilter();
+    }
+
+    function onQueueTypeChange(value) {
+        currentQueueTypeFilter = (value || "").trim();
+        applyQueueFilter();
+    }
+
+    function onQueueTodayToggle(checked) {
+        todayOnly = !!checked;
+        if (todayOnly) {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            const iso = `${yyyy}-${mm}-${dd}`;
+            document.getElementById('queueDateFrom').value = iso;
+            document.getElementById('queueDateTo').value = iso;
+            currentDateFrom = iso;
+            currentDateTo = iso;
+        } else {
+            const from = document.getElementById('queueDateFrom');
+            const to = document.getElementById('queueDateTo');
+            if (from) from.value = "";
+            if (to) to.value = "";
+            currentDateFrom = "";
+            currentDateTo = "";
+        }
+        applyQueueFilter();
+    }
+
+    function onQueueDateChange() {
+        currentDateFrom = document.getElementById('queueDateFrom').value || "";
+        currentDateTo = document.getElementById('queueDateTo').value || "";
+        if (currentDateFrom || currentDateTo) {
+            const todayBox = document.getElementById('queueTodayOnly');
+            if (todayBox) todayBox.checked = false;
+            todayOnly = false;
+        }
+        applyQueueFilter();
+    }
+
+    function applyQueueFilter() {
+        const normalizedDesc = (currentQueueSearchQuery || "").toLowerCase();
+        const normalizedTicket = (currentQueueTicketQuery || "").toLowerCase();
+        const rows = document.querySelectorAll('#queue-items tr.queue-item-row');
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            const descEl = row.querySelector('.queue-desc-text');
+            const descText = descEl ? (descEl.textContent || "") : (cells && cells[5] ? (cells[5].textContent || "") : "");
+            const ticketText = cells && cells[3] ? (cells[3].textContent || "") : "";
+            const rowTypeId = row.dataset.typeId || "";
+            const predStart = row.dataset.predStart || "";
+            const predEnd = row.dataset.predEnd || "";
+
+            const matchDesc = !normalizedDesc || descText.toLowerCase().includes(normalizedDesc);
+            const matchTicket = !normalizedTicket || ticketText.toLowerCase().includes(normalizedTicket);
+            const matchType = !currentQueueTypeFilter || rowTypeId === currentQueueTypeFilter;
+
+            const fromOk = !currentDateFrom || (predEnd ? predEnd >= currentDateFrom : true);
+            const toOk = !currentDateTo || (predStart ? predStart <= currentDateTo : true);
+            const matchDate = fromOk && toOk;
+
+            const match = matchDesc && matchTicket && matchType && matchDate;
+            row.style.display = match ? "" : "none";
+
+            const id = row.dataset.id;
+            const detailsRow = id ? document.getElementById(`queue-details-row-${id}`) : null;
+            if (!match) {
+                if (detailsRow) detailsRow.style.display = "none";
+                if (id) {
+                    expandedDetails.delete(String(id));
+                    setDetailsChevron(id, false);
+                }
+            } else {
+                if (id && expandedDetails.has(String(id)) && detailsRow) {
+                    detailsRow.style.display = "table-row";
+                    setDetailsChevron(id, true);
+                }
+            }
+        });
+        updateQueueDashboard();
+        renderMyQueueKanban();
+    }
+
+    function updateQueueDashboard() {
+        const rows = Array.from(document.querySelectorAll("#container-queue tr.queue-task-row[data-id]"))
+            .filter((row) => row.style.display !== "none");
+
+        const today = new Date();
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
+        const todayIso = `${today.getFullYear()}-${month}-${day}`;
+
+        let inProgress = 0;
+        let delayed = 0;
+        let hours = 0;
+
+        rows.forEach((row) => {
+            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            if (isCurrent) inProgress += 1;
+
+            const predEnd = (row.dataset.predEnd || "").trim();
+            if (predEnd && predEnd < todayIso) delayed += 1;
+
+            hours += parseFloat(row.dataset.detailHours || "0") || 0;
+        });
+
+        const backlog = Math.max(0, rows.length - inProgress);
+
+        const inProgressEl = document.getElementById("dashInProgress");
+        const backlogEl = document.getElementById("dashBacklog");
+        const delayedEl = document.getElementById("dashDelayed");
+        const hoursEl = document.getElementById("dashHours");
+        const visibleEl = document.getElementById("dashVisible");
+
+        if (inProgressEl) inProgressEl.textContent = String(inProgress);
+        if (backlogEl) backlogEl.textContent = String(backlog);
+        if (delayedEl) delayedEl.textContent = String(delayed);
+        if (hoursEl) hoursEl.textContent = `${hours.toFixed(2)}h`;
+        if (visibleEl) visibleEl.textContent = String(rows.length);
+    }
+
+    function renderMyQueueKanban() {
+        const host = document.getElementById("myQueueKanban");
+        if (!host) return;
+
+        const rows = Array.from(document.querySelectorAll("tr.queue-task-row[data-id]"))
+            .filter((row) => row.style.display !== "none");
+
+        if (!rows.length) {
+            host.innerHTML = `
+                <div class="myq-kanban-empty">Nenhuma tarefa encontrada para exibir no Kanban.</div>
+            `;
+            return;
+        }
+
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, "0");
+        const dd = String(today.getDate()).padStart(2, "0");
+        const todayIso = `${yyyy}-${mm}-${dd}`;
+
+        const groups = {
+            doing: { title: "Em andamento", items: [] },
+            backlog: { title: "Em fila", items: [] },
+            delayed: { title: "Atrasadas", items: [] },
+            done: { title: "Prontas", items: [] },
+        };
+
+        rows.forEach((row) => {
+            const id = row.dataset.id || "";
+            const cells = row.querySelectorAll("td");
+            const ticket = cells && cells[3] ? (cells[3].textContent || "").trim() : "";
+            const descEl = row.querySelector(".queue-desc-text");
+            const description = descEl ? (descEl.textContent || "").trim() : "";
+            const typeBadge = row.querySelector(".type-badge");
+            const typeText = typeBadge ? (typeBadge.textContent || "").trim() : "";
+            const typeColor = typeBadge ? (typeBadge.style.background || "") : "";
+            const predEnd = row.dataset.predEnd || "";
+            const predEndTime = row.dataset.predEndTime || "";
+
+            const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
+            const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+
+            let status = "backlog";
+            if (pct === 100 && total > 0) {
+                status = "done";
+            } else if (isCurrent) {
+                status = "doing";
+            } else if (predEnd && predEnd < todayIso) {
+                status = "delayed";
+            }
+
+            groups[status].items.push({
+                id,
+                ticket,
+                description,
+                typeText,
+                typeColor,
+                predEnd,
+                predEndTime,
+                pct,
+                done,
+                total,
+            });
+        });
+
+        const renderCard = (item) => {
+            const ticketLabel = item.ticket ? `<span class="myq-ticket">#${escapeHtml(item.ticket)}</span>` : "";
+            const type = item.typeText
+                ? `<span class="myq-type" style="--type-color:${item.typeColor || "#5cd6a3"};">${escapeHtml(item.typeText)}</span>`
+                : "";
+            const endLabel = item.predEnd ? `${fmtBrDate(item.predEnd)}${item.predEndTime ? " " + item.predEndTime : ""}` : "-";
+            return `
+                <div class="myq-card" data-id="${item.id}">
+                    <div class="myq-card-head">
+                        ${ticketLabel}
+                        ${type}
+                    </div>
+                    <div class="myq-card-title">${escapeHtml(item.description || "Sem descricao")}</div>
+                    <div class="myq-card-meta">Previsao fim: ${escapeHtml(endLabel)}</div>
+                    <div class="myq-card-progress">
+                        <div class="myq-progress-track">
+                            <div class="myq-progress-fill" style="width:${item.pct}%;"></div>
+                        </div>
+                        <div class="myq-progress-text">${item.pct}% (${item.done}/${item.total})</div>
+                    </div>
+                    <div class="myq-card-actions">
+                        <button type="button" class="queue-secondary-btn myq-edit-btn" onclick="openEditQueueItem('${item.id}')">Editar</button>
+                    </div>
+                </div>
+            `;
+        };
+
+        const colsOrder = ["doing", "backlog", "delayed", "done"];
+        const columnsHtml = colsOrder.map((key) => {
+            const col = groups[key];
+            const cards = col.items.map(renderCard).join("");
+            return `
+                <div class="myq-col myq-col-${key}">
+                    <div class="myq-col-head">
+                        <span class="myq-col-title">${col.title}</span>
+                        <span class="myq-col-count">${col.items.length}</span>
+                    </div>
+                    <div class="myq-col-body">
+                        ${cards || `<div class="myq-col-empty">Sem tarefas</div>`}
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        host.innerHTML = `<div class="myq-kanban-grid">${columnsHtml}</div>`;
+    }
+
+    function fmtBrDate(iso) {
+        if (!iso) return "-";
+        const parts = String(iso).split("-");
+        if (parts.length !== 3) return iso;
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    // Per-task details (subtasks) accordion + CRUD over JSON endpoints.
+    function escapeHtml(str) {
+        return String(str || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function setDetailsChevron(itemId, isOpen) {
+        const id = String(itemId);
+        const buttons = document.querySelectorAll(`tr.queue-task-row[data-id="${id}"] .queue-expand-btn`);
+        buttons.forEach(btn => {
+            btn.textContent = isOpen ? "▼" : "▶";
+            btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        });
+    }
+
+    function setExpandEnabled(itemId, enabled) {
+        const id = String(itemId);
+        const buttons = document.querySelectorAll(`tr.queue-task-row[data-id="${id}"] .queue-expand-btn`);
+        buttons.forEach(btn => {
+            const isEnabled = !!enabled;
+            btn.classList.toggle("is-disabled", !isEnabled);
+        });
+    }
+
+    function initTaskProgressBars() {
+        const rows = document.querySelectorAll("tr.queue-task-row[data-id]");
+        rows.forEach(row => {
+            const id = row.dataset.id;
+            const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
+            const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
+            const hours = parseFloat(row.dataset.detailHours || "0") || 0;
+            updateTaskProgressFromCounts(id, done, total);
+            updateTaskTimeTotal(id, hours);
+        });
+    }
+
+    function updateTaskTimeTotal(itemId, hoursTotal) {
+        const id = String(itemId);
+        const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+        if (!row) return;
+
+        const progress = row.querySelector(`.queue-progress[data-item-id="${id}"]`);
+        if (!progress) return;
+
+        const val = Number.isFinite(hoursTotal) ? hoursTotal : (parseFloat(row.dataset.detailHours || "0") || 0);
+        row.dataset.detailHours = String(val);
+
+        const el = progress.querySelector(".queue-time-total-val");
+        if (el) el.textContent = `${val.toFixed(2)}h`;
+    }
+
+
+    function updateTaskProgressFromCounts(itemId, done, total) {
+        const id = String(itemId);
+        const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+        if (!row) return;
+
+        const progress = row.querySelector(`.queue-progress[data-item-id="${id}"]`);
+        if (!progress) return;
+
+        const totalN = Math.max(0, parseInt(total, 10) || 0);
+        const doneN = Math.min(totalN, Math.max(0, parseInt(done, 10) || 0));
+
+        row.dataset.detailTotal = String(totalN);
+        row.dataset.detailDone = String(doneN);
+
+        if (totalN <= 0) {
+            progress.classList.add("is-hidden");
+            return;
+        }
+        progress.classList.remove("is-hidden");
+
+        const pct = Math.round((doneN / totalN) * 100);
+        const fill = progress.querySelector(".queue-progress-fill");
+        const pctEl = progress.querySelector(".queue-progress-pct");
+        const fracEl = progress.querySelector(".queue-progress-frac");
+
+        if (fill) fill.style.width = `${pct}%`;
+        if (pctEl) pctEl.textContent = `${pct}%`;
+        if (fracEl) fracEl.textContent = `(${doneN}/${totalN})`;
+
+        progress.classList.toggle("is-complete", totalN > 0 && doneN === totalN);
+    }
+
+    function bindDetailsInput(itemId) {
+        const input = document.getElementById(`queue-details-input-${itemId}`);
+        if (!input || input.dataset.bound === "1") return;
+        input.dataset.bound = "1";
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                addTaskDetail(itemId);
+            }
+        });
+    }
+
+    function toggleTaskDetails(e, itemId) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const id = String(itemId);
+        const detailsRow = document.getElementById(`queue-details-row-${id}`);
+        if (!detailsRow) return;
+
+        const isOpen = detailsRow.style.display !== "none";
+        if (isOpen) {
+            detailsRow.style.display = "none";
+            expandedDetails.delete(id);
+            setDetailsChevron(id, false);
+            return;
+        }
+
+        detailsRow.style.display = "table-row";
+        expandedDetails.add(id);
+        setDetailsChevron(id, true);
+        bindDetailsInput(id);
+        const input = document.getElementById(`queue-details-input-${id}`);
+        if (input) input.focus();
+
+        if (!detailsLoaded.has(id)) {
+            loadTaskDetails(id);
+        }
+    }
+
+    function setSectionCollapsedState(wrapId, chevronId, storageKey, collapsed) {
+        const wrap = document.getElementById(wrapId);
+        const chevron = document.getElementById(chevronId);
+        if (!wrap || !chevron) return;
+        wrap.style.display = collapsed ? "none" : "block";
+        chevron.innerHTML = collapsed ? "&#9654;" : "&#9660;";
+        localStorage.setItem(storageKey, collapsed ? "1" : "0");
+    }
+
+    function toggleCurrentQueueSection() {
+        const wrap = document.getElementById("currentQueueWrap");
+        if (!wrap) return;
+        const isCollapsed = wrap.style.display === "none";
+        setSectionCollapsedState("currentQueueWrap", "currentQueueChevron", CURRENT_QUEUE_SECTION_COLLAPSED_KEY, !isCollapsed);
+    }
+
+    function toggleBacklogQueueSection() {
+        const wrap = document.getElementById("backlogQueueWrap");
+        if (!wrap) return;
+        const isCollapsed = wrap.style.display === "none";
+        setSectionCollapsedState("backlogQueueWrap", "backlogQueueChevron", BACKLOG_QUEUE_SECTION_COLLAPSED_KEY, !isCollapsed);
+    }
+
+    function applyQueueSectionsCollapsedState() {
+        const currentCollapsed = localStorage.getItem(CURRENT_QUEUE_SECTION_COLLAPSED_KEY) === "1";
+        const backlogCollapsed = localStorage.getItem(BACKLOG_QUEUE_SECTION_COLLAPSED_KEY) === "1";
+        setSectionCollapsedState("currentQueueWrap", "currentQueueChevron", CURRENT_QUEUE_SECTION_COLLAPSED_KEY, currentCollapsed);
+        setSectionCollapsedState("backlogQueueWrap", "backlogQueueChevron", BACKLOG_QUEUE_SECTION_COLLAPSED_KEY, backlogCollapsed);
+    }
+
+    function restoreExpandedDetails() {
+        expandedDetails.forEach((id) => {
+            const detailsRow = document.getElementById(`queue-details-row-${id}`);
+            if (!detailsRow) return;
+            detailsRow.style.display = "table-row";
+            setDetailsChevron(id, true);
+            bindDetailsInput(id);
+            if (!detailsLoaded.has(id)) loadTaskDetails(id);
+        });
+    }
+
+    function loadTaskDetails(itemId) {
+        const id = String(itemId);
+        fetch(`/queue/user/details/${id}/`)
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.status === "ok") {
+                    detailsLoaded.add(id);
+                    renderTaskDetails(id, data.details || []);
+                    if (data.hours_total != null) updateTaskTimeTotal(id, parseFloat(data.hours_total) || 0);
+                }
+            })
+            .catch(() => {
+                renderTaskDetails(id, [], "Erro ao carregar detalhes.");
+            });
+    }
+
+    function renderTaskDetails(itemId, details, errorMessage) {
+        const id = String(itemId);
+        const host = document.getElementById(`queue-details-list-${id}`);
+        if (!host) return;
+
+        if (errorMessage) {
+            host.innerHTML = `<div class="queue-details-empty">${escapeHtml(errorMessage)}</div>`;
+            return;
+        }
+
+        if (!details || details.length === 0) {
+            setExpandEnabled(id, false);
+            updateTaskProgressFromCounts(id, 0, 0);
+            updateTaskTimeTotal(id, 0);
+            host.innerHTML = `<div class="queue-details-empty">Nenhum detalhe cadastrado.</div>`;
+            return;
+        }
+
+        setExpandEnabled(id, true);
+        const total = details.length;
+        const done = details.filter(d => !!d.is_done).length;
+        updateTaskProgressFromCounts(id, done, total);
+        const hoursTotal = details.filter(d => !!d.is_done).reduce((acc, d) => acc + (parseFloat(d.duration_hours) || 0), 0);
+        updateTaskTimeTotal(id, hoursTotal);
+
+        const itemsHtml = details.map(d => {
+            const done = !!d.is_done;
+            const desc = escapeHtml(d.description);
+            const dur = d.duration_hours != null && d.duration_hours !== "" ? parseFloat(d.duration_hours) : 0;
+            const durLabel = done && dur > 0 ? `(${dur.toFixed(2)}h)` : "";
+            return `
+                <li class="queue-detail-item ${done ? "is-done" : ""}" data-detail-id="${d.id}">
+                    <label class="queue-detail-check">
+                        <input type="checkbox" ${done ? "checked" : ""} onchange="onTaskDetailCheckboxChange('${id}', '${d.id}', this)">
+                        <span class="queue-detail-text">${desc}</span>
+                        <span class="queue-detail-time" role="button" tabindex="0" title="Editar tempo" onclick="event.preventDefault(); event.stopPropagation(); editTaskDetailDuration('${id}', '${d.id}')" onkeydown="if(event.key==='Enter'){event.preventDefault(); event.stopPropagation(); editTaskDetailDuration('${id}','${d.id}')}">${escapeHtml(durLabel)}</span>
+                    </label>
+                    <button class="queue-detail-del" type="button" onclick="deleteTaskDetail('${id}', '${d.id}')" aria-label="Remover">&#x2715;</button>
+                </li>
+            `;
+        }).join("");
+
+        host.innerHTML = `<ul class="queue-details-ul">${itemsHtml}</ul>`;
+    }
+
+    function addTaskDetail(itemId) {
+        const id = String(itemId);
+        const input = document.getElementById(`queue-details-input-${id}`);
+        if (!input) return;
+        const description = (input.value || "").trim();
+        if (!description) return;
+
+        postJson(`/queue/user/details/${id}/add/`, { description })
+            .then((data) => {
+                if (data && data.status === "ok") {
+                    input.value = "";
+                    setExpandEnabled(id, true);
+                    if (data.hours_total != null) updateTaskTimeTotal(id, parseFloat(data.hours_total) || 0);
+                    detailsLoaded.delete(id);
+                    loadTaskDetails(id);
+                } else {
+                    alert((data && data.message) || "Erro ao adicionar detalhe");
+                }
+            });
+    }
+
+    function onTaskDetailCheckboxChange(itemId, detailId, checkbox) {
+        const id = String(itemId);
+        const isDone = !!(checkbox && checkbox.checked);
+        const host = document.getElementById(`queue-details-list-${id}`);
+        const li = host ? host.querySelector(`li[data-detail-id="${detailId}"]`) : null;
+        if (!li) return;
+
+        if (!isDone) {
+            postJson(`/queue/user/details/${detailId}/toggle/`, { is_done: false })
+                .then((data) => {
+                    if (!data || data.status !== "ok") {
+                        throw new Error((data && data.message) || "Erro ao salvar");
+                    }
+                    li.classList.remove("is-done");
+                    const timeEl = li.querySelector(".queue-detail-time");
+                    if (timeEl) timeEl.textContent = "";
+
+                    const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+                    if (!row) return;
+                    const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
+                    const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
+                    updateTaskProgressFromCounts(id, done - 1, total);
+                    if (data && data.hours_total != null) updateTaskTimeTotal(id, parseFloat(data.hours_total) || 0);
+                })
+                .catch(() => {
+                    checkbox.checked = true;
+                });
+            return;
+        }
+
+        startTaskDetailDurationInput(id, detailId, li, checkbox);
+    }
+
+    function startTaskDetailDurationInput(itemId, detailId, li, checkbox, presetValue) {
+        const existing = li.querySelector("input.queue-detail-duration");
+        if (existing) {
+            existing.focus();
+            return;
+        }
+
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "0.25";
+        input.placeholder = "h";
+        input.className = "queue-detail-duration";
+        input.inputMode = "decimal";
+        input.value = presetValue != null ? String(presetValue) : "";
+
+        const timeEl = li.querySelector(".queue-detail-time");
+        if (timeEl) timeEl.textContent = "";
+        li.querySelector(".queue-detail-check").appendChild(input);
+        input.focus();
+
+        const commit = () => {
+            const raw = (input.value || "").trim();
+            const val = raw ? parseFloat(raw) : 0;
+            if (!Number.isFinite(val) || val < 0) {
+                alert("Informe um tempo valido (>= 0).");
+                input.focus();
+                return;
+            }
+
+            postJson(`/queue/user/details/${detailId}/toggle/`, { is_done: true, duration_hours: val })
+                .then((data) => {
+                    if (!data || data.status !== "ok") {
+                        throw new Error((data && data.message) || "Erro ao salvar");
+                    }
+                    li.classList.add("is-done");
+                    if (timeEl) {
+                        const d = parseFloat((data && data.duration_hours) || "") || val;
+                        timeEl.textContent = d > 0 ? `(${d.toFixed(2)}h)` : "";
+                    }
+                    input.remove();
+
+                    const row = document.querySelector(`tr.queue-task-row[data-id="${itemId}"]`);
+                    if (row) {
+                        const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
+                        const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
+                        updateTaskProgressFromCounts(itemId, done + 1, total);
+                    }
+                    if (data && data.hours_total != null) updateTaskTimeTotal(itemId, parseFloat(data.hours_total) || 0);
+                })
+                .catch((err) => {
+                    checkbox.checked = false;
+                    input.remove();
+                    alert(err && err.message ? err.message : "Erro ao salvar tempo");
+                });
+        };
+
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                checkbox.checked = false;
+                input.remove();
+            }
+        });
+    }
+
+    function editTaskDetailDuration(itemId, detailId) {
+        const host = document.getElementById(`queue-details-list-${itemId}`);
+        if (!host) return;
+        const li = host.querySelector(`li[data-detail-id="${detailId}"]`);
+        if (!li) return;
+        const checkbox = li.querySelector('input[type="checkbox"]');
+        if (!checkbox || !checkbox.checked) return;
+
+        const timeEl = li.querySelector(".queue-detail-time");
+        const current = timeEl && timeEl.textContent ? timeEl.textContent.replace(/[()h]/g, "") : "";
+        const preset = current ? parseFloat(current) : "";
+        startTaskDetailDurationInput(itemId, detailId, li, checkbox, preset);
+    }
+
+    function deleteTaskDetail(itemId, detailId) {
+        const id = String(itemId);
+        postJson(`/queue/user/details/${detailId}/delete/`)
+            .then((data) => {
+                if (data && data.hours_total != null) updateTaskTimeTotal(id, parseFloat(data.hours_total) || 0);
+                detailsLoaded.delete(id);
+                loadTaskDetails(id);
+            });
+    }
+
+    function initInlineRealEdit() {
+        const cells = document.querySelectorAll('.queue-editable');
+        cells.forEach(cell => {
+            if (cell.dataset.bound === "1") return;
+            cell.dataset.bound = "1";
+            cell.addEventListener('click', () => startInlineEdit(cell));
+        });
+    }
+
+    function startInlineEdit(cell) {
+        if (cell.querySelector('input')) return;
+
+        const type = cell.dataset.type;
+        const field = cell.dataset.field;
+        const id = cell.dataset.id;
+        const iso = cell.dataset.iso || "";
+
+        const input = document.createElement('input');
+        input.type = type;
+        input.value = iso;
+        input.className = 'queue-inline-input';
+
+        cell.textContent = '';
+        cell.appendChild(input);
+        input.focus();
+
+        const commit = () => {
+            const value = input.value || "";
+            saveInlineValue(id, field, value, type, cell);
+        };
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                restoreCell(cell, iso, type);
+            }
+        });
+    }
+
+    function restoreCell(cell, iso, type) {
+        if (type === 'date' && iso) {
+            const [y, m, d] = iso.split('-');
+            cell.textContent = `${d}/${m}/${y}`;
+        } else if (type === 'time' && iso) {
+            cell.textContent = iso;
+        } else {
+            cell.textContent = '-';
+        }
+        cell.dataset.iso = iso || "";
+    }
+
+    function saveInlineValue(id, field, value, type, cell) {
+        const csrfToken = getCookie('csrftoken');
+        const formData = new FormData();
+        formData.append(field, value);
+
+        fetch(`/queue/user/update/${id}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+            body: formData,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data && data.errors ? JSON.stringify(data.errors) : 'Erro ao salvar');
+            }
+            return response.json();
+        })
+        .then(() => {
+            const iso = value || "";
+            if (type === 'date' && iso) {
+                const [y, m, d] = iso.split('-');
+                cell.textContent = `${d}/${m}/${y}`;
+            } else if (type === 'time' && iso) {
+                cell.textContent = iso;
+            } else {
+                cell.textContent = '-';
+            }
+            cell.dataset.iso = iso;
+        })
+        .catch((err) => {
+            alert(err.message || 'Erro ao salvar');
+            restoreCell(cell, cell.dataset.iso || "", type);
+        });
+    }
+
+</script>

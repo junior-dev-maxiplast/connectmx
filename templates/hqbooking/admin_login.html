@@ -1,0 +1,32 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Reservas da Sede - Login</title>
+    <link rel="stylesheet" href="{% static 'style/hqbooking.css' %}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body class="hqb-page">
+    <main class="hqb-login-wrap">
+        <section class="hqb-login-card">
+            <h1>Painel Administrativo</h1>
+            <p>Entre com sua matricula e chave de acesso admin.</p>
+
+            {% if error_message %}
+                <div class="hqb-alert hqb-alert-error">{{ error_message }}</div>
+            {% endif %}
+
+            <form method="POST" action="{% url 'hqbooking_admin_login_submit' %}" class="hqb-login-form">
+                {% csrf_token %}
+                <label for="admin_id">Matricula admin</label>
+                <input id="admin_id" name="admin_id" type="text" maxlength="20" placeholder="Ex: 10001" required>
+                <label for="access_key">Chave de acesso</label>
+                <input id="access_key" name="access_key" type="password" placeholder="Informe a chave admin" required>
+                <button type="submit">Entrar no painel</button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

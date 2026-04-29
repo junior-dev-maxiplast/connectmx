@@ -1,0 +1,126 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Administrativo - Reservas da Sede</title>
+    <link rel="stylesheet" href="{% static 'style/hqbooking.css' %}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body class="hqb-page">
+    <main class="hqb-calendar-wrap">
+        <header class="hqb-topbar">
+            <div>
+                <h1>Administracao de Reservas da Sede</h1>
+                <div class="hqb-user">Admin logado: <strong>{{ admin_id }}</strong></div>
+            </div>
+            <form method="POST" action="{% url 'hqbooking_admin_logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="hqb-logout-btn">Sair</button>
+            </form>
+        </header>
+
+        <section class="hqb-admin-tabs">
+            <button type="button" class="hqb-tab-btn is-active" data-tab="reservas">Reservas</button>
+            <button type="button" class="hqb-tab-btn" data-tab="ambientes">Ambientes</button>
+            <button type="button" class="hqb-tab-btn" data-tab="bloqueios">Bloqueio de Datas</button>
+        </section>
+
+        <section id="hqbTabReservas" class="hqb-tab-panel">
+            <section class="hqb-admin-toolbar">
+                <label>
+                    Status
+                    <select id="hqbAdminStatus">
+                        <option value="">Todos</option>
+                        <option value="PENDING">Pendente</option>
+                        <option value="APPROVED">Aprovada</option>
+                        <option value="REJECTED">Recusada</option>
+                    </select>
+                </label>
+                <label>
+                    Ambiente
+                    <select id="hqbAdminEnvFilter">
+                        <option value="">Todos</option>
+                    </select>
+                </label>
+                <label>
+                    Ordenacao
+                    <select id="hqbAdminOrder">
+                        <option value="asc">Data crescente</option>
+                        <option value="desc">Data decrescente</option>
+                    </select>
+                </label>
+                <button id="hqbAdminRefresh" type="button" class="hqb-logout-btn">Atualizar</button>
+            </section>
+
+            <section class="hqb-admin-table-wrap">
+                <table class="hqb-admin-table">
+                    <thead>
+                        <tr>
+                            <th>Matricula</th>
+                            <th>Data</th>
+                            <th>Horario</th>
+                            <th>Motivo</th>
+                            <th>Ambientes</th>
+                            <th>Status</th>
+                            <th>Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hqbAdminRows"></tbody>
+                </table>
+            </section>
+        </section>
+
+        <section id="hqbTabAmbientes" class="hqb-tab-panel" style="display:none;">
+            <section class="hqb-admin-form-card">
+                <h3>Novo ambiente</h3>
+                <div class="hqb-inline-form">
+                    <input id="hqbEnvName" type="text" placeholder="Nome do ambiente">
+                    <input id="hqbEnvDescription" type="text" placeholder="Descricao (opcional)">
+                    <button id="hqbEnvCreateBtn" type="button" class="hqb-logout-btn">Cadastrar</button>
+                </div>
+            </section>
+            <section class="hqb-admin-table-wrap">
+                <table class="hqb-admin-table">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Descricao</th>
+                            <th>Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hqbAdminEnvRows"></tbody>
+                </table>
+            </section>
+        </section>
+
+        <section id="hqbTabBloqueios" class="hqb-tab-panel" style="display:none;">
+            <section class="hqb-admin-form-card">
+                <h3>Novo bloqueio</h3>
+                <div class="hqb-inline-form">
+                    <input id="hqbBlockDate" type="date">
+                    <input id="hqbBlockReason" type="text" placeholder="Motivo (opcional)">
+                    <button id="hqbBlockCreateBtn" type="button" class="hqb-logout-btn">Bloquear data</button>
+                </div>
+            </section>
+            <section class="hqb-admin-table-wrap">
+                <table class="hqb-admin-table">
+                    <thead>
+                        <tr>
+                            <th>Data bloqueada</th>
+                            <th>Motivo</th>
+                            <th>Bloqueado por</th>
+                            <th>Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hqbAdminBlockRows"></tbody>
+                </table>
+            </section>
+        </section>
+    </main>
+
+    <div id="hqbToast" class="hqb-toast"></div>
+    <script src="{% static 'js/hqbooking_admin.js' %}"></script>
+</body>
+</html>

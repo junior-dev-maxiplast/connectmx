@@ -1,0 +1,189 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Tarefas Concluidas</h1>
+                <div class="subtitle">Historico completo das tarefas finalizadas</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <select id="completedUserFilter" class="queue-select" onchange="filterConcluded()">
+                        <option value="">Todos os usuarios</option>
+                    </select>
+                    <input id="completedSearch" class="queue-search" type="search" placeholder="Buscar descricao, chamado ou usuario..." oninput="filterConcluded(this.value)">
+                    <button type="button" class="queue-secondary-btn" onclick="exportConcludedCsv()">Exportar CSV</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Lista de concluidas</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 8%;">Concluido</th>
+                            <th style="width: 7%;">Hora</th>
+                            <th style="width: 14%;">Usuario</th>
+                            <th style="width: 8%;">Chamado</th>
+                            <th style="width: 23%;">Descricao</th>
+                            <th style="width: 9%;">Tipo</th>
+                            <th style="width: 7%;">% Concl.</th>
+                            <th style="width: 8%;">Fim Prev.</th>
+                            <th style="width: 7%;">H Prev.</th>
+                            <th style="width: 8%;">Fim Real</th>
+                            <th style="width: 7%;">H Real</th>
+                        </tr>
+                    </thead>
+                    <tbody id="concludedRows">
+                        {% for r in rows %}
+                            <tr class="concluded-row">
+                                <td>{{ r.done_date|date:"d/m/Y" }}</td>
+                                <td>{{ r.done_time|time:"H:i" }}</td>
+                                <td>{{ r.user_name }}</td>
+                                <td>{{ r.ticket }}</td>
+                                <td>{{ r.description }}</td>
+                                <td>
+                                    <span class="type-badge" style="background: {{ r.type_color }};">{{ r.type_name }}</span>
+                                </td>
+                                <td>{% if r.rate %}{{ r.rate }}{% else %}-{% endif %}</td>
+                                <td>{% if r.pred_end_date %}{{ r.pred_end_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if r.pred_end_time %}{{ r.pred_end_time|time:"H:i" }}{% else %}-{% endif %}</td>
+                                <td>{% if r.real_end_date %}{{ r.real_end_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if r.real_end_time %}{{ r.real_end_time|time:"H:i" }}{% else %}-{% endif %}</td>
+                            </tr>
+                        {% empty %}
+                            <tr>
+                                <td colspan="11" class="queue-empty">Nenhuma tarefa concluida encontrada.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+
+<script>
+    function normalizeText(value) {
+        return String(value || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .trim()
+            .toLowerCase();
+    }
+
+    function initConcludedUserFilter() {
+        const select = document.getElementById("completedUserFilter");
+        if (!select) return;
+
+        const rows = Array.from(document.querySelectorAll("#concludedRows .concluded-row"));
+        const names = new Set();
+        rows.forEach((row) => {
+            const userCell = row.children && row.children[2] ? row.children[2] : null;
+            const userName = (userCell && userCell.textContent ? userCell.textContent : "").trim();
+            if (userName) names.add(userName);
+        });
+
+        Array.from(names)
+            .sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }))
+            .forEach((name) => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+    }
+
+    function filterConcluded(value) {
+        const searchInput = document.getElementById("completedSearch");
+        const userSelect = document.getElementById("completedUserFilter");
+        const q = normalizeText(value != null ? value : (searchInput ? searchInput.value : ""));
+        const selectedUser = normalizeText(userSelect ? userSelect.value : "");
+        const rows = document.querySelectorAll("#concludedRows .concluded-row");
+
+        rows.forEach((row) => {
+            const fullText = normalizeText(row.textContent || "");
+            const userCell = row.children && row.children[2] ? row.children[2] : null;
+            const rowUser = normalizeText(userCell && userCell.textContent ? userCell.textContent : "");
+
+            const matchText = !q || fullText.includes(q);
+            const matchUser = !selectedUser || rowUser === selectedUser;
+            row.style.display = matchText && matchUser ? "" : "none";
+        });
+    }
+
+    function csvEscape(value) {
+        const s = String(value == null ? "" : value);
+        if (/[",;\n]/.test(s)) {
+            return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+    }
+
+    function exportConcludedCsv() {
+        const headers = [
+            "Concluido",
+            "Hora",
+            "Usuario",
+            "Chamado",
+            "Descricao",
+            "Tipo",
+            "% Concl.",
+            "Fim Prev.",
+            "H Prev.",
+            "Fim Real",
+            "H Real",
+        ];
+
+        const rows = Array.from(document.querySelectorAll("#concludedRows .concluded-row"))
+            .filter((row) => row.style.display !== "none");
+
+        if (!rows.length) {
+            alert("Nenhuma linha visivel para exportar.");
+            return;
+        }
+
+        const lines = [headers.map(csvEscape).join(";")];
+        rows.forEach((row) => {
+            const cols = Array.from(row.querySelectorAll("td")).map((td) => {
+                const badge = td.querySelector(".type-badge");
+                const text = badge ? (badge.textContent || "") : (td.textContent || "");
+                return csvEscape(text.trim());
+            });
+            lines.push(cols.join(";"));
+        });
+
+        const csv = "\uFEFF" + lines.join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        a.href = url;
+        a.download = `tarefas_concluidas_${yyyy}${mm}${dd}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+
+    initConcludedUserFilter();
+    filterConcluded();
+</script>

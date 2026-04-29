@@ -1,0 +1,208 @@
+<div class="headerMain queue-collapsible-header" onclick="toggleCurrentQueueSection()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleCurrentQueueSection();}">
+    <div class="headerTitle queue-collapsible-title">
+        <h1>Demanda Atual</h1>
+        <span id="currentQueueChevron" class="queue-collapsible-chevron">&#9660;</span>
+    </div>
+</div>
+<div id="currentQueueWrap" class="queue-section-wrap">
+<div class="queue">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col" rowspan="2" style="width: 3%;"></th>
+                        <th scope="col" rowspan="2" style="width: 4%;">Atual</th>
+                        <th scope="col" rowspan="2" style="width: 4%;" class="queue-sortable" data-sort-key="position">#</th>
+                        <th scope="col" rowspan="2" style="width: 6%;" class="queue-sortable" data-sort-key="ticket">Chamado</th>
+                        <th scope="col" rowspan="2" style="width: 22%;" class="queue-sortable" data-sort-key="description">Descri&#231;&#227;o</th>
+                        <th scope="col" rowspan="2" style="width: 6%;" class="queue-sortable" data-sort-key="type">Tipo</th>
+                        <th scope="col" colspan="4" class="queue-head-group group-planned">Previsto</th>
+                        <th scope="col" colspan="4" class="queue-head-group group-actual">Real</th>
+                        <th scope="col" colspan="7" rowspan="2" class="queue-head-group group-actions">A&#231;&#245;es</th>
+                    </tr>
+                    <tr>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_start_date" style="width: 8.5%;">In&#237;cio D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_start_time" style="width: 5%;">In&#237;cio H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_end_date" style="width: 6%;">Fim D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_end_time" style="width: 5%;">Fim H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_start_date" style="width: 8.5%;">In&#237;cio D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_start_time" style="width: 5%;">In&#237;cio H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_end_date" style="width: 6%;">Fim D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_end_time" style="width: 5%;">Fim H.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if queue_working != 0 %}
+                        {% for item in queue_working %}
+                            <tr class="queue-task-row" data-id="{{ item.n_register }}" data-project-id="{% if item.linked_project %}{{ item.linked_project.id }}{% endif %}" data-detail-total="{{ item.detail_count|default:0 }}" data-detail-done="{{ item.detail_done_count|default:0 }}" data-detail-hours="{{ item.detail_hours_total|default:0 }}" data-pred-start="{% if item.d_predicted_date_start %}{{ item.d_predicted_date_start|date:"Y-m-d" }}{% endif %}" data-pred-end="{% if item.d_predicted_date_end %}{{ item.d_predicted_date_end|date:"Y-m-d" }}{% endif %}" data-pred-start-time="{% if item.t_predicted_time_start %}{{ item.t_predicted_time_start|time:"H:i" }}{% endif %}" data-pred-end-time="{% if item.t_predicted_time_end %}{{ item.t_predicted_time_end|time:"H:i" }}{% endif %}">
+                                <td>
+                                    <button class="queue-expand-btn{% if item.detail_count|default:0 == 0 %} is-disabled{% endif %}" type="button" onclick="toggleTaskDetails(event, '{{ item.n_register }}')" aria-label="Detalhes" aria-expanded="false">▶</button>
+                                </td>
+                                <td><input type="checkbox" class="queue-current-toggle" checked onchange="toggleCurrent(this, '{{ item.n_register }}')"></td>
+                                <td>{{ item.n_queue_position }}</td>
+                                <td>{{ item.a_ticket }}</td>
+                                <td>
+                                    <span class="queue-desc-text">{{ item.a_description }}</span>
+                                    {% if item.linked_project %}
+                                        <div class="queue-project-chip">Projeto: {{ item.linked_project.name }}</div>
+                                    {% endif %}
+                                    <div class="queue-progress" data-item-id="{{ item.n_register }}">
+                                        <div class="queue-progress-bar">
+                                            <div class="queue-progress-fill"></div>
+                                        </div>
+                                        <div class="queue-progress-meta">
+                                            <span class="queue-progress-pct">0%</span>
+                                            <span class="queue-progress-frac">(0/0)</span>
+                                            <span class="queue-time-total">Total:</span>
+                                            <span class="queue-time-total-val">0.00h</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if item.task_type %}
+                                        <span class="type-badge" style="background: {{ item.task_type.color }};">{{ item.task_type.name }}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>{% if item.d_predicted_date_start %}{{ item.d_predicted_date_start|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if item.t_predicted_time_start %}{{ item.t_predicted_time_start|time:"H:i" }}{% else %}-{% endif %}</td>
+                                <td>{% if item.d_predicted_date_end %}{{ item.d_predicted_date_end|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if item.t_predicted_time_end %}{{ item.t_predicted_time_end|time:"H:i" }}{% else %}-{% endif %}</td>
+                                <td class="queue-editable" data-field="d_real_date_start" data-type="date" data-id="{{ item.n_register }}" data-iso="{% if item.d_real_date_start %}{{ item.d_real_date_start|date:"Y-m-d" }}{% endif %}">{% if item.d_real_date_start %}{{ item.d_real_date_start|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td class="queue-editable" data-field="d_real_time_start" data-type="time" data-id="{{ item.n_register }}" data-iso="{% if item.d_real_time_start %}{{ item.d_real_time_start|time:"H:i" }}{% endif %}">{% if item.d_real_time_start %}{{ item.d_real_time_start|time:"H:i" }}{% else %}-{% endif %}</td>
+                                <td class="queue-editable" data-field="d_real_date_end" data-type="date" data-id="{{ item.n_register }}" data-iso="{% if item.d_real_date_end %}{{ item.d_real_date_end|date:"Y-m-d" }}{% endif %}">{% if item.d_real_date_end %}{{ item.d_real_date_end|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td class="queue-editable" data-field="t_real_time_end" data-type="time" data-id="{{ item.n_register }}" data-iso="{% if item.t_real_time_end %}{{ item.t_real_time_end|time:"H:i" }}{% endif %}">{% if item.t_real_time_end %}{{ item.t_real_time_end|time:"H:i" }}{% else %}-{% endif %}</td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-edit" onclick="openEditQueueItem(`{{ item.n_register }}`)" title="Editar" aria-label="Editar">&#x270F;&#xFE0F;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-up" onclick="upQueuePosition(`{{ item.n_register }}`)" title="Subir" aria-label="Subir">&#x2B06;&#xFE0F;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-down" onclick="dropQueuePosition(`{{ item.n_register }}`)" title="Descer" aria-label="Descer">&#x2B07;&#xFE0F;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-duplicate" onclick="duplicateQueueItem(`{{ item.n_register }}`)" title="Duplicar" aria-label="Duplicar">&#x2398;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-delete" onclick="deleteRegister(`{{ item.n_register }}`)" title="Excluir" aria-label="Excluir">&#x1F5D1;&#xFE0F;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-done" onclick="endRegister(`{{ item.n_register }}`)" title="Concluir" aria-label="Concluir">&#x2611;&#xFE0F;</button></td>
+                                <td style="width: 1.7%;"><button class="queue-action-btn action-project" onclick="openLinkProjectModal(`{{ item.n_register }}`)" title="Vincular projeto" aria-label="Vincular projeto">&#x1F517;</button></td>
+                            </tr>
+                            <tr class="queue-details-row" id="queue-details-row-{{ item.n_register }}" style="display:none;">
+                                <td colspan="21">
+                                    <div class="queue-details-panel" data-item-id="{{ item.n_register }}">
+                                        <div class="queue-details-head">
+                                            <div class="queue-details-title">Subatividades</div>
+                                            <div class="queue-details-add">
+                                                <input class="queue-input-sm queue-details-input" id="queue-details-input-{{ item.n_register }}" type="text" placeholder="Adicionar detalhe..." maxlength="240">
+                                                <button class="queue-secondary-btn queue-details-add-btn" type="button" onclick="addTaskDetail('{{ item.n_register }}')">Adicionar</button>
+                                            </div>
+                                        </div>
+                                        <div class="queue-details-list" id="queue-details-list-{{ item.n_register }}"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+</div>
+        <div class="headerMain queue-collapsible-header" onclick="toggleBacklogQueueSection()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleBacklogQueueSection();}">
+            <div class="headerTitle queue-collapsible-title">
+                <h1>Fila</h1>
+                <span id="backlogQueueChevron" class="queue-collapsible-chevron">&#9660;</span>
+            </div>
+        </div>
+        <div id="backlogQueueWrap" class="queue-section-wrap">
+        <div class="queue">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col" rowspan="2" style="width: 3%;"></th>
+                        <th scope="col" rowspan="2" style="width: 4%;">Atual</th>
+                        <th scope="col" rowspan="2" style="width: 4%;" class="queue-sortable" data-sort-key="position">#</th>
+                        <th scope="col" rowspan="2" style="width: 6%;" class="queue-sortable" data-sort-key="ticket">Chamado</th>
+                        <th scope="col" rowspan="2" style="width: 22%;" class="queue-sortable" data-sort-key="description">Descri&#231;&#227;o</th>
+                        <th scope="col" rowspan="2" style="width: 6%;" class="queue-sortable" data-sort-key="type">Tipo</th>
+                        <th scope="col" colspan="4" class="queue-head-group group-planned">Previsto</th>
+                        <th scope="col" colspan="4" class="queue-head-group group-actual">Real</th>
+                        <th scope="col" colspan="7" rowspan="2" class="queue-head-group group-actions">A&#231;&#245;es</th>
+                    </tr>
+                    <tr>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_start_date" style="width: 8.5%;">In&#237;cio D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_start_time" style="width: 5%;">In&#237;cio H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_end_date" style="width: 6%;">Fim D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="pred_end_time" style="width: 5%;">Fim H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_start_date" style="width: 8.5%;">In&#237;cio D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_start_time" style="width: 5%;">In&#237;cio H.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_end_date" style="width: 6%;">Fim D.</th>
+                        <th scope="col" class="queue-head-sub queue-sortable" data-sort-key="real_end_time" style="width: 5%;">Fim H.</th>
+                    </tr>
+                </thead>
+                <tbody id="queue-items" class="queue-items-body">
+                    {% if queue_data != 0 %}
+                    {% for queue in queue_data %}
+                        <tr draggable="true" class="queue-item-row queue-task-row" data-id="{{ queue.n_register }}" data-project-id="{% if queue.linked_project %}{{ queue.linked_project.id }}{% endif %}" data-detail-total="{{ queue.detail_count|default:0 }}" data-detail-done="{{ queue.detail_done_count|default:0 }}" data-detail-hours="{{ queue.detail_hours_total|default:0 }}" data-type-id="{% if queue.task_type %}{{ queue.task_type.id }}{% endif %}" data-pred-start="{% if queue.d_predicted_date_start %}{{ queue.d_predicted_date_start|date:"Y-m-d" }}{% endif %}" data-pred-end="{% if queue.d_predicted_date_end %}{{ queue.d_predicted_date_end|date:"Y-m-d" }}{% endif %}" data-pred-start-time="{% if queue.t_predicted_time_start %}{{ queue.t_predicted_time_start|time:"H:i" }}{% endif %}" data-pred-end-time="{% if queue.t_predicted_time_end %}{{ queue.t_predicted_time_end|time:"H:i" }}{% endif %}">
+                            <td>
+                                <button class="queue-expand-btn{% if queue.detail_count|default:0 == 0 %} is-disabled{% endif %}" type="button" onclick="toggleTaskDetails(event, '{{ queue.n_register }}')" aria-label="Detalhes" aria-expanded="false">▶</button>
+                            </td>
+                            <td><input type="checkbox" class="queue-current-toggle" onchange="toggleCurrent(this, '{{ queue.n_register }}')"></td>
+                            <td>{{queue.n_queue_position}}</td>
+                            <td>{{queue.a_ticket}}</td>
+                            <td>
+                                <span class="queue-desc-text">{{queue.a_description}}</span>
+                                {% if queue.linked_project %}
+                                    <div class="queue-project-chip">Projeto: {{ queue.linked_project.name }}</div>
+                                {% endif %}
+                                <div class="queue-progress" data-item-id="{{ queue.n_register }}">
+                                    <div class="queue-progress-bar">
+                                        <div class="queue-progress-fill"></div>
+                                    </div>
+                                    <div class="queue-progress-meta">
+                                        <span class="queue-progress-pct">0%</span>
+                                        <span class="queue-progress-frac">(0/0)</span>
+                                        <span class="queue-time-total">Total:</span>
+                                        <span class="queue-time-total-val">0.00h</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                {% if queue.task_type %}
+                                    <span class="type-badge" style="background: {{ queue.task_type.color }};">{{ queue.task_type.name }}</span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{% if queue.d_predicted_date_start %}{{ queue.d_predicted_date_start|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td>{% if queue.t_predicted_time_start %}{{ queue.t_predicted_time_start|time:"H:i" }}{% else %}-{% endif %}</td>
+                            <td>{% if queue.d_predicted_date_end %}{{ queue.d_predicted_date_end|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td>{% if queue.t_predicted_time_end %}{{ queue.t_predicted_time_end|time:"H:i" }}{% else %}-{% endif %}</td>
+                            <td class="queue-editable" data-field="d_real_date_start" data-type="date" data-id="{{ queue.n_register }}" data-iso="{% if queue.d_real_date_start %}{{ queue.d_real_date_start|date:"Y-m-d" }}{% endif %}">{% if queue.d_real_date_start %}{{ queue.d_real_date_start|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td class="queue-editable" data-field="d_real_time_start" data-type="time" data-id="{{ queue.n_register }}" data-iso="{% if queue.d_real_time_start %}{{ queue.d_real_time_start|time:"H:i" }}{% endif %}">{% if queue.d_real_time_start %}{{ queue.d_real_time_start|time:"H:i" }}{% else %}-{% endif %}</td>
+                            <td class="queue-editable" data-field="d_real_date_end" data-type="date" data-id="{{ queue.n_register }}" data-iso="{% if queue.d_real_date_end %}{{ queue.d_real_date_end|date:"Y-m-d" }}{% endif %}">{% if queue.d_real_date_end %}{{ queue.d_real_date_end|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td class="queue-editable" data-field="t_real_time_end" data-type="time" data-id="{{ queue.n_register }}" data-iso="{% if queue.t_real_time_end %}{{ queue.t_real_time_end|time:"H:i" }}{% endif %}">{% if queue.t_real_time_end %}{{ queue.t_real_time_end|time:"H:i" }}{% else %}-{% endif %}</td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-edit" onclick="openEditQueueItem(`{{ queue.n_register }}`)" title="Editar" aria-label="Editar">&#x270F;&#xFE0F;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-up" onclick="upQueuePosition(`{{ queue.n_register }}`)" title="Subir" aria-label="Subir">&#x2B06;&#xFE0F;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-down" onclick="dropQueuePosition(`{{ queue.n_register }}`)" title="Descer" aria-label="Descer">&#x2B07;&#xFE0F;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-duplicate" onclick="duplicateQueueItem(`{{ queue.n_register }}`)" title="Duplicar" aria-label="Duplicar">&#x2398;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-delete" onclick="deleteRegister(`{{ queue.n_register }}`)" title="Excluir" aria-label="Excluir">&#x1F5D1;&#xFE0F;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-done" onclick="endRegister(`{{ queue.n_register }}`)" title="Concluir" aria-label="Concluir">&#x2611;&#xFE0F;</button></td>
+                            <td style="width: 1.7%;"><button class="queue-action-btn action-project" onclick="openLinkProjectModal(`{{ queue.n_register }}`)" title="Vincular projeto" aria-label="Vincular projeto">&#x1F517;</button></td>
+                        </tr>
+                        <tr class="queue-details-row" id="queue-details-row-{{ queue.n_register }}" style="display:none;">
+                            <td colspan="21">
+                                <div class="queue-details-panel" data-item-id="{{ queue.n_register }}">
+                                    <div class="queue-details-head">
+                                        <div class="queue-details-title">Subatividades</div>
+                                        <div class="queue-details-add">
+                                            <input class="queue-input-sm queue-details-input" id="queue-details-input-{{ queue.n_register }}" type="text" placeholder="Adicionar detalhe..." maxlength="240">
+                                            <button class="queue-secondary-btn queue-details-add-btn" type="button" onclick="addTaskDetail('{{ queue.n_register }}')">Adicionar</button>
+                                        </div>
+                                    </div>
+                                    <div class="queue-details-list" id="queue-details-list-{{ queue.n_register }}"></div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        </div>
+
+        <script>
+            
+        </script>
