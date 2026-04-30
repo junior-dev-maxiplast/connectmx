@@ -156,6 +156,34 @@
             </div>
         </form>
     </div>
+
+    <div id="tetrisOverlay" class="tetris-overlay" style="display:none;">
+        <div class="tetris-modal" role="dialog" aria-modal="true" aria-label="Maxi Tetris">
+            <div class="tetris-head">
+                <div class="tetris-title">Maxi Tetris</div>
+                <button type="button" class="modal-close" onclick="closeTetrisModal()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <div class="tetris-body">
+                <canvas id="tetrisCanvas" width="240" height="480" class="tetris-canvas"></canvas>
+                <div class="tetris-side">
+                    <div class="tetris-stat"><span>Pontos</span><strong id="tetrisScore">0</strong></div>
+                    <div class="tetris-stat"><span>Linhas</span><strong id="tetrisLines">0</strong></div>
+                    <div class="tetris-stat"><span>Nivel</span><strong id="tetrisLevel">1</strong></div>
+                    <div class="tetris-help">
+                        <div>← → mover</div>
+                        <div>↑ girar</div>
+                        <div>↓ descer</div>
+                        <div>Espaco: queda rapida</div>
+                        <div>Esc: sair</div>
+                    </div>
+                </div>
+            </div>
+            <div id="tetrisGameOver" class="tetris-gameover" style="display:none;">
+                <div class="tetris-gameover-title">Game Over</div>
+                <button type="button" class="queue-primary-btn" onclick="restartTetris()">Jogar novamente</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 <script>
@@ -266,5 +294,266 @@
         return false;
     }
 
+    const KONAMI_MAXI = [
+        "ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown",
+        "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"
+    ];
+    let konamiBuffer = [];
+    let tetrisRunning = false;
+    let tetrisAnimationId = null;
+    let tetrisLastTime = 0;
+    let tetrisDropCounter = 0;
+    let tetrisDropInterval = 700;
+    let tetrisBoard = [];
+    let tetrisPlayer = null;
+    let tetrisScore = 0;
+    let tetrisLines = 0;
+    let tetrisLevel = 1;
+    const TETRIS_COLS = 10;
+    const TETRIS_ROWS = 20;
+    const TETRIS_BLOCK = 24;
+    const TETRIS_COLORS = {
+        1: "#00bf63",
+        2: "#3f8cff",
+        3: "#ff9f43",
+        4: "#8b5cf6",
+        5: "#ef476f",
+        6: "#ffd166",
+        7: "#06d6a0",
+    };
+
+    function isTypingContext(target) {
+        if (!target) return false;
+        const tag = String(target.tagName || "").toLowerCase();
+        return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+    }
+
+    function onHubKonami(e) {
+        if (isTypingContext(e.target) || tetrisRunning) return;
+        const key = (e.key && e.key.length === 1) ? e.key.toLowerCase() : e.key;
+        konamiBuffer.push(key);
+        if (konamiBuffer.length > KONAMI_MAXI.length) konamiBuffer.shift();
+        const hit = KONAMI_MAXI.every((k, i) => konamiBuffer[i] === k);
+        if (hit) {
+            konamiBuffer = [];
+            openTetrisModal();
+        }
+    }
+
+    function createMatrix(w, h) {
+        return Array.from({ length: h }, () => Array(w).fill(0));
+    }
+
+    function randomPiece() {
+        const pieces = "TJLOSZI";
+        const type = pieces[(Math.random() * pieces.length) | 0];
+        if (type === "T") return [[0,1,0],[1,1,1],[0,0,0]];
+        if (type === "J") return [[2,0,0],[2,2,2],[0,0,0]];
+        if (type === "L") return [[0,0,3],[3,3,3],[0,0,0]];
+        if (type === "O") return [[4,4],[4,4]];
+        if (type === "S") return [[0,5,5],[5,5,0],[0,0,0]];
+        if (type === "Z") return [[6,6,0],[0,6,6],[0,0,0]];
+        return [[0,7,0],[7,7,7],[0,0,0]];
+    }
+
+    function resetPlayer() {
+        tetrisPlayer = {
+            pos: { x: 0, y: 0 },
+            matrix: randomPiece(),
+        };
+        tetrisPlayer.pos.y = 0;
+        tetrisPlayer.pos.x = ((TETRIS_COLS / 2) | 0) - ((tetrisPlayer.matrix[0].length / 2) | 0);
+        if (collide(tetrisBoard, tetrisPlayer)) {
+            gameOverTetris();
+        }
+    }
+
+    function collide(board, player) {
+        const m = player.matrix;
+        const o = player.pos;
+        for (let y = 0; y < m.length; y++) {
+            for (let x = 0; x < m[y].length; x++) {
+                if (m[y][x] !== 0 &&
+                    (board[y + o.y] && board[y + o.y][x + o.x]) !== 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function merge(board, player) {
+        player.matrix.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value !== 0) board[y + player.pos.y][x + player.pos.x] = value;
+            });
+        });
+    }
+
+    function rotate(matrix) {
+        for (let y = 0; y < matrix.length; y++) {
+            for (let x = 0; x < y; x++) {
+                [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+            }
+        }
+        matrix.forEach(row => row.reverse());
+    }
+
+    function playerRotate() {
+        const pos = tetrisPlayer.pos.x;
+        let offset = 1;
+        rotate(tetrisPlayer.matrix);
+        while (collide(tetrisBoard, tetrisPlayer)) {
+            tetrisPlayer.pos.x += offset;
+            offset = -(offset + (offset > 0 ? 1 : -1));
+            if (offset > tetrisPlayer.matrix[0].length) {
+                rotate(tetrisPlayer.matrix);
+                rotate(tetrisPlayer.matrix);
+                rotate(tetrisPlayer.matrix);
+                tetrisPlayer.pos.x = pos;
+                return;
+            }
+        }
+    }
+
+    function playerDrop() {
+        tetrisPlayer.pos.y++;
+        if (collide(tetrisBoard, tetrisPlayer)) {
+            tetrisPlayer.pos.y--;
+            merge(tetrisBoard, tetrisPlayer);
+            sweepRows();
+            resetPlayer();
+            updateTetrisHud();
+        }
+        tetrisDropCounter = 0;
+    }
+
+    function playerMove(dir) {
+        tetrisPlayer.pos.x += dir;
+        if (collide(tetrisBoard, tetrisPlayer)) tetrisPlayer.pos.x -= dir;
+    }
+
+    function hardDrop() {
+        while (!collide(tetrisBoard, tetrisPlayer)) {
+            tetrisPlayer.pos.y++;
+        }
+        tetrisPlayer.pos.y--;
+        playerDrop();
+    }
+
+    function sweepRows() {
+        let rowCount = 0;
+        outer: for (let y = tetrisBoard.length - 1; y >= 0; y--) {
+            for (let x = 0; x < tetrisBoard[y].length; x++) {
+                if (tetrisBoard[y][x] === 0) continue outer;
+            }
+            const row = tetrisBoard.splice(y, 1)[0].fill(0);
+            tetrisBoard.unshift(row);
+            y++;
+            rowCount++;
+        }
+        if (!rowCount) return;
+        tetrisLines += rowCount;
+        const pointsMap = { 1: 100, 2: 250, 3: 450, 4: 700 };
+        tetrisScore += (pointsMap[rowCount] || 1000) * tetrisLevel;
+        tetrisLevel = 1 + Math.floor(tetrisLines / 10);
+        tetrisDropInterval = Math.max(120, 700 - ((tetrisLevel - 1) * 55));
+    }
+
+    function drawMatrix(ctx, matrix, offset) {
+        matrix.forEach((row, y) => {
+            row.forEach((value, x) => {
+                if (value === 0) return;
+                ctx.fillStyle = TETRIS_COLORS[value] || "#ffffff";
+                ctx.fillRect((x + offset.x) * TETRIS_BLOCK, (y + offset.y) * TETRIS_BLOCK, TETRIS_BLOCK - 1, TETRIS_BLOCK - 1);
+            });
+        });
+    }
+
+    function drawTetris() {
+        const canvas = document.getElementById("tetrisCanvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#10172c";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawMatrix(ctx, tetrisBoard, { x: 0, y: 0 });
+        drawMatrix(ctx, tetrisPlayer.matrix, tetrisPlayer.pos);
+    }
+
+    function updateTetrisHud() {
+        const scoreEl = document.getElementById("tetrisScore");
+        const linesEl = document.getElementById("tetrisLines");
+        const levelEl = document.getElementById("tetrisLevel");
+        if (scoreEl) scoreEl.textContent = String(tetrisScore);
+        if (linesEl) linesEl.textContent = String(tetrisLines);
+        if (levelEl) levelEl.textContent = String(tetrisLevel);
+    }
+
+    function tetrisLoop(time = 0) {
+        if (!tetrisRunning) return;
+        const delta = time - tetrisLastTime;
+        tetrisLastTime = time;
+        tetrisDropCounter += delta;
+        if (tetrisDropCounter > tetrisDropInterval) playerDrop();
+        drawTetris();
+        tetrisAnimationId = requestAnimationFrame(tetrisLoop);
+    }
+
+    function gameOverTetris() {
+        tetrisRunning = false;
+        if (tetrisAnimationId) cancelAnimationFrame(tetrisAnimationId);
+        const over = document.getElementById("tetrisGameOver");
+        if (over) over.style.display = "flex";
+    }
+
+    function restartTetris() {
+        tetrisBoard = createMatrix(TETRIS_COLS, TETRIS_ROWS);
+        tetrisScore = 0;
+        tetrisLines = 0;
+        tetrisLevel = 1;
+        tetrisDropInterval = 700;
+        tetrisDropCounter = 0;
+        tetrisLastTime = 0;
+        const over = document.getElementById("tetrisGameOver");
+        if (over) over.style.display = "none";
+        resetPlayer();
+        updateTetrisHud();
+        tetrisRunning = true;
+        tetrisLoop();
+    }
+
+    function handleTetrisKey(e) {
+        if (!tetrisRunning) {
+            if (e.key === "Escape") closeTetrisModal();
+            return;
+        }
+        if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "Escape"].includes(e.key)) {
+            e.preventDefault();
+        }
+        if (e.key === "ArrowLeft") playerMove(-1);
+        else if (e.key === "ArrowRight") playerMove(1);
+        else if (e.key === "ArrowDown") playerDrop();
+        else if (e.key === "ArrowUp") playerRotate();
+        else if (e.key === " ") hardDrop();
+        else if (e.key === "Escape") closeTetrisModal();
+    }
+
+    function openTetrisModal() {
+        const overlay = document.getElementById("tetrisOverlay");
+        if (!overlay) return;
+        overlay.style.display = "flex";
+        restartTetris();
+        document.addEventListener("keydown", handleTetrisKey);
+    }
+
+    function closeTetrisModal() {
+        const overlay = document.getElementById("tetrisOverlay");
+        if (overlay) overlay.style.display = "none";
+        tetrisRunning = false;
+        if (tetrisAnimationId) cancelAnimationFrame(tetrisAnimationId);
+        document.removeEventListener("keydown", handleTetrisKey);
+    }
+
+    document.addEventListener("keydown", onHubKonami);
     applyHubFilters();
 </script>

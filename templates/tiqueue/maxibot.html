@@ -1,0 +1,164 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Maxibot</h1>
+                <div class="subtitle">Pergunte algo e eu busco respostas na Base de Conhecimento</div>
+            </div>
+        </div>
+
+        <div class="checklist-card maxibot-chat-card">
+            <div class="maxibot-chat-head">
+                <div class="maxibot-avatar">M</div>
+                <div class="maxibot-chat-head-text">
+                    <div class="checklist-card-title">Maxibot</div>
+                    <div class="maxibot-chat-sub">Assistente da Base de Conhecimento</div>
+                </div>
+                <button id="maxibotClearBtn" type="button" class="queue-secondary-btn">Limpar conversa</button>
+            </div>
+
+            <div id="maxibotMessages" class="maxibot-messages">
+                <div class="maxibot-bubble maxibot-bubble-bot">
+                    Ola! Me pergunte sobre erros, solucao, causa raiz ou procedimentos da base.
+                </div>
+            </div>
+
+            <div class="maxibot-compose">
+                <textarea id="maxibotQuestion" class="queue-input-sm table-input maxibot-input" placeholder="Digite sua pergunta..."></textarea>
+                <button id="maxibotAskBtn" type="button" class="queue-primary-btn">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getCookie(name) {
+            const cookies = document.cookie ? document.cookie.split(';') : [];
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    return decodeURIComponent(cookie.substring(name.length + 1));
+                }
+            }
+            return null;
+        }
+
+        const MAXIBOT_SESSION_KEY = "maxibot_chat_session_v1";
+
+        function escapeHtml(str) {
+            return String(str || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function scrollChatToBottom() {
+            const host = document.getElementById("maxibotMessages");
+            if (!host) return;
+            host.scrollTop = host.scrollHeight;
+        }
+
+        function renderMessage(role, text, sources) {
+            const host = document.getElementById("maxibotMessages");
+            if (!host) return;
+
+            const bubbleClass = role === "user" ? "maxibot-bubble-user" : "maxibot-bubble-bot";
+            const sourcesHtml = Array.isArray(sources) && sources.length
+                ? `<div class="maxibot-bubble-sources">${sources.map((s) => `<div>• <strong>${escapeHtml(s.category)}</strong> - ${escapeHtml(s.title)} <a class="maxibot-source-link" href="${escapeHtml(s.url || '#')}">Abrir registro</a></div>`).join("")}</div>`
+                : "";
+
+            host.insertAdjacentHTML(
+                "beforeend",
+                `<div class="maxibot-bubble ${bubbleClass}">${escapeHtml(text).replace(/\n/g, "<br>")}${sourcesHtml}</div>`
+            );
+            scrollChatToBottom();
+        }
+
+        function saveSession() {
+            const host = document.getElementById("maxibotMessages");
+            if (!host) return;
+            sessionStorage.setItem(MAXIBOT_SESSION_KEY, host.innerHTML);
+        }
+
+        function restoreSession() {
+            const host = document.getElementById("maxibotMessages");
+            if (!host) return;
+            const saved = sessionStorage.getItem(MAXIBOT_SESSION_KEY);
+            if (saved) host.innerHTML = saved;
+            scrollChatToBottom();
+        }
+
+        async function askMaxibot() {
+            const input = document.getElementById("maxibotQuestion");
+            const btn = document.getElementById("maxibotAskBtn");
+
+            const question = (input.value || "").trim();
+            if (!question) return;
+
+            renderMessage("user", question);
+            input.value = "";
+            btn.disabled = true;
+            renderMessage("bot", "Consultando base...");
+            saveSession();
+
+            try {
+                const response = await fetch("{% url 'maxibotAsk' %}", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCookie("csrftoken"),
+                    },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ question }),
+                });
+                const data = await response.json();
+                if (!response.ok || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Erro ao consultar");
+                }
+
+                const host = document.getElementById("maxibotMessages");
+                if (host && host.lastElementChild && host.lastElementChild.classList.contains("maxibot-bubble-bot")) {
+                    host.removeChild(host.lastElementChild);
+                }
+                renderMessage("bot", data.answer || "-", data.sources || []);
+                saveSession();
+            } catch (err) {
+                const host = document.getElementById("maxibotMessages");
+                if (host && host.lastElementChild && host.lastElementChild.classList.contains("maxibot-bubble-bot")) {
+                    host.removeChild(host.lastElementChild);
+                }
+                renderMessage("bot", err.message || "Erro ao consultar a base.");
+                saveSession();
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        document.getElementById("maxibotAskBtn").addEventListener("click", askMaxibot);
+        document.getElementById("maxibotQuestion").addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                askMaxibot();
+            }
+        });
+        document.getElementById("maxibotClearBtn").addEventListener("click", () => {
+            const host = document.getElementById("maxibotMessages");
+            host.innerHTML = `<div class="maxibot-bubble maxibot-bubble-bot">Ola! Me pergunte sobre erros, solucao, causa raiz ou procedimentos da base.</div>`;
+            saveSession();
+        });
+        restoreSession();
+    </script>
+</body>

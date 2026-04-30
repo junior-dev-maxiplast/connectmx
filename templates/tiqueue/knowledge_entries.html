@@ -1,0 +1,67 @@
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Base de Conhecimento - Registros</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'knowledgeCategoriesPage' %}">Gerenciar categorias</a>
+                    <a class="queue-secondary-btn" href="{% url 'knowledgeConsultPage' %}">Abrir consulta</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Novo registro</div>
+            <form method="POST" class="checklist-form" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="entry">
+                <div class="checklist-section-grid">
+                    <div class="field">{{ entry_form.category.label_tag }}{{ entry_form.category }}</div>
+                    <div class="field">{{ entry_form.title.label_tag }}{{ entry_form.title }}</div>
+                    <div class="field span-2">{{ entry_form.trigger.label_tag }}{{ entry_form.trigger }}</div>
+                    <div class="field span-2">{{ entry_form.description.label_tag }}{{ entry_form.description }}</div>
+                    <div class="field span-2">{{ entry_form.impact.label_tag }}{{ entry_form.impact }}</div>
+                    <div class="field span-2">{{ entry_form.workaround.label_tag }}{{ entry_form.workaround }}</div>
+                    <div class="field span-2">{{ entry_form.root_cause.label_tag }}{{ entry_form.root_cause }}</div>
+                    <div class="field span-2">{{ entry_form.resolution.label_tag }}{{ entry_form.resolution }}</div>
+                    <div class="field">{{ entry_form.tags.label_tag }}{{ entry_form.tags }}</div>
+                    <div class="field"><label class="checklist-inline-check">{{ entry_form.is_resolved }}<span>Resolvido</span></label></div>
+                    <div class="field span-2">
+                        <label for="kbAttachments">Anexos</label>
+                        <input id="kbAttachments" type="file" name="attachments" class="queue-input-sm table-input" multiple>
+                        <small class="wifi-muted">Voce pode selecionar mais de um arquivo.</small>
+                    </div>
+                </div>
+                <div class="modal-actions"><button type="submit" class="queue-primary-btn">Salvar registro</button></div>
+            </form>
+        </div>
+
+    </div>
+    <script>
+        (function () {
+            const areas = document.querySelectorAll("textarea.kb-autogrow");
+            const resize = (el) => {
+                el.style.height = "auto";
+                const next = Math.max(72, el.scrollHeight + 2);
+                el.style.height = `${next}px`;
+            };
+            areas.forEach((el) => {
+                resize(el);
+                el.addEventListener("input", () => resize(el));
+            });
+        })();
+    </script>
+</body>

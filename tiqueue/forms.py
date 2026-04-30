@@ -16,6 +16,8 @@ from .models import (
     HubTool,
     HubUserTool,
     HubUserToolCategory,
+    KnowledgeCategory,
+    KnowledgeEntry,
 )
 
 
@@ -365,4 +367,60 @@ class HubUserToolCategoryForm(forms.ModelForm):
             "name": "Categoria",
             "sort_order": "Ordem",
             "is_active": "Ativa",
+        }
+
+
+class KnowledgeCategoryForm(forms.ModelForm):
+    class Meta:
+        model = KnowledgeCategory
+        fields = ["name", "description", "sort_order", "is_active"]
+
+        labels = {
+            "name": "Categoria",
+            "description": "Descricao",
+            "sort_order": "Ordem",
+            "is_active": "Ativa",
+        }
+
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 2}),
+        }
+
+
+class KnowledgeEntryForm(forms.ModelForm):
+    class Meta:
+        model = KnowledgeEntry
+        fields = [
+            "category",
+            "title",
+            "trigger",
+            "description",
+            "impact",
+            "workaround",
+            "root_cause",
+            "resolution",
+            "tags",
+            "is_resolved",
+        ]
+
+        labels = {
+            "category": "Categoria",
+            "title": "Titulo",
+            "trigger": "Situacao / problema",
+            "description": "Descricao detalhada",
+            "impact": "Impacto",
+            "workaround": "Contorno aplicado",
+            "root_cause": "Causa raiz",
+            "resolution": "Solucao definitiva",
+            "tags": "Tags (separadas por virgula)",
+            "is_resolved": "Resolvido",
+        }
+
+        widgets = {
+            "trigger": forms.Textarea(attrs={"rows": 3, "class": "kb-autogrow"}),
+            "description": forms.Textarea(attrs={"rows": 4, "class": "kb-autogrow"}),
+            "impact": forms.Textarea(attrs={"rows": 2, "class": "kb-autogrow"}),
+            "workaround": forms.Textarea(attrs={"rows": 2, "class": "kb-autogrow"}),
+            "root_cause": forms.Textarea(attrs={"rows": 2, "class": "kb-autogrow"}),
+            "resolution": forms.Textarea(attrs={"rows": 3, "class": "kb-autogrow"}),
         }

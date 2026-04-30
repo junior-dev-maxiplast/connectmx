@@ -36,6 +36,20 @@ urlpatterns = [
     ,
     path('hub/tools/my/', views.manageMyHubTools, name='manageMyHubTools')
     ,
+    path('knowledge/base/', views.knowledgeBasePage, name='knowledgeBasePage')
+    ,
+    path('knowledge/base/categories/', views.knowledgeCategoriesPage, name='knowledgeCategoriesPage')
+    ,
+    path('knowledge/base/entries/', views.knowledgeEntriesPage, name='knowledgeEntriesPage')
+    ,
+    path('knowledge/base/consult/', views.knowledgeConsultPage, name='knowledgeConsultPage')
+    ,
+    path('knowledge/base/entry/<int:entry_id>/', views.knowledgeEntryDetailPage, name='knowledgeEntryDetailPage')
+    ,
+    path('maxibot/', views.maxibotPage, name='maxibotPage')
+    ,
+    path('maxibot/ask/', views.maxibotAsk, name='maxibotAsk')
+    ,
     path('updates/senior/', views.seniorUpdatesPage, name='seniorUpdatesPage'),
     path('updates/senior/<int:update_id>/inline/', views.seniorUpdatesInlineUpdate, name='seniorUpdatesInlineUpdate'),
     path('updates/wifi/', views.wifiVoucherPage, name='wifiVoucherPage'),

@@ -1,0 +1,86 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Base de Conhecimento - Registro #{{ entry.id }}</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'knowledgeConsultPage' %}">Voltar para consulta</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">{{ entry.title }}</div>
+            <div class="checklist-section-grid">
+                <div class="field">
+                    <label>Categoria</label>
+                    <div class="queue-input-sm table-input">{{ entry.category.name }}</div>
+                </div>
+                <div class="field">
+                    <label>Status</label>
+                    <div class="queue-input-sm table-input">{% if entry.is_resolved %}Resolvido{% else %}Pendente{% endif %}</div>
+                </div>
+                <div class="field">
+                    <label>Inserido em</label>
+                    <div class="queue-input-sm table-input">{{ entry.inserted_at|date:"d/m/Y H:i" }}</div>
+                </div>
+                <div class="field">
+                    <label>Autor</label>
+                    <div class="queue-input-sm table-input">{% if entry.created_by %}{{ entry.created_by.nameUser|default:entry.created_by.username }}{% else %}-{% endif %}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Situacao / Problema</label>
+                    <div class="queue-input-sm table-input">{{ entry.trigger|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Descricao detalhada</label>
+                    <div class="queue-input-sm table-input">{{ entry.description|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Impacto</label>
+                    <div class="queue-input-sm table-input">{{ entry.impact|default:"-"|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Contorno aplicado</label>
+                    <div class="queue-input-sm table-input">{{ entry.workaround|default:"-"|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Causa raiz</label>
+                    <div class="queue-input-sm table-input">{{ entry.root_cause|default:"-"|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Solucao definitiva</label>
+                    <div class="queue-input-sm table-input">{{ entry.resolution|default:"-"|linebreaksbr }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Tags</label>
+                    <div class="queue-input-sm table-input">{{ entry.tags|default:"-" }}</div>
+                </div>
+                <div class="field span-2">
+                    <label>Anexos</label>
+                    <div class="queue-input-sm table-input">
+                        {% for a in entry.attachments.all %}
+                            <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:a.file.name }}</a>{% if not forloop.last %}<br>{% endif %}
+                        {% empty %}
+                            -
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>

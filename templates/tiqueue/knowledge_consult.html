@@ -1,0 +1,93 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Base de Conhecimento - Consulta</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'knowledgeEntriesPage' %}">Novo registro</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Filtros</div>
+            <form method="GET" class="checklist-form">
+                <div class="checklist-section-grid">
+                    <div class="field">
+                        <label for="kbTitle">Titulo</label>
+                        <input id="kbTitle" class="queue-input-sm table-input" type="search" name="title" value="{{ title_q }}" placeholder="Buscar por titulo...">
+                    </div>
+                    <div class="field">
+                        <label for="kbCategory">Categoria</label>
+                        <select id="kbCategory" class="queue-input-sm table-input" name="category">
+                            <option value="">Todas as categorias</option>
+                            {% for c in categories %}
+                                <option value="{{ c.id }}" {% if selected_category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="queue-primary-btn">Pesquisar</button>
+                    <a href="{% url 'knowledgeConsultPage' %}" class="queue-secondary-btn">Limpar</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="checklist-card">
+            <div class="checklist-card-title">Resultados</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead>
+                        <tr>
+                            <th>Categoria</th>
+                            <th>Titulo</th>
+                            <th>Situacao</th>
+                            <th>Descricao</th>
+                            <th>Solucao</th>
+                            <th>Anexos</th>
+                            <th>Resolvido</th>
+                            <th>Inserido em</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in entries %}
+                            <tr>
+                                <td>{{ e.category.name }}</td>
+                                <td><a href="{% url 'knowledgeEntryDetailPage' e.id %}">{{ e.title }}</a></td>
+                                <td>{{ e.trigger }}</td>
+                                <td>{{ e.description }}</td>
+                                <td>{{ e.resolution|default:'-' }}</td>
+                                <td>
+                                    {% for a in e.attachments.all %}
+                                        <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:a.file.name }}</a>{% if not forloop.last %}<br>{% endif %}
+                                    {% empty %}
+                                        -
+                                    {% endfor %}
+                                </td>
+                                <td>{% if e.is_resolved %}Sim{% else %}Nao{% endif %}</td>
+                                <td>{{ e.inserted_at|date:"d/m/Y H:i" }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="8" class="queue-empty">Nenhum registro encontrado para os filtros informados.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
