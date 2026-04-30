@@ -107,6 +107,31 @@
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
                     <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Base de conhecimento</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'knowledgeCategoriesPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Categorias</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'knowledgeEntriesPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Registros</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'knowledgeConsultPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Consulta</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">HUB</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -172,6 +197,15 @@
                         </div>
                     </a>
                 </div>
+            </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'maxibotPage' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Maxibot</span>
+                    </div>
+                </a>
             </div>
         </li>
     </ul>

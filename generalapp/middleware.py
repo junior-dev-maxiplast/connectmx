@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.shortcuts import redirect
+from django.shortcuts import resolve_url
 
 
 class RequireLoginMiddleware:
@@ -28,7 +29,7 @@ class RequireLoginMiddleware:
         is_authenticated = bool(getattr(request, "user", None) and request.user.is_authenticated)
 
         if not is_authenticated and not is_exempt and not is_admin_area:
-            return redirect(f"{settings.LOGIN_URL}?next={request.get_full_path()}")
+            login_url = resolve_url(settings.LOGIN_URL)
+            return redirect(f"{login_url}?next={request.get_full_path()}")
 
         return self.get_response(request)
-

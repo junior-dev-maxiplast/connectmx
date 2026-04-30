@@ -1,0 +1,60 @@
+{% load static %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div class="queue_main checklist-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Base de Conhecimento - Categorias</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'knowledgeEntriesPage' %}">Ir para Registros</a>
+                </div>
+            </div>
+        </div>
+        <div class="checklist-card">
+            <div class="checklist-card-title">Nova categoria</div>
+            <form method="POST" class="checklist-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="category">
+                <div class="checklist-section-grid">
+                    <div class="field span-2">{{ category_form.name.label_tag }}{{ category_form.name }}</div>
+                    <div class="field span-2">{{ category_form.description.label_tag }}{{ category_form.description }}</div>
+                    <div class="field">{{ category_form.sort_order.label_tag }}{{ category_form.sort_order }}</div>
+                    <div class="field"><label class="checklist-inline-check">{{ category_form.is_active }}<span>Ativa</span></label></div>
+                </div>
+                <div class="modal-actions"><button type="submit" class="queue-primary-btn">Salvar categoria</button></div>
+            </form>
+        </div>
+        <div class="checklist-card">
+            <div class="checklist-card-title">Categorias cadastradas</div>
+            <div class="checklist-table projects-table-wrap">
+                <table class="projects-manage-table">
+                    <thead><tr><th>Categoria</th><th>Descricao</th><th>Ordem</th><th>Ativa</th><th>Acoes</th></tr></thead>
+                    <tbody>
+                        {% for c in categories %}
+                        <tr>
+                            <td><input class="queue-input-sm table-input" name="name" value="{{ c.name }}" form="kb-cat-form-{{ c.id }}"></td>
+                            <td><input class="queue-input-sm table-input" name="description" value="{{ c.description|default:'' }}" form="kb-cat-form-{{ c.id }}"></td>
+                            <td><input class="queue-input-sm table-input" name="sort_order" type="number" value="{{ c.sort_order }}" form="kb-cat-form-{{ c.id }}"></td>
+                            <td><label class="checklist-inline-check"><input type="checkbox" name="is_active" {% if c.is_active %}checked{% endif %} form="kb-cat-form-{{ c.id }}"><span>Ativa</span></label></td>
+                            <td><div class="table-actions"><form method="POST" id="kb-cat-form-{{ c.id }}">{% csrf_token %}<input type="hidden" name="form_id" value="edit_category"><input type="hidden" name="category_id" value="{{ c.id }}"><button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button></form></div></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="queue-empty">Nenhuma categoria cadastrada.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>

@@ -17,6 +17,8 @@ from .forms import (
     HubToolForm,
     HubUserToolForm,
     HubUserToolCategoryForm,
+    KnowledgeCategoryForm,
+    KnowledgeEntryForm,
 )
 from .models import (
     userQueue,
@@ -40,6 +42,9 @@ from .models import (
     HubTool,
     HubUserTool,
     HubUserToolCategory,
+    KnowledgeCategory,
+    KnowledgeEntry,
+    KnowledgeEntryAttachment,
 )
 from accounts.models import User
 from .models import TaskType
@@ -679,6 +684,256 @@ def manageMyHubTools(request):
             "my_tools": my_tools,
         },
     )
+
+
+@login_required
+def knowledgeBasePage(request):
+    return redirect("knowledgeEntriesPage")
+
+
+@login_required
+def knowledgeCategoriesPage(request):
+    category_form = KnowledgeCategoryForm(prefix="kcat")
+
+    if request.method == "POST":
+        form_id = request.POST.get("form_id")
+
+        if form_id == "category":
+            category_form = KnowledgeCategoryForm(request.POST, prefix="kcat")
+            if category_form.is_valid():
+                category_form.save()
+            return redirect("knowledgeCategoriesPage")
+
+        if form_id == "edit_category":
+            category_id = request.POST.get("category_id")
+            name = (request.POST.get("name") or "").strip()
+            description = (request.POST.get("description") or "").strip()
+            sort_order = request.POST.get("sort_order")
+            is_active = request.POST.get("is_active") == "on"
+
+            if category_id and name:
+                data = {
+                    "name": name,
+                    "description": description or None,
+                    "is_active": is_active,
+                }
+                if sort_order not in (None, ""):
+                    data["sort_order"] = int(sort_order)
+                KnowledgeCategory.objects.filter(pk=category_id).update(**data)
+            return redirect("knowledgeCategoriesPage")
+
+    categories = KnowledgeCategory.objects.all().order_by("sort_order", "name", "id")
+
+    return render(
+        request,
+        "tiqueue/knowledge_categories.html",
+        {
+            "category_form": category_form,
+            "categories": categories,
+        },
+    )
+
+
+@login_required
+def knowledgeEntriesPage(request):
+    entry_form = KnowledgeEntryForm(prefix="kentry")
+
+    if request.method == "POST":
+        form_id = request.POST.get("form_id")
+
+        if form_id == "entry":
+            entry_form = KnowledgeEntryForm(request.POST, prefix="kentry")
+            if entry_form.is_valid():
+                entry = entry_form.save(commit=False)
+                entry.created_by = request.user
+                entry.save()
+                for f in request.FILES.getlist("attachments"):
+                    KnowledgeEntryAttachment.objects.create(
+                        entry=entry,
+                        file=f,
+                        original_name=getattr(f, "name", None) or None,
+                    )
+            return redirect("knowledgeEntriesPage")
+
+        if form_id == "edit_entry":
+            entry_id = request.POST.get("entry_id")
+            if entry_id:
+                entry = get_object_or_404(KnowledgeEntry, pk=entry_id)
+                category_id = request.POST.get("category")
+                title = (request.POST.get("title") or "").strip()
+                trigger = (request.POST.get("trigger") or "").strip()
+                description = (request.POST.get("description") or "").strip()
+
+                if category_id and title and trigger and description:
+                    entry.category_id = int(category_id)
+                    entry.title = title
+                    entry.trigger = trigger
+                    entry.description = description
+                    entry.impact = (request.POST.get("impact") or "").strip() or None
+                    entry.workaround = (request.POST.get("workaround") or "").strip() or None
+                    entry.root_cause = (request.POST.get("root_cause") or "").strip() or None
+                    entry.resolution = (request.POST.get("resolution") or "").strip() or None
+                    entry.tags = (request.POST.get("tags") or "").strip() or None
+                    entry.is_resolved = request.POST.get("is_resolved") == "on"
+                    entry.save()
+            return redirect("knowledgeEntriesPage")
+
+    categories = KnowledgeCategory.objects.filter(is_active=True).order_by("sort_order", "name", "id")
+
+    return render(
+        request,
+        "tiqueue/knowledge_entries.html",
+        {
+            "entry_form": entry_form,
+            "categories": categories,
+        },
+    )
+
+
+@login_required
+def knowledgeConsultPage(request):
+    title_q = (request.GET.get("title") or "").strip()
+    category_id = (request.GET.get("category") or "").strip()
+
+    categories = KnowledgeCategory.objects.filter(is_active=True).order_by("sort_order", "name", "id")
+    entries_qs = KnowledgeEntry.objects.select_related("category", "created_by").prefetch_related("attachments").all()
+
+    if title_q:
+        entries_qs = entries_qs.filter(title__icontains=title_q)
+    if category_id:
+        try:
+            entries_qs = entries_qs.filter(category_id=int(category_id))
+        except Exception:
+            pass
+
+    entries = entries_qs.order_by("-inserted_at", "-id")
+
+    return render(
+        request,
+        "tiqueue/knowledge_consult.html",
+        {
+            "entries": entries,
+            "categories": categories,
+            "title_q": title_q,
+            "selected_category": category_id,
+        },
+    )
+
+
+@login_required
+def knowledgeEntryDetailPage(request, entry_id):
+    entry = get_object_or_404(
+        KnowledgeEntry.objects.select_related("category", "created_by").prefetch_related("attachments"),
+        pk=entry_id,
+    )
+    return render(request, "tiqueue/knowledge_entry_detail.html", {"entry": entry})
+
+
+@login_required
+def maxibotPage(request):
+    return render(request, "tiqueue/maxibot.html")
+
+
+def _maxibot_tokens(text):
+    raw = (text or "").lower()
+    words = re.findall(r"[a-z0-9à-úç]+", raw)
+    stop = {
+        "de", "da", "do", "das", "dos", "a", "o", "e", "em", "para", "por",
+        "com", "sem", "na", "no", "nas", "nos", "um", "uma", "que", "como",
+        "quando", "onde", "qual", "quais", "ser", "esta", "esse", "isso",
+    }
+    return {w for w in words if len(w) > 2 and w not in stop}
+
+
+@login_required
+@require_POST
+def maxibotAsk(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalido"}, status=400)
+
+    question = (payload.get("question") or "").strip()
+    if not question:
+        return JsonResponse({"status": "error", "message": "Pergunta obrigatoria"}, status=400)
+
+    q_tokens = _maxibot_tokens(question)
+    if not q_tokens:
+        return JsonResponse({"status": "ok", "answer": "Tente detalhar melhor a pergunta para eu localizar na base.", "sources": []})
+
+    entries = list(
+        KnowledgeEntry.objects.select_related("category")
+        .filter(category__is_active=True)
+        .order_by("-inserted_at")[:400]
+    )
+
+    ranked = []
+    for entry in entries:
+        title = entry.title or ""
+        trigger = entry.trigger or ""
+        description = entry.description or ""
+        resolution = entry.resolution or ""
+        workaround = entry.workaround or ""
+        tags = entry.tags or ""
+        category = entry.category.name if entry.category_id else ""
+
+        field_weights = [
+            (title, 4.0),
+            (tags, 3.0),
+            (category, 2.5),
+            (trigger, 2.5),
+            (resolution, 2.2),
+            (workaround, 1.9),
+            (description, 1.5),
+        ]
+
+        score = 0.0
+        for text, weight in field_weights:
+            tks = _maxibot_tokens(text)
+            if not tks:
+                continue
+            common = len(q_tokens.intersection(tks))
+            if common:
+                score += common * weight
+
+        if score > 0:
+            ranked.append((score, entry))
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    top = [e for _, e in ranked[:3]]
+
+    if not top:
+        return JsonResponse(
+            {
+                "status": "ok",
+                "answer": "Nao encontrei resposta direta na Base de Conhecimento. Tente outra palavra-chave ou cadastre um novo registro.",
+                "sources": [],
+            }
+        )
+
+    bullets = []
+    for e in top:
+        base = e.resolution or e.workaround or e.description or e.trigger
+        short = (base or "").strip()
+        if len(short) > 220:
+            short = short[:217] + "..."
+        bullets.append(f"{e.title}: {short}")
+
+    answer = "Possiveis respostas com base na Base de Conhecimento:\n- " + "\n- ".join(bullets)
+
+    sources = [
+        {
+            "id": e.id,
+            "category": e.category.name if e.category_id else "-",
+            "title": e.title,
+            "resolved": bool(e.is_resolved),
+            "inserted_at": e.inserted_at.strftime("%d/%m/%Y %H:%M"),
+            "url": reverse("knowledgeEntryDetailPage", args=[e.id]),
+        }
+        for e in top
+    ]
+
+    return JsonResponse({"status": "ok", "answer": answer, "sources": sources})
 
 
 @login_required

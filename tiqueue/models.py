@@ -429,3 +429,52 @@ class HubUserToolCategory(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.name}"
+
+
+class KnowledgeCategory(models.Model):
+    name = models.CharField(max_length=90, unique=True)
+    description = models.TextField(blank=True, null=True)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class KnowledgeEntry(models.Model):
+    category = models.ForeignKey(KnowledgeCategory, on_delete=models.PROTECT, related_name="entries")
+    title = models.CharField(max_length=180)
+    trigger = models.TextField(help_text="Situacao/problema que gerou a anotacao.")
+    description = models.TextField(help_text="Descricao detalhada do problema.")
+    impact = models.TextField(blank=True, null=True)
+    workaround = models.TextField(blank=True, null=True)
+    root_cause = models.TextField(blank=True, null=True)
+    resolution = models.TextField(blank=True, null=True)
+    tags = models.CharField(max_length=220, blank=True, null=True)
+    is_resolved = models.BooleanField(default=False)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    inserted_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-inserted_at", "-id"]
+
+    def __str__(self):
+        return f"{self.category.name} - {self.title}"
+
+
+class KnowledgeEntryAttachment(models.Model):
+    entry = models.ForeignKey(KnowledgeEntry, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="knowledge_base/")
+    original_name = models.CharField(max_length=255, blank=True, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+
+    def __str__(self):
+        return self.original_name or self.file.name
