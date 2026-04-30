@@ -15,6 +15,7 @@ class RequireLoginMiddleware:
         "/admin/login/",
         "/static/",
         "/sede/",
+        "/loginPage",
     )
 
     def __init__(self, get_response):

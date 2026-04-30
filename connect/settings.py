@@ -42,6 +42,13 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()]
 
+ALLOWED_HOSTS += [
+    "127.0.0.1",
+    "localhost",
+    "192.168.0.25",
+    "connectmx.local",
+]
+
 
 # Application definition
 
@@ -94,8 +101,12 @@ WSGI_APPLICATION = 'connect.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'db_main',
+        'USER': 'root',
+        'PASSWORD': 'ti@118',
+        'HOST': '127.0.0.1',
+        'PORT': '3306'
     }
 }
 
@@ -135,15 +146,24 @@ USE_I18N = True
 
 USE_TZ = True
 
-LOGIN_URL = 'loginPage'
+LOGIN_URL = "/main/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/main/login/"
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'connect/static')
 ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+
+SECURE_SSL_REDIRECT = False
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://192.168.0.25:8888",
+    "http://connectmx.local:8888",
+]
