@@ -45,9 +45,10 @@ from .models import (
     KnowledgeCategory,
     KnowledgeEntry,
     KnowledgeEntryAttachment,
+    UserQueueKanbanColumn,
 )
 from accounts.models import User
-from .models import TaskType
+from .models import TaskType, TaskGroup
 from . import services as service
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
@@ -1167,8 +1168,8 @@ def queueMainPage(request):
         to_attr="pending_details",
     )
 
-    current_items = list(
-        userQueue.objects.filter(is_current=True)
+    items = list(
+        userQueue.objects.all()
         .annotate(
             detail_count=Count("details"),
             detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1179,28 +1180,38 @@ def queueMainPage(request):
             ),
         )
         .prefetch_related(pending_details_prefetch)
-        .order_by('user_code', 'n_queue_position')
+        .order_by("user_code", "-is_current", "n_queue_position", "n_register")
     )
-    user_ids = [item.user_code for item in current_items if item.user_code]
+
+    if not items:
+        return render(request, "tiqueue/mainQueue.html", {"columns": []})
+
+    user_ids = sorted({i.user_code for i in items if i.user_code})
     users_by_id = {u.userId: u for u in User.objects.filter(userId__in=user_ids)}
 
-    cards = []
-    for item in current_items:
-        user = users_by_id.get(item.user_code)
+    columns_map = {}
+    user_order = []
+
+    for item in items:
+        key = item.user_code or "SEM_USUARIO"
+        if key not in columns_map:
+            user = users_by_id.get(key)
+            columns_map[key] = {
+                "user_code": key,
+                "user_name": (user.nameUser if user and user.nameUser else (user.username if user else key)),
+                "cards": [],
+            }
+            user_order.append(key)
+
         total = int(getattr(item, "detail_count", 0) or 0)
         done = int(getattr(item, "detail_done_count", 0) or 0)
-        pct = 0
-        if total > 0:
-            pct = int(round((done / total) * 100))
+        pct = int(round((done / total) * 100)) if total > 0 else 0
+        pending = [d.description for d in (getattr(item, "pending_details", []) or []) if d.description]
 
-        pending = []
-        for d in getattr(item, "pending_details", []) or []:
-            if d.description:
-                pending.append(d.description)
-
-        cards.append(
+        columns_map[key]["cards"].append(
             {
-                "user_name": (user.nameUser if user and user.nameUser else (user.username if user else item.user_code)),
+                "id": item.n_register,
+                "is_current": bool(item.is_current),
                 "description": item.a_description or "-",
                 "ticket": item.a_ticket or "",
                 "pred_date_end": item.d_predicted_date_end,
@@ -1209,11 +1220,12 @@ def queueMainPage(request):
                 "details_total": total,
                 "details_done": done,
                 "pending_details": pending,
-                "hours_total": getattr(item, "detail_hours_total", 0) or 0,
+                "hours_total": float(getattr(item, "detail_hours_total", 0) or 0),
             }
         )
 
-    return render(request, 'tiqueue/mainQueue.html', {"cards": cards})
+    columns = [columns_map[k] for k in user_order]
+    return render(request, "tiqueue/mainQueue.html", {"columns": columns})
 
 
 @login_required
@@ -1249,15 +1261,44 @@ def queueConcludedPage(request):
 
     return render(request, "tiqueue/queueConcluded.html", {"rows": rows})
 
+
+def _ensure_user_queue_kanban_columns(user):
+    cols = list(
+        UserQueueKanbanColumn.objects.filter(user=user, is_active=True).order_by("sort_order", "id")
+    )
+    if cols:
+        return cols
+
+    defaults = [
+        ("Backlog", "#343955", 1),
+        ("Em andamento", "#3a3f61", 2),
+        ("Concluido", "#1f5a3a", 3),
+    ]
+    created = []
+    for name, color, order in defaults:
+        created.append(
+            UserQueueKanbanColumn.objects.create(
+                user=user,
+                name=name,
+                color=color,
+                sort_order=order,
+                is_active=True,
+            )
+        )
+    return created
+
+
 @login_required
 def queueUserPage(request):
 
     user= request.user.userId
+    kanban_columns = _ensure_user_queue_kanban_columns(request.user)
+    default_col_id = kanban_columns[0].id if kanban_columns else None
 
     try:
         queue_working = list(
             userQueue.objects.filter(is_current=True, user_code=user)
-            .select_related("task_type", "linked_project")
+            .select_related("task_type", "linked_project", "kanban_column")
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1271,7 +1312,7 @@ def queueUserPage(request):
         )
         queue_data = list(
             userQueue.objects.filter(is_current=False, user_code=user)
-            .select_related("task_type", "linked_project")
+            .select_related("task_type", "linked_project", "kanban_column")
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1296,6 +1337,7 @@ def queueUserPage(request):
         form = UserQueueCreateForm()
         
     task_types = TaskType.objects.select_related("group").order_by("group__name", "name")
+    task_groups = TaskGroup.objects.order_by("name")
     projects = Project.objects.order_by("name")
     return render(
         request,
@@ -1305,7 +1347,10 @@ def queueUserPage(request):
             'queue_data': queue_data,
             'queue_working': queue_working,
             'task_types': task_types,
+            'task_groups': task_groups,
             'projects': projects,
+            'my_kanban_columns': kanban_columns,
+            'my_kanban_default_col_id': default_col_id,
         },
     )
 
@@ -1348,6 +1393,7 @@ def duplicateQueueItem(request, id):
             n_type_code=original.n_type_code,
             task_group=original.task_group,
             task_type=original.task_type,
+            kanban_column=original.kanban_column,
             linked_project=original.linked_project,
             # New recurring task starts detached from old roadmap item.
             linked_roadmap_item=None,
@@ -1381,7 +1427,7 @@ def listQueueUpdate(request):
     try:
         queue_working = list(
             userQueue.objects.filter(is_current=True, user_code=user)
-            .select_related("task_type", "linked_project")
+            .select_related("task_type", "linked_project", "kanban_column")
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1395,7 +1441,7 @@ def listQueueUpdate(request):
         )
         queue_data = list(
             userQueue.objects.filter(is_current=False, user_code=user)
-            .select_related("task_type", "linked_project")
+            .select_related("task_type", "linked_project", "kanban_column")
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1493,6 +1539,8 @@ def queueItemDetails(request, id):
             "a_ticket": item.a_ticket or "",
             "f_conclusion_rate": "" if item.f_conclusion_rate is None else str(item.f_conclusion_rate),
             "a_description": item.a_description or "",
+            "task_group": item.task_group_id or "",
+            "task_type": item.task_type_id or "",
             "d_predicted_date_start": _date(item.d_predicted_date_start),
             "t_predicted_time_start": _time(item.t_predicted_time_start),
             "d_predicted_date_end": _date(item.d_predicted_date_end),
@@ -1512,7 +1560,19 @@ def updateQueueItem(request, id):
     if not form.is_valid():
         return JsonResponse({"status": "error", "errors": form.errors}, status=400)
 
-    form.save()
+    item = form.save()
+
+    task_group_raw = (request.POST.get("task_group") or "").strip()
+    task_type_raw = (request.POST.get("task_type") or "").strip()
+
+    task_group_id = int(task_group_raw) if task_group_raw.isdigit() else None
+    task_type_id = int(task_type_raw) if task_type_raw.isdigit() else None
+
+    item.task_group_id = task_group_id
+    item.task_type_id = task_type_id
+    item.n_type_group = task_group_id
+    item.n_type_code = task_type_id
+    item.save(update_fields=["task_group", "task_type", "n_type_group", "n_type_code"])
     return JsonResponse({"status": "ok"})
 
 @login_required
@@ -1714,6 +1774,124 @@ def reorderQueueItems(request):
             n_queue_position=Case(*whens, output_field=IntegerField())
         )
 
+        return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def createMyQueueKanbanColumn(request):
+    name = (request.POST.get("name") or "").strip()
+    color = (request.POST.get("color") or "").strip() or "#343955"
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome obrigatorio"}, status=400)
+
+    max_sort = (
+        UserQueueKanbanColumn.objects.filter(user=request.user)
+        .aggregate(models.Max("sort_order"))
+        .get("sort_order__max")
+        or 0
+    )
+    try:
+        col = UserQueueKanbanColumn.objects.create(
+            user=request.user,
+            name=name,
+            color=color,
+            sort_order=int(max_sort) + 1,
+            is_active=True,
+        )
+    except IntegrityError:
+        return JsonResponse({"status": "error", "message": "Ja existe uma coluna com esse nome."}, status=400)
+
+    return JsonResponse({"status": "ok", "id": col.id, "name": col.name, "color": col.color})
+
+
+@login_required
+@require_POST
+def updateMyQueueKanbanColumn(request, column_id):
+    col = get_object_or_404(UserQueueKanbanColumn, pk=column_id, user=request.user, is_active=True)
+    name = (request.POST.get("name") or "").strip()
+    color = (request.POST.get("color") or "").strip() or "#343955"
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome obrigatorio"}, status=400)
+
+    if (
+        UserQueueKanbanColumn.objects.filter(user=request.user, is_active=True, name=name)
+        .exclude(pk=col.pk)
+        .exists()
+    ):
+        return JsonResponse({"status": "error", "message": "Ja existe uma coluna com esse nome."}, status=400)
+
+    col.name = name
+    col.color = color
+    col.save(update_fields=["name", "color"])
+    return JsonResponse({"status": "ok", "id": col.id, "name": col.name, "color": col.color})
+
+
+@login_required
+@require_POST
+def deleteMyQueueKanbanColumn(request, column_id):
+    col = get_object_or_404(UserQueueKanbanColumn, pk=column_id, user=request.user, is_active=True)
+    has_items = userQueue.objects.filter(user_code=request.user.userId, kanban_column=col).exists()
+    if has_items:
+        return JsonResponse(
+            {"status": "error", "message": "Nao e possivel excluir: a coluna possui tarefas."},
+            status=400,
+        )
+
+    active_count = UserQueueKanbanColumn.objects.filter(user=request.user, is_active=True).count()
+    if active_count <= 1:
+        return JsonResponse(
+            {"status": "error", "message": "E necessario manter pelo menos uma coluna ativa."},
+            status=400,
+        )
+
+    col.is_active = False
+    col.save(update_fields=["is_active"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def reorderMyQueueKanbanColumn(request, column_id):
+    direction = (request.POST.get("direction") or "").strip().lower()
+    if direction not in ("left", "right"):
+        return JsonResponse({"status": "error", "message": "Direcao invalida."}, status=400)
+
+    columns = list(
+        UserQueueKanbanColumn.objects.filter(user=request.user, is_active=True).order_by("sort_order", "id")
+    )
+    if len(columns) <= 1:
+        return JsonResponse({"status": "ok"})
+
+    idx = next((i for i, c in enumerate(columns) if c.id == column_id), -1)
+    if idx < 0:
+        return JsonResponse({"status": "error", "message": "Coluna nao encontrada."}, status=404)
+
+    target_idx = idx - 1 if direction == "left" else idx + 1
+    if target_idx < 0 or target_idx >= len(columns):
+        return JsonResponse({"status": "ok"})
+
+    col_a = columns[idx]
+    col_b = columns[target_idx]
+    col_a.sort_order, col_b.sort_order = col_b.sort_order, col_a.sort_order
+    with transaction.atomic():
+        col_a.save(update_fields=["sort_order"])
+        col_b.save(update_fields=["sort_order"])
+
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def moveMyQueueKanbanCard(request, item_id):
+    item = get_object_or_404(userQueue, n_register=item_id, user_code=request.user.userId)
+    column_id = request.POST.get("column_id")
+    if not column_id:
+        return JsonResponse({"status": "error", "message": "Coluna obrigatoria"}, status=400)
+
+    col = get_object_or_404(UserQueueKanbanColumn, pk=int(column_id), user=request.user, is_active=True)
+    item.kanban_column = col
+    item.save(update_fields=["kanban_column"])
     return JsonResponse({"status": "ok"})
 
 
@@ -2267,6 +2445,7 @@ def seniorUpdatesPage(request):
                 erp_version=erp_version,
                 hcm_version=hcm_version,
                 sde_version=sde_version,
+                folder_name=(request.POST.get("folder_name") or "").strip() or None,
                 release_date=(request.POST.get("release_date") or None),
                 download_date=(request.POST.get("download_date") or None),
                 planned_apply_date=(request.POST.get("planned_apply_date") or None),
@@ -2274,6 +2453,7 @@ def seniorUpdatesPage(request):
                 in_production=(request.POST.get("in_production") == "on"),
                 in_test_base=(request.POST.get("in_test_base") == "on"),
                 in_simulation_base=(request.POST.get("in_simulation_base") == "on"),
+                sent_to_drive=(request.POST.get("sent_to_drive") == "on"),
             )
         return redirect("seniorUpdatesPage")
 
@@ -2286,6 +2466,7 @@ def seniorUpdatesPage(request):
             "erp_docs_url": "https://documentacao.senior.com.br/gestaoempresarialerp/notasdaversao/",
             "hcm_docs_url": "https://documentacao.senior.com.br/gestao-de-pessoas-hcm/notas-da-versao/",
             "sde_docs_url": "https://documentacao.senior.com.br/documentoseletronicos/notasdaversao/",
+            "drive_folder_url": "https://drive.google.com/drive/folders/12tbd0xhKEjWf341IwMqPrdoKh5OZmyeT?usp=sharing",
         },
     )
 
@@ -2294,11 +2475,13 @@ def seniorUpdatesPage(request):
 @require_POST
 def seniorUpdatesInlineUpdate(request, update_id):
     row = get_object_or_404(SeniorSystemUpdate, pk=update_id)
+    optional_text_fields = {"folder_name"}
 
     editable_fields = {
         "erp_version": "text",
         "hcm_version": "text",
         "sde_version": "text",
+        "folder_name": "text",
         "release_date": "date",
         "download_date": "date",
         "planned_apply_date": "date",
@@ -2306,6 +2489,7 @@ def seniorUpdatesInlineUpdate(request, update_id):
         "in_production": "bool",
         "in_test_base": "bool",
         "in_simulation_base": "bool",
+        "sent_to_drive": "bool",
     }
 
     updated_fields = []
@@ -2320,8 +2504,10 @@ def seniorUpdatesInlineUpdate(request, update_id):
             value = raw or None
         else:
             value = (raw or "").strip()
-            if not value:
+            if not value and field not in optional_text_fields:
                 return JsonResponse({"status": "error", "message": f"{field} obrigatorio"}, status=400)
+            if not value and field in optional_text_fields:
+                value = None
 
         setattr(row, field, value)
         updated_fields.append(field)

@@ -118,6 +118,26 @@
                     </div>
 
                     <div class="field">
+                        <label for="edit_task_group">Grupo</label>
+                        <select name="task_group" id="edit_task_group" class="queue-select">
+                            <option value="">Selecione...</option>
+                            {% for g in task_groups %}
+                                <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="edit_task_type">Tipo</label>
+                        <select name="task_type" id="edit_task_type" class="queue-select">
+                            <option value="">Selecione...</option>
+                            {% for t in task_types %}
+                                <option value="{{ t.id }}" data-group-id="{{ t.group_id }}">{{ t.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="field">
                         <label for="edit_d_predicted_date_start">In&#237;cio (Data)</label>
                         <input type="date" name="d_predicted_date_start" id="edit_d_predicted_date_start">
                     </div>
@@ -227,6 +247,30 @@
                 </div>
             </form>
         </div>
+
+        <div style="display: none;" id="popUpKanbanColumn" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Nova coluna do Kanban</div>
+                <button type="button" class="modal-close" onclick="closeKanbanColumnModal()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="kanbanColumnForm" class="modal-form" onsubmit="return submitKanbanColumn(event)">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field span-2">
+                        <label for="kanban_col_name">Nome da coluna</label>
+                        <input id="kanban_col_name" name="name" type="text" maxlength="80" required>
+                    </div>
+                    <div class="field">
+                        <label for="kanban_col_color">Cor</label>
+                        <input id="kanban_col_color" name="color" type="color" class="queue-color" value="#343955">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="closeKanbanColumnModal()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Criar coluna</button>
+                </div>
+            </form>
+        </div>
         <div id="container-queue">
             {% include 'partials/queue.html' %}
         </div>
@@ -235,9 +279,20 @@
                 <h1>Kanban da Minha Fila</h1>
                 <span id="myQueueKanbanChevron" class="queue-collapsible-chevron">&#9660;</span>
             </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <button type="button" class="queue-secondary-btn" onclick="event.stopPropagation(); openKanbanColumnModal()">Nova coluna</button>
+                </div>
+            </div>
         </div>
         <div id="myQueueKanbanWrap" class="myq-kanban-wrap-container">
-            <div id="myQueueKanban" class="myq-kanban-wrap"></div>
+            <div class="myq-carousel">
+                <button type="button" id="myqArrowLeft" class="myq-arrow" aria-label="Colunas anteriores" onclick="scrollMyQueueKanban(-1)">&#x276E;</button>
+                <div id="myQueueKanbanViewport" class="myq-carousel-viewport">
+                    <div id="myQueueKanban" class="myq-kanban-wrap"></div>
+                </div>
+                <button type="button" id="myqArrowRight" class="myq-arrow" aria-label="Proximas colunas" onclick="scrollMyQueueKanban(1)">&#x276F;</button>
+            </div>
         </div>
     </div>
 
@@ -268,6 +323,26 @@
             body: payload ? JSON.stringify(payload) : null,
         }).then(response => response.json());
     }
+
+    function toggleRowActions(e, itemId) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        const id = String(itemId || "");
+        const rows = document.querySelectorAll("tr.queue-task-row[data-id]");
+        rows.forEach((row) => {
+            const isTarget = String(row.dataset.id || "") === id;
+            row.classList.toggle("actions-open", isTarget ? !row.classList.contains("actions-open") : false);
+        });
+    }
+
+    let MY_QUEUE_COLUMNS = [
+        {% for c in my_kanban_columns %}
+            { id: "{{ c.id }}", name: "{{ c.name|escapejs }}", color: "{{ c.color }}" }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+    const MY_QUEUE_DEFAULT_COLUMN_ID = "{{ my_kanban_default_col_id|default:'' }}";
 
     function getQueueSortValue(row, key) {
         const cells = row.querySelectorAll("td");
@@ -574,6 +649,38 @@
         apply();
     }
 
+    function initEditTaskTypeFilter(forceApply) {
+        const groupSelect = document.getElementById("edit_task_group");
+        const typeSelect = document.getElementById("edit_task_type");
+        if (!groupSelect || !typeSelect) return;
+
+        const apply = () => {
+            const groupId = (groupSelect.value || "").trim();
+            const options = Array.from(typeSelect.options || []);
+            options.forEach((opt) => {
+                if (!opt.value) return;
+                const optGroup = (opt.dataset.groupId || "").trim();
+                const match = !groupId || optGroup === groupId;
+                opt.hidden = !match;
+                opt.disabled = !match;
+            });
+
+            const selected = typeSelect.options[typeSelect.selectedIndex];
+            if (selected && selected.value) {
+                const selectedGroup = (selected.dataset.groupId || "").trim();
+                if (groupId && selectedGroup !== groupId) {
+                    typeSelect.value = "";
+                }
+            }
+        };
+
+        if (groupSelect.dataset.boundEdit !== "1") {
+            groupSelect.dataset.boundEdit = "1";
+            groupSelect.addEventListener("change", apply);
+        }
+        if (forceApply) apply();
+    }
+
     function fCreateNewQueueItem(){
         divPopUpFormNewItem = document.getElementById("popUpFormNewItem");
         document.getElementById("overlay").style.display = "block";
@@ -603,6 +710,9 @@
                 document.getElementById("edit_a_ticket").value = data.a_ticket || "";
                 document.getElementById("edit_f_conclusion_rate").value = data.f_conclusion_rate || "";
                 document.getElementById("edit_a_description").value = data.a_description || "";
+                document.getElementById("edit_task_group").value = data.task_group || "";
+                document.getElementById("edit_task_type").value = data.task_type || "";
+                initEditTaskTypeFilter(true);
 
                 document.getElementById("edit_d_predicted_date_start").value = data.d_predicted_date_start || "";
                 document.getElementById("edit_t_predicted_time_start").value = data.t_predicted_time_start || "";
@@ -1005,18 +1115,15 @@
             return;
         }
 
-        const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, "0");
-        const dd = String(today.getDate()).padStart(2, "0");
-        const todayIso = `${yyyy}-${mm}-${dd}`;
+        if (!Array.isArray(MY_QUEUE_COLUMNS) || !MY_QUEUE_COLUMNS.length) {
+            MY_QUEUE_COLUMNS = [{ id: MY_QUEUE_DEFAULT_COLUMN_ID || "", name: "Backlog", color: "#343955" }];
+        }
 
-        const groups = {
-            doing: { title: "Em andamento", items: [] },
-            backlog: { title: "Em fila", items: [] },
-            delayed: { title: "Atrasadas", items: [] },
-            done: { title: "Prontas", items: [] },
-        };
+        const groups = {};
+        MY_QUEUE_COLUMNS.forEach((col) => {
+            groups[String(col.id)] = { title: col.name, color: col.color || "#343955", items: [] };
+        });
+        const fallbackCol = String(MY_QUEUE_COLUMNS[0].id);
 
         rows.forEach((row) => {
             const id = row.dataset.id || "";
@@ -1033,18 +1140,9 @@
             const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
             const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
-
-            let status = "backlog";
-            if (pct === 100 && total > 0) {
-                status = "done";
-            } else if (isCurrent) {
-                status = "doing";
-            } else if (predEnd && predEnd < todayIso) {
-                status = "delayed";
-            }
-
-            groups[status].items.push({
+            const colId = String(row.dataset.kanbanColumn || fallbackCol || "");
+            const target = groups[colId] ? colId : fallbackCol;
+            groups[target].items.push({
                 id,
                 ticket,
                 description,
@@ -1085,24 +1183,281 @@
             `;
         };
 
-        const colsOrder = ["doing", "backlog", "delayed", "done"];
-        const columnsHtml = colsOrder.map((key) => {
-            const col = groups[key];
+        const columnsHtml = MY_QUEUE_COLUMNS.map((colDef) => {
+            const key = String(colDef.id);
+            const col = groups[key] || { title: colDef.name, color: colDef.color || "#343955", items: [] };
             const cards = col.items.map(renderCard).join("");
             return `
-                <div class="myq-col myq-col-${key}">
-                    <div class="myq-col-head">
+                <div class="myq-col myq-col-user" data-col-id="${key}">
+                    <div class="myq-col-head" style="border-left: 4px solid ${escapeHtml(col.color || "#343955")}">
                         <span class="myq-col-title">${col.title}</span>
-                        <span class="myq-col-count">${col.items.length}</span>
+                        <div class="myq-col-tools">
+                            <span class="myq-col-count">${col.items.length}</span>
+                            <button type="button" class="myq-col-tool-btn" onclick="reorderKanbanColumn('${key}', 'left')" title="Mover coluna para esquerda" aria-label="Mover coluna para esquerda">&#x276E;</button>
+                            <button type="button" class="myq-col-tool-btn" onclick="reorderKanbanColumn('${key}', 'right')" title="Mover coluna para direita" aria-label="Mover coluna para direita">&#x276F;</button>
+                            <button type="button" class="myq-col-tool-btn" onclick="openEditKanbanColumn('${key}')" title="Editar coluna" aria-label="Editar coluna">&#9998;</button>
+                            <button type="button" class="myq-col-tool-btn danger" onclick="deleteKanbanColumn('${key}')" title="Excluir coluna" aria-label="Excluir coluna">&#128465;</button>
+                        </div>
                     </div>
-                    <div class="myq-col-body">
-                        ${cards || `<div class="myq-col-empty">Sem tarefas</div>`}
+                    <div class="myq-col-body-wrap">
+                        <div class="myq-col-body" data-col-drop="${key}" id="myqColBody-${key}">
+                            ${cards || `<div class="myq-col-empty">Sem tarefas</div>`}
+                        </div>
+                        <button type="button" class="myq-col-expand-btn" id="myqColExpand-${key}" onclick="toggleMyqColumnExpand('${key}')" style="display:none;">Expandir</button>
                     </div>
                 </div>
             `;
         }).join("");
 
         host.innerHTML = `<div class="myq-kanban-grid">${columnsHtml}</div>`;
+        initMyQueueKanbanDnD();
+        refreshMyqColumnExpanders();
+        bindMyQueueKanbanCarousel();
+    }
+
+    function refreshMyqColumnExpanders() {
+        const bodies = document.querySelectorAll(".myq-col-body[id^='myqColBody-']");
+        bodies.forEach((body) => {
+            const key = (body.id || "").replace("myqColBody-", "");
+            const btn = document.getElementById(`myqColExpand-${key}`);
+            if (!btn) return;
+            const hasOverflow = body.scrollHeight > body.clientHeight + 6;
+            btn.style.display = hasOverflow ? "inline-flex" : "none";
+            btn.textContent = body.classList.contains("is-expanded") ? "Recolher" : "Expandir";
+        });
+    }
+
+    function toggleMyqColumnExpand(colId) {
+        const body = document.getElementById(`myqColBody-${colId}`);
+        const btn = document.getElementById(`myqColExpand-${colId}`);
+        if (!body || !btn) return;
+        body.classList.toggle("is-expanded");
+        btn.textContent = body.classList.contains("is-expanded") ? "Recolher" : "Expandir";
+    }
+
+    function bindMyQueueKanbanCarousel() {
+        const viewport = document.getElementById("myQueueKanbanViewport");
+        if (!viewport || viewport.dataset.carouselBound === "1") {
+            updateMyQueueKanbanArrows();
+            refreshMyqColumnExpanders();
+            return;
+        }
+        viewport.dataset.carouselBound = "1";
+        viewport.addEventListener("scroll", updateMyQueueKanbanArrows);
+        window.addEventListener("resize", () => {
+            updateMyQueueKanbanArrows();
+            refreshMyqColumnExpanders();
+        });
+        updateMyQueueKanbanArrows();
+    }
+
+    function updateMyQueueKanbanArrows() {
+        const viewport = document.getElementById("myQueueKanbanViewport");
+        const left = document.getElementById("myqArrowLeft");
+        const right = document.getElementById("myqArrowRight");
+        if (!viewport || !left || !right) return;
+
+        const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+        const cur = viewport.scrollLeft;
+        const hasOverflow = maxScroll > 4;
+
+        left.style.visibility = hasOverflow ? "visible" : "hidden";
+        right.style.visibility = hasOverflow ? "visible" : "hidden";
+        left.disabled = cur <= 2;
+        right.disabled = cur >= maxScroll - 2;
+    }
+
+    function scrollMyQueueKanban(dir) {
+        const viewport = document.getElementById("myQueueKanbanViewport");
+        if (!viewport) return;
+        const amount = Math.max(220, Math.round(viewport.clientWidth * 0.72));
+        viewport.scrollBy({ left: dir > 0 ? amount : -amount, behavior: "smooth" });
+        setTimeout(updateMyQueueKanbanArrows, 220);
+    }
+
+    function openKanbanColumnModal() {
+        const modal = document.getElementById("popUpKanbanColumn");
+        const overlay = document.getElementById("overlay");
+        const nameInput = document.getElementById("kanban_col_name");
+        const colorInput = document.getElementById("kanban_col_color");
+        const form = document.getElementById("kanbanColumnForm");
+        if (!modal || !overlay) return;
+        if (nameInput) nameInput.value = "";
+        if (colorInput) colorInput.value = "#343955";
+        if (form) form.dataset.editingId = "";
+        overlay.style.display = "block";
+        modal.style.display = "flex";
+        modal.classList.add("is-show");
+        if (nameInput) nameInput.focus();
+    }
+
+    function closeKanbanColumnModal() {
+        const modal = document.getElementById("popUpKanbanColumn");
+        const overlay = document.getElementById("overlay");
+        if (modal) {
+            modal.style.display = "none";
+            modal.classList.remove("is-show");
+        }
+        if (overlay) overlay.style.display = "none";
+    }
+
+    function submitKanbanColumn(e) {
+        e.preventDefault();
+        const name = ((document.getElementById("kanban_col_name") || {}).value || "").trim();
+        const color = ((document.getElementById("kanban_col_color") || {}).value || "#343955").trim();
+        const formEl = document.getElementById("kanbanColumnForm");
+        const editingId = (formEl && formEl.dataset.editingId) ? String(formEl.dataset.editingId) : "";
+        if (!name) return false;
+
+        const form = new FormData();
+        form.append("name", name);
+        form.append("color", color);
+
+        const url = editingId
+            ? `/queue/user/kanban/column/${editingId}/update/`
+            : "/queue/user/kanban/column/create/";
+
+        fetch(url, {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+            credentials: "same-origin",
+            body: form,
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao salvar coluna.");
+                if (editingId) {
+                    MY_QUEUE_COLUMNS = MY_QUEUE_COLUMNS.map((c) =>
+                        String(c.id) === String(editingId)
+                            ? { ...c, name: data.name, color: data.color || "#343955" }
+                            : c
+                    );
+                } else {
+                    MY_QUEUE_COLUMNS.push({ id: String(data.id), name: data.name, color: data.color || "#343955" });
+                }
+                renderMyQueueKanban();
+                closeKanbanColumnModal();
+            })
+            .catch((err) => alert(err.message || "Erro ao salvar coluna."));
+        return false;
+    }
+
+    function openEditKanbanColumn(colId) {
+        const id = String(colId || "");
+        const col = (Array.isArray(MY_QUEUE_COLUMNS) ? MY_QUEUE_COLUMNS : []).find((c) => String(c.id) === id);
+        if (!col) return;
+        const modal = document.getElementById("popUpKanbanColumn");
+        const overlay = document.getElementById("overlay");
+        const form = document.getElementById("kanbanColumnForm");
+        const nameInput = document.getElementById("kanban_col_name");
+        const colorInput = document.getElementById("kanban_col_color");
+        if (!modal || !overlay || !form) return;
+        form.dataset.editingId = id;
+        if (nameInput) nameInput.value = col.name || "";
+        if (colorInput) colorInput.value = col.color || "#343955";
+        overlay.style.display = "block";
+        modal.style.display = "flex";
+        modal.classList.add("is-show");
+        if (nameInput) nameInput.focus();
+    }
+
+    function deleteKanbanColumn(colId) {
+        const id = String(colId || "");
+        if (!id) return;
+        if (!confirm("Deseja excluir esta coluna? Ela so pode ser removida se estiver vazia.")) return;
+        fetch(`/queue/user/kanban/column/${id}/delete/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+            credentials: "same-origin",
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao excluir coluna.");
+                MY_QUEUE_COLUMNS = (MY_QUEUE_COLUMNS || []).filter((c) => String(c.id) !== id);
+                renderMyQueueKanban();
+            })
+            .catch((err) => alert(err.message || "Erro ao excluir coluna."));
+    }
+
+    function reorderKanbanColumn(colId, direction) {
+        const id = String(colId || "");
+        const dir = String(direction || "").toLowerCase();
+        if (!id || !["left", "right"].includes(dir)) return;
+        const form = new FormData();
+        form.append("direction", dir);
+        fetch(`/queue/user/kanban/column/${id}/reorder/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+            credentials: "same-origin",
+            body: form,
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao reordenar coluna.");
+                const index = (MY_QUEUE_COLUMNS || []).findIndex((c) => String(c.id) === id);
+                if (index < 0) return;
+                const target = dir === "left" ? index - 1 : index + 1;
+                if (target < 0 || target >= MY_QUEUE_COLUMNS.length) return;
+                const list = [...MY_QUEUE_COLUMNS];
+                const tmp = list[index];
+                list[index] = list[target];
+                list[target] = tmp;
+                MY_QUEUE_COLUMNS = list;
+                renderMyQueueKanban();
+            })
+            .catch((err) => alert(err.message || "Erro ao reordenar coluna."));
+    }
+
+    function initMyQueueKanbanDnD() {
+        const cards = document.querySelectorAll(".myq-card[data-id]");
+        cards.forEach((card) => {
+            if (card.dataset.dragBound === "1") return;
+            card.dataset.dragBound = "1";
+            card.setAttribute("draggable", "true");
+            card.addEventListener("dragstart", (e) => {
+                e.dataTransfer.setData("text/plain", card.dataset.id || "");
+                card.classList.add("is-dragging");
+            });
+            card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+        });
+
+        const drops = document.querySelectorAll(".myq-col-body[data-col-drop]");
+        drops.forEach((zone) => {
+            if (zone.dataset.dropBound === "1") return;
+            zone.dataset.dropBound = "1";
+            zone.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                zone.classList.add("is-drop-hover");
+            });
+            zone.addEventListener("dragleave", () => zone.classList.remove("is-drop-hover"));
+            zone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                zone.classList.remove("is-drop-hover");
+                const id = e.dataTransfer.getData("text/plain");
+                const colId = zone.dataset.colDrop || "";
+                if (!id || !colId) return;
+                moveMyQueueKanbanCard(id, colId);
+            });
+        });
+    }
+
+    function moveMyQueueKanbanCard(itemId, columnId) {
+        const form = new FormData();
+        form.append("column_id", columnId);
+        fetch(`/queue/user/kanban/card/${itemId}/move/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+            credentials: "same-origin",
+            body: form,
+        })
+            .then((r) => r.json())
+            .then((data) => {
+                if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao mover card.");
+                const row = document.querySelector(`tr.queue-task-row[data-id="${itemId}"]`);
+                if (row) row.dataset.kanbanColumn = String(columnId);
+                renderMyQueueKanban();
+            })
+            .catch((err) => alert(err.message || "Erro ao mover card."));
     }
 
     function fmtBrDate(iso) {
