@@ -20,6 +20,15 @@
 
     <ul class="sidebar_menu">
         <li class="dropdown">
+            <div class="dropdown_button">
+                <a href="{% url 'index' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/hub.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Voltar ao HUB</span>
+                    </div>
+                </a>
+            </div>
+
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
                     <img src="{% static 'assets/i_user.png' %}" class="sidebar_icon" alt="">
@@ -106,7 +115,7 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <img src="{% static 'assets/base_conhecimento.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">Base de conhecimento</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -131,7 +140,7 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <img src="{% static 'assets/hub.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">HUB</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -151,7 +160,7 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <img src="{% static 'assets/projetos.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">Projetos</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -171,7 +180,7 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <img src="{% static 'assets/atualizacoes.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">Atualizacoes</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -186,7 +195,7 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                    <img src="{% static 'assets/wifi.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">Wifi</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
@@ -202,7 +211,7 @@
             <div class="dropdown_button">
                 <a href="{% url 'maxibotPage' %}">
                     <div class="dropdownHeader">
-                        <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                        <img src="{% static 'assets/maxibot.png' %}" class="sidebar_icon" alt="">
                         <span class="sidebar_text">Maxibot</span>
                     </div>
                 </a>

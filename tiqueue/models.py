@@ -21,6 +21,22 @@ class TaskType(models.Model):
         return f"{self.group.name} - {self.name}"
 
 
+class UserQueueKanbanColumn(models.Model):
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="queue_kanban_columns")
+    name = models.CharField(max_length=80)
+    color = models.CharField(max_length=7, default="#343955")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("user", "name")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+
 class userQueue(models.Model):
 
     user_code = models.CharField(max_length=10)
@@ -36,6 +52,9 @@ class userQueue(models.Model):
     linked_project = models.ForeignKey("Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items")
     linked_roadmap_item = models.ForeignKey(
         "ProjectRoadmapItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items"
+    )
+    kanban_column = models.ForeignKey(
+        UserQueueKanbanColumn, on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items"
     )
     d_predicted_date_start = models.DateField(blank=True, null=True)
     d_predicted_date_end = models.DateField(blank=True, null=True)
@@ -296,6 +315,7 @@ class SeniorSystemUpdate(models.Model):
     erp_version = models.CharField(max_length=40)
     hcm_version = models.CharField(max_length=40)
     sde_version = models.CharField(max_length=40)
+    folder_name = models.CharField(max_length=180, blank=True, null=True)
 
     release_date = models.DateField(blank=True, null=True)
     download_date = models.DateField(blank=True, null=True)
@@ -305,6 +325,7 @@ class SeniorSystemUpdate(models.Model):
     in_production = models.BooleanField(default=False)
     in_test_base = models.BooleanField(default=False)
     in_simulation_base = models.BooleanField(default=False)
+    sent_to_drive = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

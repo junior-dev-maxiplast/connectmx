@@ -14,7 +14,7 @@
 
     {% include 'partials/sidebar.html' %}
 
-    <div class="queue_main">
+    <div class="queue_main queue-general-page">
         <div class="headerMain">
             <div class="headerTitle">
                 <h1>Fila geral</h1>
@@ -22,61 +22,109 @@
         </div>
 
         <div class="queue">
-            <div class="queue-cards">
-                {% if cards %}
-                    {% for c in cards %}
-                        <div class="queue-card">
-                            <div class="queue-card-title">
-                                <span class="queue-card-user">{{ c.user_name }}</span>
-                                <span class="queue-card-label">trabalhando em:</span>
+            <div class="queue-main-carousel">
+                <button type="button" id="queueMainArrowLeft" class="myq-arrow" aria-label="Atendentes anteriores" onclick="scrollQueueMainKanban(-1)">&#x276E;</button>
+                <div id="queueMainViewport" class="queue-main-viewport">
+                    <div class="kanban-board queue-main-kanban" id="queueMainKanbanBoard">
+                {% if columns %}
+                    {% for col in columns %}
+                        <div class="kanban-col queue-main-col">
+                            <div class="kanban-col-head">
+                                <span class="kanban-col-title">{{ col.user_name }}</span>
+                                <span class="myq-col-count">{{ col.cards|length }}</span>
                             </div>
-                            <div class="queue-card-task">
-                                {{ c.description }}
-                                {% if c.ticket %}
-                                    <span class="queue-card-ticket">({{ c.ticket }})</span>
-                                {% endif %}
-                            </div>
-
-                            <div class="queue-card-progress">
-                                <div class="queue-progress{% if c.details_total|default:0 == 0 %} is-hidden{% endif %}">
-                                    <div class="queue-progress-bar">
-                                        <div class="queue-progress-fill" style="width: {{ c.progress_pct|default:0 }}%;"></div>
+                            <div class="kanban-col-body queue-main-col-body">
+                                {% for c in col.cards %}
+                                    <div class="kanban-card queue-main-card{% if c.is_current %} is-current{% endif %}">
+                                        <div class="queue-card-title">
+                                            {% if c.is_current %}
+                                                <span class="queue-main-focus">Demanda atual</span>
+                                            {% else %}
+                                                <span class="queue-main-focus queue-main-focus-muted">Fila</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="queue-card-task">
+                                            {{ c.description }}
+                                            {% if c.ticket %}
+                                                <span class="queue-card-ticket">({{ c.ticket }})</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="queue-card-progress">
+                                            <div class="queue-progress{% if c.details_total|default:0 == 0 %} is-hidden{% endif %}">
+                                                <div class="queue-progress-bar">
+                                                    <div class="queue-progress-fill" style="width: {{ c.progress_pct|default:0 }}%;"></div>
+                                                </div>
+                                                <div class="queue-progress-meta">
+                                                    <span class="queue-progress-pct">{{ c.progress_pct|default:0 }}%</span>
+                                                    <span class="queue-progress-frac">({{ c.details_done|default:0 }}/{{ c.details_total|default:0 }})</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="queue-card-subtasks">
+                                            <div class="queue-card-subtitle">Pendentes</div>
+                                            {% if c.pending_details %}
+                                                <ul class="queue-card-sublist">
+                                                    {% for d in c.pending_details|slice:":3" %}
+                                                        <li>{{ d }}</li>
+                                                    {% endfor %}
+                                                </ul>
+                                            {% else %}
+                                                <div class="queue-card-subempty">Sem subtarefas pendentes.</div>
+                                            {% endif %}
+                                        </div>
+                                        <div class="queue-card-meta">
+                                            <span class="queue-card-meta-label">Previsto:</span>
+                                            <span class="queue-card-meta-value">
+                                                {% if c.pred_date_end %}{{ c.pred_date_end|date:"d/m/Y" }}{% else %}-{% endif %}
+                                                {% if c.pred_time_end %}{{ c.pred_time_end|time:"H:i" }}{% endif %}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div class="queue-progress-meta">
-                                        <span class="queue-progress-pct">{{ c.progress_pct|default:0 }}%</span>
-                                        <span class="queue-progress-frac">({{ c.details_done|default:0 }}/{{ c.details_total|default:0 }})</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="queue-card-subtasks">
-                                <div class="queue-card-subtitle">Pendentes</div>
-                                {% if c.pending_details %}
-                                    <ul class="queue-card-sublist">
-                                        {% for d in c.pending_details|slice:":4" %}
-                                            <li>{{ d }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% if c.pending_details|length > 4 %}
-                                        <div class="queue-card-submore">+{{ c.pending_details|length|add:"-4" }} outras</div>
-                                    {% endif %}
-                                {% else %}
-                                    <div class="queue-card-subempty">Sem subtarefas pendentes.</div>
-                                {% endif %}
-                            </div>
-                            <div class="queue-card-meta">
-                                <span class="queue-card-meta-label">Previsto:</span>
-                                <span class="queue-card-meta-value">
-                                    {% if c.pred_date_end %}{{ c.pred_date_end|date:"d/m/Y" }}{% else %}-{% endif %}
-                                    {% if c.pred_time_end %}{{ c.pred_time_end|time:"H:i" }}{% endif %}
-                                </span>
+                                {% endfor %}
                             </div>
                         </div>
                     {% endfor %}
                 {% else %}
                     <div class="queue-empty">Nenhuma demanda atual encontrada.</div>
                 {% endif %}
+                    </div>
+                </div>
+                <button type="button" id="queueMainArrowRight" class="myq-arrow" aria-label="Proximos atendentes" onclick="scrollQueueMainKanban(1)">&#x276F;</button>
             </div>
         </div>
     </div>
+
+    <script>
+        function updateQueueMainArrows() {
+            const viewport = document.getElementById("queueMainViewport");
+            const left = document.getElementById("queueMainArrowLeft");
+            const right = document.getElementById("queueMainArrowRight");
+            if (!viewport || !left || !right) return;
+
+            const max = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+            const cur = viewport.scrollLeft;
+            const hasOverflow = max > 4;
+
+            left.style.visibility = hasOverflow ? "visible" : "hidden";
+            right.style.visibility = hasOverflow ? "visible" : "hidden";
+            left.disabled = cur <= 2;
+            right.disabled = cur >= max - 2;
+        }
+
+        function scrollQueueMainKanban(dir) {
+            const viewport = document.getElementById("queueMainViewport");
+            if (!viewport) return;
+            const amount = Math.max(220, Math.round(viewport.clientWidth * 0.72));
+            viewport.scrollBy({ left: dir > 0 ? amount : -amount, behavior: "smooth" });
+            setTimeout(updateQueueMainArrows, 220);
+        }
+
+        (function initQueueMainCarousel() {
+            const viewport = document.getElementById("queueMainViewport");
+            if (!viewport) return;
+            viewport.addEventListener("scroll", updateQueueMainArrows);
+            window.addEventListener("resize", updateQueueMainArrows);
+            updateQueueMainArrows();
+        })();
+    </script>
 </body>

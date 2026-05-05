@@ -14,7 +14,7 @@
     {% include 'partials/sidebar.html' %}
     <div id="overlay" onclick="closeSeniorModal()" style="display:none;"></div>
 
-    <div class="queue_main">
+    <div class="queue_main senior-page">
         <div class="headerMain">
             <div class="headerTitle">
                 <h1>Atualizacoes Senior</h1>
@@ -25,25 +25,28 @@
                     <a class="queue-secondary-btn" href="{{ erp_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao ERP</a>
                     <a class="queue-secondary-btn" href="{{ hcm_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao HCM</a>
                     <a class="queue-secondary-btn" href="{{ sde_docs_url }}" target="_blank" rel="noopener noreferrer">Documentacao SDE</a>
+                    <a class="queue-secondary-btn" href="{{ drive_folder_url }}" target="_blank" rel="noopener noreferrer">Pasta Google Drive</a>
                     <button type="button" class="queue-primary-btn" onclick="openSeniorModal()">Nova atualizacao</button>
                 </div>
             </div>
         </div>
 
-        <div class="queue">
+        <div class="queue senior-table-wrap">
             <table>
                 <thead>
                     <tr>
                         <th style="width: 7%;">ERP</th>
                         <th style="width: 7%;">HCM</th>
                         <th style="width: 7%;">SDE</th>
-                        <th style="width: 10%;">Data lancamento</th>
-                        <th style="width: 10%;">Data download</th>
+                        <th style="width: 14%;">Nome da pasta</th>
+                        <th style="width: 9%;">Data lancamento</th>
+                        <th style="width: 9%;">Data download</th>
                         <th style="width: 10%;">Data planejada aplicacao</th>
                         <th style="width: 9%;">Data real aplicacao</th>
-                        <th style="width: 8%;">Producao</th>
-                        <th style="width: 8%;">Testes</th>
-                        <th style="width: 8%;">Simulacoes</th>
+                        <th style="width: 7%;">Producao</th>
+                        <th style="width: 7%;">Testes</th>
+                        <th style="width: 7%;">Simulacoes</th>
+                        <th style="width: 7%;">Enviado Drive</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -52,6 +55,7 @@
                             <td class="senior-editable" data-field="erp_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.erp_version }}">{{ r.erp_version }}</td>
                             <td class="senior-editable" data-field="hcm_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.hcm_version }}">{{ r.hcm_version }}</td>
                             <td class="senior-editable" data-field="sde_version" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.sde_version }}">{{ r.sde_version }}</td>
+                            <td class="senior-editable" data-field="folder_name" data-type="text" data-id="{{ r.id }}" data-iso="{{ r.folder_name|default:'' }}">{{ r.folder_name|default:"-" }}</td>
                             <td class="senior-editable" data-field="release_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.release_date %}{{ r.release_date|date:'Y-m-d' }}{% endif %}">{% if r.release_date %}{{ r.release_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                             <td class="senior-editable" data-field="download_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.download_date %}{{ r.download_date|date:'Y-m-d' }}{% endif %}">{% if r.download_date %}{{ r.download_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                             <td class="senior-editable" data-field="planned_apply_date" data-type="date" data-id="{{ r.id }}" data-iso="{% if r.planned_apply_date %}{{ r.planned_apply_date|date:'Y-m-d' }}{% endif %}">{% if r.planned_apply_date %}{{ r.planned_apply_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
@@ -65,10 +69,13 @@
                             <td>
                                 <input type="checkbox" {% if r.in_simulation_base %}checked{% endif %} onchange="toggleSeniorCheckbox('{{ r.id }}', 'in_simulation_base', this.checked)">
                             </td>
+                            <td>
+                                <input type="checkbox" {% if r.sent_to_drive %}checked{% endif %} onchange="toggleSeniorCheckbox('{{ r.id }}', 'sent_to_drive', this.checked)">
+                            </td>
                         </tr>
                     {% empty %}
                         <tr>
-                            <td colspan="10">Nenhuma atualizacao cadastrada.</td>
+                            <td colspan="12">Nenhuma atualizacao cadastrada.</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -95,6 +102,10 @@
                 <div class="field">
                     <label for="sde_version">Versao SDE</label>
                     <input id="sde_version" name="sde_version" type="text" required>
+                </div>
+                <div class="field span-2">
+                    <label for="folder_name">Nome da pasta</label>
+                    <input id="folder_name" name="folder_name" type="text" placeholder="Ex: 2026.03.17 - ERP 5.10.4">
                 </div>
 
                 <div class="field">
@@ -130,6 +141,12 @@
                     <label class="queue-check queue-control">
                         <input type="checkbox" name="in_simulation_base">
                         <span>Em simulacoes</span>
+                    </label>
+                </div>
+                <div class="field">
+                    <label class="queue-check queue-control">
+                        <input type="checkbox" name="sent_to_drive">
+                        <span>Enviado ao Drive</span>
                     </label>
                 </div>
             </div>
