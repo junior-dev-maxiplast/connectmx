@@ -111,3 +111,41 @@ html[data-theme="light"] .theme-fab {
     color: rgba(28, 34, 66, 0.92);
 }
 
+/* Global scrollbar theme */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 191, 99, 0.9) rgba(28, 34, 66, 0.18);
+}
+
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: rgba(28, 34, 66, 0.14);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(0, 191, 99, 0.95), rgba(0, 150, 78, 0.95));
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(0, 204, 106, 1), rgba(0, 166, 86, 1));
+}
+
+html[data-theme="dark"] * {
+    scrollbar-color: rgba(92, 214, 163, 0.9) rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="dark"] *::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.10);
+}
+
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(92, 214, 163, 0.96), rgba(0, 191, 99, 0.96));
+}
