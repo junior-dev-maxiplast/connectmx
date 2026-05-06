@@ -1,0 +1,39 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Configuracoes do Sistema</h1>
+            </div>
+        </div>
+
+        <div class="checklist-card checklist-form-card" style="max-width: 520px;">
+            <form method="POST" class="modal-form">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field span-2">
+                        <label for="system_version">Versao em uso</label>
+                        <input id="system_version" name="system_version" type="text" maxlength="40" value="{% if config and config.system_version %}{{ config.system_version }}{% endif %}" placeholder="Ex: v2.8.1">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="submit" class="queue-primary-btn">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+

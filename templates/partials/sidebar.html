@@ -216,10 +216,24 @@
                     </div>
                 </a>
             </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'systemSettingsPage' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Configuracoes</span>
+                    </div>
+                </a>
+            </div>
         </li>
     </ul>
 
     <div class="sidebar_footer">
+        {% if sidebar_system_version %}
+            <div class="sidebar_system_version" title="Versao em uso">
+                <span class="sidebar_text">Versao: {{ sidebar_system_version }}</span>
+            </div>
+        {% endif %}
         <form method="POST" action="{% url 'logoutPage' %}">
             {% csrf_token %}
             <button type="submit" class="sidebar_logout_btn" title="Encerrar sessao">

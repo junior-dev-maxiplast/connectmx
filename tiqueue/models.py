@@ -9,6 +9,14 @@ class TaskGroup(models.Model):
         return self.name
 
 
+class SystemConfig(models.Model):
+    system_version = models.CharField(max_length=40, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.system_version or "Sem versao"
+
+
 class TaskType(models.Model):
     group = models.ForeignKey(TaskGroup, on_delete=models.CASCADE, related_name="types")
     name = models.CharField(max_length=80)

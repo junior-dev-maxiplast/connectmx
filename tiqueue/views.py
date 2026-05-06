@@ -46,6 +46,7 @@ from .models import (
     KnowledgeEntry,
     KnowledgeEntryAttachment,
     UserQueueKanbanColumn,
+    SystemConfig,
 )
 from accounts.models import User
 from .models import TaskType, TaskGroup
@@ -2430,6 +2431,25 @@ def checklistChoices(request):
             "groups": groups,
             "options": options,
         },
+    )
+
+
+@login_required
+def systemSettingsPage(request):
+    config = SystemConfig.objects.order_by("-updated_at", "-id").first()
+    if request.method == "POST":
+        version = (request.POST.get("system_version") or "").strip()
+        if config is None:
+            config = SystemConfig.objects.create(system_version=version or None)
+        else:
+            config.system_version = version or None
+            config.save(update_fields=["system_version", "updated_at"])
+        return redirect("systemSettingsPage")
+
+    return render(
+        request,
+        "tiqueue/system_settings.html",
+        {"config": config},
     )
 
 
