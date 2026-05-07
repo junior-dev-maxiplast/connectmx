@@ -34,10 +34,20 @@ def logoutPage(request):
 
 @login_required
 def createUser(request):
+    has_any_system_admin = User.objects.filter(is_system_admin=True).exists()
+    can_manage_users = bool(
+        getattr(request.user, "is_system_admin", False)
+        or getattr(request.user, "is_superuser", False)
+        or not has_any_system_admin
+    )
     error_message = None
     success_message = None
+    access_denied_message = None
 
-    if request.method == "POST":
+    if not can_manage_users:
+        access_denied_message = "Voce nao possui acesso a este modulo."
+
+    if request.method == "POST" and can_manage_users:
         form_id = (request.POST.get("form_id") or "create").strip()
 
         if form_id == "edit":
@@ -51,6 +61,7 @@ def createUser(request):
                 email = (request.POST.get("email") or "").strip()
                 name_user = (request.POST.get("nameUser") or "").strip()
                 id_sm = (request.POST.get("id_sm") or "").strip()
+                is_system_admin = request.POST.get("is_system_admin") == "on"
                 password = (request.POST.get("password") or "").strip()
 
                 if not user_id or not username or not email or not name_user:
@@ -67,6 +78,7 @@ def createUser(request):
                     user.email = email
                     user.nameUser = name_user
                     user.id_sm = id_sm or None
+                    user.is_system_admin = is_system_admin
                     if password:
                         user.set_password(password)
                     user.save()
@@ -77,6 +89,7 @@ def createUser(request):
             email = (request.POST.get("email") or "").strip()
             username = (request.POST.get("username") or "").strip()
             id_sm = (request.POST.get("id_sm") or "").strip()
+            is_system_admin = request.POST.get("is_system_admin") == "on"
             password = (request.POST.get("password") or "").strip()
 
             if not name_user or not user_id or not email or not username or not password:
@@ -89,6 +102,7 @@ def createUser(request):
                         email=email,
                         nameUser=name_user,
                         id_sm=id_sm or None,
+                        is_system_admin=is_system_admin,
                         password=password,
                     )
                     success_message = "Usuario cadastrado com sucesso."
@@ -101,6 +115,8 @@ def createUser(request):
         "general/createUser.html",
         {
             "users": users,
+            "can_manage_users": can_manage_users,
+            "access_denied_message": access_denied_message,
             "error_message": error_message,
             "success_message": success_message,
         },

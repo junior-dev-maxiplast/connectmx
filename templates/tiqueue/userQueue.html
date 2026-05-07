@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Minha Fila</title>
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
@@ -815,7 +816,7 @@
                 if (!data || data.status !== "ok") {
                     throw new Error((data && data.message) || "Erro ao sincronizar com SM.");
                 }
-                alert(`Sincronizacao concluida.\nEncontrados: ${data.total_found}\nCriados: ${data.created}\nIgnorados: ${data.skipped}`);
+                alert(`Sincronizacao concluida.\nAbertos encontrados: ${data.total_found}\nFechados encontrados: ${data.total_closed_found || 0}\nCriados: ${data.created}\nConcluidos automaticamente: ${data.auto_concluded || 0}\nIgnorados: ${data.skipped}`);
                 updateScreen();
             })
             .catch((err) => {

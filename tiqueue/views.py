@@ -184,10 +184,10 @@ def hubQuickAddItem(request):
     return JsonResponse({"status": "ok"})
 
 
-def _query_sm_open_tickets(attendant_id: str):
+def _query_sm_tickets(attendant_id: str, closed: bool = False):
     """
-    Returns open SM tickets for the attendant in format:
-    [{"codigo_helpdesk": "...", "descricao": "..."}]
+    Returns SM tickets for the attendant in format:
+    [{"codigo_helpdesk": "...", "descricao": "...", "detalhe_demanda": "..."}]
     """
     host = os.getenv("SM_DB_HOST", "192.168.0.209")
     port = int(os.getenv("SM_DB_PORT", "3306"))
@@ -195,14 +195,16 @@ def _query_sm_open_tickets(attendant_id: str):
     db_user = os.getenv("SM_DB_USER", "sm_viewer")
     db_pass = os.getenv("SM_DB_PASSWORD", "KcyVbd66h@UnvZ")
 
-    query = """
+    status_filter = "in (5, 6, 13)" if closed else "not in (5, 6, 13)"
+    query = f"""
         select
             A.subject AS descricao,
-            A.id AS codigo_helpdesk
+            A.id AS codigo_helpdesk,
+            A.description_txt AS detalhe_demanda
         from
             helpdesk.helpdesk A
         where
-            A.status_id not in (5, 6, 13) AND
+            A.status_id {status_filter} AND
             A.user_id_attendent = %s
     """
 
@@ -229,6 +231,7 @@ def _query_sm_open_tickets(attendant_id: str):
                     {
                         "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
                         "descricao": str(r.get("descricao") or "").strip(),
+                        "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
                     }
                     for r in rows
                 ]
@@ -257,6 +260,7 @@ def _query_sm_open_tickets(attendant_id: str):
                 {
                     "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
                     "descricao": str(r.get("descricao") or "").strip(),
+                    "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
                 }
                 for r in rows
             ]
@@ -286,6 +290,7 @@ def _query_sm_open_tickets(attendant_id: str):
                 {
                     "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
                     "descricao": str(r.get("descricao") or "").strip(),
+                    "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
                 }
                 for r in rows
             ]
@@ -299,6 +304,14 @@ def _query_sm_open_tickets(attendant_id: str):
         "Instale um destes pacotes: `pip install pymysql` ou `pip install mysql-connector-python`. "
         f"Detalhes: {' | '.join(driver_errors)}"
     )
+
+
+def _query_sm_open_tickets(attendant_id: str):
+    return _query_sm_tickets(attendant_id, closed=False)
+
+
+def _query_sm_closed_tickets(attendant_id: str):
+    return _query_sm_tickets(attendant_id, closed=True)
 
 
 KANBAN_DEFAULT_COLUMNS = [
@@ -1171,6 +1184,7 @@ def queueMainPage(request):
 
     items = list(
         userQueue.objects.all()
+        .select_related("task_type", "linked_project")
         .annotate(
             detail_count=Count("details"),
             detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1212,11 +1226,20 @@ def queueMainPage(request):
         columns_map[key]["cards"].append(
             {
                 "id": item.n_register,
+                "queue_position": item.n_queue_position or 0,
                 "is_current": bool(item.is_current),
                 "description": item.a_description or "-",
                 "ticket": item.a_ticket or "",
+                "project_name": (item.linked_project.name if item.linked_project else ""),
+                "task_type_name": (item.task_type.name if item.task_type else ""),
                 "pred_date_end": item.d_predicted_date_end,
                 "pred_time_end": item.t_predicted_time_end,
+                "pred_date_start": item.d_predicted_date_start,
+                "pred_time_start": item.t_predicted_time_start,
+                "real_date_end": item.d_real_date_end,
+                "real_time_end": item.t_real_time_end,
+                "real_date_start": item.d_real_date_start,
+                "real_time_start": item.d_real_time_start,
                 "progress_pct": pct,
                 "details_total": total,
                 "details_done": done,
@@ -1227,6 +1250,30 @@ def queueMainPage(request):
 
     columns = [columns_map[k] for k in user_order]
     return render(request, "tiqueue/mainQueue.html", {"columns": columns})
+
+
+@login_required
+def queueDemandDetailPage(request, item_id):
+    item = get_object_or_404(
+        userQueue.objects.select_related("task_group", "task_type", "linked_project", "linked_roadmap_item"),
+        n_register=item_id,
+    )
+    details = list(QueueTaskDetail.objects.filter(queue_item=item).order_by("sort_order", "id"))
+    done = sum(1 for d in details if d.is_done)
+    total = len(details)
+    progress_pct = int(round((done / total) * 100)) if total else 0
+
+    return render(
+        request,
+        "tiqueue/queue_demand_detail.html",
+        {
+            "item": item,
+            "details": details,
+            "detail_done": done,
+            "detail_total": total,
+            "progress_pct": progress_pct,
+        },
+    )
 
 
 @login_required
@@ -1603,6 +1650,7 @@ def syncQueueWithSM(request):
 
     try:
         sm_rows = _query_sm_open_tickets(attendant_id)
+        sm_closed_rows = _query_sm_closed_tickets(attendant_id)
     except Exception as exc:
         return JsonResponse({"status": "error", "message": str(exc)}, status=500)
 
@@ -1625,10 +1673,28 @@ def syncQueueWithSM(request):
 
     created = 0
     skipped = 0
+    auto_concluded = 0
     with transaction.atomic():
+        # 1) Auto-conclude in ConnectMX what is already closed in SM.
+        closed_tickets = {
+            (row.get("codigo_helpdesk") or "").strip()
+            for row in sm_closed_rows
+            if (row.get("codigo_helpdesk") or "").strip()
+        }
+        if closed_tickets:
+            queue_to_close = list(
+                userQueue.objects.filter(user_code=user_code, a_ticket__in=closed_tickets)
+                .order_by("n_queue_position", "n_register")
+                .values_list("n_register", flat=True)
+            )
+            for reg_id in queue_to_close:
+                service.serviceEndQueueItem(request, reg_id)
+                auto_concluded += 1
+
         for row in sm_rows:
             ticket = (row.get("codigo_helpdesk") or "").strip()
             desc = (row.get("descricao") or "").strip()
+            detail = (row.get("detalhe_demanda") or "").strip()
             if not ticket:
                 skipped += 1
                 continue
@@ -1641,6 +1707,7 @@ def syncQueueWithSM(request):
                 user_code=user_code,
                 a_ticket=ticket,
                 a_description=desc or f"Chamado {ticket}",
+                a_demand_detail=detail or None,
                 n_queue_position=current_max_pos,
                 f_conclusion_rate=Decimal("0.00"),
                 is_current=False,
@@ -1653,7 +1720,9 @@ def syncQueueWithSM(request):
             "status": "ok",
             "created": created,
             "skipped": skipped,
+            "auto_concluded": auto_concluded,
             "total_found": len(sm_rows),
+            "total_closed_found": len(sm_closed_rows),
         }
     )
 
