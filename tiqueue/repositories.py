@@ -60,11 +60,15 @@ def endQueueItem(request, ref_id):
         position = objectCurrent.n_queue_position
         updateQueuePositions(user_code, position)
 
-        data = {
-            field.name: getattr(objectCurrent, field.name)
-            for field in objectCurrent._meta.fields
-            if field.name not in {"id", "n_register"}
-            }
+        source_fields = {field.name for field in objectCurrent._meta.fields}
+        target_fields = {
+            field.name
+            for field in concludedTasks._meta.fields
+            if field.name not in {"id", "n_register", "d_conclusion_date", "d_conclusion_time"}
+        }
+        allowed_fields = source_fields.intersection(target_fields)
+
+        data = {field_name: getattr(objectCurrent, field_name) for field_name in allowed_fields}
 
         concludedTasks.objects.create(**data)
 

@@ -47,6 +47,7 @@ ALLOWED_HOSTS += [
     "localhost",
     "192.168.0.25",
     "connectmx.local",
+    "connectmx.maxiplast.com.br",
 ]
 
 
@@ -88,6 +89,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'tiqueue.context_processors.system_config',
             ],
         },
     },
@@ -166,4 +168,5 @@ SECURE_SSL_REDIRECT = False
 CSRF_TRUSTED_ORIGINS = [
     "http://192.168.0.25:8888",
     "http://connectmx.local:8888",
+    "http://connectmx.maxiplast.com.br:8888"
 ]

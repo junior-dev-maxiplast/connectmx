@@ -55,6 +55,8 @@ urlpatterns = [
     ,
     path('maxibot/ask/', views.maxibotAsk, name='maxibotAsk')
     ,
+    path('system/settings/', views.systemSettingsPage, name='systemSettingsPage')
+    ,
     path('updates/senior/', views.seniorUpdatesPage, name='seniorUpdatesPage'),
     path('updates/senior/<int:update_id>/inline/', views.seniorUpdatesInlineUpdate, name='seniorUpdatesInlineUpdate'),
     path('updates/wifi/', views.wifiVoucherPage, name='wifiVoucherPage'),
