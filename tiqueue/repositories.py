@@ -11,6 +11,7 @@ def userQueueSaveInDatabase(request, data):
     )
     updatedPosition = updatedPosition + 1
     data['n_queue_position'] = updatedPosition
+    data['kanban_sort_order'] = updatedPosition
     data['user_code'] = user_code
     userQueue.objects.create(**data)
 

@@ -36,6 +36,10 @@
                             {{ project_form.description.label_tag }}
                             {{ project_form.description }}
                         </div>
+                        <div class="field span-2">
+                            {{ project_form.developer.label_tag }}
+                            {{ project_form.developer }}
+                        </div>
                         <div class="field">
                             {{ project_form.status.label_tag }}
                             {{ project_form.status }}
@@ -111,6 +115,7 @@
                             <th>Status</th>
                             <th>Inicio</th>
                             <th>Fim</th>
+                            <th>Desenvolvedor</th>
                             <th>Cor</th>
                             <th>A&#231;&#245;es</th>
                         </tr>
@@ -136,6 +141,16 @@
                                     <input class="queue-input-sm table-input" type="date" name="end_date" value="{% if p.end_date %}{{ p.end_date|date:'Y-m-d' }}{% endif %}" form="project-form-{{ p.id }}">
                                 </td>
                                 <td>
+                                    <select class="queue-input-sm table-input" name="developer_id" form="project-form-{{ p.id }}">
+                                        <option value="">Sem desenvolvedor</option>
+                                        {% for u in users %}
+                                            <option value="{{ u.id }}" {% if p.developer_id == u.id %}selected{% endif %}>
+                                                {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
                                     <input class="queue-color" type="color" name="color" value="{{ p.color }}" form="project-form-{{ p.id }}">
                                 </td>
                                 <td>
@@ -152,7 +167,7 @@
                                 </td>
                             </tr>
                         {% empty %}
-                            <tr><td colspan="6" class="queue-empty">Nenhum projeto cadastrado.</td></tr>
+                            <tr><td colspan="7" class="queue-empty">Nenhum projeto cadastrado.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

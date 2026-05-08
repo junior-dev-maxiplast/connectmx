@@ -19,6 +19,8 @@ from .forms import (
     HubUserToolCategoryForm,
     KnowledgeCategoryForm,
     KnowledgeEntryForm,
+    DemandTemplateForm,
+    DemandTemplateDetailForm,
 )
 from .models import (
     userQueue,
@@ -47,6 +49,8 @@ from .models import (
     KnowledgeEntryAttachment,
     UserQueueKanbanColumn,
     SystemConfig,
+    DemandTemplate,
+    DemandTemplateDetail,
 )
 from accounts.models import User
 from .models import TaskType, TaskGroup
@@ -64,7 +68,7 @@ from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_GET
 from django import forms
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from django.utils import timezone
 import io
 import re
@@ -443,6 +447,7 @@ def manageProjects(request):
                 # We'll update manually to keep a compact inline form.
                 name = (request.POST.get("name") or "").strip()
                 description = (request.POST.get("description") or "").strip()
+                developer_id = (request.POST.get("developer_id") or "").strip()
                 status = request.POST.get("status") or "active"
                 color = (request.POST.get("color") or "").strip() or "#00bf63"
                 start_date = request.POST.get("start_date") or None
@@ -451,6 +456,7 @@ def manageProjects(request):
                     Project.objects.filter(pk=project_id).update(
                         name=name,
                         description=description or None,
+                        developer_id=int(developer_id) if developer_id.isdigit() else None,
                         status=status,
                         color=color,
                         start_date=start_date or None,
@@ -498,7 +504,8 @@ def manageProjects(request):
             if card_form.is_valid():
                 card_form.save()
 
-    projects = Project.objects.all().order_by("name")
+    projects = Project.objects.select_related("developer").all().order_by("name")
+    users = User.objects.order_by("nameUser", "username")
     roadmap_items = (
         ProjectRoadmapItem.objects.select_related("project").order_by("project__name", "sort_order", "id")
     )
@@ -516,6 +523,7 @@ def manageProjects(request):
             "column_form": column_form,
             "card_form": card_form,
             "projects": projects,
+            "users": users,
             "roadmap_items": roadmap_items,
             "columns": columns,
             "cards": cards,
@@ -526,7 +534,7 @@ def manageProjects(request):
 @login_required
 def projectCatalogPage(request):
     projects = list(
-        Project.objects.annotate(
+        Project.objects.select_related("developer").annotate(
             roadmap_total=Count("roadmap_items"),
             roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done")),
             kanban_cards_total=Count("kanban_cards"),
@@ -1184,7 +1192,7 @@ def queueMainPage(request):
 
     items = list(
         userQueue.objects.all()
-        .select_related("task_type", "linked_project")
+        .select_related("task_type", "linked_project", "kanban_column")
         .annotate(
             detail_count=Count("details"),
             detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1232,6 +1240,8 @@ def queueMainPage(request):
                 "ticket": item.a_ticket or "",
                 "project_name": (item.linked_project.name if item.linked_project else ""),
                 "task_type_name": (item.task_type.name if item.task_type else ""),
+                "kanban_column_name": (item.kanban_column.name if item.kanban_column else "Sem coluna"),
+                "kanban_column_color": (item.kanban_column.color if item.kanban_column else "#61688c"),
                 "pred_date_end": item.d_predicted_date_end,
                 "pred_time_end": item.t_predicted_time_end,
                 "pred_date_start": item.d_predicted_date_start,
@@ -1258,10 +1268,79 @@ def queueDemandDetailPage(request, item_id):
         userQueue.objects.select_related("task_group", "task_type", "linked_project", "linked_roadmap_item"),
         n_register=item_id,
     )
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+
+        if form_id == "notes":
+            notes = (request.POST.get("a_notes") or "").strip()
+            item.a_notes = notes or None
+            item.save(update_fields=["a_notes"])
+        elif form_id == "main":
+            def _split_datetime_local(field_name):
+                raw = (request.POST.get(field_name) or "").strip()
+                if not raw:
+                    return None, None
+                try:
+                    parsed = datetime.strptime(raw, "%Y-%m-%dT%H:%M")
+                    return parsed.date(), parsed.time().replace(second=0, microsecond=0)
+                except ValueError:
+                    return None, None
+
+            item.a_ticket = (request.POST.get("a_ticket") or "").strip() or None
+            item.a_description = (request.POST.get("a_description") or "").strip() or None
+            item.a_demand_detail = (request.POST.get("a_demand_detail") or "").strip() or None
+
+            task_group_raw = (request.POST.get("task_group") or "").strip()
+            task_type_raw = (request.POST.get("task_type") or "").strip()
+            project_raw = (request.POST.get("linked_project") or "").strip()
+
+            item.task_group_id = int(task_group_raw) if task_group_raw.isdigit() else None
+            item.task_type_id = int(task_type_raw) if task_type_raw.isdigit() else None
+            item.n_type_group = item.task_group_id
+            item.n_type_code = item.task_type_id
+            item.linked_project_id = int(project_raw) if project_raw.isdigit() else None
+
+            item.d_predicted_date_start, item.t_predicted_time_start = _split_datetime_local("predicted_start_dt")
+            item.d_predicted_date_end, item.t_predicted_time_end = _split_datetime_local("predicted_end_dt")
+            item.d_real_date_start, item.d_real_time_start = _split_datetime_local("real_start_dt")
+            item.d_real_date_end, item.t_real_time_end = _split_datetime_local("real_end_dt")
+            item.save()
+        elif form_id == "subtask_add":
+            description = (request.POST.get("subtask_description") or "").strip()
+            if description:
+                max_sort = (
+                    QueueTaskDetail.objects.filter(queue_item=item)
+                    .aggregate(v=models.Max("sort_order"))
+                    .get("v")
+                    or 0
+                )
+                QueueTaskDetail.objects.create(queue_item=item, description=description, sort_order=int(max_sort) + 1)
+        elif form_id == "subtask_toggle":
+            detail_id = request.POST.get("detail_id")
+            detail = QueueTaskDetail.objects.filter(pk=detail_id, queue_item=item).first()
+            if detail:
+                detail.is_done = not detail.is_done
+                if not detail.is_done:
+                    detail.duration_hours = None
+                detail.save(update_fields=["is_done", "duration_hours"])
+        elif form_id == "subtask_delete":
+            detail_id = request.POST.get("detail_id")
+            QueueTaskDetail.objects.filter(pk=detail_id, queue_item=item).delete()
+
+        return redirect("queueDemandDetailPage", item_id=item_id)
+
     details = list(QueueTaskDetail.objects.filter(queue_item=item).order_by("sort_order", "id"))
     done = sum(1 for d in details if d.is_done)
     total = len(details)
     progress_pct = int(round((done / total) * 100)) if total else 0
+    task_groups = TaskGroup.objects.order_by("name")
+    task_types = TaskType.objects.select_related("group").order_by("group__name", "name")
+    projects = Project.objects.order_by("name")
+
+    def _datetime_local(date_value, time_value):
+        if not date_value or not time_value:
+            return ""
+        return f"{date_value.strftime('%Y-%m-%d')}T{time_value.strftime('%H:%M')}"
 
     return render(
         request,
@@ -1272,6 +1351,13 @@ def queueDemandDetailPage(request, item_id):
             "detail_done": done,
             "detail_total": total,
             "progress_pct": progress_pct,
+            "task_groups": task_groups,
+            "task_types": task_types,
+            "projects": projects,
+            "predicted_start_dt": _datetime_local(item.d_predicted_date_start, item.t_predicted_time_start),
+            "predicted_end_dt": _datetime_local(item.d_predicted_date_end, item.t_predicted_time_end),
+            "real_start_dt": _datetime_local(item.d_real_date_start, item.d_real_time_start),
+            "real_end_dt": _datetime_local(item.d_real_date_end, item.t_real_time_end),
         },
     )
 
@@ -1336,12 +1422,20 @@ def _ensure_user_queue_kanban_columns(user):
     return created
 
 
-@login_required
-def queueUserPage(request):
-
-    user= request.user.userId
+def _build_queue_user_context(request):
+    user = request.user.userId
     kanban_columns = _ensure_user_queue_kanban_columns(request.user)
     default_col_id = kanban_columns[0].id if kanban_columns else None
+
+    # Backfill defensivo para dados legados:
+    # quando kanban_sort_order estiver vazio/0, usa a posicao da fila.
+    with transaction.atomic():
+        legacy_rows = userQueue.objects.filter(user_code=user).filter(
+            Q(kanban_sort_order__isnull=True) | Q(kanban_sort_order=0)
+        )
+        for row in legacy_rows.only("n_register", "n_queue_position"):
+            row.kanban_sort_order = int(row.n_queue_position or row.n_register or 0)
+            row.save(update_fields=["kanban_sort_order"])
 
     try:
         queue_working = list(
@@ -1376,31 +1470,120 @@ def queueUserPage(request):
         queue_data = 0
         queue_working = 0
 
-    if request.method == 'POST':
-        form = UserQueueCreateForm(request.POST)
-        if form.is_valid():
-            service.userQueueSaveItem(request, form.cleaned_data)
-            return redirect('queueUserPage')
-    else:
-        form = UserQueueCreateForm()
-        
+    form = UserQueueCreateForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        selected_template_id = (request.POST.get("demand_template_id") or "").strip()
+        service.userQueueSaveItem(request, form.cleaned_data)
+
+        created_item = (
+            userQueue.objects.filter(user_code=request.user.userId)
+            .order_by("-n_queue_position", "-n_register")
+            .first()
+        )
+        if created_item and selected_template_id.isdigit():
+            template = (
+                DemandTemplate.objects.filter(pk=int(selected_template_id), is_active=True)
+                .select_related("task_group", "task_type", "linked_project")
+                .prefetch_related("details")
+                .first()
+            )
+            if template:
+                changed_fields = []
+                if template.task_group_id:
+                    created_item.task_group_id = template.task_group_id
+                    created_item.n_type_group = template.task_group_id
+                    changed_fields += ["task_group", "n_type_group"]
+                if template.task_type_id:
+                    created_item.task_type_id = template.task_type_id
+                    created_item.n_type_code = template.task_type_id
+                    changed_fields += ["task_type", "n_type_code"]
+                if template.linked_project_id:
+                    created_item.linked_project_id = template.linked_project_id
+                    changed_fields.append("linked_project")
+
+                now_dt = timezone.localtime()
+
+                start_offset = float(template.predicted_start_offset_hours or 0)
+                end_offset = float(template.predicted_end_offset_hours or 0)
+                if start_offset:
+                    start_dt = now_dt + timedelta(hours=start_offset)
+                    created_item.d_predicted_date_start = start_dt.date()
+                    created_item.t_predicted_time_start = start_dt.time().replace(second=0, microsecond=0)
+                    changed_fields += ["d_predicted_date_start", "t_predicted_time_start"]
+                if end_offset:
+                    end_dt = now_dt + timedelta(hours=end_offset)
+                    created_item.d_predicted_date_end = end_dt.date()
+                    created_item.t_predicted_time_end = end_dt.time().replace(second=0, microsecond=0)
+                    changed_fields += ["d_predicted_date_end", "t_predicted_time_end"]
+
+                if changed_fields:
+                    created_item.save(update_fields=list(dict.fromkeys(changed_fields)))
+
+                max_sort = 0
+                for detail in template.details.all():
+                    max_sort += 1
+                    QueueTaskDetail.objects.create(
+                        queue_item=created_item,
+                        description=detail.description,
+                        sort_order=max_sort,
+                    )
+        return {"redirect": True}
+
     task_types = TaskType.objects.select_related("group").order_by("group__name", "name")
     task_groups = TaskGroup.objects.order_by("name")
     projects = Project.objects.order_by("name")
-    return render(
-        request,
-        'tiqueue/userQueue.html',
-        {
-            'form': form,
-            'queue_data': queue_data,
-            'queue_working': queue_working,
-            'task_types': task_types,
-            'task_groups': task_groups,
-            'projects': projects,
-            'my_kanban_columns': kanban_columns,
-            'my_kanban_default_col_id': default_col_id,
-        },
+    demand_templates = (
+        DemandTemplate.objects.filter(is_active=True)
+        .select_related("task_group", "task_type", "linked_project")
+        .prefetch_related("details")
+        .order_by("name")
     )
+
+    templates_payload = []
+    for tpl in demand_templates:
+        templates_payload.append(
+            {
+                "id": tpl.id,
+                "name": tpl.name,
+                "description": tpl.description or "",
+                "task_group_id": tpl.task_group_id,
+                "task_type_id": tpl.task_type_id,
+                "linked_project_id": tpl.linked_project_id,
+                "predicted_start_offset_hours": float(tpl.predicted_start_offset_hours or 0),
+                "predicted_end_offset_hours": float(tpl.predicted_end_offset_hours or 0),
+                "details": [
+                    {"description": d.description, "sort_order": int(d.sort_order or 0)}
+                    for d in tpl.details.all()
+                ],
+            }
+        )
+
+    return {
+        'form': form,
+        'queue_data': queue_data,
+        'queue_working': queue_working,
+        'task_types': task_types,
+        'task_groups': task_groups,
+        'projects': projects,
+        'demand_templates': demand_templates,
+        'demand_templates_payload': templates_payload,
+        'my_kanban_columns': kanban_columns,
+        'my_kanban_default_col_id': default_col_id,
+    }
+
+
+@login_required
+def queueUserPage(request):
+    context = _build_queue_user_context(request)
+    if context.get("redirect"):
+        return redirect('queueUserPage')
+    context["kanban_lab"] = True
+    return render(request, 'tiqueue/userQueue.html', context)
+
+
+@login_required
+def queueUserPageKanbanLab(request):
+    return redirect("queueUserPage")
 
 @login_required
 @require_POST
@@ -1457,6 +1640,7 @@ def duplicateQueueItem(request, id):
             f_total_real_time=None,
             f_predicted_real_diference=None,
             n_queue_position=next_position,
+            kanban_sort_order=next_position,
             is_current=False,
         )
 
@@ -1567,6 +1751,56 @@ def manageTaskTypes(request):
             "types_page_obj": types_page_obj,
             "all_groups": groups_qs,
             "selected_group_id": selected_group_id,
+        },
+    )
+
+
+@login_required
+def manageDemandTemplates(request):
+    template_form = DemandTemplateForm(prefix="tpl")
+    detail_form = DemandTemplateDetailForm(prefix="det")
+
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "template":
+            template_form = DemandTemplateForm(request.POST, prefix="tpl")
+            if template_form.is_valid():
+                template_form.save()
+                return redirect("manageDemandTemplates")
+        elif form_id == "detail":
+            detail_form = DemandTemplateDetailForm(request.POST, prefix="det")
+            if detail_form.is_valid():
+                detail_form.save()
+                return redirect("manageDemandTemplates")
+        elif form_id == "template_toggle":
+            template_id = request.POST.get("template_id")
+            row = DemandTemplate.objects.filter(pk=template_id).first()
+            if row:
+                row.is_active = not row.is_active
+                row.save(update_fields=["is_active"])
+                return redirect("manageDemandTemplates")
+        elif form_id == "template_delete":
+            template_id = request.POST.get("template_id")
+            DemandTemplate.objects.filter(pk=template_id).delete()
+            return redirect("manageDemandTemplates")
+        elif form_id == "detail_delete":
+            detail_id = request.POST.get("detail_id")
+            DemandTemplateDetail.objects.filter(pk=detail_id).delete()
+            return redirect("manageDemandTemplates")
+
+    templates = (
+        DemandTemplate.objects.select_related("task_group", "task_type", "linked_project")
+        .prefetch_related("details")
+        .order_by("name")
+    )
+
+    return render(
+        request,
+        "tiqueue/demand_templates.html",
+        {
+            "template_form": template_form,
+            "detail_form": detail_form,
+            "templates": templates,
         },
     )
 
@@ -1709,6 +1943,7 @@ def syncQueueWithSM(request):
                 a_description=desc or f"Chamado {ticket}",
                 a_demand_detail=detail or None,
                 n_queue_position=current_max_pos,
+                kanban_sort_order=current_max_pos,
                 f_conclusion_rate=Decimal("0.00"),
                 is_current=False,
             )
@@ -1961,7 +2196,49 @@ def moveMyQueueKanbanCard(request, item_id):
 
     col = get_object_or_404(UserQueueKanbanColumn, pk=int(column_id), user=request.user, is_active=True)
     item.kanban_column = col
-    item.save(update_fields=["kanban_column"])
+    next_sort = (
+        userQueue.objects.filter(user_code=request.user.userId, kanban_column=col)
+        .aggregate(v=models.Max("kanban_sort_order"))
+        .get("v")
+        or 0
+    )
+    item.kanban_sort_order = int(next_sort) + 1
+    item.save(update_fields=["kanban_column", "kanban_sort_order"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def reorderMyQueueKanbanCards(request, column_id):
+    col = get_object_or_404(UserQueueKanbanColumn, pk=column_id, user=request.user, is_active=True)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    ordered_ids_raw = payload.get("ordered_ids") or []
+    if not isinstance(ordered_ids_raw, list):
+        return JsonResponse({"status": "error", "message": "ordered_ids invalido"}, status=400)
+
+    db_ids = list(
+        userQueue.objects.filter(user_code=request.user.userId, kanban_column=col).values_list("n_register", flat=True)
+    )
+    valid = set(int(i) for i in db_ids)
+    ordered_ids = []
+    for i in ordered_ids_raw:
+        try:
+            n = int(i)
+        except Exception:
+            continue
+        if n in valid and n not in ordered_ids:
+            ordered_ids.append(n)
+    remainder = [i for i in db_ids if i not in ordered_ids]
+    final_ids = ordered_ids + remainder
+
+    with transaction.atomic():
+        for idx, reg_id in enumerate(final_ids, start=1):
+            userQueue.objects.filter(n_register=reg_id, user_code=request.user.userId).update(kanban_sort_order=idx)
+
     return JsonResponse({"status": "ok"})
 
 

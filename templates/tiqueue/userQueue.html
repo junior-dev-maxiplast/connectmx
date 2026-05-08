@@ -17,7 +17,7 @@
 
     {% include 'partials/sidebar.html' %}
 
-    <div id="queuePageRoot" class="queue_main">
+    <div id="queuePageRoot" class="queue_main{% if kanban_lab %} queue-user-lab{% endif %}">
         <div class="headerMain">
             <div class="headerTitle">
                 <h1>Minha Fila</h1>
@@ -34,6 +34,10 @@
                             <option value="{{ t.id }}">{{ t.group.name }} - {{ t.name }}</option>
                         {% endfor %}
                     </select>
+                    <label class="queue-check queue-control">
+                        <input id="queueOperationMode" type="checkbox" onchange="onQueueOperationModeToggle(this.checked)">
+                        <span>Modo operação</span>
+                    </label>
                     <label class="queue-check queue-control">
                         <input id="queueTodayOnly" type="checkbox" onchange="onQueueTodayToggle(this.checked)">
                         <span>Hoje</span>
@@ -77,6 +81,15 @@
             <form method="POST" class="modal-form">
                 {% csrf_token %}
                 <div class="modal-grid">
+                    <div class="field span-2">
+                        <label for="demand_template_id">Modelo de demanda (opcional)</label>
+                        <select id="demand_template_id" name="demand_template_id" class="queue-select" onchange="onDemandTemplateChange(this.value)">
+                            <option value="">Sem modelo</option>
+                            {% for tpl in demand_templates %}
+                                <option value="{{ tpl.id }}">{{ tpl.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     {% for field in form %}
                         <div class="field {% if field.name == 'a_description' %}span-2{% endif %}">
                             {{ field.label_tag }}
@@ -180,6 +193,7 @@
                 </div>
 
                 <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="applyPredictedToRealOnEdit()">Igual previsto</button>
                     <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
                     <button type="submit" class="queue-primary-btn">Salvar</button>
                 </div>
@@ -216,8 +230,13 @@
                             <span>Manter atuais</span>
                         </label>
                     </div>
+                    <input type="hidden" id="pred_real_d_start" name="d_real_date_start">
+                    <input type="hidden" id="pred_real_t_start" name="d_real_time_start">
+                    <input type="hidden" id="pred_real_d_end" name="d_real_date_end">
+                    <input type="hidden" id="pred_real_t_end" name="t_real_time_end">
                 </div>
                 <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="applyPredictedToRealOnPredictedModal()">Igual previsto</button>
                     <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
                     <button type="submit" class="queue-primary-btn">Salvar</button>
                 </div>
@@ -272,6 +291,31 @@
                 </div>
             </form>
         </div>
+        {% if kanban_lab %}
+        <div class="headerMain queue-collapsible-header" onclick="toggleMyQueueKanban()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleMyQueueKanban();}">
+            <div class="headerTitle queue-collapsible-title">
+                <h1>Kanban da Minha Fila (LAB)</h1>
+                <span id="myQueueKanbanChevron" class="queue-collapsible-chevron">&#9660;</span>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <button type="button" class="queue-secondary-btn" onclick="event.stopPropagation(); openKanbanColumnModal()">Nova coluna</button>
+                </div>
+            </div>
+        </div>
+        <div id="myQueueKanbanWrap" class="myq-kanban-wrap-container">
+            <div class="myq-carousel">
+                <button type="button" id="myqArrowLeft" class="myq-arrow" aria-label="Colunas anteriores" onclick="scrollMyQueueKanban(-1)">&#x276E;</button>
+                <div id="myQueueKanbanViewport" class="myq-carousel-viewport">
+                    <div id="myQueueKanban" class="myq-kanban-wrap"></div>
+                </div>
+                <button type="button" id="myqArrowRight" class="myq-arrow" aria-label="Proximas colunas" onclick="scrollMyQueueKanban(1)">&#x276F;</button>
+            </div>
+        </div>
+        <div id="container-queue">
+            {% include 'partials/queue.html' %}
+        </div>
+        {% else %}
         <div id="container-queue">
             {% include 'partials/queue.html' %}
         </div>
@@ -295,11 +339,13 @@
                 <button type="button" id="myqArrowRight" class="myq-arrow" aria-label="Proximas colunas" onclick="scrollMyQueueKanban(1)">&#x276F;</button>
             </div>
         </div>
+        {% endif %}
     </div>
 
 
 </body>
 
+{{ demand_templates_payload|json_script:"demandTemplatesPayload" }}
 <script>
     function getCookie(name) {
         const cookies = document.cookie ? document.cookie.split(';') : [];
@@ -887,6 +933,10 @@
                 document.getElementById("pred_t_start").value = data.t_predicted_time_start || "";
                 document.getElementById("pred_d_end").value = data.d_predicted_date_end || "";
                 document.getElementById("pred_t_end").value = data.t_predicted_time_end || "";
+                document.getElementById("pred_real_d_start").value = data.d_real_date_start || "";
+                document.getElementById("pred_real_t_start").value = data.d_real_time_start || "";
+                document.getElementById("pred_real_d_end").value = data.d_real_date_end || "";
+                document.getElementById("pred_real_t_end").value = data.t_real_time_end || "";
 
                 document.getElementById("overlay").style.display = "block";
                 document.getElementById("popUpPredictedEdit").style.display = "block";
@@ -963,12 +1013,14 @@
     initTaskProgressBars();
     updateQueueDashboard();
     renderMyQueueKanban();
+    const DEMAND_TEMPLATES = JSON.parse(document.getElementById("demandTemplatesPayload").textContent || "[]");
     let currentQueueSearchQuery = "";
     let currentQueueTicketQuery = "";
     let currentQueueTypeFilter = "";
     let currentDateFrom = "";
     let currentDateTo = "";
     let todayOnly = false;
+    let operationMode = false;
     const expandedDetails = new Set();
     const detailsLoaded = new Set();
 
@@ -1010,6 +1062,11 @@
         applyQueueFilter();
     }
 
+    function onQueueOperationModeToggle(checked) {
+        operationMode = !!checked;
+        applyQueueFilter();
+    }
+
     function onQueueDateChange() {
         currentDateFrom = document.getElementById('queueDateFrom').value || "";
         currentDateTo = document.getElementById('queueDateTo').value || "";
@@ -1024,6 +1081,8 @@
     function applyQueueFilter() {
         const normalizedDesc = (currentQueueSearchQuery || "").toLowerCase();
         const normalizedTicket = (currentQueueTicketQuery || "").toLowerCase();
+        const today = new Date();
+        const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
         const rows = document.querySelectorAll('#queue-items tr.queue-item-row');
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
@@ -1041,8 +1100,12 @@
             const fromOk = !currentDateFrom || (predEnd ? predEnd >= currentDateFrom : true);
             const toOk = !currentDateTo || (predStart ? predStart <= currentDateTo : true);
             const matchDate = fromOk && toOk;
+            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            const isDelayed = !!predEnd && predEnd < todayIso;
+            const isToday = (!!predStart && predStart <= todayIso) && (!!predEnd && predEnd >= todayIso);
+            const matchOperation = !operationMode || isCurrent || isDelayed || isToday;
 
-            const match = matchDesc && matchTicket && matchType && matchDate;
+            const match = matchDesc && matchTicket && matchType && matchDate && matchOperation;
             row.style.display = match ? "" : "none";
 
             const id = row.dataset.id;
@@ -1064,6 +1127,88 @@
         renderMyQueueKanban();
     }
 
+    function onDemandTemplateChange(templateId) {
+        const selected = (DEMAND_TEMPLATES || []).find((t) => String(t.id) === String(templateId));
+        if (!selected) return;
+
+        const byName = (name) => document.querySelector(`#popUpFormNewItem [name="${name}"]`);
+        const ticket = byName("a_ticket");
+        const desc = byName("a_description");
+        const group = byName("task_group");
+        const type = byName("task_type");
+        const dStart = byName("d_predicted_date_start");
+        const tStart = byName("t_predicted_time_start");
+        const dEnd = byName("d_predicted_date_end");
+        const tEnd = byName("t_predicted_time_end");
+
+        if (desc && !desc.value && selected.description) desc.value = selected.description;
+        if (ticket && !ticket.value) ticket.focus();
+        if (group && selected.task_group_id) group.value = String(selected.task_group_id);
+        if (type && selected.task_type_id) type.value = String(selected.task_type_id);
+
+        const now = new Date();
+        const addHours = (base, hours) => new Date(base.getTime() + (Number(hours || 0) * 3600000));
+        const pad = (v) => String(v).padStart(2, "0");
+        const asDate = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+        const asTime = (dt) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+        const startOffset = Number(selected.predicted_start_offset_hours || 0);
+        const endOffset = Number(selected.predicted_end_offset_hours || 0);
+        if (dStart && tStart && startOffset) {
+            const startDt = addHours(now, startOffset);
+            dStart.value = asDate(startDt);
+            tStart.value = asTime(startDt);
+        }
+        if (dEnd && tEnd && endOffset) {
+            const endDt = addHours(now, endOffset);
+            dEnd.value = asDate(endDt);
+            tEnd.value = asTime(endDt);
+        }
+    }
+
+    function applyPredictedToRealOnEdit() {
+        const predDateStart = document.getElementById("edit_d_predicted_date_start");
+        const predTimeStart = document.getElementById("edit_t_predicted_time_start");
+        const predDateEnd = document.getElementById("edit_d_predicted_date_end");
+        const predTimeEnd = document.getElementById("edit_t_predicted_time_end");
+        const realDateStart = document.getElementById("edit_d_real_date_start");
+        const realTimeStart = document.getElementById("edit_d_real_time_start");
+        const realDateEnd = document.getElementById("edit_d_real_date_end");
+        const realTimeEnd = document.getElementById("edit_t_real_time_end");
+
+        if (realDateStart && predDateStart) realDateStart.value = predDateStart.value || "";
+        if (realTimeStart && predTimeStart) realTimeStart.value = predTimeStart.value || "";
+        if (realDateEnd && predDateEnd) realDateEnd.value = predDateEnd.value || "";
+        if (realTimeEnd && predTimeEnd) realTimeEnd.value = predTimeEnd.value || "";
+    }
+
+    function applyPredictedToRealOnPredictedModal() {
+        const predDateStart = document.getElementById("pred_d_start");
+        const predTimeStart = document.getElementById("pred_t_start");
+        const predDateEnd = document.getElementById("pred_d_end");
+        const predTimeEnd = document.getElementById("pred_t_end");
+        const realDateStart = document.getElementById("pred_real_d_start");
+        const realTimeStart = document.getElementById("pred_real_t_start");
+        const realDateEnd = document.getElementById("pred_real_d_end");
+        const realTimeEnd = document.getElementById("pred_real_t_end");
+        const keep = document.getElementById("pred_keep_current");
+
+        if (realDateStart && predDateStart) realDateStart.value = predDateStart.value || "";
+        if (realTimeStart && predTimeStart) realTimeStart.value = predTimeStart.value || "";
+        if (realDateEnd && predDateEnd) realDateEnd.value = predDateEnd.value || "";
+        if (realTimeEnd && predTimeEnd) realTimeEnd.value = predTimeEnd.value || "";
+        if (keep) keep.checked = false;
+    }
+
+    function copyPredictedToRealInKanbanCard(itemId) {
+        const predStart = document.getElementById(`myqPredStart-${itemId}`);
+        const predEnd = document.getElementById(`myqPredEnd-${itemId}`);
+        const realStart = document.getElementById(`myqRealStart-${itemId}`);
+        const realEnd = document.getElementById(`myqRealEnd-${itemId}`);
+        if (realStart && predStart) realStart.value = predStart.value || "";
+        if (realEnd && predEnd) realEnd.value = predEnd.value || "";
+    }
+
     function updateQueueDashboard() {
         const rows = Array.from(document.querySelectorAll("#container-queue tr.queue-task-row[data-id]"))
             .filter((row) => row.style.display !== "none");
@@ -1079,6 +1224,7 @@
 
         rows.forEach((row) => {
             const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            const kanbanSort = parseInt(row.dataset.kanbanSort || "0", 10) || 0;
             if (isCurrent) inProgress += 1;
 
             const predEnd = (row.dataset.predEnd || "").trim();
@@ -1130,6 +1276,8 @@
             const id = row.dataset.id || "";
             const cells = row.querySelectorAll("td");
             const ticket = cells && cells[3] ? (cells[3].textContent || "").trim() : "";
+            const queuePos = cells && cells[2] ? (cells[2].textContent || "").trim() : "";
+            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
             const descEl = row.querySelector(".queue-desc-text");
             const description = descEl ? (descEl.textContent || "").trim() : "";
             const typeBadge = row.querySelector(".type-badge");
@@ -1137,6 +1285,13 @@
             const typeColor = typeBadge ? (typeBadge.style.background || "") : "";
             const predEnd = row.dataset.predEnd || "";
             const predEndTime = row.dataset.predEndTime || "";
+            const predStart = row.dataset.predStart || "";
+            const predStartTime = row.dataset.predStartTime || "";
+            const realStart = cells && cells[10] ? (cells[10].dataset.iso || "") : "";
+            const realStartTime = cells && cells[11] ? (cells[11].dataset.iso || "") : "";
+            const realEnd = cells && cells[12] ? (cells[12].dataset.iso || "") : "";
+            const realEndTime = cells && cells[13] ? (cells[13].dataset.iso || "") : "";
+            const kanbanSort = parseInt(row.dataset.kanbanSort || "0", 10) || 0;
 
             const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
             const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
@@ -1151,9 +1306,25 @@
                 typeColor,
                 predEnd,
                 predEndTime,
+                predStart,
+                predStartTime,
+                realStart,
+                realStartTime,
+                realEnd,
+                realEndTime,
+                queuePos,
+                isCurrent,
+                kanbanSort,
                 pct,
                 done,
                 total,
+            });
+        });
+
+        Object.keys(groups).forEach((k) => {
+            groups[k].items.sort((a, b) => {
+                if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+                return (a.kanbanSort || 0) - (b.kanbanSort || 0);
             });
         });
 
@@ -1163,13 +1334,19 @@
                 ? `<span class="myq-type" style="--type-color:${item.typeColor || "#5cd6a3"};">${escapeHtml(item.typeText)}</span>`
                 : "";
             const endLabel = item.predEnd ? `${fmtBrDate(item.predEnd)}${item.predEndTime ? " " + item.predEndTime : ""}` : "-";
+            const statusLabel = item.isCurrent ? "Demanda atual" : "Fila";
+            const dtPredStart = toDateTimeLocalValue(item.predStart, item.predStartTime);
+            const dtPredEnd = toDateTimeLocalValue(item.predEnd, item.predEndTime);
+            const dtRealStart = toDateTimeLocalValue(item.realStart, item.realStartTime);
+            const dtRealEnd = toDateTimeLocalValue(item.realEnd, item.realEndTime);
             return `
-                <div class="myq-card" data-id="${item.id}">
+                <div class="myq-card${item.isCurrent ? " is-current" : ""}" data-id="${item.id}">
                     <div class="myq-card-head">
                         ${ticketLabel}
                         ${type}
                     </div>
                     <div class="myq-card-title">${escapeHtml(item.description || "Sem descricao")}</div>
+                    <div class="myq-card-meta">Status: ${statusLabel} | Fila #${escapeHtml(item.queuePos || "-")}</div>
                     <div class="myq-card-meta">Previsao fim: ${escapeHtml(endLabel)}</div>
                     <div class="myq-card-progress">
                         <div class="myq-progress-track">
@@ -1177,7 +1354,28 @@
                         </div>
                         <div class="myq-progress-text">${item.pct}% (${item.done}/${item.total})</div>
                     </div>
+                    <div class="myq-card-datetime">
+                        <div class="myq-datetime-row">
+                            <label>Prev. inicio</label>
+                            <input type="datetime-local" class="myq-datetime-input" id="myqPredStart-${item.id}" value="${dtPredStart}">
+                        </div>
+                        <div class="myq-datetime-row">
+                            <label>Prev. fim</label>
+                            <input type="datetime-local" class="myq-datetime-input" id="myqPredEnd-${item.id}" value="${dtPredEnd}">
+                        </div>
+                        <div class="myq-datetime-row">
+                            <label>Real inicio</label>
+                            <input type="datetime-local" class="myq-datetime-input" id="myqRealStart-${item.id}" value="${dtRealStart}">
+                        </div>
+                        <div class="myq-datetime-row">
+                            <label>Real fim</label>
+                            <input type="datetime-local" class="myq-datetime-input" id="myqRealEnd-${item.id}" value="${dtRealEnd}">
+                        </div>
+                    </div>
                     <div class="myq-card-actions">
+                        <button type="button" class="queue-secondary-btn myq-edit-btn" onclick="setCardAsCurrent('${item.id}')">Definir atual</button>
+                        <button type="button" class="queue-secondary-btn myq-edit-btn" onclick="copyPredictedToRealInKanbanCard('${item.id}')">Igual previsto</button>
+                        <button type="button" class="queue-secondary-btn myq-edit-btn" onclick="saveCardSchedule('${item.id}', this)">Salvar datas</button>
                         <button type="button" class="queue-secondary-btn myq-edit-btn" onclick="openEditQueueItem('${item.id}')">Editar</button>
                     </div>
                 </div>
@@ -1410,6 +1608,7 @@
     }
 
     function initMyQueueKanbanDnD() {
+        let dragOriginColId = "";
         const cards = document.querySelectorAll(".myq-card[data-id]");
         cards.forEach((card) => {
             if (card.dataset.dragBound === "1") return;
@@ -1417,29 +1616,70 @@
             card.setAttribute("draggable", "true");
             card.addEventListener("dragstart", (e) => {
                 e.dataTransfer.setData("text/plain", card.dataset.id || "");
+                const originBody = card.closest(".myq-col-body[data-col-drop]");
+                dragOriginColId = originBody ? String(originBody.dataset.colDrop || "") : "";
                 card.classList.add("is-dragging");
             });
-            card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+            card.addEventListener("dragend", () => {
+                card.classList.remove("is-dragging");
+                dragOriginColId = "";
+            });
+            card.addEventListener("dblclick", () => {
+                const id = card.dataset.id || "";
+                if (!id) return;
+                window.location.href = `/queue/main/item/${id}/`;
+            });
         });
 
-        const drops = document.querySelectorAll(".myq-col-body[data-col-drop]");
+        const drops = document.querySelectorAll(".myq-col[data-col-id]");
         drops.forEach((zone) => {
             if (zone.dataset.dropBound === "1") return;
             zone.dataset.dropBound = "1";
             zone.addEventListener("dragover", (e) => {
                 e.preventDefault();
                 zone.classList.add("is-drop-hover");
+                const body = zone.querySelector(".myq-col-body[data-col-drop]");
+                if (!body) return;
+                const dragging = document.querySelector(".myq-card.is-dragging");
+                if (!dragging) return;
+                const after = getDragAfterCard(body, e.clientY);
+                if (!after) {
+                    body.appendChild(dragging);
+                } else if (after !== dragging) {
+                    body.insertBefore(dragging, after);
+                }
             });
             zone.addEventListener("dragleave", () => zone.classList.remove("is-drop-hover"));
             zone.addEventListener("drop", (e) => {
                 e.preventDefault();
                 zone.classList.remove("is-drop-hover");
+                const body = zone.querySelector(".myq-col-body[data-col-drop]");
+                if (!body) return;
                 const id = e.dataTransfer.getData("text/plain");
-                const colId = zone.dataset.colDrop || "";
+                const colId = zone.dataset.colId || body.dataset.colDrop || "";
                 if (!id || !colId) return;
-                moveMyQueueKanbanCard(id, colId);
+                const movedAcrossColumns = String(dragOriginColId || "") !== String(colId);
+
+                if (movedAcrossColumns) {
+                    moveMyQueueKanbanCard(id, colId);
+                } else {
+                    persistKanbanColumnOrder(colId);
+                }
             });
         });
+    }
+
+    function getDragAfterCard(container, mouseY) {
+        const cards = [...container.querySelectorAll(".myq-card:not(.is-dragging)")];
+        let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+        cards.forEach((card) => {
+            const rect = card.getBoundingClientRect();
+            const offset = mouseY - rect.top - rect.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                closest = { offset, element: card };
+            }
+        });
+        return closest.element;
     }
 
     function moveMyQueueKanbanCard(itemId, columnId) {
@@ -1457,8 +1697,48 @@
                 const row = document.querySelector(`tr.queue-task-row[data-id="${itemId}"]`);
                 if (row) row.dataset.kanbanColumn = String(columnId);
                 renderMyQueueKanban();
+                persistKanbanColumnOrder(columnId);
             })
             .catch((err) => alert(err.message || "Erro ao mover card."));
+    }
+
+    function persistKanbanColumnOrder(columnId) {
+        const col = document.querySelector(`.myq-col[data-col-id="${String(columnId)}"]`);
+        if (!col) return;
+        const body = col.querySelector(".myq-col-body");
+        if (!body) return;
+        const orderedIds = Array.from(body.querySelectorAll(".myq-card[data-id]")).map((el) => String(el.dataset.id || ""));
+        postJson(`/queue/user/kanban/column/${String(columnId)}/reorder-cards/`, { ordered_ids: orderedIds })
+            .then(() => {
+                orderedIds.forEach((id, idx) => {
+                    const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+                    if (row) row.dataset.kanbanSort = String(idx + 1);
+                });
+            });
+    }
+
+    function setCardAsCurrent(itemId) {
+        const id = String(itemId || "");
+        if (!id) return;
+        postJson(`/queue/user/current/${id}/`, { is_current: true })
+            .then(() => {
+                const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+                if (row) {
+                    row.querySelectorAll(".queue-current-toggle").forEach((cb) => cb.checked = true);
+                }
+                const card = document.querySelector(`.myq-card[data-id="${id}"]`);
+                if (!card) {
+                    updateScreen();
+                    return;
+                }
+                const body = card.parentElement;
+                if (!body) return;
+                body.insertBefore(card, body.firstChild);
+                const colId = (body.dataset.colDrop || "").trim();
+                if (colId) persistKanbanColumnOrder(colId);
+                renderMyQueueKanban();
+            })
+            .catch(() => alert("Nao foi possivel definir a tarefa atual."));
     }
 
     function fmtBrDate(iso) {
@@ -1466,6 +1746,78 @@
         const parts = String(iso).split("-");
         if (parts.length !== 3) return iso;
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    function toDateTimeLocalValue(dateIso, hhmm) {
+        const d = String(dateIso || "").trim();
+        const t = String(hhmm || "").trim();
+        if (!d) return "";
+        const safeTime = t || "00:00";
+        return `${d}T${safeTime}`;
+    }
+
+    function splitDateTimeLocal(value) {
+        const v = String(value || "").trim();
+        if (!v || !v.includes("T")) return { date: "", time: "" };
+        const parts = v.split("T");
+        const date = parts[0] || "";
+        const time = (parts[1] || "").slice(0, 5);
+        return { date, time };
+    }
+
+    function saveCardSchedule(itemId, btn) {
+        const id = String(itemId || "");
+        if (!id) return;
+        const predStartRaw = (document.getElementById(`myqPredStart-${id}`) || {}).value || "";
+        const predEndRaw = (document.getElementById(`myqPredEnd-${id}`) || {}).value || "";
+        const realStartRaw = (document.getElementById(`myqRealStart-${id}`) || {}).value || "";
+        const realEndRaw = (document.getElementById(`myqRealEnd-${id}`) || {}).value || "";
+
+        const predStart = splitDateTimeLocal(predStartRaw);
+        const predEnd = splitDateTimeLocal(predEndRaw);
+        const realStart = splitDateTimeLocal(realStartRaw);
+        const realEnd = splitDateTimeLocal(realEndRaw);
+
+        const formData = new FormData();
+        formData.append("d_predicted_date_start", predStart.date);
+        formData.append("t_predicted_time_start", predStart.time);
+        formData.append("d_predicted_date_end", predEnd.date);
+        formData.append("t_predicted_time_end", predEnd.time);
+        formData.append("d_real_date_start", realStart.date);
+        formData.append("d_real_time_start", realStart.time);
+        formData.append("d_real_date_end", realEnd.date);
+        formData.append("t_real_time_end", realEnd.time);
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = "Salvando...";
+        }
+
+        fetch(`/queue/user/update/${id}/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") || "" },
+            credentials: "same-origin",
+            body: formData,
+        })
+            .then(async (r) => {
+                if (!r.ok) {
+                    const data = await r.json().catch(() => null);
+                    throw new Error((data && data.message) || "Erro ao salvar datas.");
+                }
+                return r.json();
+            })
+            .then(() => {
+                updateScreen();
+            })
+            .catch((err) => {
+                alert(err && err.message ? err.message : "Erro ao salvar datas.");
+            })
+            .finally(() => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Salvar datas";
+                }
+            });
     }
 
     // Per-task details (subtasks) accordion + CRUD over JSON endpoints.
