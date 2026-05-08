@@ -1,5 +1,6 @@
 (function () {
     const STORAGE_KEY = "connectmx_theme";
+    const FAVICON_HREF = "/static/assets/cmx-page.png";
 
     function preferredTheme() {
         try {
@@ -45,8 +46,28 @@
         sync: syncSwitches,
     };
 
+    function ensureFavicon() {
+        const head = document.head || document.querySelector("head");
+        if (!head) return;
+
+        let icon = document.querySelector('link[rel="icon"]');
+        if (!icon) {
+            icon = document.createElement("link");
+            icon.setAttribute("rel", "icon");
+            head.appendChild(icon);
+        }
+        icon.setAttribute("type", "image/png");
+        icon.setAttribute("href", FAVICON_HREF);
+    }
+
     // Once DOM exists, sync toggles.
-    document.addEventListener("DOMContentLoaded", syncSwitches);
+    document.addEventListener("DOMContentLoaded", () => {
+        syncSwitches();
+        ensureFavicon();
+    });
+
+    // Also run immediately for pages where script is loaded late.
+    ensureFavicon();
 
     // Cross-tab sync.
     window.addEventListener("storage", (e) => {
@@ -55,4 +76,3 @@
         syncSwitches();
     });
 })();
-

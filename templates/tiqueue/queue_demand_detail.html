@@ -1,0 +1,88 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Detalhe da Demanda</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main queue-demand-detail-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Detalhe da demanda #{{ item.n_register }}</h1>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'queueMainPage' %}">Voltar para Fila Geral</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="checklist-card demand-detail-card">
+            <div class="checklist-card-title">Informacoes principais</div>
+            <div class="demand-hero-line">
+                <span class="demand-hero-chip">Chamado: {{ item.a_ticket|default:"-" }}</span>
+                <span class="demand-hero-chip">Atendente: {{ item.user_code|default:"-" }}</span>
+                <span class="demand-hero-chip">Posicao: {{ item.n_queue_position|default:"-" }}</span>
+            </div>
+            <div class="project-meta-grid demand-detail-grid">
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Descricao</span><strong class="project-meta-value">{{ item.a_description|default:"-" }}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Grupo</span><strong class="project-meta-value">{% if item.task_group %}{{ item.task_group.name }}{% else %}-{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Tipo</span><strong class="project-meta-value">{% if item.task_type %}{{ item.task_type.name }}{% else %}-{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Projeto</span><strong class="project-meta-value">{% if item.linked_project %}{{ item.linked_project.name }}{% else %}-{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Roadmap</span><strong class="project-meta-value">{% if item.linked_roadmap_item %}{{ item.linked_roadmap_item.title }}{% else %}-{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Prev. inicio</span><strong class="project-meta-value">{% if item.d_predicted_date_start %}{{ item.d_predicted_date_start|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_predicted_time_start %}{{ item.t_predicted_time_start|time:"H:i" }}{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Prev. fim</span><strong class="project-meta-value">{% if item.d_predicted_date_end %}{{ item.d_predicted_date_end|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_predicted_time_end %}{{ item.t_predicted_time_end|time:"H:i" }}{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Real inicio</span><strong class="project-meta-value">{% if item.d_real_date_start %}{{ item.d_real_date_start|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.d_real_time_start %}{{ item.d_real_time_start|time:"H:i" }}{% endif %}</strong></div>
+                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Real fim</span><strong class="project-meta-value">{% if item.d_real_date_end %}{{ item.d_real_date_end|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_real_time_end %}{{ item.t_real_time_end|time:"H:i" }}{% endif %}</strong></div>
+            </div>
+        </div>
+
+        <div class="checklist-card demand-detail-card demand-detail-card-subtasks" style="margin-top: 14px;">
+            <div class="checklist-card-title">Detalhe da demanda (SM)</div>
+            <div class="demand-detail-textbox">
+                {% if item.a_demand_detail %}
+                    {{ item.a_demand_detail|linebreaksbr }}
+                {% else %}
+                    Nao informado.
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="checklist-card demand-detail-card demand-detail-card-subtasks" style="margin-top: 14px;">
+            <div class="checklist-card-title">Subatividades ({{ detail_done }}/{{ detail_total }}) - {{ progress_pct }}%</div>
+            <div class="task-types-table-wrap">
+                <table class="task-types-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 8%;">Status</th>
+                            <th style="width: 62%;">Descricao</th>
+                            <th style="width: 15%;">Tempo</th>
+                            <th style="width: 15%;">Ordem</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in details %}
+                            <tr>
+                                <td>{% if d.is_done %}Concluida{% else %}Pendente{% endif %}</td>
+                                <td>{{ d.description }}</td>
+                                <td>{% if d.duration_hours %}{{ d.duration_hours }}h{% else %}-{% endif %}</td>
+                                <td>{{ d.sort_order }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="4">Nenhuma subatividade cadastrada.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>

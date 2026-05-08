@@ -53,6 +53,7 @@ class userQueue(models.Model):
     f_conclusion_rate = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     n_status_code = models.IntegerField(blank=True, null=True)
     a_description = models.CharField(max_length=250, blank=True, null=True)
+    a_demand_detail = models.TextField(blank=True, null=True)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)

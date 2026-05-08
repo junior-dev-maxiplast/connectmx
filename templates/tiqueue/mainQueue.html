@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Fila Geral</title>
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
@@ -19,6 +20,28 @@
             <div class="headerTitle">
                 <h1>Fila geral</h1>
             </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <select id="queueMainAttendantFilter" class="queue-select">
+                        <option value="">Todos os atendentes</option>
+                        {% for col in columns %}
+                            <option value="{{ col.user_code }}">{{ col.user_name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="queueMainSortKey" class="queue-select">
+                        <option value="queue_position">Ordenar: Posicao</option>
+                        <option value="pred_datetime">Ordenar: Data/Hora Prevista</option>
+                        <option value="real_datetime">Ordenar: Data/Hora Real</option>
+                        <option value="description">Ordenar: Nome/Descricao</option>
+                        <option value="id">Ordenar: ID</option>
+                        <option value="ticket">Ordenar: Chamado</option>
+                    </select>
+                    <select id="queueMainSortDir" class="queue-select">
+                        <option value="asc">Crescente</option>
+                        <option value="desc">Decrescente</option>
+                    </select>
+                </div>
+            </div>
         </div>
 
         <div class="queue">
@@ -28,14 +51,14 @@
                     <div class="kanban-board queue-main-kanban" id="queueMainKanbanBoard">
                 {% if columns %}
                     {% for col in columns %}
-                        <div class="kanban-col queue-main-col">
+                        <div class="kanban-col queue-main-col" data-user-code="{{ col.user_code }}">
                             <div class="kanban-col-head">
                                 <span class="kanban-col-title">{{ col.user_name }}</span>
                                 <span class="myq-col-count">{{ col.cards|length }}</span>
                             </div>
                             <div class="kanban-col-body queue-main-col-body">
                                 {% for c in col.cards %}
-                                    <div class="kanban-card queue-main-card{% if c.is_current %} is-current{% endif %}">
+                                    <div class="kanban-card queue-main-card{% if c.is_current %} is-current{% endif %}" data-id="{{ c.id }}" data-ticket="{{ c.ticket }}" data-description="{{ c.description|escape }}" data-queue-position="{{ c.queue_position|default:0 }}" data-project-name="{{ c.project_name|default:''|escape }}" data-task-type="{{ c.task_type_name|default:''|escape }}" data-pred-date="{% if c.pred_date_end %}{{ c.pred_date_end|date:'Y-m-d' }}{% endif %}" data-pred-time="{% if c.pred_time_end %}{{ c.pred_time_end|time:'H:i' }}{% endif %}" data-pred-date-start="{% if c.pred_date_start %}{{ c.pred_date_start|date:'Y-m-d' }}{% endif %}" data-pred-time-start="{% if c.pred_time_start %}{{ c.pred_time_start|time:'H:i' }}{% endif %}" data-real-date="{% if c.real_date_end %}{{ c.real_date_end|date:'Y-m-d' }}{% endif %}" data-real-time="{% if c.real_time_end %}{{ c.real_time_end|time:'H:i' }}{% endif %}" data-real-date-start="{% if c.real_date_start %}{{ c.real_date_start|date:'Y-m-d' }}{% endif %}" data-real-time-start="{% if c.real_time_start %}{{ c.real_time_start|time:'H:i' }}{% endif %}">
                                         <div class="queue-card-title">
                                             {% if c.is_current %}
                                                 <span class="queue-main-focus">Demanda atual</span>
@@ -93,6 +116,7 @@
             </div>
         </div>
     </div>
+    <div id="queueMainHoverPopup" class="queue-main-hover-popup" style="display:none;"></div>
 
     <script>
         function updateQueueMainArrows() {
@@ -119,11 +143,120 @@
             setTimeout(updateQueueMainArrows, 220);
         }
 
+        function queueMainCardSortValue(card, key) {
+            const txt = (v) => String(v || "").trim().toLowerCase();
+            const n = (v) => {
+                const num = parseInt(String(v || "").trim(), 10);
+                return Number.isFinite(num) ? num : Number.POSITIVE_INFINITY;
+            };
+            const dt = (dateStr, timeStr) => {
+                const d = String(dateStr || "").trim();
+                const t = String(timeStr || "").trim() || "00:00";
+                if (!d) return Number.POSITIVE_INFINITY;
+                const ts = Date.parse(`${d}T${t}:00`);
+                return Number.isFinite(ts) ? ts : Number.POSITIVE_INFINITY;
+            };
+
+            if (key === "id") return n(card.dataset.id);
+            if (key === "ticket") return txt(card.dataset.ticket);
+            if (key === "description") return txt(card.dataset.description);
+            if (key === "pred_datetime") return dt(card.dataset.predDate, card.dataset.predTime);
+            if (key === "real_datetime") return dt(card.dataset.realDate, card.dataset.realTime);
+            return n(card.dataset.queuePosition);
+        }
+
+        function applyQueueMainFiltersAndSort() {
+            const userFilter = (document.getElementById("queueMainAttendantFilter") || {}).value || "";
+            const sortKey = (document.getElementById("queueMainSortKey") || {}).value || "queue_position";
+            const sortDir = (document.getElementById("queueMainSortDir") || {}).value || "asc";
+
+            const cols = document.querySelectorAll(".queue-main-col[data-user-code]");
+            cols.forEach((col) => {
+                const code = (col.dataset.userCode || "").trim();
+                col.style.display = (!userFilter || code === userFilter) ? "" : "none";
+
+                const body = col.querySelector(".queue-main-col-body");
+                if (!body) return;
+                const cards = Array.from(body.querySelectorAll(".queue-main-card"));
+                cards.sort((a, b) => {
+                    const va = queueMainCardSortValue(a, sortKey);
+                    const vb = queueMainCardSortValue(b, sortKey);
+                    let cmp = 0;
+                    if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+                    else cmp = String(va).localeCompare(String(vb), "pt-BR", { sensitivity: "base" });
+                    return sortDir === "asc" ? cmp : -cmp;
+                });
+                cards.forEach((card) => body.appendChild(card));
+            });
+            updateQueueMainArrows();
+        }
+
+        function queueMainFmtBrDate(iso) {
+            if (!iso) return "-";
+            const p = String(iso).split("-");
+            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+        }
+
+        function bindQueueMainHoverPopup() {
+            const popup = document.getElementById("queueMainHoverPopup");
+            if (!popup) return;
+            const cards = document.querySelectorAll(".queue-main-card");
+
+            const hide = () => {
+                popup.style.display = "none";
+            };
+
+            cards.forEach((card) => {
+                if (card.dataset.hoverBound === "1") return;
+                card.dataset.hoverBound = "1";
+                card.addEventListener("dblclick", () => {
+                    const id = card.dataset.id;
+                    if (!id) return;
+                    window.location.href = `/queue/main/item/${id}/`;
+                });
+
+                card.addEventListener("mousemove", (e) => {
+                    const d = card.dataset;
+                    const predStart = `${queueMainFmtBrDate(d.predDateStart)} ${d.predTimeStart || ""}`.trim();
+                    const predEnd = `${queueMainFmtBrDate(d.predDate)} ${d.predTime || ""}`.trim();
+                    const realStart = `${queueMainFmtBrDate(d.realDateStart)} ${d.realTimeStart || ""}`.trim();
+                    const realEnd = `${queueMainFmtBrDate(d.realDate)} ${d.realTime || ""}`.trim();
+
+                    popup.innerHTML = `
+                        <div><strong>ID:</strong> ${d.id || "-"}</div>
+                        <div><strong>Chamado:</strong> ${d.ticket || "-"}</div>
+                        <div><strong>Tipo:</strong> ${d.taskType || "-"}</div>
+                        <div><strong>Projeto:</strong> ${d.projectName || "-"}</div>
+                        <div><strong>Posicao:</strong> ${d.queuePosition || "-"}</div>
+                        <div><strong>Prev. inicio:</strong> ${predStart || "-"}</div>
+                        <div><strong>Prev. fim:</strong> ${predEnd || "-"}</div>
+                        <div><strong>Real inicio:</strong> ${realStart || "-"}</div>
+                        <div><strong>Real fim:</strong> ${realEnd || "-"}</div>
+                    `;
+
+                    const offset = 16;
+                    popup.style.left = `${e.clientX + offset}px`;
+                    popup.style.top = `${e.clientY + offset}px`;
+                    popup.style.display = "block";
+                });
+
+                card.addEventListener("mouseleave", hide);
+            });
+        }
+
         (function initQueueMainCarousel() {
             const viewport = document.getElementById("queueMainViewport");
             if (!viewport) return;
             viewport.addEventListener("scroll", updateQueueMainArrows);
             window.addEventListener("resize", updateQueueMainArrows);
+            const attendee = document.getElementById("queueMainAttendantFilter");
+            const sortKey = document.getElementById("queueMainSortKey");
+            const sortDir = document.getElementById("queueMainSortDir");
+            if (attendee) attendee.addEventListener("change", applyQueueMainFiltersAndSort);
+            if (sortKey) sortKey.addEventListener("change", applyQueueMainFiltersAndSort);
+            if (sortDir) sortDir.addEventListener("change", applyQueueMainFiltersAndSort);
+            applyQueueMainFiltersAndSort();
+            bindQueueMainHoverPopup();
             updateQueueMainArrows();
         })();
     </script>

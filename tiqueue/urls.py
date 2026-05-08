@@ -6,6 +6,7 @@ urlpatterns = [
     path('', views.index, name='index'),
 
     path('queue/main/', views.queueMainPage, name='queueMainPage'),
+    path('queue/main/item/<int:item_id>/', views.queueDemandDetailPage, name='queueDemandDetailPage'),
     path('queue/concluded/', views.queueConcludedPage, name='queueConcludedPage'),
     path('queue/user/', views.queueUserPage, name='queueUserPage'),
     path('queue/user/save/<int:id>', views.upQueuePosition, name='upQueuePosition'),

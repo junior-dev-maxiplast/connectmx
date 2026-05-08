@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Cadastro de Usuario</title>
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/createUser.css'%}">
@@ -15,6 +16,13 @@
     {% include 'partials/sidebar.html' %}
 
     <div id="overlay" onclick="closeEditUserModal()" style="display:none;"></div>
+    {% if access_denied_message %}
+        <div id="accessDeniedPopup" class="user-access-popup">
+            <div class="user-access-popup-title">Acesso negado</div>
+            <div class="user-access-popup-text">{{ access_denied_message }}</div>
+            <button type="button" class="user-access-popup-btn" onclick="closeAccessDeniedPopup()">OK</button>
+        </div>
+    {% endif %}
 
     <div class="queue_main user-page">
         <div class="headerMain">
@@ -34,6 +42,7 @@
         <div class="user-layout">
             <div class="user-card">
                 <div class="user-card-title">Novo usuario</div>
+                {% if can_manage_users %}
                 <form method="POST" class="user-form">
                     {% csrf_token %}
                     <input type="hidden" name="form_id" value="create">
@@ -53,11 +62,19 @@
                     <label for="create_id_sm">ID SM</label>
                     <input id="create_id_sm" type="text" name="id_sm" placeholder="Ex: SM-10001">
 
+                    <label class="queue-check queue-control user-inline-check">
+                        <input type="checkbox" name="is_system_admin">
+                        <span>Administrador do sistema</span>
+                    </label>
+
                     <label for="create_password">Senha</label>
                     <input id="create_password" type="password" name="password" placeholder="Senha" required>
 
                     <button type="submit" class="queue-primary-btn user-submit-btn">Cadastrar</button>
                 </form>
+                {% else %}
+                <div class="user-alert user-alert-error">Sem permissao para cadastrar usuarios.</div>
+                {% endif %}
             </div>
 
             <div class="user-card">
@@ -70,8 +87,9 @@
                                 <th style="width: 14%;">ID SM</th>
                                 <th style="width: 18%;">Usuario</th>
                                 <th style="width: 23%;">Nome</th>
-                                <th style="width: 20%;">Email</th>
-                                <th style="width: 8%;">Acoes</th>
+                                <th style="width: 16%;">Email</th>
+                                <th style="width: 8%;">Admin</th>
+                                <th style="width: 6%;">Acoes</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -82,7 +100,9 @@
                                     <td>{{ u.username }}</td>
                                     <td>{{ u.nameUser|default:"-" }}</td>
                                     <td>{{ u.email }}</td>
+                                    <td>{% if u.is_system_admin %}Sim{% else %}Nao{% endif %}</td>
                                     <td>
+                                        {% if can_manage_users %}
                                         <button
                                             type="button"
                                             class="queue-action-btn action-edit"
@@ -95,17 +115,51 @@
                                             data-name-user="{{ u.nameUser|default:'' }}"
                                             data-email="{{ u.email }}"
                                             data-id-sm="{{ u.id_sm|default:'' }}"
+                                            data-is-admin="{% if u.is_system_admin %}1{% else %}0{% endif %}"
                                         >&#x270F;&#xFE0F;</button>
+                                        {% else %}
+                                        -
+                                        {% endif %}
                                     </td>
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="6">Nenhum usuario cadastrado.</td>
+                                    <td colspan="7">Nenhum usuario cadastrado.</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <div class="user-card" style="margin-top: 14px;">
+            <div class="user-card-title">Log de uso dos usuarios</div>
+            <div class="user-table-wrap">
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">Usuario</th>
+                            <th style="width: 20%;">Nome</th>
+                            <th style="width: 12%;">Admin</th>
+                            <th style="width: 24%;">Ultimo acesso</th>
+                            <th style="width: 24%;">Ultima alteracao</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                            <tr>
+                                <td>{{ u.username }}</td>
+                                <td>{{ u.nameUser|default:"-" }}</td>
+                                <td>{% if u.is_system_admin %}Sim{% else %}Nao{% endif %}</td>
+                                <td>{% if u.last_access_at %}{{ u.last_access_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+                                <td>{% if u.last_data_change_at %}{{ u.last_data_change_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5">Nenhum usuario encontrado.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -138,6 +192,12 @@
                     <input id="edit_id_sm" type="text" name="id_sm">
                 </div>
                 <div class="field span-2">
+                    <label class="queue-check queue-control user-inline-check">
+                        <input id="edit_is_system_admin" type="checkbox" name="is_system_admin">
+                        <span>Administrador do sistema</span>
+                    </label>
+                </div>
+                <div class="field span-2">
                     <label for="edit_email">Email</label>
                     <input id="edit_email" type="email" name="email" required>
                 </div>
@@ -156,6 +216,11 @@
 </body>
 
 <script>
+    function closeAccessDeniedPopup() {
+        const pop = document.getElementById('accessDeniedPopup');
+        if (pop) pop.style.display = 'none';
+    }
+
     function openEditUserModal(button) {
         if (!button) return;
 
@@ -165,6 +230,7 @@
         document.getElementById('edit_nameUser').value = button.dataset.nameUser || '';
         document.getElementById('edit_id_sm').value = button.dataset.idSm || '';
         document.getElementById('edit_email').value = button.dataset.email || '';
+        document.getElementById('edit_is_system_admin').checked = (button.dataset.isAdmin || '') === '1';
         document.getElementById('edit_password').value = '';
 
         document.getElementById('overlay').style.display = 'block';

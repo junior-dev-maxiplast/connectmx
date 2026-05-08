@@ -1812,6 +1812,131 @@ html[data-theme="dark"] .queue_main.queue-modern-style .queue-detail-item:not(.i
     color: rgba(255, 255, 255, 0.9);
 }
 
+.queue-main-hover-popup {
+    position: fixed;
+    z-index: 1500;
+    min-width: 230px;
+    max-width: 320px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(18, 24, 48, 0.96);
+    color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 16px 34px rgba(7, 10, 24, 0.45);
+    pointer-events: none;
+    font-size: 11px;
+    line-height: 1.45;
+    display: none;
+}
+
+.queue-main-hover-popup strong {
+    color: rgba(164, 255, 210, 0.96);
+    font-weight: 800;
+}
+
+/* Demand detail page (double click) */
+.queue-demand-detail-page {
+    animation: demandPageFadeIn 0.28s ease;
+}
+
+.demand-detail-card {
+    border-radius: 16px;
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.14));
+    box-shadow: var(--surface-shadow, 0 10px 24px rgba(28, 34, 66, 0.08));
+    padding: 16px;
+    animation: demandCardRise 0.28s ease both;
+}
+
+.demand-detail-card-subtasks {
+    animation-delay: 0.06s;
+}
+
+.demand-hero-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 4px 0 16px;
+}
+
+.demand-hero-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(28, 34, 66, 0.08);
+    border: 1px solid rgba(28, 34, 66, 0.14);
+    color: var(--page-text, #1c2242);
+}
+
+.demand-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.demand-detail-item {
+    border-radius: 12px;
+    border: 1px solid rgba(28, 34, 66, 0.10);
+    background: rgba(255, 255, 255, 0.65);
+    padding: 11px 12px;
+    transition: transform 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.demand-detail-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(0, 191, 99, 0.36);
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.demand-detail-textbox {
+    border-radius: 12px;
+    border: 1px solid rgba(28, 34, 66, 0.12);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--page-text, #1c2242);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow: auto;
+}
+
+html[data-theme="dark"] .demand-hero-chip {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.94);
+}
+
+html[data-theme="dark"] .demand-detail-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .demand-detail-item:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(0, 191, 99, 0.42);
+}
+
+html[data-theme="dark"] .demand-detail-textbox {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+@keyframes demandPageFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes demandCardRise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 html[data-theme="dark"] .queue-general-page .queue {
     background: linear-gradient(180deg, #161b35 0%, #11162c 100%);
     border-color: rgba(255, 255, 255, 0.16);
@@ -2830,18 +2955,13 @@ html[data-theme="dark"] .senior-page .queue table thead th {
     height: 34px;
     min-width: 34px;
     min-height: 34px;
-    border-radius: 12px;
+    border-radius: 10px;
 
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    background: rgba(0, 191, 99, 0.18);
-    border: 1px solid rgba(0, 191, 99, 0.35);
-    color: rgba(255, 255, 255, 0.96);
-
-    font-weight: 900;
-    letter-spacing: 0.02em;
+    display: block;
+    object-fit: contain;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    padding: 3px;
     flex: 0 0 auto;
 }
 
