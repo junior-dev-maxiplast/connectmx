@@ -72,6 +72,11 @@
                                                 <span class="queue-card-ticket">({{ c.ticket }})</span>
                                             {% endif %}
                                         </div>
+                                        <div class="queue-card-kanban-tag-wrap">
+                                            <span class="queue-card-kanban-tag" style="--kanban-color: {{ c.kanban_column_color|default:'#61688c' }};">
+                                                {{ c.kanban_column_name|default:"Sem coluna" }}
+                                            </span>
+                                        </div>
                                         <div class="queue-card-progress">
                                             <div class="queue-progress{% if c.details_total|default:0 == 0 %} is-hidden{% endif %}">
                                                 <div class="queue-progress-bar">

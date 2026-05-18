@@ -1,0 +1,115 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Modelos de Demanda</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main task-types-page">
+    <div class="headerMain">
+        <div class="headerTitle"><h1>Modelos de Demanda</h1></div>
+    </div>
+
+    <div class="checklist-card">
+        <div class="checklist-card-title">Novo modelo</div>
+        <form method="POST" class="checklist-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="template">
+            <div class="modal-grid">
+                {% for field in template_form %}
+                    <div class="field {% if field.name == 'tpl-description' %}span-2{% endif %}">
+                        {{ field.label_tag }}
+                        {{ field }}
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="queue-primary-btn">Salvar modelo</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="checklist-card">
+        <div class="checklist-card-title">Nova subtarefa padrão</div>
+        <form method="POST" class="checklist-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="detail">
+            <div class="modal-grid">
+                {% for field in detail_form %}
+                    <div class="field">
+                        {{ field.label_tag }}
+                        {{ field }}
+                    </div>
+                {% endfor %}
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="queue-primary-btn">Adicionar subtarefa</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="checklist-card">
+        <div class="checklist-card-title">Modelos cadastrados</div>
+        <div class="task-types-table-wrap">
+            <table class="task-types-table">
+                <thead>
+                    <tr>
+                        <th>Modelo</th>
+                        <th>Grupo / Tipo</th>
+                        <th>Projeto</th>
+                        <th>Subtarefas padrão</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for tpl in templates %}
+                    <tr>
+                        <td>
+                            <strong>{{ tpl.name }}</strong><br>
+                            <span class="types-muted">{{ tpl.description|default:"-" }}</span>
+                        </td>
+                        <td>{{ tpl.task_group.name|default:"-" }} / {{ tpl.task_type.name|default:"-" }}</td>
+                        <td>{{ tpl.linked_project.name|default:"-" }}</td>
+                        <td>
+                            {% for d in tpl.details.all %}
+                                <div>{{ d.sort_order }} - {{ d.description }}</div>
+                            {% empty %}
+                                -
+                            {% endfor %}
+                        </td>
+                        <td>{% if tpl.is_active %}Ativo{% else %}Inativo{% endif %}</td>
+                        <td>
+                            <div class="types-actions">
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_id" value="template_toggle">
+                                    <input type="hidden" name="template_id" value="{{ tpl.id }}">
+                                    <button class="queue-secondary-btn" type="submit">{% if tpl.is_active %}Desativar{% else %}Ativar{% endif %}</button>
+                                </form>
+                                <form method="POST">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_id" value="template_delete">
+                                    <input type="hidden" name="template_id" value="{{ tpl.id }}">
+                                    <button class="queue-secondary-btn" type="submit">Excluir</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">Nenhum modelo cadastrado.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+</body>
+</html>

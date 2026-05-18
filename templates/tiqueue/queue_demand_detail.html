@@ -1,16 +1,15 @@
 {% load static %}
-
+<!DOCTYPE html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ConnectMX | Detalhe da Demanda</title>
-    <script src="{% static '/js/theme.js'%}"></script>
-    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
-    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans" rel="stylesheet">
 </head>
-
-<!DOCTYPE html>
 <body>
     {% include 'partials/sidebar.html' %}
 
@@ -27,62 +26,230 @@
         </div>
 
         <div class="checklist-card demand-detail-card">
-            <div class="checklist-card-title">Informacoes principais</div>
-            <div class="demand-hero-line">
-                <span class="demand-hero-chip">Chamado: {{ item.a_ticket|default:"-" }}</span>
-                <span class="demand-hero-chip">Atendente: {{ item.user_code|default:"-" }}</span>
-                <span class="demand-hero-chip">Posicao: {{ item.n_queue_position|default:"-" }}</span>
-            </div>
-            <div class="project-meta-grid demand-detail-grid">
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Descricao</span><strong class="project-meta-value">{{ item.a_description|default:"-" }}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Grupo</span><strong class="project-meta-value">{% if item.task_group %}{{ item.task_group.name }}{% else %}-{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Tipo</span><strong class="project-meta-value">{% if item.task_type %}{{ item.task_type.name }}{% else %}-{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Projeto</span><strong class="project-meta-value">{% if item.linked_project %}{{ item.linked_project.name }}{% else %}-{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Roadmap</span><strong class="project-meta-value">{% if item.linked_roadmap_item %}{{ item.linked_roadmap_item.title }}{% else %}-{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Prev. inicio</span><strong class="project-meta-value">{% if item.d_predicted_date_start %}{{ item.d_predicted_date_start|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_predicted_time_start %}{{ item.t_predicted_time_start|time:"H:i" }}{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Prev. fim</span><strong class="project-meta-value">{% if item.d_predicted_date_end %}{{ item.d_predicted_date_end|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_predicted_time_end %}{{ item.t_predicted_time_end|time:"H:i" }}{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Real inicio</span><strong class="project-meta-value">{% if item.d_real_date_start %}{{ item.d_real_date_start|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.d_real_time_start %}{{ item.d_real_time_start|time:"H:i" }}{% endif %}</strong></div>
-                <div class="project-meta-item demand-detail-item"><span class="project-meta-label">Real fim</span><strong class="project-meta-value">{% if item.d_real_date_end %}{{ item.d_real_date_end|date:"d/m/Y" }}{% else %}-{% endif %} {% if item.t_real_time_end %}{{ item.t_real_time_end|time:"H:i" }}{% endif %}</strong></div>
-            </div>
+            <div class="checklist-card-title">Dados da demanda</div>
+
+            <form method="POST" class="modal-form demand-detail-edit-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="main">
+
+                <div class="demand-hero-line">
+                    <span class="demand-hero-chip">Atendente: {{ item.user_code|default:"-" }}</span>
+                    <span class="demand-hero-chip">Posição: {{ item.n_queue_position|default:"-" }}</span>
+                    <span class="demand-hero-chip">Progresso: {{ progress_pct }}%</span>
+                </div>
+
+                <section class="demand-section-block">
+                    <h3 class="demand-section-title">Informações iniciais</h3>
+                    <div class="project-meta-grid demand-detail-grid demand-detail-grid-form demand-detail-grid-initial">
+                        <div class="project-meta-item demand-detail-item demand-detail-item-compact">
+                            <label for="a_ticket" class="project-meta-label">Chamado</label>
+                            <input id="a_ticket" name="a_ticket" type="text" value="{{ item.a_ticket|default:'' }}">
+                        </div>
+
+                        <div class="project-meta-item demand-detail-item demand-detail-item-wide">
+                            <label for="a_description" class="project-meta-label">Descrição</label>
+                            <input id="a_description" name="a_description" type="text" value="{{ item.a_description|default:'' }}">
+                        </div>
+
+                        <div class="project-meta-item demand-detail-item demand-detail-item-compact">
+                            <label for="task_group" class="project-meta-label">Grupo</label>
+                            <select id="task_group" name="task_group">
+                                <option value="">Selecione...</option>
+                                {% for g in task_groups %}
+                                    <option value="{{ g.id }}" {% if item.task_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="project-meta-item demand-detail-item demand-detail-item-compact">
+                            <label for="task_type" class="project-meta-label">Tipo</label>
+                            <select id="task_type" name="task_type">
+                                <option value="">Selecione...</option>
+                                {% for t in task_types %}
+                                    <option value="{{ t.id }}" data-group-id="{{ t.group_id }}" {% if item.task_type_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="demand-section-block">
+                    <h3 class="demand-section-title">Datas e horas</h3>
+                    <div class="project-meta-grid demand-detail-grid demand-detail-grid-form demand-detail-grid-dates">
+                        <div class="project-meta-item demand-detail-item">
+                            <label for="predicted_start_dt" class="project-meta-label">Previsto início</label>
+                            <input id="predicted_start_dt" name="predicted_start_dt" type="datetime-local" value="{{ predicted_start_dt }}">
+                        </div>
+                        <div class="project-meta-item demand-detail-item">
+                            <label for="predicted_end_dt" class="project-meta-label">Previsto fim</label>
+                            <input id="predicted_end_dt" name="predicted_end_dt" type="datetime-local" value="{{ predicted_end_dt }}">
+                        </div>
+                        <div class="project-meta-item demand-detail-item">
+                            <label for="real_start_dt" class="project-meta-label">Real início</label>
+                            <input id="real_start_dt" name="real_start_dt" type="datetime-local" value="{{ real_start_dt }}">
+                        </div>
+                        <div class="project-meta-item demand-detail-item">
+                            <label for="real_end_dt" class="project-meta-label">Real fim</label>
+                            <input id="real_end_dt" name="real_end_dt" type="datetime-local" value="{{ real_end_dt }}">
+                        </div>
+                    </div>
+                    <div class="modal-actions demand-inline-actions">
+                        <button type="button" class="queue-secondary-btn" onclick="copyPredictedToRealOnDemandDetail()">Igual previsto</button>
+                    </div>
+                </section>
+
+                <section class="demand-section-block">
+                    <h3 class="demand-section-title">Projeto e detalhes</h3>
+                    <div class="project-meta-grid demand-detail-grid demand-detail-grid-form">
+                        <div class="project-meta-item demand-detail-item demand-detail-item-wide">
+                            <label for="linked_project" class="project-meta-label">Projeto vinculado</label>
+                            <select id="linked_project" name="linked_project">
+                                <option value="">Sem vínculo</option>
+                                {% for p in projects %}
+                                    <option value="{{ p.id }}" {% if item.linked_project_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="project-meta-item demand-detail-item demand-detail-item-full">
+                            <label for="a_demand_detail" class="project-meta-label">Detalhe da demanda (SM)</label>
+                            <textarea id="a_demand_detail" name="a_demand_detail" rows="7" class="demand-notes-textarea">{% if item.a_demand_detail %}{{ item.a_demand_detail }}{% endif %}</textarea>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="modal-actions">
+                    <button type="submit" class="queue-primary-btn">Salvar dados da demanda</button>
+                </div>
+            </form>
         </div>
 
-        <div class="checklist-card demand-detail-card demand-detail-card-subtasks" style="margin-top: 14px;">
-            <div class="checklist-card-title">Detalhe da demanda (SM)</div>
-            <div class="demand-detail-textbox">
-                {% if item.a_demand_detail %}
-                    {{ item.a_demand_detail|linebreaksbr }}
-                {% else %}
-                    Nao informado.
-                {% endif %}
+        <div class="checklist-card demand-detail-card demand-detail-card-subtasks">
+            <div class="demand-tabs">
+                <button type="button" class="demand-tab-btn is-active" data-tab-target="tabSubtasks">Subtarefas</button>
+                <button type="button" class="demand-tab-btn" data-tab-target="tabNotes">Anotações</button>
             </div>
-        </div>
 
-        <div class="checklist-card demand-detail-card demand-detail-card-subtasks" style="margin-top: 14px;">
-            <div class="checklist-card-title">Subatividades ({{ detail_done }}/{{ detail_total }}) - {{ progress_pct }}%</div>
-            <div class="task-types-table-wrap">
-                <table class="task-types-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 8%;">Status</th>
-                            <th style="width: 62%;">Descricao</th>
-                            <th style="width: 15%;">Tempo</th>
-                            <th style="width: 15%;">Ordem</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for d in details %}
+            <div id="tabSubtasks" class="demand-tab-panel is-active">
+                <div class="checklist-card-title">Subtarefas ({{ detail_done }}/{{ detail_total }}) - {{ progress_pct }}%</div>
+                <form method="POST" class="modal-form demand-subtask-add-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="subtask_add">
+                    <div class="demand-subtask-add-row">
+                        <input type="text" name="subtask_description" maxlength="240" placeholder="Nova subtarefa..." required>
+                        <button type="submit" class="queue-primary-btn">Adicionar</button>
+                    </div>
+                </form>
+
+                <div class="task-types-table-wrap demand-subtask-table-wrap">
+                    <table class="task-types-table">
+                        <thead>
                             <tr>
-                                <td>{% if d.is_done %}Concluida{% else %}Pendente{% endif %}</td>
-                                <td>{{ d.description }}</td>
-                                <td>{% if d.duration_hours %}{{ d.duration_hours }}h{% else %}-{% endif %}</td>
-                                <td>{{ d.sort_order }}</td>
+                                <th class="demand-col-status">Status</th>
+                                <th class="demand-col-description">Descrição</th>
+                                <th class="demand-col-time">Tempo</th>
+                                <th class="demand-col-order">Ordem</th>
+                                <th class="demand-col-actions">Ações</th>
                             </tr>
-                        {% empty %}
-                            <tr><td colspan="4">Nenhuma subatividade cadastrada.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {% for d in details %}
+                                <tr>
+                                    <td>{% if d.is_done %}Concluída{% else %}Pendente{% endif %}</td>
+                                    <td>{{ d.description }}</td>
+                                    <td>{% if d.duration_hours %}{{ d.duration_hours }}h{% else %}-{% endif %}</td>
+                                    <td>{{ d.sort_order }}</td>
+                                    <td>
+                                        <div class="demand-subtask-actions">
+                                            <form method="POST" class="demand-subtask-inline-form">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_id" value="subtask_toggle">
+                                                <input type="hidden" name="detail_id" value="{{ d.id }}">
+                                                <button type="submit" class="queue-secondary-btn demand-subtask-btn">{% if d.is_done %}Reabrir{% else %}Concluir{% endif %}</button>
+                                            </form>
+                                            <form method="POST" class="demand-subtask-inline-form">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_id" value="subtask_delete">
+                                                <input type="hidden" name="detail_id" value="{{ d.id }}">
+                                                <button type="submit" class="queue-secondary-btn demand-subtask-btn">Excluir</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="5">Nenhuma subtarefa cadastrada.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="tabNotes" class="demand-tab-panel">
+                <div class="checklist-card-title">Anotações da tarefa</div>
+                <form method="POST" class="modal-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_id" value="notes">
+                    <div class="field">
+                        <label for="a_notes">Informações extras</label>
+                        <textarea id="a_notes" name="a_notes" rows="8" class="demand-notes-textarea" placeholder="Adicione observações, pendências, contexto e lembretes para esta demanda...">{% if item.a_notes %}{{ item.a_notes }}{% endif %}</textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="submit" class="queue-primary-btn">Salvar anotações</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 </body>
+
+<script>
+    (function initDemandTabs() {
+        const buttons = document.querySelectorAll(".demand-tab-btn[data-tab-target]");
+        const panels = document.querySelectorAll(".demand-tab-panel");
+        if (!buttons.length) return;
+
+        const activate = (targetId) => {
+            buttons.forEach((b) => b.classList.toggle("is-active", b.dataset.tabTarget === targetId));
+            panels.forEach((p) => p.classList.toggle("is-active", p.id === targetId));
+        };
+
+        buttons.forEach((btn) => btn.addEventListener("click", () => activate(btn.dataset.tabTarget)));
+    })();
+
+    (function initDetailTypeFilter() {
+        const groupSelect = document.getElementById("task_group");
+        const typeSelect = document.getElementById("task_type");
+        if (!groupSelect || !typeSelect) return;
+
+        const apply = () => {
+            const groupId = (groupSelect.value || "").trim();
+            const options = Array.from(typeSelect.options || []);
+            options.forEach((opt) => {
+                if (!opt.value) return;
+                const optGroup = (opt.dataset.groupId || "").trim();
+                const match = !groupId || optGroup === groupId;
+                opt.hidden = !match;
+                opt.disabled = !match;
+            });
+            const selected = typeSelect.options[typeSelect.selectedIndex];
+            if (selected && selected.value && groupId) {
+                const selectedGroup = (selected.dataset.groupId || "").trim();
+                if (selectedGroup !== groupId) typeSelect.value = "";
+            }
+        };
+
+        groupSelect.addEventListener("change", apply);
+        apply();
+    })();
+
+    function copyPredictedToRealOnDemandDetail() {
+        const predictedStart = document.getElementById("predicted_start_dt");
+        const predictedEnd = document.getElementById("predicted_end_dt");
+        const realStart = document.getElementById("real_start_dt");
+        const realEnd = document.getElementById("real_end_dt");
+
+        if (realStart && predictedStart) realStart.value = predictedStart.value || "";
+        if (realEnd && predictedEnd) realEnd.value = predictedEnd.value || "";
+    }
+</script>
+</html>

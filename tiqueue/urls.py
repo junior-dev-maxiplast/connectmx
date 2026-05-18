@@ -25,6 +25,7 @@ urlpatterns = [
     path('queue/user/kanban/column/<int:column_id>/update/', views.updateMyQueueKanbanColumn, name='updateMyQueueKanbanColumn'),
     path('queue/user/kanban/column/<int:column_id>/delete/', views.deleteMyQueueKanbanColumn, name='deleteMyQueueKanbanColumn'),
     path('queue/user/kanban/column/<int:column_id>/reorder/', views.reorderMyQueueKanbanColumn, name='reorderMyQueueKanbanColumn'),
+    path('queue/user/kanban/column/<int:column_id>/reorder-cards/', views.reorderMyQueueKanbanCards, name='reorderMyQueueKanbanCards'),
     path('queue/user/kanban/card/<int:item_id>/move/', views.moveMyQueueKanbanCard, name='moveMyQueueKanbanCard'),
     path('queue/user/details/<int:id>/', views.queueTaskDetailsList, name='queueTaskDetailsList'),
     path('queue/user/details/<int:id>/add/', views.queueTaskDetailsAdd, name='queueTaskDetailsAdd'),
@@ -33,6 +34,8 @@ urlpatterns = [
     path('queue/create/status/', views.listCreateStatus, name='listCreateStatus')
     ,
     path('queue/create/types/', views.manageTaskTypes, name='manageTaskTypes')
+    ,
+    path('queue/create/demand-templates/', views.manageDemandTemplates, name='manageDemandTemplates')
     ,
     path('hub/tools/', views.manageHubTools, name='manageHubTools')
     ,
@@ -62,14 +65,6 @@ urlpatterns = [
     path('updates/senior/<int:update_id>/inline/', views.seniorUpdatesInlineUpdate, name='seniorUpdatesInlineUpdate'),
     path('updates/wifi/', views.wifiVoucherPage, name='wifiVoucherPage'),
     path('updates/wifi/<int:voucher_id>/deliver/', views.wifiVoucherDeliver, name='wifiVoucherDeliver'),
-    path('checklists/', views.checklistList, name='checklistList'),
-    path('checklists/create/', views.checklistEntryCreate, name='checklistEntryCreate'),
-    path('checklists/create/<int:template_id>/', views.checklistEntryCreate, name='checklistEntryCreateWithTemplate'),
-    path('checklists/<int:entry_id>/edit/', views.checklistEntryEdit, name='checklistEntryEdit'),
-    path('checklists/<int:entry_id>/print/', views.checklistEntryPrint, name='checklistEntryPrint'),
-    path('checklists/templates/', views.checklistTemplates, name='checklistTemplates'),
-    path('checklists/choices/', views.checklistChoices, name='checklistChoices')
-    ,
     path('projects/', views.manageProjects, name='manageProjects')
     ,
     path('projects/catalog/', views.projectCatalogPage, name='projectCatalogPage')

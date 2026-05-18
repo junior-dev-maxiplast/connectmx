@@ -149,3 +149,49 @@ html[data-theme="dark"] *::-webkit-scrollbar-track {
 html[data-theme="dark"] *::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, rgba(92, 214, 163, 0.96), rgba(0, 191, 99, 0.96));
 }
+
+/* Global fallback checkbox style for pages that only load theme.css */
+input[type="checkbox"]:not([data-theme-switch]) {
+    --cb-size: 16px;
+    appearance: none;
+    -webkit-appearance: none;
+    width: var(--cb-size);
+    height: var(--cb-size);
+    border-radius: 5px;
+    border: 1.5px solid rgba(28, 34, 66, 0.34);
+    background: rgba(255, 255, 255, 0.96);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background-color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.08s ease;
+}
+
+input[type="checkbox"]:not([data-theme-switch]):hover {
+    border-color: rgba(0, 191, 99, 0.62);
+    box-shadow: 0 0 0 3px rgba(0, 191, 99, 0.12);
+}
+
+input[type="checkbox"]:not([data-theme-switch]):focus-visible {
+    outline: none;
+    border-color: rgba(0, 191, 99, 0.78);
+    box-shadow: 0 0 0 3px rgba(0, 191, 99, 0.20);
+}
+
+input[type="checkbox"]:not([data-theme-switch]):checked {
+    background-color: #00bf63;
+    border-color: #00bf63;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.4 6.7 11.2 12.5 4.8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px 12px;
+}
+
+input[type="checkbox"]:not([data-theme-switch]):disabled {
+    opacity: 0.52;
+    cursor: not-allowed;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:not([data-theme-switch]) {
+    border-color: rgba(255, 255, 255, 0.34);
+    background: rgba(255, 255, 255, 0.08);
+}

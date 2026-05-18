@@ -1,4 +1,5 @@
 from django import forms
+from accounts.models import User
 from .models import (
     userQueue,
     TaskGroup,
@@ -18,6 +19,8 @@ from .models import (
     HubUserToolCategory,
     KnowledgeCategory,
     KnowledgeEntry,
+    DemandTemplate,
+    DemandTemplateDetail,
 )
 
 
@@ -237,11 +240,12 @@ class ChecklistChoiceOptionForm(forms.ModelForm):
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ["name", "description", "status", "color", "start_date", "end_date"]
+        fields = ["name", "description", "developer", "status", "color", "start_date", "end_date"]
 
         labels = {
             "name": "Projeto",
             "description": "Descricao",
+            "developer": "Desenvolvedor",
             "status": "Status",
             "color": "Cor",
             "start_date": "Inicio",
@@ -254,6 +258,10 @@ class ProjectForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["developer"].queryset = User.objects.order_by("nameUser", "username")
 
 
 class ProjectRoadmapItemForm(forms.ModelForm):
@@ -275,6 +283,45 @@ class ProjectRoadmapItemForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 2}),
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
+        }
+
+
+class DemandTemplateForm(forms.ModelForm):
+    class Meta:
+        model = DemandTemplate
+        fields = [
+            "name",
+            "description",
+            "task_group",
+            "task_type",
+            "linked_project",
+            "predicted_start_offset_hours",
+            "predicted_end_offset_hours",
+            "is_active",
+        ]
+        labels = {
+            "name": "Nome do modelo",
+            "description": "Descrição",
+            "task_group": "Grupo",
+            "task_type": "Tipo",
+            "linked_project": "Projeto vinculado",
+            "predicted_start_offset_hours": "Offset início (horas)",
+            "predicted_end_offset_hours": "Offset fim (horas)",
+            "is_active": "Ativo",
+        }
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 2}),
+        }
+
+
+class DemandTemplateDetailForm(forms.ModelForm):
+    class Meta:
+        model = DemandTemplateDetail
+        fields = ["template", "description", "sort_order"]
+        labels = {
+            "template": "Modelo",
+            "description": "Subtarefa padrão",
+            "sort_order": "Ordem",
         }
 
 

@@ -49,6 +49,7 @@
                     <div class="projects-meta">
                         <span>Inicio: {% if p.start_date %}{{ p.start_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
                         <span>Fim: {% if p.end_date %}{{ p.end_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
+                        <span>Desenvolvedor: {% if p.developer %}{% if p.developer.nameUser %}{{ p.developer.nameUser }}{% else %}{{ p.developer.username }}{% endif %}{% else %}-{% endif %}</span>
                     </div>
 
                     <div class="projects-progress">

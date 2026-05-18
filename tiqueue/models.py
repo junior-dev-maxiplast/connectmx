@@ -54,6 +54,7 @@ class userQueue(models.Model):
     n_status_code = models.IntegerField(blank=True, null=True)
     a_description = models.CharField(max_length=250, blank=True, null=True)
     a_demand_detail = models.TextField(blank=True, null=True)
+    a_notes = models.TextField(blank=True, null=True)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
@@ -65,6 +66,7 @@ class userQueue(models.Model):
     kanban_column = models.ForeignKey(
         UserQueueKanbanColumn, on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items"
     )
+    kanban_sort_order = models.IntegerField(default=0)
     d_predicted_date_start = models.DateField(blank=True, null=True)
     d_predicted_date_end = models.DateField(blank=True, null=True)
     t_predicted_time_start = models.TimeField(blank=True, null=True)
@@ -134,6 +136,36 @@ class QueueTaskDetail(models.Model):
         return self.description
 
 
+class DemandTemplate(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=240, blank=True, null=True)
+    task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="demand_templates")
+    task_type = models.ForeignKey(TaskType, on_delete=models.SET_NULL, null=True, blank=True, related_name="demand_templates")
+    linked_project = models.ForeignKey("Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="demand_templates")
+    predicted_start_offset_hours = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
+    predicted_end_offset_hours = models.DecimalField(max_digits=8, decimal_places=2, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class DemandTemplateDetail(models.Model):
+    template = models.ForeignKey(DemandTemplate, on_delete=models.CASCADE, related_name="details")
+    description = models.CharField(max_length=240)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return self.description
+
+
 class Project(models.Model):
     STATUS_CHOICES = [
         ("planned", "Planejado"),
@@ -144,6 +176,13 @@ class Project(models.Model):
 
     name = models.CharField(max_length=140, unique=True)
     description = models.TextField(blank=True, null=True)
+    developer = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="projects",
+    )
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="active")
     color = models.CharField(max_length=7, default="#00bf63")
     start_date = models.DateField(blank=True, null=True)
