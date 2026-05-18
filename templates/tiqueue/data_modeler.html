@@ -1,0 +1,434 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Modelagem BD</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main">
+    <div class="headerMain">
+        <div class="headerTitle">
+            <h1>Modelagem de Banco de Dados</h1>
+            <div class="subtitle">Canvas dinâmico por lançamento, com tabelas, campos e relações visuais</div>
+        </div>
+    </div>
+
+    <div class="queue-actions dbm-toolbar">
+        <select id="dbmLaunchSelect" class="queue-filter-input">
+            {% for launch in launches %}
+                <option value="{{ launch.id }}" {% if selected_launch and selected_launch.id == launch.id %}selected{% endif %}>{{ launch.name }}</option>
+            {% endfor %}
+        </select>
+        <button id="dbmNewLaunchBtn" type="button" class="queue-secondary-btn">+ Lançamento</button>
+        <button id="dbmNewTableBtn" type="button" class="queue-primary-btn">+ Tabela</button>
+        <button id="dbmGenerateSqlBtn" type="button" class="queue-secondary-btn">Gerar SQL Oracle</button>
+        <button id="dbmRelationModeBtn" type="button" class="queue-secondary-btn">Ligar tabelas</button>
+        <span id="dbmHint" class="dbm-hint"></span>
+    </div>
+
+    <div class="queue-card dbm-canvas-wrap">
+        <svg id="dbmRelationsSvg" class="dbm-relations"></svg>
+        <div id="dbmCanvas" class="dbm-canvas"></div>
+    </div>
+</div>
+
+<div id="overlay" style="display:none;"></div>
+<div id="dbmModal" class="formNewItemMain dbm-modal" style="display:none;">
+    <div class="modal-header">
+        <div id="dbmModalTitle" class="modal-title">Modelagem</div>
+        <button type="button" class="modal-close" onclick="window.DBMModal && window.DBMModal.cancel()" aria-label="Fechar">&#x2715;</button>
+    </div>
+    <form id="dbmModalForm" class="modal-form" onsubmit="return false;">
+        <div id="dbmModalGrid" class="modal-grid"></div>
+        <div class="modal-actions">
+            <button type="button" class="queue-secondary-btn" onclick="window.DBMModal && window.DBMModal.cancel()">Cancelar</button>
+            <button type="button" id="dbmModalConfirmBtn" class="queue-primary-btn">Confirmar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+(() => {
+    const stateUrl = "{% url 'dataModelerState' %}";
+    const createLaunchUrl = "{% url 'dataModelerLaunchCreate' %}";
+    const createTableUrl = "{% url 'dataModelerTableCreate' %}";
+    const updateTableUrlTpl = "{% url 'dataModelerTableUpdate' 0 %}";
+    const createFieldUrlTpl = "{% url 'dataModelerFieldCreate' 0 %}";
+    const createRelationUrl = "{% url 'dataModelerRelationCreate' %}";
+    const generateSqlUrl = "{% url 'dataModelerGenerateOracleSql' %}";
+
+    const launchSelect = document.getElementById("dbmLaunchSelect");
+    const btnNewLaunch = document.getElementById("dbmNewLaunchBtn");
+    const btnNewTable = document.getElementById("dbmNewTableBtn");
+    const btnGenerateSql = document.getElementById("dbmGenerateSqlBtn");
+    const btnRelationMode = document.getElementById("dbmRelationModeBtn");
+    const hint = document.getElementById("dbmHint");
+    const canvas = document.getElementById("dbmCanvas");
+    const svg = document.getElementById("dbmRelationsSvg");
+
+    let appState = { tables: [], relations: [], launchId: launchSelect.value || "" };
+    let relationMode = false;
+    let relationSourceFieldId = null;
+    let dbmModalResolve = null;
+
+    function csrfToken() {
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : "";
+    }
+    function post(url, data) {
+        const body = new URLSearchParams(data);
+        return fetch(url, {
+            method: "POST",
+            headers: { "X-CSRFToken": csrfToken(), "X-Requested-With": "XMLHttpRequest", "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body
+        }).then(r => r.json());
+    }
+    function updateTableUrl(id) { return updateTableUrlTpl.replace("/0/update/", `/${id}/update/`); }
+    function createFieldUrl(id) { return createFieldUrlTpl.replace("/0/field/create/", `/${id}/field/create/`); }
+
+    function safeText(v) { return (v || "").toString().replace(/[<>&"]/g, c => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[c])); }
+    function closeDbmModal() {
+        const modal = document.getElementById("dbmModal");
+        const overlay = document.getElementById("overlay");
+        if (modal) modal.style.display = "none";
+        if (overlay) overlay.style.display = "none";
+    }
+    function openDbmModal({ title, fields, confirmLabel }) {
+        return new Promise((resolve) => {
+            dbmModalResolve = resolve;
+            const modal = document.getElementById("dbmModal");
+            const overlay = document.getElementById("overlay");
+            const titleEl = document.getElementById("dbmModalTitle");
+            const grid = document.getElementById("dbmModalGrid");
+            const confirmBtn = document.getElementById("dbmModalConfirmBtn");
+            if (!modal || !overlay || !titleEl || !grid || !confirmBtn) {
+                resolve(null);
+                return;
+            }
+
+            titleEl.textContent = title || "Modelagem";
+            confirmBtn.textContent = confirmLabel || "Confirmar";
+            grid.innerHTML = (fields || []).map((f) => {
+                const id = `dbm_${f.key}`;
+                if (f.type === "checkbox") {
+                    return `
+                        <div class="field span-2">
+                            <label class="queue-check queue-control" style="justify-content:flex-start;">
+                                <input id="${id}" type="checkbox" ${f.value ? "checked" : ""}>
+                                <span>${safeText(f.label || "")}</span>
+                            </label>
+                        </div>
+                    `;
+                }
+                if (f.type === "textarea") {
+                    return `
+                        <div class="field ${f.span2 ? "span-2" : ""}">
+                            <label for="${id}">${safeText(f.label || "")}</label>
+                            <textarea id="${id}" rows="${f.rows || 14}" ${f.readonly ? "readonly" : ""}>${safeText(f.value || "")}</textarea>
+                        </div>
+                    `;
+                }
+                const inputType = f.type || "text";
+                return `
+                    <div class="field ${f.span2 ? "span-2" : ""}">
+                        <label for="${id}">${safeText(f.label || "")}</label>
+                        <input id="${id}" type="${safeText(inputType)}" value="${safeText(f.value || "")}" placeholder="${safeText(f.placeholder || "")}" ${f.readonly ? "readonly" : ""}>
+                    </div>
+                `;
+            }).join("");
+
+            overlay.style.display = "block";
+            modal.style.display = "block";
+            const firstInput = grid.querySelector("input:not([type='checkbox'])");
+            if (firstInput) firstInput.focus();
+
+            confirmBtn.onclick = () => {
+                const values = {};
+                (fields || []).forEach((f) => {
+                    const input = document.getElementById(`dbm_${f.key}`);
+                    if (!input) return;
+                    values[f.key] = f.type === "checkbox" ? !!input.checked : (input.value || "").trim();
+                });
+                closeDbmModal();
+                if (dbmModalResolve) dbmModalResolve(values);
+                dbmModalResolve = null;
+            };
+        });
+    }
+    function cancelDbmModal() {
+        closeDbmModal();
+        if (dbmModalResolve) dbmModalResolve(null);
+        dbmModalResolve = null;
+    }
+    window.DBMModal = { cancel: cancelDbmModal };
+
+    function render() {
+        canvas.innerHTML = "";
+        appState.tables.forEach(t => {
+            const card = document.createElement("div");
+            card.className = "dbm-table";
+            card.style.left = `${t.x}px`;
+            card.style.top = `${t.y}px`;
+            card.dataset.tableId = t.id;
+
+            const fieldsHtml = (t.fields || []).map(f => `
+                <div class="dbm-field" data-field-id="${f.id}">
+                    <button type="button" class="dbm-field-link" data-field-id="${f.id}" title="Criar ligação">●</button>
+                    <span class="dbm-field-name">${safeText(f.name)}</span>
+                    <span class="dbm-field-type">${safeText(f.data_type)}${f.size ? "(" + safeText(f.size) + ")" : ""}</span>
+                    ${f.is_primary ? '<span class="dbm-pk">PK</span>' : ""}
+                </div>
+            `).join("");
+
+            card.innerHTML = `
+                <div class="dbm-table-head" style="--table-color:${safeText(t.color || "#343955")}">
+                    <span class="dbm-table-title">${safeText(t.name)}</span>
+                    <div class="dbm-head-actions">
+                        <button type="button" class="dbm-mini-btn" data-act="rename">✎</button>
+                        <button type="button" class="dbm-mini-btn" data-act="color">🎨</button>
+                        <button type="button" class="dbm-mini-btn" data-act="field">+ campo</button>
+                    </div>
+                </div>
+                <div class="dbm-fields">${fieldsHtml || '<div class="dbm-empty-fields">Sem campos</div>'}</div>
+            `;
+            canvas.appendChild(card);
+            makeDraggable(card, t.id);
+        });
+        bindCardActions();
+        drawRelations();
+    }
+
+    function drawRelations() {
+        const rect = canvas.getBoundingClientRect();
+        svg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+        svg.innerHTML = "";
+        (appState.relations || []).forEach(rel => {
+            const sourceField = canvas.querySelector(`.dbm-field[data-field-id="${rel.source_field_id}"]`);
+            const targetField = canvas.querySelector(`.dbm-field[data-field-id="${rel.target_field_id}"]`);
+            if (!sourceField || !targetField) return;
+            const s = sourceField.getBoundingClientRect();
+            const t = targetField.getBoundingClientRect();
+            const x1 = s.right - rect.left;
+            const y1 = s.top - rect.top + s.height / 2;
+            const x2 = t.left - rect.left;
+            const y2 = t.top - rect.top + t.height / 2;
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            const dx = Math.max(40, Math.abs(x2 - x1) * 0.35);
+            const c1x = x1 + dx;
+            const c2x = x2 - dx;
+            path.setAttribute("d", `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`);
+            path.setAttribute("class", "dbm-rel-path");
+            svg.appendChild(path);
+        });
+    }
+
+    function makeDraggable(card, tableId) {
+        const head = card.querySelector(".dbm-table-head");
+        let startX = 0, startY = 0, initX = 0, initY = 0, dragging = false;
+        head.addEventListener("mousedown", (ev) => {
+            dragging = true;
+            startX = ev.clientX; startY = ev.clientY;
+            initX = parseFloat(card.style.left || 0); initY = parseFloat(card.style.top || 0);
+            document.body.classList.add("dbm-dragging");
+        });
+        window.addEventListener("mousemove", (ev) => {
+            if (!dragging) return;
+            const nx = initX + (ev.clientX - startX);
+            const ny = initY + (ev.clientY - startY);
+            card.style.left = `${Math.max(0, nx)}px`;
+            card.style.top = `${Math.max(0, ny)}px`;
+            drawRelations();
+        });
+        window.addEventListener("mouseup", async () => {
+            if (!dragging) return;
+            dragging = false;
+            document.body.classList.remove("dbm-dragging");
+            await post(updateTableUrl(tableId), { x: parseInt(card.style.left, 10) || 0, y: parseInt(card.style.top, 10) || 0 });
+        });
+    }
+
+    function bindCardActions() {
+        canvas.querySelectorAll(".dbm-mini-btn").forEach(btn => {
+            btn.onclick = async () => {
+                const card = btn.closest(".dbm-table");
+                const tableId = card.dataset.tableId;
+                const act = btn.getAttribute("data-act");
+                if (act === "rename") {
+                    const t = appState.tables.find(x => String(x.id) === String(tableId));
+                    const vals = await openDbmModal({
+                        title: "Renomear tabela",
+                        confirmLabel: "Salvar",
+                        fields: [{ key: "name", label: "Nome da tabela", value: t ? t.name : "", span2: true }]
+                    });
+                    if (!vals || !vals.name) return;
+                    await post(updateTableUrl(tableId), { name: vals.name });
+                    await load();
+                } else if (act === "color") {
+                    const t = appState.tables.find(x => String(x.id) === String(tableId));
+                    const vals = await openDbmModal({
+                        title: "Alterar cor da tabela",
+                        confirmLabel: "Salvar",
+                        fields: [{ key: "color", label: "Cor", type: "color", value: (t && t.color) ? t.color : "#343955", span2: true }]
+                    });
+                    if (!vals || !vals.color) return;
+                    await post(updateTableUrl(tableId), { color: vals.color });
+                    await load();
+                } else if (act === "field") {
+                    const vals = await openDbmModal({
+                        title: "Novo campo",
+                        confirmLabel: "Adicionar",
+                        fields: [
+                            { key: "name", label: "Nome do campo", span2: true },
+                            { key: "data_type", label: "Tipo do dado", value: "varchar", placeholder: "int, varchar, text, date, datetime, bool..." },
+                            { key: "size", label: "Tamanho (opcional)", value: "" },
+                            { key: "is_primary", label: "Campo é chave primária", type: "checkbox", value: false }
+                        ]
+                    });
+                    if (!vals || !vals.name) return;
+                    const isPrimary = !!vals.is_primary;
+                    await post(createFieldUrl(tableId), {
+                        name: vals.name,
+                        data_type: vals.data_type || "varchar",
+                        size: vals.size || "",
+                        is_primary: isPrimary ? "1" : "",
+                        is_nullable: isPrimary ? "" : "1"
+                    });
+                    await load();
+                }
+            };
+        });
+
+        canvas.querySelectorAll(".dbm-field-link").forEach(link => {
+            link.onclick = async () => {
+                const fieldId = link.getAttribute("data-field-id");
+                if (!relationMode) return;
+                if (!relationSourceFieldId) {
+                    relationSourceFieldId = fieldId;
+                    hint.textContent = "Agora clique no campo de destino para criar a ligação.";
+                    link.classList.add("is-selecting");
+                    return;
+                }
+                if (relationSourceFieldId === fieldId) return;
+                await post(createRelationUrl, {
+                    launch_id: appState.launchId,
+                    source_field_id: relationSourceFieldId,
+                    target_field_id: fieldId,
+                    relation_type: "1:N"
+                });
+                relationSourceFieldId = null;
+                hint.textContent = "Ligação criada.";
+                await load();
+            };
+        });
+    }
+
+    async function load() {
+        if (!appState.launchId) {
+            canvas.innerHTML = '<div class="dbm-empty">Crie um lançamento para começar.</div>';
+            svg.innerHTML = "";
+            return;
+        }
+        const data = await fetch(`${stateUrl}?launch_id=${encodeURIComponent(appState.launchId)}`).then(r => r.json());
+        if (data.status !== "ok") {
+            canvas.innerHTML = `<div class="dbm-empty">${safeText(data.message || "Falha ao carregar.")}</div>`;
+            svg.innerHTML = "";
+            return;
+        }
+        appState.tables = data.tables || [];
+        appState.relations = data.relations || [];
+        render();
+    }
+
+    launchSelect.addEventListener("change", () => {
+        appState.launchId = launchSelect.value || "";
+        const url = new URL(window.location.href);
+        if (appState.launchId) url.searchParams.set("launch_id", appState.launchId);
+        window.history.replaceState({}, "", url.toString());
+        load();
+    });
+
+    btnNewLaunch.addEventListener("click", async () => {
+        const vals = await openDbmModal({
+            title: "Novo lançamento",
+            confirmLabel: "Criar lançamento",
+            fields: [
+                { key: "name", label: "Nome do lançamento", span2: true },
+                { key: "description", label: "Descrição (opcional)", span2: true }
+            ]
+        });
+        if (!vals || !vals.name) return;
+        const res = await post(createLaunchUrl, { name: vals.name, description: vals.description || "" });
+        if (res.status !== "ok") return;
+        const opt = document.createElement("option");
+        opt.value = res.launch_id;
+        opt.textContent = vals.name;
+        opt.selected = true;
+        launchSelect.insertBefore(opt, launchSelect.firstChild);
+        appState.launchId = String(res.launch_id);
+        load();
+    });
+
+    btnNewTable.addEventListener("click", async () => {
+        if (!appState.launchId) return alert("Crie ou selecione um lançamento primeiro.");
+        const vals = await openDbmModal({
+            title: "Nova tabela",
+            confirmLabel: "Criar tabela",
+            fields: [
+                { key: "name", label: "Nome da tabela", span2: true },
+                { key: "color", label: "Cor da tabela", type: "color", value: "#343955", span2: true }
+            ]
+        });
+        if (!vals || !vals.name) return;
+        await post(createTableUrl, { launch_id: appState.launchId, name: vals.name, color: vals.color || "#343955" });
+        await load();
+    });
+
+    btnRelationMode.addEventListener("click", () => {
+        relationMode = !relationMode;
+        relationSourceFieldId = null;
+        btnRelationMode.classList.toggle("is-active", relationMode);
+        hint.textContent = relationMode ? "Modo ligação ativo: clique no campo origem e depois no campo destino." : "";
+    });
+
+    btnGenerateSql.addEventListener("click", async () => {
+        if (!appState.launchId) {
+            alert("Selecione um lançamento para gerar SQL.");
+            return;
+        }
+        try {
+            const response = await fetch(`${generateSqlUrl}?launch_id=${encodeURIComponent(appState.launchId)}`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status !== "ok") {
+                alert(data.message || "Falha ao gerar SQL Oracle.");
+                return;
+            }
+            const vals = await openDbmModal({
+                title: "SQL Oracle gerado",
+                confirmLabel: "Copiar SQL",
+                fields: [{ key: "sql", label: "Comando SQL", span2: true, type: "textarea", rows: 16, readonly: true, value: data.sql || "" }]
+            });
+            if (!vals) return;
+            try {
+                await navigator.clipboard.writeText(data.sql || "");
+                hint.textContent = "SQL copiado para a área de transferência.";
+            } catch (e) {
+                hint.textContent = "Não foi possível copiar automaticamente o SQL.";
+            }
+        } catch (e) {
+            alert("Erro ao consultar geração de SQL.");
+        }
+    });
+
+    window.addEventListener("resize", drawRelations);
+    load();
+})();
+</script>
+</body>
+</html>

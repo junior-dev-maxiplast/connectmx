@@ -35,6 +35,17 @@
             </div>
         </div>
 
+        {% if active_notifications %}
+            <div class="hub-notifications">
+                {% for n in active_notifications %}
+                    <div class="hub-notice-item {% if n.level == 'error' %}hub-notice-error{% elif n.level == 'warning' %}hub-notice-warning{% else %}hub-notice-info{% endif %}">
+                        <div class="hub-notice-title">{{ n.title }}</div>
+                        <div class="hub-notice-text">{{ n.message }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
         <div id="hubGeneralGrid" class="hub-grid">
             {% for category in categories %}
                     <section class="hub-category-card hub-category-block" data-category-name="{{ category.name }}">

@@ -7,6 +7,7 @@ class User(AbstractUser):
     userId = models.CharField(max_length=20, unique=True)
     nameUser = models.CharField(max_length=150, null=True)
     id_sm = models.CharField(max_length=50, blank=True, null=True)
+    id_erp = models.CharField(max_length=50, blank=True, null=True)
     is_system_admin = models.BooleanField(default=False)
     last_access_at = models.DateTimeField(blank=True, null=True)
     last_data_change_at = models.DateTimeField(blank=True, null=True)

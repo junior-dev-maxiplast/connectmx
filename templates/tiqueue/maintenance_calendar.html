@@ -1,0 +1,194 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Calendário de Manutenções</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main">
+    <div class="headerMain">
+        <div class="headerTitle"><h1>Calendário de Manutenções</h1></div>
+    </div>
+    <div class="queue-card maintenance-calendar-card">
+        <div class="maintenance-calendar-head">
+            <button id="mPrev" class="queue-secondary-btn" type="button">&#9664;</button>
+            <h3 id="mTitle"></h3>
+            <button id="mNext" class="queue-secondary-btn" type="button">&#9654;</button>
+        </div>
+        <div class="maintenance-weekdays">
+            <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+        </div>
+        <div id="mGrid" class="maintenance-calendar-grid"></div>
+    </div>
+</div>
+
+<div id="maintenanceCreateModal" class="queue-modal-overlay" style="display:none;">
+    <div class="queue-modal-card maintenance-modal-card">
+        <div class="queue-modal-head">
+            <h3>Novo agendamento</h3>
+            <button id="maintenanceModalClose" type="button" class="queue-secondary-btn">Fechar</button>
+        </div>
+        <form method="POST" action="{% url 'maintenanceCalendarPage' %}" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="create_event">
+            <div class="modal-grid">
+                <div class="field span-2">
+                    <label for="mc_title">Título</label>
+                    <input id="mc_title" name="event-title" type="text" required>
+                </div>
+                <div class="field">
+                    <label for="mc_type">Tipo</label>
+                    <select id="mc_type" name="event-maintenance_type">
+                        <option value="">Selecione</option>
+                        {% for item in types %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="mc_situation">Situação</label>
+                    <select id="mc_situation" name="event-situation">
+                        <option value="">Selecione</option>
+                        {% for item in situations %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="mc_indicator">Indicativo</label>
+                    <select id="mc_indicator" name="event-indicator">
+                        <option value="">Selecione</option>
+                        {% for item in indicators %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="mc_group">Grupo de sistemas</label>
+                    <select id="mc_group" name="event-system_group">
+                        <option value="">Selecione</option>
+                        {% for item in system_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="mc_start">Data/Hora agendada</label>
+                    <input id="mc_start" name="event-scheduled_start" type="datetime-local" required>
+                </div>
+                <div class="field">
+                    <label for="mc_expected">Previsão de retorno</label>
+                    <input id="mc_expected" name="event-expected_return" type="datetime-local">
+                </div>
+                <div class="field">
+                    <label for="mc_real">Retorno real</label>
+                    <input id="mc_real" name="event-real_return" type="datetime-local">
+                </div>
+                <div class="field span-2">
+                    <label for="mc_short">Descrição curta</label>
+                    <textarea id="mc_short" name="event-short_description" rows="2"></textarea>
+                </div>
+                <div class="field span-2">
+                    <label for="mc_full">Descrição completa</label>
+                    <textarea id="mc_full" name="event-full_description" rows="4"></textarea>
+                </div>
+                <div class="field span-2">
+                    <label for="mc_systems">Sistemas afetados</label>
+                    <select id="mc_systems" name="event-affected_systems" multiple size="7">
+                        {% for item in systems %}
+                            <option value="{{ item.id }}">{{ item.group.name }} - {{ item.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" name="event-is_outage"> Registrar como indisponibilidade</label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="queue-primary-btn" type="submit">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(() => {
+    const items = {{ calendar_items_json|safe }};
+    const grid = document.getElementById("mGrid");
+    const title = document.getElementById("mTitle");
+    const prev = document.getElementById("mPrev");
+    const next = document.getElementById("mNext");
+    const modal = document.getElementById("maintenanceCreateModal");
+    const modalClose = document.getElementById("maintenanceModalClose");
+    const mcStart = document.getElementById("mc_start");
+    let view = new Date();
+    view.setDate(1);
+
+    function key(d) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+
+    function openModalForDay(dayDate) {
+        if (!dayDate) return;
+        mcStart.value = `${dayDate}T09:00`;
+        modal.style.display = "flex";
+    }
+
+    function render() {
+        const y = view.getFullYear();
+        const m = view.getMonth();
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        title.textContent = view.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+        const start = new Date(y, m, 1);
+        const end = new Date(y, m + 1, 0);
+        const firstWeekday = start.getDay();
+        const totalCells = Math.ceil((firstWeekday + end.getDate()) / 7) * 7;
+        const byDay = {};
+
+        for (const ev of items) {
+            if (!ev.start) continue;
+            const d = new Date(ev.start);
+            const k = key(d);
+            if (!byDay[k]) byDay[k] = [];
+            byDay[k].push(ev);
+        }
+
+        const html = [];
+        for (let i = 0; i < totalCells; i++) {
+            const dayNum = i - firstWeekday + 1;
+            const inMonth = dayNum >= 1 && dayNum <= end.getDate();
+            const d = new Date(y, m, inMonth ? dayNum : 1);
+            const k = inMonth ? key(d) : "";
+            const isPast = inMonth && d < today;
+            const events = inMonth ? (byDay[k] || []) : [];
+            html.push(`<div class="maintenance-day ${inMonth ? "" : "is-out"} ${isPast ? "is-past" : ""}" ${inMonth && !isPast ? `data-date="${k}"` : ""}>
+                <div class="maintenance-day-num">${inMonth ? dayNum : ""}</div>
+                <div class="maintenance-day-events">
+                    ${events.map(ev => `<span class="maintenance-day-event ${ev.is_outage ? "is-outage" : ""}" style="--event-color:${ev.type_color || "#343955"}">${ev.title}</span>`).join("")}
+                </div>
+            </div>`);
+        }
+        grid.innerHTML = html.join("");
+    }
+
+    prev.addEventListener("click", () => { view.setMonth(view.getMonth() - 1); render(); });
+    next.addEventListener("click", () => { view.setMonth(view.getMonth() + 1); render(); });
+    grid.addEventListener("dblclick", (ev) => {
+        const day = ev.target.closest(".maintenance-day[data-date]");
+        if (!day) return;
+        openModalForDay(day.getAttribute("data-date"));
+    });
+    grid.addEventListener("click", (ev) => {
+        const day = ev.target.closest(".maintenance-day[data-date]");
+        if (!day) return;
+        if (ev.detail === 2) openModalForDay(day.getAttribute("data-date"));
+    });
+    modalClose.addEventListener("click", () => { modal.style.display = "none"; });
+    modal.addEventListener("click", (ev) => {
+        if (ev.target === modal) modal.style.display = "none";
+    });
+    render();
+})();
+</script>
+</body>
+</html>

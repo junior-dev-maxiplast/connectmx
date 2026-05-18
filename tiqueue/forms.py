@@ -21,6 +21,13 @@ from .models import (
     KnowledgeEntry,
     DemandTemplate,
     DemandTemplateDetail,
+    MaintenanceType,
+    MaintenanceSituation,
+    MaintenanceIndicator,
+    MaintenanceSystemGroup,
+    MaintenanceSystem,
+    MaintenanceEvent,
+    MyAgendaReminder,
 )
 
 
@@ -240,12 +247,13 @@ class ChecklistChoiceOptionForm(forms.ModelForm):
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ["name", "description", "developer", "status", "color", "start_date", "end_date"]
+        fields = ["name", "description", "developer", "participants", "status", "color", "start_date", "end_date"]
 
         labels = {
             "name": "Projeto",
             "description": "Descricao",
-            "developer": "Desenvolvedor",
+            "developer": "Responsável",
+            "participants": "Participantes",
             "status": "Status",
             "color": "Cor",
             "start_date": "Inicio",
@@ -262,6 +270,8 @@ class ProjectForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["developer"].queryset = User.objects.order_by("nameUser", "username")
+        self.fields["participants"].queryset = User.objects.order_by("nameUser", "username")
+        self.fields["participants"].widget = forms.SelectMultiple(attrs={"size": 5})
 
 
 class ProjectRoadmapItemForm(forms.ModelForm):
@@ -470,4 +480,82 @@ class KnowledgeEntryForm(forms.ModelForm):
             "workaround": forms.Textarea(attrs={"rows": 2, "class": "kb-autogrow"}),
             "root_cause": forms.Textarea(attrs={"rows": 2, "class": "kb-autogrow"}),
             "resolution": forms.Textarea(attrs={"rows": 3, "class": "kb-autogrow"}),
+        }
+
+
+class MaintenanceTypeForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceType
+        fields = ["name", "color", "is_active"]
+        widgets = {
+            "color": forms.TextInput(attrs={"type": "color", "class": "queue-color"}),
+        }
+
+
+class MaintenanceSituationForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceSituation
+        fields = ["name", "is_active"]
+
+
+class MaintenanceIndicatorForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceIndicator
+        fields = ["name", "is_incident", "is_active"]
+
+
+class MaintenanceSystemGroupForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceSystemGroup
+        fields = ["name", "description", "is_active"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
+
+
+class MaintenanceSystemForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceSystem
+        fields = ["group", "name", "description", "is_active"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 2})}
+
+
+class MaintenanceEventForm(forms.ModelForm):
+    class Meta:
+        model = MaintenanceEvent
+        fields = [
+            "title",
+            "short_description",
+            "full_description",
+            "maintenance_type",
+            "situation",
+            "indicator",
+            "system_group",
+            "affected_systems",
+            "scheduled_start",
+            "expected_return",
+            "real_return",
+            "is_outage",
+        ]
+        widgets = {
+            "short_description": forms.Textarea(attrs={"rows": 2}),
+            "full_description": forms.Textarea(attrs={"rows": 4, "class": "kb-autogrow"}),
+            "scheduled_start": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "expected_return": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "real_return": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["affected_systems"].queryset = MaintenanceSystem.objects.filter(is_active=True).order_by("name")
+        self.fields["affected_systems"].widget = forms.CheckboxSelectMultiple()
+
+
+class MyAgendaReminderForm(forms.ModelForm):
+    class Meta:
+        model = MyAgendaReminder
+        fields = ["title", "description", "color", "reminder_date", "reminder_time", "priority", "is_done"]
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 3}),
+            "color": forms.TextInput(attrs={"type": "color", "class": "queue-color"}),
+            "reminder_date": forms.DateInput(attrs={"type": "date"}),
+            "reminder_time": forms.TimeInput(attrs={"type": "time"}),
         }

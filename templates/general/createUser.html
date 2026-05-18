@@ -62,6 +62,9 @@
                     <label for="create_id_sm">ID SM</label>
                     <input id="create_id_sm" type="text" name="id_sm" placeholder="Ex: SM-10001">
 
+                    <label for="create_id_erp">ID ERP</label>
+                    <input id="create_id_erp" type="text" name="id_erp" placeholder="Ex: ERP-10001">
+
                     <label class="queue-check queue-control user-inline-check">
                         <input type="checkbox" name="is_system_admin">
                         <span>Administrador do sistema</span>
@@ -84,12 +87,13 @@
                         <thead>
                             <tr>
                                 <th style="width: 17%;">Matricula</th>
-                                <th style="width: 14%;">ID SM</th>
-                                <th style="width: 18%;">Usuario</th>
-                                <th style="width: 23%;">Nome</th>
+                                <th style="width: 11%;">ID SM</th>
+                                <th style="width: 11%;">ID ERP</th>
+                                <th style="width: 16%;">Usuario</th>
+                                <th style="width: 21%;">Nome</th>
                                 <th style="width: 16%;">Email</th>
                                 <th style="width: 8%;">Admin</th>
-                                <th style="width: 6%;">Acoes</th>
+                                <th style="width: 7%;">Acoes</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -97,6 +101,7 @@
                                 <tr>
                                     <td>{{ u.userId }}</td>
                                     <td>{{ u.id_sm|default:"-" }}</td>
+                                    <td>{{ u.id_erp|default:"-" }}</td>
                                     <td>{{ u.username }}</td>
                                     <td>{{ u.nameUser|default:"-" }}</td>
                                     <td>{{ u.email }}</td>
@@ -115,6 +120,7 @@
                                             data-name-user="{{ u.nameUser|default:'' }}"
                                             data-email="{{ u.email }}"
                                             data-id-sm="{{ u.id_sm|default:'' }}"
+                                            data-id-erp="{{ u.id_erp|default:'' }}"
                                             data-is-admin="{% if u.is_system_admin %}1{% else %}0{% endif %}"
                                         >&#x270F;&#xFE0F;</button>
                                         {% else %}
@@ -124,7 +130,7 @@
                                 </tr>
                             {% empty %}
                                 <tr>
-                                    <td colspan="7">Nenhum usuario cadastrado.</td>
+                                    <td colspan="8">Nenhum usuario cadastrado.</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -192,6 +198,10 @@
                     <input id="edit_id_sm" type="text" name="id_sm">
                 </div>
                 <div class="field span-2">
+                    <label for="edit_id_erp">ID ERP</label>
+                    <input id="edit_id_erp" type="text" name="id_erp">
+                </div>
+                <div class="field span-2">
                     <label class="queue-check queue-control user-inline-check">
                         <input id="edit_is_system_admin" type="checkbox" name="is_system_admin">
                         <span>Administrador do sistema</span>
@@ -229,6 +239,7 @@
         document.getElementById('edit_username').value = button.dataset.username || '';
         document.getElementById('edit_nameUser').value = button.dataset.nameUser || '';
         document.getElementById('edit_id_sm').value = button.dataset.idSm || '';
+        document.getElementById('edit_id_erp').value = button.dataset.idErp || '';
         document.getElementById('edit_email').value = button.dataset.email || '';
         document.getElementById('edit_is_system_admin').checked = (button.dataset.isAdmin || '') === '1';
         document.getElementById('edit_password').value = '';

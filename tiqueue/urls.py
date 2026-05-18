@@ -27,6 +27,7 @@ urlpatterns = [
     path('queue/user/kanban/column/<int:column_id>/reorder/', views.reorderMyQueueKanbanColumn, name='reorderMyQueueKanbanColumn'),
     path('queue/user/kanban/column/<int:column_id>/reorder-cards/', views.reorderMyQueueKanbanCards, name='reorderMyQueueKanbanCards'),
     path('queue/user/kanban/card/<int:item_id>/move/', views.moveMyQueueKanbanCard, name='moveMyQueueKanbanCard'),
+    path('queue/user/agenda/', views.myAgendaPage, name='myAgendaPage'),
     path('queue/user/details/<int:id>/', views.queueTaskDetailsList, name='queueTaskDetailsList'),
     path('queue/user/details/<int:id>/add/', views.queueTaskDetailsAdd, name='queueTaskDetailsAdd'),
     path('queue/user/details/<int:detail_id>/toggle/', views.queueTaskDetailsToggle, name='queueTaskDetailsToggle'),
@@ -61,13 +62,37 @@ urlpatterns = [
     ,
     path('system/settings/', views.systemSettingsPage, name='systemSettingsPage')
     ,
+    path('system/services/', views.serviceAgentPage, name='serviceAgentPage')
+    ,
+    path('system/services/api/list/', views.serviceAgentList, name='serviceAgentList')
+    ,
+    path('system/services/api/action/<str:service_name>/<str:action>/', views.serviceAgentAction, name='serviceAgentAction')
+    ,
+    path('system/services/api/erp/cleanup-users/', views.serviceAgentErpCleanupUsers, name='serviceAgentErpCleanupUsers')
+    ,
+    path('data-modeler/', views.dataModelerPage, name='dataModelerPage'),
+    path('data-modeler/api/state/', views.dataModelerState, name='dataModelerState'),
+    path('data-modeler/api/launch/create/', views.dataModelerLaunchCreate, name='dataModelerLaunchCreate'),
+    path('data-modeler/api/table/create/', views.dataModelerTableCreate, name='dataModelerTableCreate'),
+    path('data-modeler/api/table/<int:table_id>/update/', views.dataModelerTableUpdate, name='dataModelerTableUpdate'),
+    path('data-modeler/api/table/<int:table_id>/field/create/', views.dataModelerFieldCreate, name='dataModelerFieldCreate'),
+    path('data-modeler/api/relation/create/', views.dataModelerRelationCreate, name='dataModelerRelationCreate'),
+    path('data-modeler/api/sql/generate/', views.dataModelerGenerateOracleSql, name='dataModelerGenerateOracleSql'),
     path('updates/senior/', views.seniorUpdatesPage, name='seniorUpdatesPage'),
     path('updates/senior/<int:update_id>/inline/', views.seniorUpdatesInlineUpdate, name='seniorUpdatesInlineUpdate'),
     path('updates/wifi/', views.wifiVoucherPage, name='wifiVoucherPage'),
+    path('contracts/', views.contractsPage, name='contractsPage'),
     path('updates/wifi/<int:voucher_id>/deliver/', views.wifiVoucherDeliver, name='wifiVoucherDeliver'),
+    path('maintenance/', views.maintenancePage, name='maintenancePage'),
+    path('maintenance/catalog/', views.maintenanceCatalogPage, name='maintenanceCatalogPage'),
+    path('maintenance/outages/', views.maintenanceOutagePage, name='maintenanceOutagePage'),
+    path('maintenance/schedules/', views.maintenanceSchedulePage, name='maintenanceSchedulePage'),
+    path('maintenance/calendar/', views.maintenanceCalendarPage, name='maintenanceCalendarPage'),
     path('projects/', views.manageProjects, name='manageProjects')
     ,
     path('projects/catalog/', views.projectCatalogPage, name='projectCatalogPage')
+    ,
+    path('projects/catalog/concluded/', views.projectCatalogConcludedPage, name='projectCatalogConcludedPage')
     ,
     path('projects/<int:project_id>/board/', views.projectBoard, name='projectBoard'),
     path('projects/<int:project_id>/roadmap/', views.projectRoadmapView, name='projectRoadmapView'),

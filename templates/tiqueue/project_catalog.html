@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ConnectMX | Catalogo de Projetos</title>
+    <title>ConnectMX | {% if page_title %}{{ page_title }}{% else %}Projetos{% endif %}</title>
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
@@ -17,7 +17,7 @@
     <div class="queue_main">
         <div class="headerMain">
             <div class="headerTitle">
-                <h1>Projetos</h1>
+                <h1>{% if page_title %}{{ page_title }}{% else %}Projetos{% endif %}</h1>
                 <div class="subtitle">Visao geral com acesso rapido para Roadmap e Kanban</div>
             </div>
             <div class="headerButton">
@@ -49,7 +49,14 @@
                     <div class="projects-meta">
                         <span>Inicio: {% if p.start_date %}{{ p.start_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
                         <span>Fim: {% if p.end_date %}{{ p.end_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
-                        <span>Desenvolvedor: {% if p.developer %}{% if p.developer.nameUser %}{{ p.developer.nameUser }}{% else %}{{ p.developer.username }}{% endif %}{% else %}-{% endif %}</span>
+                        <span>Responsável: {% if p.developer %}{% if p.developer.nameUser %}{{ p.developer.nameUser }}{% else %}{{ p.developer.username }}{% endif %}{% else %}-{% endif %}</span>
+                        <span>Participantes:
+                            {% for u in p.participants.all %}
+                                {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                -
+                            {% endfor %}
+                        </span>
                     </div>
 
                     <div class="projects-progress">

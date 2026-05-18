@@ -11,6 +11,9 @@ class TaskGroup(models.Model):
 
 class SystemConfig(models.Model):
     system_version = models.CharField(max_length=40, blank=True, null=True)
+    service_agent_url = models.CharField(max_length=255, blank=True, null=True)
+    service_agent_token = models.CharField(max_length=255, blank=True, null=True)
+    service_agent_timeout_sec = models.PositiveIntegerField(default=8)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -183,6 +186,7 @@ class Project(models.Model):
         blank=True,
         related_name="projects",
     )
+    participants = models.ManyToManyField("accounts.User", blank=True, related_name="project_participations")
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="active")
     color = models.CharField(max_length=7, default="#00bf63")
     start_date = models.DateField(blank=True, null=True)
@@ -357,6 +361,30 @@ class ChecklistAnswer(models.Model):
 
     def __str__(self):
         return f"{self.entry} - {self.field.label}"
+
+
+class ContractRecord(models.Model):
+    reference_month = models.CharField(max_length=20, blank=True, null=True)
+    company = models.CharField(max_length=80, blank=True, null=True)
+    cnpj = models.CharField(max_length=30, blank=True, null=True)
+    supplier = models.CharField(max_length=180, blank=True, null=True)
+    invoice_number = models.CharField(max_length=60, blank=True, null=True)
+    issue_date = models.DateField(blank=True, null=True)
+    due_date = models.DateField(blank=True, null=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, blank=True, null=True)
+    item = models.CharField(max_length=80, blank=True, null=True)
+    request_code = models.CharField(max_length=80, blank=True, null=True)
+    contract_code = models.CharField(max_length=80, blank=True, null=True)
+    transaction_type = models.CharField(max_length=120, blank=True, null=True)
+    cost_center = models.CharField(max_length=160, blank=True, null=True)
+    observation = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+
+    def __str__(self):
+        return f"{self.company or '-'} - {self.supplier or '-'}"
 
 
 class SeniorSystemUpdate(models.Model):
@@ -547,3 +575,237 @@ class KnowledgeEntryAttachment(models.Model):
 
     def __str__(self):
         return self.original_name or self.file.name
+
+
+class MaintenanceType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    color = models.CharField(max_length=7, default="#343955")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class MaintenanceSituation(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class MaintenanceIndicator(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_incident = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class MaintenanceSystemGroup(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class MaintenanceSystem(models.Model):
+    group = models.ForeignKey(MaintenanceSystemGroup, on_delete=models.CASCADE, related_name="systems")
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["group__name", "name", "id"]
+        unique_together = ("group", "name")
+
+    def __str__(self):
+        return f"{self.group.name} - {self.name}"
+
+
+class MaintenanceEvent(models.Model):
+    title = models.CharField(max_length=180)
+    short_description = models.CharField(max_length=280, blank=True, null=True)
+    full_description = models.TextField(blank=True, null=True)
+    maintenance_type = models.ForeignKey(
+        MaintenanceType, on_delete=models.SET_NULL, null=True, blank=True, related_name="events"
+    )
+    situation = models.ForeignKey(
+        MaintenanceSituation, on_delete=models.SET_NULL, null=True, blank=True, related_name="events"
+    )
+    indicator = models.ForeignKey(
+        MaintenanceIndicator, on_delete=models.SET_NULL, null=True, blank=True, related_name="events"
+    )
+    system_group = models.ForeignKey(
+        MaintenanceSystemGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name="events"
+    )
+    affected_systems = models.ManyToManyField(MaintenanceSystem, blank=True, related_name="events")
+    scheduled_start = models.DateTimeField()
+    expected_return = models.DateTimeField(blank=True, null=True)
+    real_return = models.DateTimeField(blank=True, null=True)
+    is_outage = models.BooleanField(default=False)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-scheduled_start", "-id"]
+
+    def __str__(self):
+        return self.title
+
+
+class MyAgendaReminder(models.Model):
+    PRIORITY_LOW = "low"
+    PRIORITY_MEDIUM = "medium"
+    PRIORITY_HIGH = "high"
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Baixa"),
+        (PRIORITY_MEDIUM, "Média"),
+        (PRIORITY_HIGH, "Alta"),
+    ]
+
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="agenda_reminders")
+    title = models.CharField(max_length=180)
+    description = models.TextField(blank=True, null=True)
+    color = models.CharField(max_length=7, blank=True, null=True)
+    reminder_date = models.DateField()
+    reminder_time = models.TimeField(blank=True, null=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+    is_done = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["reminder_date", "reminder_time", "id"]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
+
+
+class DataModelLaunch(models.Model):
+    name = models.CharField(max_length=140, unique=True)
+    description = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.name
+
+
+class DataModelTable(models.Model):
+    launch = models.ForeignKey(DataModelLaunch, on_delete=models.CASCADE, related_name="tables")
+    name = models.CharField(max_length=140)
+    x = models.IntegerField(default=40)
+    y = models.IntegerField(default=40)
+    color = models.CharField(max_length=7, default="#343955")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+        unique_together = ("launch", "name")
+
+    def __str__(self):
+        return f"{self.launch.name} - {self.name}"
+
+
+class DataModelField(models.Model):
+    TYPE_CHOICES = [
+        ("int", "INT"),
+        ("bigint", "BIGINT"),
+        ("varchar", "VARCHAR"),
+        ("text", "TEXT"),
+        ("date", "DATE"),
+        ("datetime", "DATETIME"),
+        ("bool", "BOOLEAN"),
+        ("decimal", "DECIMAL"),
+        ("float", "FLOAT"),
+        ("json", "JSON"),
+    ]
+
+    table = models.ForeignKey(DataModelTable, on_delete=models.CASCADE, related_name="fields")
+    name = models.CharField(max_length=140)
+    data_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="varchar")
+    size = models.CharField(max_length=30, blank=True, null=True)
+    is_primary = models.BooleanField(default=False)
+    is_nullable = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("table", "name")
+
+    def __str__(self):
+        return f"{self.table.name}.{self.name}"
+
+
+class DataModelRelation(models.Model):
+    REL_CHOICES = [
+        ("1:1", "1:1"),
+        ("1:N", "1:N"),
+        ("N:1", "N:1"),
+        ("N:N", "N:N"),
+    ]
+
+    launch = models.ForeignKey(DataModelLaunch, on_delete=models.CASCADE, related_name="relations")
+    source_field = models.ForeignKey(DataModelField, on_delete=models.CASCADE, related_name="source_relations")
+    target_field = models.ForeignKey(DataModelField, on_delete=models.CASCADE, related_name="target_relations")
+    relation_type = models.CharField(max_length=3, choices=REL_CHOICES, default="1:N")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.source_field} -> {self.target_field}"
+
+
+class SystemNotification(models.Model):
+    LEVEL_INFO = "info"
+    LEVEL_WARNING = "warning"
+    LEVEL_ERROR = "error"
+    LEVEL_CHOICES = [
+        (LEVEL_INFO, "Info"),
+        (LEVEL_WARNING, "Aviso"),
+        (LEVEL_ERROR, "Erro"),
+    ]
+
+    source_key = models.CharField(max_length=80, unique=True)
+    title = models.CharField(max_length=180)
+    message = models.TextField()
+    level = models.CharField(max_length=10, choices=LEVEL_CHOICES, default=LEVEL_WARNING)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return self.title

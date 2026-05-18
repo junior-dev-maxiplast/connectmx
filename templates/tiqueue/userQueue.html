@@ -28,6 +28,10 @@
                         <input id="queueModernStyleToggle" type="checkbox" onchange="toggleQueueModernStyle(this.checked)">
                         <span>Layout moderno</span>
                     </label>
+                    <label class="queue-check queue-control">
+                        <input id="queueFocusModeToggle" type="checkbox" onchange="toggleQueueFocusMode(this.checked)">
+                        <span>Modo foco</span>
+                    </label>
                     <select id="queueTypeFilter" class="queue-select" onchange="onQueueTypeChange(this.value)">
                         <option value="">Todos os tipos</option>
                         {% for t in task_types %}
@@ -52,17 +56,25 @@
             </div>
         </div>
         <div class="queue-dashboard" id="queueDashboard">
-            <div class="queue-dashboard-card">
+            <div class="queue-dashboard-card queue-dashboard-clickable" onclick="applyDashboardFilter('in_progress')">
                 <span class="queue-dashboard-label">Em andamento</span>
                 <strong id="dashInProgress" class="queue-dashboard-value">0</strong>
             </div>
-            <div class="queue-dashboard-card">
+            <div class="queue-dashboard-card queue-dashboard-clickable" onclick="applyDashboardFilter('backlog')">
                 <span class="queue-dashboard-label">Em fila</span>
                 <strong id="dashBacklog" class="queue-dashboard-value">0</strong>
             </div>
-            <div class="queue-dashboard-card">
+            <div class="queue-dashboard-card queue-dashboard-clickable" onclick="applyDashboardFilter('delayed')">
                 <span class="queue-dashboard-label">Atrasadas</span>
                 <strong id="dashDelayed" class="queue-dashboard-value">0</strong>
+            </div>
+            <div class="queue-dashboard-card queue-dashboard-clickable" onclick="applyDashboardFilter('today_due')">
+                <span class="queue-dashboard-label">Para hoje</span>
+                <strong id="dashTodayDue" class="queue-dashboard-value">0</strong>
+            </div>
+            <div class="queue-dashboard-card queue-dashboard-clickable" onclick="applyDashboardFilter('done_today')">
+                <span class="queue-dashboard-label">Concluídas hoje</span>
+                <strong id="dashDoneToday" class="queue-dashboard-value">0</strong>
             </div>
             <div class="queue-dashboard-card">
                 <span class="queue-dashboard-label">Horas</span>
@@ -266,6 +278,37 @@
                     <button type="submit" class="queue-primary-btn">Vincular e criar passo</button>
                 </div>
             </form>
+        </div>
+
+        <div id="bulkDueDateModal" class="queue-modal-overlay" style="display:none;">
+            <div class="queue-modal-card queue-bulk-due-modal">
+                <div class="queue-modal-head">
+                    <h3>Alterar prazo em lote</h3>
+                    <button type="button" class="queue-secondary-btn" onclick="closeBulkDueDateModal()">Fechar</button>
+                </div>
+                <div class="queue-table-wrap queue-bulk-due-wrap">
+                    <table class="queue-table queue-table-modern queue-bulk-due-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Chamado</th>
+                                <th>Descrição</th>
+                                <th>Prev. início</th>
+                                <th>Prev. fim</th>
+                                <th>Real início</th>
+                                <th>Real fim</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkDueDateRows">
+                            <tr><td colspan="8">Nenhuma demanda selecionada.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="closeBulkDueDateModal()">Cancelar</button>
+                    <button type="button" class="queue-primary-btn queue-bulk-due-save" onclick="submitBulkDueDate()">Salvar prazos</button>
+                </div>
+            </div>
         </div>
 
         <div style="display: none;" id="popUpKanbanColumn" class="formNewItemMain">
@@ -567,6 +610,127 @@
         if (!root) return;
         root.classList.toggle("queue-modern-style", !!enabled);
         localStorage.setItem(QUEUE_STYLE_STORAGE_KEY, enabled ? "1" : "0");
+    }
+
+    function toggleQueueFocusMode(enabled) {
+        const root = document.getElementById("queuePageRoot");
+        if (!root) return;
+        root.classList.toggle("queue-focus-mode", !!enabled);
+        localStorage.setItem("queueFocusMode", enabled ? "1" : "0");
+    }
+
+    function applyQueueFocusFromStorage() {
+        const t = document.getElementById("queueFocusModeToggle");
+        const enabled = localStorage.getItem("queueFocusMode") === "1";
+        if (t) t.checked = enabled;
+        toggleQueueFocusMode(enabled);
+    }
+
+    function getSelectedQueueIds() {
+        return Array.from(document.querySelectorAll(".queue-bulk-item:checked")).map((el) => el.dataset.id).filter(Boolean);
+    }
+
+    function onBulkSelectionChange() {
+        const count = getSelectedQueueIds().length;
+        const bar = document.getElementById("queueBulkBar");
+        const label = document.getElementById("queueBulkCount");
+        if (label) label.textContent = `${count} selecionadas`;
+        if (bar) bar.classList.toggle("is-visible", count > 0);
+    }
+
+    function toggleBulkAll(checked) {
+        document.querySelectorAll(".queue-bulk-item").forEach((el) => { el.checked = !!checked; });
+        document.querySelectorAll(".queue-bulk-master").forEach((el) => { el.checked = !!checked; });
+        onBulkSelectionChange();
+    }
+
+    function clearBulkSelection() {
+        toggleBulkAll(false);
+    }
+
+    async function bulkConclude() {
+        const ids = getSelectedQueueIds();
+        if (!ids.length) return;
+        for (const id of ids) {
+            await postJson(`/queue/user/end/${id}`);
+        }
+        updateScreen();
+    }
+
+    async function bulkSetCurrent() {
+        const ids = getSelectedQueueIds();
+        if (!ids.length) return;
+        for (const id of ids) {
+            await postJson(`/queue/user/current/${id}/`, { is_current: true });
+        }
+        updateScreen();
+    }
+
+    function closeBulkDueDateModal() {
+        const modal = document.getElementById("bulkDueDateModal");
+        if (modal) modal.style.display = "none";
+    }
+
+    function bulkSetDueDate() {
+        const ids = getSelectedQueueIds();
+        if (!ids.length) return;
+        const rowsHost = document.getElementById("bulkDueDateRows");
+        const modal = document.getElementById("bulkDueDateModal");
+        if (!rowsHost || !modal) return;
+
+        const html = ids.map((id) => {
+            const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+            const ticket = row ? ((row.children[3] && row.children[3].textContent) || "").trim() : "";
+            const desc = row ? ((row.querySelector(".queue-desc-text") && row.querySelector(".queue-desc-text").textContent) || "").trim() : "";
+            const predStart = row ? (row.dataset.predStart || "") : "";
+            const predEnd = row ? (row.dataset.predEnd || "") : "";
+            const predStartTime = row ? (row.dataset.predStartTime || "") : "";
+            const predEndTime = row ? (row.dataset.predEndTime || "") : "";
+            const realStartDate = row ? ((row.querySelector('[data-field="d_real_date_start"]')?.dataset?.iso || "").trim()) : "";
+            const realStartTime = row ? ((row.querySelector('[data-field="d_real_time_start"]')?.dataset?.iso || "").trim()) : "";
+            const realEndDate = row ? ((row.querySelector('[data-field="d_real_date_end"]')?.dataset?.iso || "").trim()) : "";
+            const realEndTime = row ? ((row.querySelector('[data-field="t_real_time_end"]')?.dataset?.iso || "").trim()) : "";
+            return `
+                <tr data-id="${id}">
+                    <td>${id}</td>
+                    <td>${ticket || "-"}</td>
+                    <td>${desc || "-"}</td>
+                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_predicted_date_start" data-id="${id}" value="${predStart}"><input type="time" class="queue-input-sm" data-k="t_predicted_time_start" data-id="${id}" value="${predStartTime}"></div></td>
+                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_predicted_date_end" data-id="${id}" value="${predEnd}"><input type="time" class="queue-input-sm" data-k="t_predicted_time_end" data-id="${id}" value="${predEndTime}"></div></td>
+                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_real_date_start" data-id="${id}" value="${realStartDate}"><input type="time" class="queue-input-sm" data-k="d_real_time_start" data-id="${id}" value="${realStartTime}"></div></td>
+                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_real_date_end" data-id="${id}" value="${realEndDate}"><input type="time" class="queue-input-sm" data-k="t_real_time_end" data-id="${id}" value="${realEndTime}"></div></td>
+                </tr>
+            `;
+        }).join("");
+
+        rowsHost.innerHTML = html || `<tr><td colspan="8">Nenhuma demanda selecionada.</td></tr>`;
+        modal.style.display = "flex";
+    }
+
+    async function submitBulkDueDate() {
+        const modal = document.getElementById("bulkDueDateModal");
+        const rows = Array.from(document.querySelectorAll("#bulkDueDateRows tr[data-id]"));
+        if (!rows.length) return;
+        const csrfToken = getCookie('csrftoken');
+
+        for (const row of rows) {
+            const id = row.getAttribute("data-id");
+            if (!id) continue;
+            const fd = new FormData();
+            row.querySelectorAll("input[data-k]").forEach((input) => {
+                const key = input.getAttribute("data-k");
+                if (!key) return;
+                fd.append(key, (input.value || "").trim());
+            });
+            await fetch(`/queue/user/update/${id}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                credentials: 'same-origin',
+                body: fd,
+            });
+        }
+        if (modal) modal.style.display = "none";
+        updateScreen();
     }
 
     function applyMyQueueKanbanCollapsedState() {
@@ -998,6 +1162,8 @@
             initInlineRealEdit();
             restoreExpandedDetails();
             initTaskProgressBars();
+            applyQueueFocusFromStorage();
+            onBulkSelectionChange();
             updateQueueDashboard();
             renderMyQueueKanban();
         });
@@ -1005,12 +1171,14 @@
 
     // Ensure DnD is wired on the initial render too.
     applyQueueStyleFromStorage();
+    applyQueueFocusFromStorage();
     applyQueueSectionsCollapsedState();
     applyMyQueueKanbanCollapsedState();
     initQueueDnD();
     initQueueHeaderSort();
     initInlineRealEdit();
     initTaskProgressBars();
+    onBulkSelectionChange();
     updateQueueDashboard();
     renderMyQueueKanban();
     const DEMAND_TEMPLATES = JSON.parse(document.getElementById("demandTemplatesPayload").textContent || "[]");
@@ -1220,6 +1388,8 @@
 
         let inProgress = 0;
         let delayed = 0;
+        let todayDue = 0;
+        let doneToday = 0;
         let hours = 0;
 
         rows.forEach((row) => {
@@ -1229,6 +1399,9 @@
 
             const predEnd = (row.dataset.predEnd || "").trim();
             if (predEnd && predEnd < todayIso) delayed += 1;
+            if (predEnd && predEnd === todayIso) todayDue += 1;
+            const realEnd = (row.querySelector('[data-field="d_real_date_end"]')?.dataset?.iso || "").trim();
+            if (realEnd && realEnd === todayIso) doneToday += 1;
 
             hours += parseFloat(row.dataset.detailHours || "0") || 0;
         });
@@ -1238,14 +1411,51 @@
         const inProgressEl = document.getElementById("dashInProgress");
         const backlogEl = document.getElementById("dashBacklog");
         const delayedEl = document.getElementById("dashDelayed");
+        const todayDueEl = document.getElementById("dashTodayDue");
+        const doneTodayEl = document.getElementById("dashDoneToday");
         const hoursEl = document.getElementById("dashHours");
         const visibleEl = document.getElementById("dashVisible");
 
         if (inProgressEl) inProgressEl.textContent = String(inProgress);
         if (backlogEl) backlogEl.textContent = String(backlog);
         if (delayedEl) delayedEl.textContent = String(delayed);
+        if (todayDueEl) todayDueEl.textContent = String(todayDue);
+        if (doneTodayEl) doneTodayEl.textContent = String(doneToday);
         if (hoursEl) hoursEl.textContent = `${hours.toFixed(2)}h`;
         if (visibleEl) visibleEl.textContent = String(rows.length);
+    }
+
+    function applyDashboardFilter(mode) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const iso = `${yyyy}-${mm}-${dd}`;
+
+        if (mode === "today_due") {
+            const from = document.getElementById("queueDateFrom");
+            const to = document.getElementById("queueDateTo");
+            const cb = document.getElementById("queueTodayOnly");
+            if (from) from.value = iso;
+            if (to) to.value = iso;
+            if (cb) cb.checked = true;
+            currentDateFrom = iso;
+            currentDateTo = iso;
+            todayOnly = true;
+        } else if (mode === "in_progress") {
+            operationMode = true;
+            const op = document.getElementById("queueOperationMode");
+            if (op) op.checked = true;
+        } else if (mode === "backlog") {
+            operationMode = false;
+            const op = document.getElementById("queueOperationMode");
+            if (op) op.checked = false;
+        } else if (mode === "delayed") {
+            currentDateTo = iso;
+            const to = document.getElementById("queueDateTo");
+            if (to) to.value = iso;
+        }
+        applyQueueFilter();
     }
 
     function renderMyQueueKanban() {

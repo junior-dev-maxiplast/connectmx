@@ -21,17 +21,36 @@
             </div>
         </div>
 
-        <div class="checklist-card checklist-form-card" style="max-width: 520px;">
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+
+        <div class="checklist-card checklist-form-card" style="max-width: 760px;">
             <form method="POST" class="modal-form">
                 {% csrf_token %}
+                <input type="hidden" name="form_id" value="save_system_settings">
                 <div class="modal-grid">
                     <div class="field span-2">
                         <label for="system_version">Versao em uso</label>
-                        <input id="system_version" name="system_version" type="text" maxlength="40" value="{% if config and config.system_version %}{{ config.system_version }}{% endif %}" placeholder="Ex: v2.8.1">
+                        <input id="system_version" name="system_version" type="text" maxlength="40" value="{% if config and config.system_version %}{{ config.system_version }}{% endif %}" placeholder="Ex: v2.8.1" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field span-2">
+                        <label for="service_agent_url">URL do Service Agent</label>
+                        <input id="service_agent_url" name="service_agent_url" type="text" value="{% if config and config.service_agent_url %}{{ config.service_agent_url }}{% endif %}" placeholder="http://192.168.30.4:8765" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field span-2">
+                        <label for="service_agent_token">Token (Bearer)</label>
+                        <input id="service_agent_token" name="service_agent_token" type="password" value="{% if config and config.service_agent_token %}{{ config.service_agent_token }}{% endif %}" placeholder="Token do agent" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field">
+                        <label for="service_agent_timeout_sec">Timeout (segundos)</label>
+                        <input id="service_agent_timeout_sec" name="service_agent_timeout_sec" type="number" min="1" max="60" value="{% if config %}{{ config.service_agent_timeout_sec }}{% else %}8{% endif %}" {% if not can_manage %}disabled{% endif %}>
                     </div>
                 </div>
                 <div class="modal-actions">
-                    <button type="submit" class="queue-primary-btn">Salvar</button>
+                    {% if can_manage %}
+                        <button type="submit" class="queue-primary-btn">Salvar</button>
+                    {% endif %}
                 </div>
             </form>
         </div>

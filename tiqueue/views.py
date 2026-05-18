@@ -21,6 +21,13 @@ from .forms import (
     KnowledgeEntryForm,
     DemandTemplateForm,
     DemandTemplateDetailForm,
+    MaintenanceTypeForm,
+    MaintenanceSituationForm,
+    MaintenanceIndicatorForm,
+    MaintenanceSystemGroupForm,
+    MaintenanceSystemForm,
+    MaintenanceEventForm,
+    MyAgendaReminderForm,
 )
 from .models import (
     userQueue,
@@ -51,6 +58,19 @@ from .models import (
     SystemConfig,
     DemandTemplate,
     DemandTemplateDetail,
+    MaintenanceType,
+    MaintenanceSituation,
+    MaintenanceIndicator,
+    MaintenanceSystemGroup,
+    MaintenanceSystem,
+    MaintenanceEvent,
+    MyAgendaReminder,
+    ContractRecord,
+    SystemNotification,
+    DataModelLaunch,
+    DataModelTable,
+    DataModelField,
+    DataModelRelation,
 )
 from accounts.models import User
 from .models import TaskType, TaskGroup
@@ -75,8 +95,11 @@ import re
 from django.core.paginator import Paginator
 from django.urls import reverse
 import os
+from urllib import request as urllib_request, parse as urllib_parse, error as urllib_error
 
 def index(request):
+    _sync_service_notifications()
+
     categories = (
         HubToolCategory.objects.filter(is_active=True)
         .prefetch_related(
@@ -122,8 +145,66 @@ def index(request):
         {
             "categories": categories,
             "my_tools_grouped": my_tools_grouped,
+            "active_notifications": SystemNotification.objects.filter(is_active=True)[:8],
         },
     )
+
+
+def _sync_service_notifications():
+    source_key = "service_agent_down"
+    notif = SystemNotification.objects.filter(source_key=source_key).first()
+    result = _service_agent_request("/services", method="GET")
+
+    if not result.get("ok"):
+        message = result.get("error") or "Falha ao consultar servicos no Service Agent."
+        if notif:
+            notif.title = "Falha na consulta de servicos"
+            notif.message = message
+            notif.level = SystemNotification.LEVEL_WARNING
+            notif.is_active = True
+            notif.resolved_at = None
+            notif.save(update_fields=["title", "message", "level", "is_active", "resolved_at", "updated_at"])
+        else:
+            SystemNotification.objects.create(
+                source_key=source_key,
+                title="Falha na consulta de servicos",
+                message=message,
+                level=SystemNotification.LEVEL_WARNING,
+                is_active=True,
+            )
+        return
+
+    items = result.get("data", []) or []
+    inactive = []
+    for item in items:
+        status_raw = str((item or {}).get("status") or "").strip().lower()
+        is_running = status_raw == "4" or "running" in status_raw
+        if not is_running:
+            inactive.append(str((item or {}).get("display_name") or (item or {}).get("name") or "-"))
+
+    if inactive:
+        message = f"{len(inactive)} servico(s) inativo(s): " + ", ".join(inactive[:8])
+        if len(inactive) > 8:
+            message += ", ..."
+        if notif:
+            notif.title = "Servicos inativos detectados"
+            notif.message = message
+            notif.level = SystemNotification.LEVEL_ERROR
+            notif.is_active = True
+            notif.resolved_at = None
+            notif.save(update_fields=["title", "message", "level", "is_active", "resolved_at", "updated_at"])
+        else:
+            SystemNotification.objects.create(
+                source_key=source_key,
+                title="Servicos inativos detectados",
+                message=message,
+                level=SystemNotification.LEVEL_ERROR,
+                is_active=True,
+            )
+    elif notif and notif.is_active:
+        notif.is_active = False
+        notif.resolved_at = timezone.now()
+        notif.save(update_fields=["is_active", "resolved_at", "updated_at"])
 
 
 @login_required
@@ -318,6 +399,41 @@ def _query_sm_closed_tickets(attendant_id: str):
     return _query_sm_tickets(attendant_id, closed=True)
 
 
+@login_required
+def contractsPage(request):
+    if request.method == "POST":
+        issue_date = request.POST.get("issue_date") or None
+        due_date = request.POST.get("due_date") or None
+        amount_raw = (request.POST.get("amount") or "").strip().replace(".", "").replace(",", ".")
+        amount_value = None
+        if amount_raw:
+            try:
+                amount_value = Decimal(amount_raw)
+            except Exception:
+                amount_value = None
+
+        ContractRecord.objects.create(
+            reference_month=(request.POST.get("reference_month") or "").strip() or None,
+            company=(request.POST.get("company") or "").strip() or None,
+            cnpj=(request.POST.get("cnpj") or "").strip() or None,
+            supplier=(request.POST.get("supplier") or "").strip() or None,
+            invoice_number=(request.POST.get("invoice_number") or "").strip() or None,
+            issue_date=issue_date,
+            due_date=due_date,
+            amount=amount_value,
+            item=(request.POST.get("item") or "").strip() or None,
+            request_code=(request.POST.get("request_code") or "").strip() or None,
+            contract_code=(request.POST.get("contract_code") or "").strip() or None,
+            transaction_type=(request.POST.get("transaction_type") or "").strip() or None,
+            cost_center=(request.POST.get("cost_center") or "").strip() or None,
+            observation=(request.POST.get("observation") or "").strip() or None,
+        )
+        return redirect("contractsPage")
+
+    contracts = ContractRecord.objects.all().order_by("-id")
+    return render(request, "tiqueue/contracts.html", {"contracts": contracts})
+
+
 KANBAN_DEFAULT_COLUMNS = [
     ("Backlog", "#343955", 1),
     ("Em andamento", "#3a3f61", 2),
@@ -448,20 +564,24 @@ def manageProjects(request):
                 name = (request.POST.get("name") or "").strip()
                 description = (request.POST.get("description") or "").strip()
                 developer_id = (request.POST.get("developer_id") or "").strip()
+                participants_ids = request.POST.getlist("participants_ids")
                 status = request.POST.get("status") or "active"
                 color = (request.POST.get("color") or "").strip() or "#00bf63"
                 start_date = request.POST.get("start_date") or None
                 end_date = request.POST.get("end_date") or None
                 if name:
-                    Project.objects.filter(pk=project_id).update(
-                        name=name,
-                        description=description or None,
-                        developer_id=int(developer_id) if developer_id.isdigit() else None,
-                        status=status,
-                        color=color,
-                        start_date=start_date or None,
-                        end_date=end_date or None,
-                    )
+                    project_obj = Project.objects.filter(pk=project_id).first()
+                    if project_obj:
+                        project_obj.name = name
+                        project_obj.description = description or None
+                        project_obj.developer_id = int(developer_id) if developer_id.isdigit() else None
+                        project_obj.status = status
+                        project_obj.color = color
+                        project_obj.start_date = start_date or None
+                        project_obj.end_date = end_date or None
+                        project_obj.save()
+                        valid_participants = [int(pid) for pid in participants_ids if str(pid).isdigit()]
+                        project_obj.participants.set(valid_participants)
         elif form_id == "roadmap":
             roadmap_form = ProjectRoadmapItemForm(request.POST, prefix="roadmap")
             if roadmap_form.is_valid():
@@ -504,7 +624,7 @@ def manageProjects(request):
             if card_form.is_valid():
                 card_form.save()
 
-    projects = Project.objects.select_related("developer").all().order_by("name")
+    projects = Project.objects.select_related("developer").prefetch_related("participants").all().order_by("name")
     users = User.objects.order_by("nameUser", "username")
     roadmap_items = (
         ProjectRoadmapItem.objects.select_related("project").order_by("project__name", "sort_order", "id")
@@ -534,7 +654,9 @@ def manageProjects(request):
 @login_required
 def projectCatalogPage(request):
     projects = list(
-        Project.objects.select_related("developer").annotate(
+        Project.objects.select_related("developer").prefetch_related("participants").filter(
+            status__in=["planned", "active", "paused"]
+        ).annotate(
             roadmap_total=Count("roadmap_items"),
             roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done")),
             kanban_cards_total=Count("kanban_cards"),
@@ -551,6 +673,34 @@ def projectCatalogPage(request):
         "tiqueue/project_catalog.html",
         {
             "projects": projects,
+            "page_title": "Projetos em aberto",
+            "is_concluded_page": False,
+        },
+    )
+
+
+@login_required
+def projectCatalogConcludedPage(request):
+    projects = list(
+        Project.objects.select_related("developer").prefetch_related("participants").filter(status="done").annotate(
+            roadmap_total=Count("roadmap_items"),
+            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done")),
+            kanban_cards_total=Count("kanban_cards"),
+        ).order_by("name")
+    )
+
+    for p in projects:
+        total = int(getattr(p, "roadmap_total", 0) or 0)
+        done = int(getattr(p, "roadmap_done", 0) or 0)
+        p.roadmap_progress_pct = int(round((done / total) * 100)) if total > 0 else 0
+
+    return render(
+        request,
+        "tiqueue/project_catalog.html",
+        {
+            "projects": projects,
+            "page_title": "Projetos concluídos",
+            "is_concluded_page": True,
         },
     )
 
@@ -1280,11 +1430,16 @@ def queueDemandDetailPage(request, item_id):
                 raw = (request.POST.get(field_name) or "").strip()
                 if not raw:
                     return None, None
-                try:
-                    parsed = datetime.strptime(raw, "%Y-%m-%dT%H:%M")
-                    return parsed.date(), parsed.time().replace(second=0, microsecond=0)
-                except ValueError:
+                parsed = None
+                for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        parsed = datetime.strptime(raw, fmt)
+                        break
+                    except ValueError:
+                        parsed = None
+                if not parsed:
                     return None, None
+                return parsed.date(), parsed.time().replace(second=0, microsecond=0)
 
             item.a_ticket = (request.POST.get("a_ticket") or "").strip() or None
             item.a_description = (request.POST.get("a_description") or "").strip() or None
@@ -1838,7 +1993,24 @@ def queueItemDetails(request, id):
 @require_POST
 def updateQueueItem(request, id):
     item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
-    form = UserQueueUpdateForm(request.POST, instance=item)
+    post_data = request.POST.copy()
+
+    # Normaliza pares data/hora para evitar falhas de validação quando apenas a data é informada.
+    for date_key, time_key in (
+        ("d_predicted_date_start", "t_predicted_time_start"),
+        ("d_predicted_date_end", "t_predicted_time_end"),
+        ("d_real_date_start", "d_real_time_start"),
+        ("d_real_date_end", "t_real_time_end"),
+    ):
+        d_val = (post_data.get(date_key) or "").strip()
+        t_val = (post_data.get(time_key) or "").strip()
+        if d_val and not t_val:
+            post_data[time_key] = "00:00"
+        if t_val and not d_val:
+            post_data[date_key] = ""
+            post_data[time_key] = ""
+
+    form = UserQueueUpdateForm(post_data, instance=item)
     if not form.is_valid():
         return JsonResponse({"status": "error", "errors": form.errors}, status=400)
 
@@ -2782,21 +2954,219 @@ def checklistChoices(request):
 
 @login_required
 def systemSettingsPage(request):
+    can_manage = _is_system_admin(request.user)
     config = SystemConfig.objects.order_by("-updated_at", "-id").first()
-    if request.method == "POST":
-        version = (request.POST.get("system_version") or "").strip()
-        if config is None:
-            config = SystemConfig.objects.create(system_version=version or None)
-        else:
-            config.system_version = version or None
-            config.save(update_fields=["system_version", "updated_at"])
+    access_denied_message = None if can_manage else "Voce nao possui acesso a este modulo."
+
+    if request.method == "POST" and can_manage:
+        form_id = (request.POST.get("form_id") or "save_system_settings").strip()
+        if form_id == "save_system_settings":
+            version = (request.POST.get("system_version") or "").strip()
+            service_agent_url = (request.POST.get("service_agent_url") or "").strip()
+            service_agent_token = (request.POST.get("service_agent_token") or "").strip()
+            timeout_raw = (request.POST.get("service_agent_timeout_sec") or "").strip()
+            try:
+                timeout = max(1, int(timeout_raw or "8"))
+            except Exception:
+                timeout = 8
+
+            if config is None:
+                config = SystemConfig.objects.create(
+                    system_version=version or None,
+                    service_agent_url=service_agent_url or None,
+                    service_agent_token=service_agent_token or None,
+                    service_agent_timeout_sec=timeout,
+                )
+            else:
+                config.system_version = version or None
+                config.service_agent_url = service_agent_url or None
+                config.service_agent_token = service_agent_token or None
+                config.service_agent_timeout_sec = timeout
+                config.save(
+                    update_fields=[
+                        "system_version",
+                        "service_agent_url",
+                        "service_agent_token",
+                        "service_agent_timeout_sec",
+                        "updated_at",
+                    ]
+                )
         return redirect("systemSettingsPage")
 
     return render(
         request,
         "tiqueue/system_settings.html",
-        {"config": config},
+        {
+            "config": config,
+            "can_manage": can_manage,
+            "access_denied_message": access_denied_message,
+        },
     )
+
+
+def _is_system_admin(user):
+    return bool(getattr(user, "is_system_admin", False) or getattr(user, "is_superuser", False))
+
+
+def _get_service_agent_config():
+    config = SystemConfig.objects.order_by("-updated_at", "-id").first()
+    if not config:
+        return None, None, 8
+    base_url = (config.service_agent_url or "").strip().rstrip("/")
+    token = (config.service_agent_token or "").strip()
+    timeout = int(config.service_agent_timeout_sec or 8)
+    if timeout <= 0:
+        timeout = 8
+    return base_url, token, timeout
+
+
+def _service_agent_request(path, method="GET", payload=None, query=None):
+    base_url, token, timeout = _get_service_agent_config()
+    if not base_url or not token:
+        return {"ok": False, "error": "Configure URL e token do Service Agent nas configuracoes."}
+
+    full_url = f"{base_url}{path}"
+    if query:
+        full_url = f"{full_url}?{urllib_parse.urlencode(query)}"
+
+    body = None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = urllib_request.Request(full_url, data=body, method=method.upper(), headers=headers)
+    try:
+        with urllib_request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+            data = json.loads(raw) if raw else {}
+            return {"ok": True, "status": resp.status, "data": data}
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="ignore")
+        detail = raw
+        try:
+            parsed = json.loads(raw)
+            detail = parsed.get("detail") or parsed.get("message") or raw
+        except Exception:
+            pass
+        return {"ok": False, "status": exc.code, "error": f"Service Agent retornou erro: {detail}"}
+    except Exception as exc:
+        return {"ok": False, "error": f"Falha ao conectar no Service Agent: {exc}"}
+
+
+@login_required
+def serviceAgentPage(request):
+    can_manage = _is_system_admin(request.user)
+    access_denied_message = None
+    if not can_manage:
+        access_denied_message = "Voce nao possui acesso a este modulo."
+
+    return render(
+        request,
+        "tiqueue/service_agent.html",
+        {
+            "can_manage": can_manage,
+            "access_denied_message": access_denied_message,
+        },
+    )
+
+
+@login_required
+@require_GET
+def serviceAgentList(request):
+    if not _is_system_admin(request.user):
+        return JsonResponse({"status": "error", "message": "Sem permissao"}, status=403)
+
+    q = (request.GET.get("q") or "").strip()
+    result = _service_agent_request("/services", method="GET", query={"q": q} if q else None)
+    if not result.get("ok"):
+        return JsonResponse({"status": "error", "message": result.get("error")}, status=400)
+    return JsonResponse({"status": "ok", "items": result.get("data", [])})
+
+
+@login_required
+@require_POST
+def serviceAgentAction(request, service_name, action):
+    if not _is_system_admin(request.user):
+        return JsonResponse({"status": "error", "message": "Sem permissao"}, status=403)
+    if action not in ("start", "stop", "restart"):
+        return JsonResponse({"status": "error", "message": "Acao invalida"}, status=400)
+
+    result = _service_agent_request(f"/services/{service_name}/{action}", method="POST", payload={})
+    if not result.get("ok"):
+        return JsonResponse({"status": "error", "message": result.get("error")}, status=400)
+    return JsonResponse({"status": "ok", "data": result.get("data", {})})
+
+
+def _cleanup_erp_users():
+    host = os.getenv("ERP_DB_HOST", "192.168.30.2")
+    port = int(os.getenv("ERP_DB_PORT", "1521"))
+    db_name = os.getenv("ERP_DB_NAME", "dbprod")
+    db_user = os.getenv("ERP_DB_USER", "sapiens")
+    db_pass = os.getenv("ERP_DB_PASSWORD", "sapiens")
+
+    last_error = None
+    for driver_name in ("oracledb", "cx_Oracle"):
+        try:
+            if driver_name == "oracledb":
+                import oracledb as oracle_driver  # type: ignore
+            else:
+                import cx_Oracle as oracle_driver  # type: ignore
+
+            dsn = oracle_driver.makedsn(host, port, service_name=db_name)
+            conn = oracle_driver.connect(user=db_user, password=db_pass, dsn=dsn)
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM R911MOD")
+                cur.execute("DELETE FROM R911SEC")
+                conn.commit()
+                return None
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                conn.close()
+        except Exception as exc:
+            last_error = f"{driver_name}: {exc}"
+            continue
+
+    return (
+        "Falha ao executar limpeza no ERP. "
+        "Instale um driver Oracle (`oracledb` ou `cx_Oracle`) e valide a conectividade. "
+        f"Detalhe: {last_error or 'driver nao encontrado'}"
+    )
+
+
+@login_required
+@require_POST
+def serviceAgentErpCleanupUsers(request):
+    if not _is_system_admin(request.user):
+        return JsonResponse({"status": "error", "message": "Sem permissao"}, status=403)
+
+    confirm_text = (request.POST.get("confirm_text") or "").strip()
+    if confirm_text != "LIMPAR USUARIOS ERP":
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": 'Confirmacao invalida. Digite exatamente: "LIMPAR USUARIOS ERP".',
+            },
+            status=400,
+        )
+
+    error = _cleanup_erp_users()
+    if error:
+        return JsonResponse({"status": "error", "message": error}, status=400)
+    return JsonResponse({"status": "ok", "message": "Usuarios do ERP limpos com sucesso (R911MOD e R911SEC)."})
 
 
 @login_required
@@ -3081,3 +3451,512 @@ def wifiVoucherDeliver(request, voucher_id):
     voucher.save(update_fields=["delivered_at", "expires_at", "status"])
 
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+def maintenancePage(request):
+    return redirect("maintenanceSchedulePage")
+
+
+def _maintenance_catalog_forms():
+    return {
+        "type_form": MaintenanceTypeForm(prefix="type"),
+        "situation_form": MaintenanceSituationForm(prefix="sit"),
+        "indicator_form": MaintenanceIndicatorForm(prefix="ind"),
+        "group_form": MaintenanceSystemGroupForm(prefix="grp"),
+        "system_form": MaintenanceSystemForm(prefix="sys"),
+    }
+
+
+@login_required
+def maintenanceCatalogPage(request):
+    forms_data = _maintenance_catalog_forms()
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "create_type":
+            forms_data["type_form"] = MaintenanceTypeForm(request.POST, prefix="type")
+            if forms_data["type_form"].is_valid():
+                forms_data["type_form"].save()
+                return redirect("maintenanceCatalogPage")
+        elif form_id == "create_situation":
+            forms_data["situation_form"] = MaintenanceSituationForm(request.POST, prefix="sit")
+            if forms_data["situation_form"].is_valid():
+                forms_data["situation_form"].save()
+                return redirect("maintenanceCatalogPage")
+        elif form_id == "create_indicator":
+            forms_data["indicator_form"] = MaintenanceIndicatorForm(request.POST, prefix="ind")
+            if forms_data["indicator_form"].is_valid():
+                forms_data["indicator_form"].save()
+                return redirect("maintenanceCatalogPage")
+        elif form_id == "create_group":
+            forms_data["group_form"] = MaintenanceSystemGroupForm(request.POST, prefix="grp")
+            if forms_data["group_form"].is_valid():
+                forms_data["group_form"].save()
+                return redirect("maintenanceCatalogPage")
+        elif form_id == "create_system":
+            forms_data["system_form"] = MaintenanceSystemForm(request.POST, prefix="sys")
+            if forms_data["system_form"].is_valid():
+                forms_data["system_form"].save()
+                return redirect("maintenanceCatalogPage")
+
+    return render(
+        request,
+        "tiqueue/maintenance_catalog.html",
+        {
+            **forms_data,
+            "types": MaintenanceType.objects.all().order_by("name"),
+            "situations": MaintenanceSituation.objects.all().order_by("name"),
+            "indicators": MaintenanceIndicator.objects.all().order_by("name"),
+            "system_groups": MaintenanceSystemGroup.objects.all().order_by("name"),
+            "systems": MaintenanceSystem.objects.select_related("group").all().order_by("group__name", "name"),
+        },
+    )
+
+
+@login_required
+def maintenanceOutagePage(request):
+    outage_form = MaintenanceEventForm(prefix="out")
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "create_outage":
+            outage_form = MaintenanceEventForm(request.POST, prefix="out")
+            if outage_form.is_valid():
+                event = outage_form.save(commit=False)
+                event.created_by = request.user
+                event.is_outage = True
+                event.save()
+                outage_form.save_m2m()
+                return redirect("maintenanceOutagePage")
+
+    recent_outage = (
+        MaintenanceEvent.objects.filter(is_outage=True)
+        .select_related("maintenance_type", "situation", "indicator", "system_group")
+        .prefetch_related("affected_systems")
+        .order_by("-scheduled_start", "-id")[:50]
+    )
+
+    return render(
+        request,
+        "tiqueue/maintenance_outages.html",
+        {"outage_form": outage_form, "recent_outage": recent_outage},
+    )
+
+
+@login_required
+def maintenanceSchedulePage(request):
+    schedule_form = MaintenanceEventForm(prefix="sch")
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "create_schedule":
+            schedule_form = MaintenanceEventForm(request.POST, prefix="sch")
+            if schedule_form.is_valid():
+                event = schedule_form.save(commit=False)
+                event.created_by = request.user
+                event.is_outage = False
+                event.save()
+                schedule_form.save_m2m()
+                return redirect("maintenanceSchedulePage")
+
+    recent_schedule = (
+        MaintenanceEvent.objects.filter(is_outage=False)
+        .select_related("maintenance_type", "situation", "indicator", "system_group")
+        .prefetch_related("affected_systems")
+        .order_by("-scheduled_start", "-id")[:50]
+    )
+
+    return render(
+        request,
+        "tiqueue/maintenance_schedule.html",
+        {
+            "schedule_form": schedule_form,
+            "recent_schedule": recent_schedule,
+        },
+    )
+
+
+@login_required
+def maintenanceCalendarPage(request):
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "create_event":
+            event_form = MaintenanceEventForm(request.POST, prefix="event")
+            if event_form.is_valid():
+                event = event_form.save(commit=False)
+                event.created_by = request.user
+                event.save()
+                event_form.save_m2m()
+                return redirect("maintenanceCalendarPage")
+
+    events = (
+        MaintenanceEvent.objects.select_related("maintenance_type", "indicator")
+        .all()
+        .order_by("scheduled_start", "id")
+    )
+    calendar_items = []
+    for ev in events:
+        calendar_items.append(
+            {
+                "id": ev.id,
+                "title": ev.title,
+                "start": ev.scheduled_start.isoformat() if ev.scheduled_start else None,
+                "end": ev.expected_return.isoformat() if ev.expected_return else None,
+                "is_outage": ev.is_outage,
+                "type_color": (ev.maintenance_type.color if ev.maintenance_type_id else "#343955"),
+                "indicator": ev.indicator.name if ev.indicator_id else "",
+            }
+        )
+
+    return render(
+        request,
+        "tiqueue/maintenance_calendar.html",
+        {
+            "calendar_items_json": json.dumps(calendar_items),
+            "types": MaintenanceType.objects.filter(is_active=True).order_by("name"),
+            "situations": MaintenanceSituation.objects.filter(is_active=True).order_by("name"),
+            "indicators": MaintenanceIndicator.objects.filter(is_active=True).order_by("name"),
+            "system_groups": MaintenanceSystemGroup.objects.filter(is_active=True).order_by("name"),
+            "systems": MaintenanceSystem.objects.filter(is_active=True).select_related("group").order_by("group__name", "name"),
+        },
+    )
+
+
+@login_required
+def myAgendaPage(request):
+    reminder_form = MyAgendaReminderForm(prefix="rem")
+    today = timezone.localdate()
+
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "create_reminder":
+            reminder_form = MyAgendaReminderForm(request.POST, prefix="rem")
+            if reminder_form.is_valid():
+                reminder = reminder_form.save(commit=False)
+                if reminder.reminder_date < today:
+                    reminder_form.add_error("reminder_date", "Não é permitido agendar em datas passadas.")
+                else:
+                    reminder.user = request.user
+                    reminder.save()
+                    return redirect("myAgendaPage")
+        elif form_id == "toggle_done":
+            reminder_id = request.POST.get("reminder_id")
+            reminder = MyAgendaReminder.objects.filter(pk=reminder_id, user=request.user).first()
+            if reminder:
+                reminder.is_done = not reminder.is_done
+                reminder.save(update_fields=["is_done", "updated_at"])
+            return redirect("myAgendaPage")
+
+    reminders = (
+        MyAgendaReminder.objects.filter(user=request.user)
+        .order_by("reminder_date", "reminder_time", "id")
+    )
+    calendar_items = []
+    for r in reminders:
+        start_iso = r.reminder_date.isoformat()
+        if r.reminder_time:
+            dt = datetime.combine(r.reminder_date, r.reminder_time)
+            start_iso = dt.isoformat()
+        color = "#4a87ff"
+        if r.priority == MyAgendaReminder.PRIORITY_HIGH:
+            color = "#d63f56"
+        elif r.priority == MyAgendaReminder.PRIORITY_LOW:
+            color = "#35b37e"
+        if r.color:
+            color = r.color
+        if r.is_done:
+            color = "#8b94aa"
+        calendar_items.append(
+            {
+                "id": r.id,
+                "title": r.title,
+                "start": start_iso,
+                "priority": r.priority,
+                "is_done": r.is_done,
+                "color": color,
+            }
+        )
+
+    upcoming = reminders.filter(reminder_date__gte=today)[:30]
+    return render(
+        request,
+        "tiqueue/my_agenda.html",
+        {
+            "reminder_form": reminder_form,
+            "calendar_items_json": json.dumps(calendar_items),
+            "upcoming": upcoming,
+        },
+    )
+
+
+@login_required
+def dataModelerPage(request):
+    launches = DataModelLaunch.objects.all().order_by("-created_at", "-id")
+    selected_id = request.GET.get("launch_id")
+    selected_launch = None
+    if selected_id and str(selected_id).isdigit():
+        selected_launch = launches.filter(pk=int(selected_id)).first()
+    if selected_launch is None:
+        selected_launch = launches.first()
+    return render(
+        request,
+        "tiqueue/data_modeler.html",
+        {
+            "launches": launches,
+            "selected_launch": selected_launch,
+        },
+    )
+
+
+@login_required
+@require_GET
+def dataModelerState(request):
+    launch_id = request.GET.get("launch_id")
+    if not launch_id or not str(launch_id).isdigit():
+        return JsonResponse({"status": "error", "message": "launch_id inválido"}, status=400)
+
+    launch = DataModelLaunch.objects.filter(pk=int(launch_id)).first()
+    if not launch:
+        return JsonResponse({"status": "error", "message": "Lançamento não encontrado"}, status=404)
+
+    tables = list(
+        DataModelTable.objects.filter(launch=launch).prefetch_related("fields").order_by("id")
+    )
+    fields_map = {}
+    for table in tables:
+        fields_map[table.id] = [
+            {
+                "id": field.id,
+                "name": field.name,
+                "data_type": field.data_type,
+                "size": field.size or "",
+                "is_primary": field.is_primary,
+                "is_nullable": field.is_nullable,
+                "sort_order": field.sort_order,
+            }
+            for field in table.fields.all()
+        ]
+
+    relations = list(
+        DataModelRelation.objects.filter(launch=launch)
+        .select_related("source_field__table", "target_field__table")
+        .order_by("id")
+    )
+
+    payload = {
+        "status": "ok",
+        "launch": {
+            "id": launch.id,
+            "name": launch.name,
+            "description": launch.description or "",
+        },
+        "tables": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "x": t.x,
+                "y": t.y,
+                "color": t.color,
+                "fields": fields_map.get(t.id, []),
+            }
+            for t in tables
+        ],
+        "relations": [
+            {
+                "id": rel.id,
+                "source_field_id": rel.source_field_id,
+                "target_field_id": rel.target_field_id,
+                "relation_type": rel.relation_type,
+            }
+            for rel in relations
+        ],
+    }
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def dataModelerLaunchCreate(request):
+    name = (request.POST.get("name") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome do lançamento é obrigatório."}, status=400)
+    launch, created = DataModelLaunch.objects.get_or_create(
+        name=name, defaults={"description": description or None, "created_by": request.user}
+    )
+    if not created:
+        launch.description = description or launch.description
+        launch.save(update_fields=["description", "updated_at"])
+    return JsonResponse({"status": "ok", "launch_id": launch.id})
+
+
+@login_required
+@require_POST
+def dataModelerTableCreate(request):
+    launch_id = request.POST.get("launch_id")
+    name = (request.POST.get("name") or "").strip()
+    color = (request.POST.get("color") or "").strip() or "#343955"
+    if not launch_id or not str(launch_id).isdigit() or not name:
+        return JsonResponse({"status": "error", "message": "Dados inválidos para criar tabela."}, status=400)
+    launch = DataModelLaunch.objects.filter(pk=int(launch_id)).first()
+    if not launch:
+        return JsonResponse({"status": "error", "message": "Lançamento não encontrado."}, status=404)
+    table = DataModelTable.objects.create(launch=launch, name=name, color=color)
+    return JsonResponse({"status": "ok", "table_id": table.id})
+
+
+@login_required
+@require_POST
+def dataModelerTableUpdate(request, table_id):
+    table = DataModelTable.objects.filter(pk=table_id).first()
+    if not table:
+        return JsonResponse({"status": "error", "message": "Tabela não encontrada."}, status=404)
+    if "name" in request.POST:
+        table.name = (request.POST.get("name") or table.name).strip() or table.name
+    if "color" in request.POST:
+        table.color = (request.POST.get("color") or "").strip() or table.color
+    if "x" in request.POST and "y" in request.POST:
+        try:
+            table.x = int(float(request.POST.get("x")))
+            table.y = int(float(request.POST.get("y")))
+        except Exception:
+            pass
+    table.save()
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def dataModelerFieldCreate(request, table_id):
+    table = DataModelTable.objects.filter(pk=table_id).first()
+    if not table:
+        return JsonResponse({"status": "error", "message": "Tabela não encontrada."}, status=404)
+    name = (request.POST.get("name") or "").strip()
+    data_type = (request.POST.get("data_type") or "varchar").strip()
+    size = (request.POST.get("size") or "").strip() or None
+    is_primary = str(request.POST.get("is_primary", "")).lower() in ("1", "true", "on", "yes")
+    is_nullable = str(request.POST.get("is_nullable", "true")).lower() in ("1", "true", "on", "yes")
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome do campo é obrigatório."}, status=400)
+    sort_order = (table.fields.aggregate(mx=Coalesce(models.Max("sort_order"), 0)).get("mx") or 0) + 1
+    field = DataModelField.objects.create(
+        table=table,
+        name=name,
+        data_type=data_type,
+        size=size,
+        is_primary=is_primary,
+        is_nullable=is_nullable,
+        sort_order=sort_order,
+    )
+    return JsonResponse({"status": "ok", "field_id": field.id})
+
+
+@login_required
+@require_POST
+def dataModelerRelationCreate(request):
+    launch_id = request.POST.get("launch_id")
+    source_field_id = request.POST.get("source_field_id")
+    target_field_id = request.POST.get("target_field_id")
+    relation_type = (request.POST.get("relation_type") or "1:N").strip()
+    if not all([launch_id, source_field_id, target_field_id]):
+        return JsonResponse({"status": "error", "message": "Dados incompletos para relação."}, status=400)
+    if source_field_id == target_field_id:
+        return JsonResponse({"status": "error", "message": "Campos de origem e destino devem ser diferentes."}, status=400)
+    launch = DataModelLaunch.objects.filter(pk=launch_id).first()
+    source_field = DataModelField.objects.filter(pk=source_field_id).select_related("table").first()
+    target_field = DataModelField.objects.filter(pk=target_field_id).select_related("table").first()
+    if not launch or not source_field or not target_field:
+        return JsonResponse({"status": "error", "message": "Entidades não encontradas."}, status=404)
+    if source_field.table.launch_id != launch.id or target_field.table.launch_id != launch.id:
+        return JsonResponse({"status": "error", "message": "Campos fora do lançamento selecionado."}, status=400)
+    exists = DataModelRelation.objects.filter(
+        launch=launch, source_field=source_field, target_field=target_field
+    ).exists()
+    if exists:
+        return JsonResponse({"status": "ok"})
+    DataModelRelation.objects.create(
+        launch=launch,
+        source_field=source_field,
+        target_field=target_field,
+        relation_type=relation_type if relation_type in ("1:1", "1:N", "N:1", "N:N") else "1:N",
+    )
+    return JsonResponse({"status": "ok"})
+
+
+def _oracle_type_from_field(field):
+    data_type = (field.data_type or "varchar").lower()
+    size = (field.size or "").strip()
+    if data_type in ("varchar",):
+        return f"VARCHAR2({size or '255'})"
+    if data_type in ("text",):
+        return "CLOB"
+    if data_type in ("int", "bigint"):
+        return f"NUMBER({size})" if size else "NUMBER"
+    if data_type in ("decimal", "float"):
+        return f"NUMBER({size})" if size else "NUMBER"
+    if data_type == "bool":
+        return "NUMBER(1)"
+    if data_type == "date":
+        return "DATE"
+    if data_type == "datetime":
+        return "TIMESTAMP"
+    if data_type == "json":
+        return "CLOB"
+    return f"VARCHAR2({size or '255'})"
+
+
+@login_required
+@require_GET
+def dataModelerGenerateOracleSql(request):
+    launch_id = request.GET.get("launch_id")
+    if not launch_id or not str(launch_id).isdigit():
+        return JsonResponse({"status": "error", "message": "launch_id invalido"}, status=400)
+
+    launch = DataModelLaunch.objects.filter(pk=int(launch_id)).first()
+    if not launch:
+        return JsonResponse({"status": "error", "message": "Lancamento nao encontrado"}, status=404)
+
+    tables = list(DataModelTable.objects.filter(launch=launch).prefetch_related("fields").order_by("id"))
+    relations = list(
+        DataModelRelation.objects.filter(launch=launch)
+        .select_related("source_field__table", "target_field__table")
+        .order_by("id")
+    )
+
+    lines = []
+    lines.append(f"-- SQL Oracle gerado automaticamente para o lancamento: {launch.name}")
+    lines.append("")
+
+    for table in tables:
+        table_name = table.name.strip().upper()
+        fields = list(table.fields.all())
+        if not fields:
+            continue
+        col_lines = []
+        pk_fields = []
+        for f in fields:
+            col_name = f.name.strip().upper()
+            col_type = _oracle_type_from_field(f)
+            nullable = "" if f.is_nullable or f.is_primary else " NOT NULL"
+            col_lines.append(f"    {col_name} {col_type}{nullable}")
+            if f.is_primary:
+                pk_fields.append(col_name)
+        if pk_fields:
+            col_lines.append(f"    CONSTRAINT PK_{table_name} PRIMARY KEY ({', '.join(pk_fields)})")
+        lines.append(f"CREATE TABLE {table_name} (")
+        lines.append(",\n".join(col_lines))
+        lines.append(");")
+        lines.append("")
+
+    for rel in relations:
+        src_table = rel.source_field.table.name.strip().upper()
+        src_col = rel.source_field.name.strip().upper()
+        tgt_table = rel.target_field.table.name.strip().upper()
+        tgt_col = rel.target_field.name.strip().upper()
+        constraint_name = f"FK_{src_table}_{src_col}_{tgt_table}_{tgt_col}"[:120]
+        lines.append(
+            f"ALTER TABLE {src_table} ADD CONSTRAINT {constraint_name} FOREIGN KEY ({src_col}) REFERENCES {tgt_table} ({tgt_col});"
+        )
+
+    if len(lines) <= 2:
+        lines.append("-- Nenhuma tabela/campo encontrado para gerar SQL.")
+
+    return JsonResponse({"status": "ok", "sql": "\n".join(lines)})
