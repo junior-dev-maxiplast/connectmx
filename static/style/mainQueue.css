@@ -652,6 +652,35 @@ html[data-theme="light"] .queue-custom-add-btn {
     margin-bottom: 6px;
 }
 
+.queue-inline-select-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.queue-inline-select-head .queue-inline-select-search {
+    margin-bottom: 0;
+    flex: 1 1 auto;
+}
+
+.queue-inline-type-add-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: #343955;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.queue-inline-type-add-btn:hover {
+    background: #3f4668;
+}
+
 .queue-inline-select-search::placeholder {
     color: rgba(238, 242, 255, 0.62);
 }
@@ -698,6 +727,12 @@ html[data-theme="light"] .queue-inline-select-search {
     background: #f2f4fb;
     color: #1c2242;
     border-color: rgba(28, 34, 66, 0.18);
+}
+
+html[data-theme="light"] .queue-inline-type-add-btn {
+    background: #e7eaf7;
+    border-color: rgba(28, 34, 66, 0.2);
+    color: #1c2242;
 }
 
 html[data-theme="light"] .queue-inline-select-search::placeholder {
