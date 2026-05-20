@@ -56,10 +56,12 @@ class UserQueueCreateForm(forms.ModelForm):
             'a_description',
             'task_group',
             'task_type',
-            'd_predicted_date_start',
-            't_predicted_time_start',
-            'd_predicted_date_end',
-            't_predicted_time_end',
+            'priority_level',
+            'estimated_effort_level',
+            'd_real_date_start',
+            'd_real_time_start',
+            'd_real_date_end',
+            't_real_time_end',
         ]
 
         labels = {
@@ -89,10 +91,10 @@ class UserQueueCreateForm(forms.ModelForm):
         }
 
         widgets = {
-            'd_predicted_date_start':forms.DateInput(attrs={'type':'date'}),
-            'd_predicted_date_end':forms.DateInput(attrs={'type':'date'}),
-            't_predicted_time_start':forms.TimeInput(attrs={'type':'time'}),
-            't_predicted_time_end':forms.TimeInput(attrs={'type':'time'}),
+            'd_real_date_start':forms.DateInput(attrs={'type':'date'}),
+            'd_real_date_end':forms.DateInput(attrs={'type':'date'}),
+            'd_real_time_start':forms.TimeInput(attrs={'type':'time'}),
+            't_real_time_end':forms.TimeInput(attrs={'type':'time'}),
             'n_queue_position':forms.HiddenInput()
         }
 

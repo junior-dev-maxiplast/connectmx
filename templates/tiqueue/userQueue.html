@@ -164,48 +164,45 @@
                     </div>
 
                     <div class="field">
-                        <label for="edit_d_predicted_date_start">In&#237;cio (Data)</label>
-                        <input type="date" name="d_predicted_date_start" id="edit_d_predicted_date_start">
+                        <label for="edit_priority_level">Prioridade</label>
+                        <select name="priority_level" id="edit_priority_level" class="queue-select">
+                            <option value="low">Baixa</option>
+                            <option value="medium">M&#233;dia</option>
+                            <option value="high">Alta</option>
+                        </select>
                     </div>
 
                     <div class="field">
-                        <label for="edit_t_predicted_time_start">In&#237;cio (Hora)</label>
-                        <input type="time" name="t_predicted_time_start" id="edit_t_predicted_time_start">
+                        <label for="edit_estimated_effort_level">N&#237;vel de tempo estimado</label>
+                        <select name="estimated_effort_level" id="edit_estimated_effort_level" class="queue-select">
+                            <option value="small">Pequeno</option>
+                            <option value="medium">M&#233;dio</option>
+                            <option value="large">Grande</option>
+                        </select>
                     </div>
 
                     <div class="field">
-                        <label for="edit_d_predicted_date_end">Fim (Data)</label>
-                        <input type="date" name="d_predicted_date_end" id="edit_d_predicted_date_end">
-                    </div>
-
-                    <div class="field">
-                        <label for="edit_t_predicted_time_end">Fim (Hora)</label>
-                        <input type="time" name="t_predicted_time_end" id="edit_t_predicted_time_end">
-                    </div>
-
-                    <div class="field">
-                        <label for="edit_d_real_date_start">In&#237;cio real (Data)</label>
+                        <label for="edit_d_real_date_start">Prazo in&#237;cio (Data)</label>
                         <input type="date" name="d_real_date_start" id="edit_d_real_date_start">
                     </div>
 
                     <div class="field">
-                        <label for="edit_d_real_time_start">In&#237;cio real (Hora)</label>
+                        <label for="edit_d_real_time_start">Prazo in&#237;cio (Hora)</label>
                         <input type="time" name="d_real_time_start" id="edit_d_real_time_start">
                     </div>
 
                     <div class="field">
-                        <label for="edit_d_real_date_end">Fim real (Data)</label>
+                        <label for="edit_d_real_date_end">Prazo fim (Data)</label>
                         <input type="date" name="d_real_date_end" id="edit_d_real_date_end">
                     </div>
 
                     <div class="field">
-                        <label for="edit_t_real_time_end">Fim real (Hora)</label>
+                        <label for="edit_t_real_time_end">Prazo fim (Hora)</label>
                         <input type="time" name="t_real_time_end" id="edit_t_real_time_end">
                     </div>
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="queue-secondary-btn" onclick="applyPredictedToRealOnEdit()">Igual previsto</button>
                     <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
                     <button type="submit" class="queue-primary-btn">Salvar</button>
                 </div>
@@ -280,6 +277,26 @@
             </form>
         </div>
 
+        <div style="display: none;" id="popUpCustomQueueColumn" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Nova coluna personalizada</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="customQueueColumnForm" class="modal-form" onsubmit="return submitCustomQueueColumn(event)">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field span-2">
+                        <label for="custom_queue_col_name">Nome da coluna</label>
+                        <input id="custom_queue_col_name" name="name" type="text" maxlength="60" required>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Adicionar coluna</button>
+                </div>
+            </form>
+        </div>
+
         <div id="bulkDueDateModal" class="queue-modal-overlay" style="display:none;">
             <div class="queue-modal-card queue-bulk-due-modal">
                 <div class="queue-modal-head">
@@ -293,14 +310,12 @@
                                 <th>ID</th>
                                 <th>Chamado</th>
                                 <th>Descrição</th>
-                                <th>Prev. início</th>
-                                <th>Prev. fim</th>
-                                <th>Real início</th>
-                                <th>Real fim</th>
+                                <th>Prazo início</th>
+                                <th>Prazo fim</th>
                             </tr>
                         </thead>
                         <tbody id="bulkDueDateRows">
-                            <tr><td colspan="8">Nenhuma demanda selecionada.</td></tr>
+                            <tr><td colspan="5">Nenhuma demanda selecionada.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -334,19 +349,21 @@
                 </div>
             </form>
         </div>
-        {% if kanban_lab %}
-        <div class="headerMain queue-collapsible-header" onclick="toggleMyQueueKanban()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleMyQueueKanban();}">
-            <div class="headerTitle queue-collapsible-title">
-                <h1>Kanban da Minha Fila (LAB)</h1>
-                <span id="myQueueKanbanChevron" class="queue-collapsible-chevron">&#9660;</span>
-            </div>
-            <div class="headerButton">
-                <div class="queue-toolbar">
-                    <button type="button" class="queue-secondary-btn" onclick="event.stopPropagation(); openKanbanColumnModal()">Nova coluna</button>
-                </div>
+        <div class="queue-view-tabs">
+            <button id="queueTabDemands" type="button" class="queue-view-tab is-active" onclick="setQueueWorkspaceView('demands')">Minhas Demandas</button>
+            <button id="queueTabKanban" type="button" class="queue-view-tab" onclick="setQueueWorkspaceView('kanban')">Fila</button>
+        </div>
+
+        <div id="queueDemandsView">
+            <div id="container-queue">
+                {% include 'partials/queue.html' %}
             </div>
         </div>
-        <div id="myQueueKanbanWrap" class="myq-kanban-wrap-container">
+
+        <div id="queueKanbanView" class="myq-kanban-wrap-container" style="display:none;">
+            <div class="queue-toolbar queue-kanban-toolbar">
+                <button type="button" class="queue-secondary-btn" onclick="openKanbanColumnModal()">Nova coluna</button>
+            </div>
             <div class="myq-carousel">
                 <button type="button" id="myqArrowLeft" class="myq-arrow" aria-label="Colunas anteriores" onclick="scrollMyQueueKanban(-1)">&#x276E;</button>
                 <div id="myQueueKanbanViewport" class="myq-carousel-viewport">
@@ -355,34 +372,6 @@
                 <button type="button" id="myqArrowRight" class="myq-arrow" aria-label="Proximas colunas" onclick="scrollMyQueueKanban(1)">&#x276F;</button>
             </div>
         </div>
-        <div id="container-queue">
-            {% include 'partials/queue.html' %}
-        </div>
-        {% else %}
-        <div id="container-queue">
-            {% include 'partials/queue.html' %}
-        </div>
-        <div class="headerMain queue-collapsible-header" onclick="toggleMyQueueKanban()" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleMyQueueKanban();}">
-            <div class="headerTitle queue-collapsible-title">
-                <h1>Kanban da Minha Fila</h1>
-                <span id="myQueueKanbanChevron" class="queue-collapsible-chevron">&#9660;</span>
-            </div>
-            <div class="headerButton">
-                <div class="queue-toolbar">
-                    <button type="button" class="queue-secondary-btn" onclick="event.stopPropagation(); openKanbanColumnModal()">Nova coluna</button>
-                </div>
-            </div>
-        </div>
-        <div id="myQueueKanbanWrap" class="myq-kanban-wrap-container">
-            <div class="myq-carousel">
-                <button type="button" id="myqArrowLeft" class="myq-arrow" aria-label="Colunas anteriores" onclick="scrollMyQueueKanban(-1)">&#x276E;</button>
-                <div id="myQueueKanbanViewport" class="myq-carousel-viewport">
-                    <div id="myQueueKanban" class="myq-kanban-wrap"></div>
-                </div>
-                <button type="button" id="myqArrowRight" class="myq-arrow" aria-label="Proximas colunas" onclick="scrollMyQueueKanban(1)">&#x276F;</button>
-            </div>
-        </div>
-        {% endif %}
     </div>
 
 
@@ -432,6 +421,21 @@
             { id: "{{ c.id }}", name: "{{ c.name|escapejs }}", color: "{{ c.color }}" }{% if not forloop.last %},{% endif %}
         {% endfor %}
     ];
+    const QUEUE_TASK_TYPE_OPTIONS = [
+        {% for t in task_types %}
+            { value: "{{ t.id }}", label: "{{ t.name|escapejs }}", color: "{{ t.color }}" }{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    ];
+    const QUEUE_PRIORITY_OPTIONS = [
+        { value: "low", label: "Baixa", color: "#2d8f66" },
+        { value: "medium", label: "Media", color: "#ad8d2e" },
+        { value: "high", label: "Alta", color: "#b14f59" },
+    ];
+    const QUEUE_EFFORT_OPTIONS = [
+        { value: "small", label: "Pequeno", color: "#2f9d9c" },
+        { value: "medium", label: "Medio", color: "#4b668f" },
+        { value: "large", label: "Grande", color: "#7d5fb0" },
+    ];
     const MY_QUEUE_DEFAULT_COLUMN_ID = "{{ my_kanban_default_col_id|default:'' }}";
 
     function getQueueSortValue(row, key) {
@@ -460,33 +464,27 @@
 
         switch (key) {
             case "position":
-                return toNum(cells[2] ? cells[2].textContent : "");
+                return toNum(cells[1] ? cells[1].textContent : "");
             case "ticket":
-                return text(cells[3] ? cells[3].textContent : "");
+                return text(cells[2] ? cells[2].textContent : "");
             case "description": {
                 const el = row.querySelector(".queue-desc-text");
-                return text(el ? el.textContent : (cells[4] ? cells[4].textContent : ""));
+                return text(el ? el.textContent : (cells[3] ? cells[3].textContent : ""));
             }
+            case "status":
+                return text(cells[4] ? cells[4].textContent : "");
+            case "priority":
+                return text(cells[5] ? cells[5].textContent : "");
             case "type": {
                 const badge = row.querySelector(".type-badge");
-                return text(badge ? badge.textContent : (cells[5] ? cells[5].textContent : ""));
+                return text(badge ? badge.textContent : (cells[6] ? cells[6].textContent : ""));
             }
-            case "pred_start_date":
-                return dateToNum(row.dataset.predStart || "");
-            case "pred_start_time":
-                return timeToNum(row.dataset.predStartTime || "");
-            case "pred_end_date":
-                return dateToNum(row.dataset.predEnd || "");
-            case "pred_end_time":
-                return timeToNum(row.dataset.predEndTime || "");
-            case "real_start_date":
-                return dateToNum(cells[10] ? cells[10].dataset.iso : "");
-            case "real_start_time":
-                return timeToNum(cells[11] ? cells[11].dataset.iso : "");
-            case "real_end_date":
-                return dateToNum(cells[12] ? cells[12].dataset.iso : "");
-            case "real_end_time":
-                return timeToNum(cells[13] ? cells[13].dataset.iso : "");
+            case "effort":
+                return text(cells[7] ? cells[7].textContent : "");
+            case "deadline_start":
+                return dateToNum(cells[8] ? cells[8].dataset.isoDate : "");
+            case "deadline_end":
+                return dateToNum(cells[9] ? cells[9].dataset.isoDate : "");
             default:
                 return text(row.textContent || "");
         }
@@ -591,9 +589,37 @@
     }
 
     const QUEUE_STYLE_STORAGE_KEY = "queueModernStyleEnabled";
+    const QUEUE_WORKSPACE_VIEW_KEY = "queueWorkspaceView";
     const MY_QUEUE_KANBAN_COLLAPSED_KEY = "myQueueKanbanCollapsed";
     const CURRENT_QUEUE_SECTION_COLLAPSED_KEY = "currentQueueSectionCollapsed";
     const BACKLOG_QUEUE_SECTION_COLLAPSED_KEY = "backlogQueueSectionCollapsed";
+
+    function setQueueWorkspaceView(view) {
+        const demands = document.getElementById("queueDemandsView");
+        const kanban = document.getElementById("queueKanbanView");
+        const tabDemands = document.getElementById("queueTabDemands");
+        const tabKanban = document.getElementById("queueTabKanban");
+        const mode = view === "kanban" ? "kanban" : "demands";
+        if (!demands || !kanban || !tabDemands || !tabKanban) return;
+
+        demands.style.display = mode === "demands" ? "block" : "none";
+        kanban.style.display = mode === "kanban" ? "block" : "none";
+        tabDemands.classList.toggle("is-active", mode === "demands");
+        tabKanban.classList.toggle("is-active", mode === "kanban");
+        localStorage.setItem(QUEUE_WORKSPACE_VIEW_KEY, mode);
+
+        if (mode === "kanban") {
+            renderMyQueueKanban();
+        }
+    }
+
+    function initQueueWorkspaceView() {
+        const params = new URLSearchParams(window.location.search || "");
+        const fromQuery = (params.get("view") || "").toLowerCase();
+        const fromStorage = (localStorage.getItem(QUEUE_WORKSPACE_VIEW_KEY) || "").toLowerCase();
+        const initial = (fromQuery === "kanban" || fromStorage === "kanban") ? "kanban" : "demands";
+        setQueueWorkspaceView(initial);
+    }
 
     function applyQueueStyleFromStorage() {
         const root = document.getElementById("queuePageRoot");
@@ -657,15 +683,6 @@
         updateScreen();
     }
 
-    async function bulkSetCurrent() {
-        const ids = getSelectedQueueIds();
-        if (!ids.length) return;
-        for (const id of ids) {
-            await postJson(`/queue/user/current/${id}/`, { is_current: true });
-        }
-        updateScreen();
-    }
-
     function closeBulkDueDateModal() {
         const modal = document.getElementById("bulkDueDateModal");
         if (modal) modal.style.display = "none";
@@ -682,28 +699,24 @@
             const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
             const ticket = row ? ((row.children[3] && row.children[3].textContent) || "").trim() : "";
             const desc = row ? ((row.querySelector(".queue-desc-text") && row.querySelector(".queue-desc-text").textContent) || "").trim() : "";
-            const predStart = row ? (row.dataset.predStart || "") : "";
-            const predEnd = row ? (row.dataset.predEnd || "") : "";
-            const predStartTime = row ? (row.dataset.predStartTime || "") : "";
-            const predEndTime = row ? (row.dataset.predEndTime || "") : "";
-            const realStartDate = row ? ((row.querySelector('[data-field="d_real_date_start"]')?.dataset?.iso || "").trim()) : "";
-            const realStartTime = row ? ((row.querySelector('[data-field="d_real_time_start"]')?.dataset?.iso || "").trim()) : "";
-            const realEndDate = row ? ((row.querySelector('[data-field="d_real_date_end"]')?.dataset?.iso || "").trim()) : "";
-            const realEndTime = row ? ((row.querySelector('[data-field="t_real_time_end"]')?.dataset?.iso || "").trim()) : "";
+            const startCell = row ? row.querySelector('[data-field-date="d_real_date_start"]') : null;
+            const endCell = row ? row.querySelector('[data-field-date="d_real_date_end"]') : null;
+            const realStartDate = startCell ? ((startCell.dataset.isoDate || "").trim()) : "";
+            const realStartTime = startCell ? ((startCell.dataset.isoTime || "").trim()) : "";
+            const realEndDate = endCell ? ((endCell.dataset.isoDate || "").trim()) : "";
+            const realEndTime = endCell ? ((endCell.dataset.isoTime || "").trim()) : "";
             return `
                 <tr data-id="${id}">
                     <td>${id}</td>
                     <td>${ticket || "-"}</td>
                     <td>${desc || "-"}</td>
-                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_predicted_date_start" data-id="${id}" value="${predStart}"><input type="time" class="queue-input-sm" data-k="t_predicted_time_start" data-id="${id}" value="${predStartTime}"></div></td>
-                    <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_predicted_date_end" data-id="${id}" value="${predEnd}"><input type="time" class="queue-input-sm" data-k="t_predicted_time_end" data-id="${id}" value="${predEndTime}"></div></td>
                     <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_real_date_start" data-id="${id}" value="${realStartDate}"><input type="time" class="queue-input-sm" data-k="d_real_time_start" data-id="${id}" value="${realStartTime}"></div></td>
                     <td><div class="bulk-due-pair"><input type="date" class="queue-input-sm" data-k="d_real_date_end" data-id="${id}" value="${realEndDate}"><input type="time" class="queue-input-sm" data-k="t_real_time_end" data-id="${id}" value="${realEndTime}"></div></td>
                 </tr>
             `;
         }).join("");
 
-        rowsHost.innerHTML = html || `<tr><td colspan="8">Nenhuma demanda selecionada.</td></tr>`;
+        rowsHost.innerHTML = html || `<tr><td colspan="5">Nenhuma demanda selecionada.</td></tr>`;
         modal.style.display = "flex";
     }
 
@@ -904,11 +917,13 @@
         divPopUpFormEditItem = document.getElementById("popUpFormEditItem");
         divPopUpPredictedEdit = document.getElementById("popUpPredictedEdit");
         divPopUpLinkProject = document.getElementById("popUpLinkProject");
+        divPopUpCustomQueueColumn = document.getElementById("popUpCustomQueueColumn");
         document.getElementById("overlay").style.display = "none";
         divPopUpFormNewItem.style.display = "none";
         if (divPopUpFormEditItem) divPopUpFormEditItem.style.display = "none";
         if (divPopUpPredictedEdit) divPopUpPredictedEdit.style.display = "none";
         if (divPopUpLinkProject) divPopUpLinkProject.style.display = "none";
+        if (divPopUpCustomQueueColumn) divPopUpCustomQueueColumn.style.display = "none";
     }
 
     let currentEditQueueItemId = null;
@@ -923,12 +938,9 @@
                 document.getElementById("edit_a_description").value = data.a_description || "";
                 document.getElementById("edit_task_group").value = data.task_group || "";
                 document.getElementById("edit_task_type").value = data.task_type || "";
+                document.getElementById("edit_priority_level").value = data.priority_level || "medium";
+                document.getElementById("edit_estimated_effort_level").value = data.estimated_effort_level || "medium";
                 initEditTaskTypeFilter(true);
-
-                document.getElementById("edit_d_predicted_date_start").value = data.d_predicted_date_start || "";
-                document.getElementById("edit_t_predicted_time_start").value = data.t_predicted_time_start || "";
-                document.getElementById("edit_d_predicted_date_end").value = data.d_predicted_date_end || "";
-                document.getElementById("edit_t_predicted_time_end").value = data.t_predicted_time_end || "";
 
                 document.getElementById("edit_d_real_date_start").value = data.d_real_date_start || "";
                 document.getElementById("edit_d_real_time_start").value = data.d_real_time_start || "";
@@ -1006,12 +1018,6 @@
             .catch((err) => {
                 alert(err && err.message ? err.message : "Erro ao duplicar tarefa.");
             });
-    }
-
-    function toggleCurrent(checkbox, id) {
-        const isCurrent = !!checkbox.checked;
-        postJson(`/queue/user/current/${id}/`, { is_current: isCurrent })
-            .then(() => {updateScreen()})
     }
 
     function syncWithSM() {
@@ -1160,12 +1166,17 @@
             initQueueHeaderSort();
             applyQueueFilter();
             initInlineRealEdit();
+            initInlineSelectEdit();
+            initInlineCustomCellEdit();
+            initInlineTextEdit();
+            initQueueRowDeleteShortcut();
             restoreExpandedDetails();
             initTaskProgressBars();
             applyQueueFocusFromStorage();
             onBulkSelectionChange();
             updateQueueDashboard();
             renderMyQueueKanban();
+            setQueueWorkspaceView(localStorage.getItem(QUEUE_WORKSPACE_VIEW_KEY) || "demands");
         });
     }
 
@@ -1177,10 +1188,15 @@
     initQueueDnD();
     initQueueHeaderSort();
     initInlineRealEdit();
+    initInlineSelectEdit();
+    initInlineCustomCellEdit();
+    initInlineTextEdit();
+    initQueueRowDeleteShortcut();
     initTaskProgressBars();
     onBulkSelectionChange();
     updateQueueDashboard();
     renderMyQueueKanban();
+    initQueueWorkspaceView();
     const DEMAND_TEMPLATES = JSON.parse(document.getElementById("demandTemplatesPayload").textContent || "[]");
     let currentQueueSearchQuery = "";
     let currentQueueTicketQuery = "";
@@ -1255,11 +1271,11 @@
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
             const descEl = row.querySelector('.queue-desc-text');
-            const descText = descEl ? (descEl.textContent || "") : (cells && cells[5] ? (cells[5].textContent || "") : "");
-            const ticketText = cells && cells[3] ? (cells[3].textContent || "") : "";
+            const descText = descEl ? (descEl.textContent || "") : (cells && cells[3] ? (cells[3].textContent || "") : "");
+            const ticketText = cells && cells[2] ? (cells[2].textContent || "") : "";
             const rowTypeId = row.dataset.typeId || "";
-            const predStart = row.dataset.predStart || "";
-            const predEnd = row.dataset.predEnd || "";
+            const predStart = row.dataset.deadlineStart || "";
+            const predEnd = row.dataset.deadlineEnd || "";
 
             const matchDesc = !normalizedDesc || descText.toLowerCase().includes(normalizedDesc);
             const matchTicket = !normalizedTicket || ticketText.toLowerCase().includes(normalizedTicket);
@@ -1268,7 +1284,7 @@
             const fromOk = !currentDateFrom || (predEnd ? predEnd >= currentDateFrom : true);
             const toOk = !currentDateTo || (predStart ? predStart <= currentDateTo : true);
             const matchDate = fromOk && toOk;
-            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            const isCurrent = String(row.dataset.isCurrent || "") === "1";
             const isDelayed = !!predEnd && predEnd < todayIso;
             const isToday = (!!predStart && predStart <= todayIso) && (!!predEnd && predEnd >= todayIso);
             const matchOperation = !operationMode || isCurrent || isDelayed || isToday;
@@ -1393,14 +1409,14 @@
         let hours = 0;
 
         rows.forEach((row) => {
-            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            const isCurrent = String(row.dataset.isCurrent || "") === "1";
             const kanbanSort = parseInt(row.dataset.kanbanSort || "0", 10) || 0;
             if (isCurrent) inProgress += 1;
 
             const predEnd = (row.dataset.predEnd || "").trim();
             if (predEnd && predEnd < todayIso) delayed += 1;
             if (predEnd && predEnd === todayIso) todayDue += 1;
-            const realEnd = (row.querySelector('[data-field="d_real_date_end"]')?.dataset?.iso || "").trim();
+            const realEnd = (row.querySelector('[data-field-date="d_real_date_end"]')?.dataset?.isoDate || "").trim();
             if (realEnd && realEnd === todayIso) doneToday += 1;
 
             hours += parseFloat(row.dataset.detailHours || "0") || 0;
@@ -1485,22 +1501,22 @@
         rows.forEach((row) => {
             const id = row.dataset.id || "";
             const cells = row.querySelectorAll("td");
-            const ticket = cells && cells[3] ? (cells[3].textContent || "").trim() : "";
-            const queuePos = cells && cells[2] ? (cells[2].textContent || "").trim() : "";
-            const isCurrent = !!row.querySelector(".queue-current-toggle:checked");
+            const ticket = cells && cells[2] ? (cells[2].textContent || "").trim() : "";
+            const queuePos = cells && cells[1] ? (cells[1].textContent || "").trim() : "";
+            const isCurrent = String(row.dataset.isCurrent || "") === "1";
             const descEl = row.querySelector(".queue-desc-text");
             const description = descEl ? (descEl.textContent || "").trim() : "";
             const typeBadge = row.querySelector(".type-badge");
             const typeText = typeBadge ? (typeBadge.textContent || "").trim() : "";
             const typeColor = typeBadge ? (typeBadge.style.background || "") : "";
-            const predEnd = row.dataset.predEnd || "";
-            const predEndTime = row.dataset.predEndTime || "";
-            const predStart = row.dataset.predStart || "";
-            const predStartTime = row.dataset.predStartTime || "";
-            const realStart = cells && cells[10] ? (cells[10].dataset.iso || "") : "";
-            const realStartTime = cells && cells[11] ? (cells[11].dataset.iso || "") : "";
-            const realEnd = cells && cells[12] ? (cells[12].dataset.iso || "") : "";
-            const realEndTime = cells && cells[13] ? (cells[13].dataset.iso || "") : "";
+            const predEnd = row.dataset.deadlineEnd || "";
+            const predEndTime = cells && cells[9] ? (cells[9].dataset.isoTime || "") : "";
+            const predStart = row.dataset.deadlineStart || "";
+            const predStartTime = cells && cells[8] ? (cells[8].dataset.isoTime || "") : "";
+            const realStart = cells && cells[8] ? (cells[8].dataset.isoDate || "") : "";
+            const realStartTime = cells && cells[8] ? (cells[8].dataset.isoTime || "") : "";
+            const realEnd = cells && cells[9] ? (cells[9].dataset.isoDate || "") : "";
+            const realEndTime = cells && cells[9] ? (cells[9].dataset.isoTime || "") : "";
             const kanbanSort = parseInt(row.dataset.kanbanSort || "0", 10) || 0;
 
             const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
@@ -1904,8 +1920,7 @@
             .then((r) => r.json())
             .then((data) => {
                 if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao mover card.");
-                const row = document.querySelector(`tr.queue-task-row[data-id="${itemId}"]`);
-                if (row) row.dataset.kanbanColumn = String(columnId);
+                syncRowStatusCell(itemId, columnId);
                 renderMyQueueKanban();
                 persistKanbanColumnOrder(columnId);
             })
@@ -1932,10 +1947,11 @@
         if (!id) return;
         postJson(`/queue/user/current/${id}/`, { is_current: true })
             .then(() => {
+                document.querySelectorAll("tr.queue-task-row[data-id]").forEach((r) => {
+                    r.dataset.isCurrent = (String(r.dataset.id || "") === id) ? "1" : "0";
+                });
                 const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
-                if (row) {
-                    row.querySelectorAll(".queue-current-toggle").forEach((cb) => cb.checked = true);
-                }
+                if (row) row.dataset.isCurrent = "1";
                 const card = document.querySelector(`.myq-card[data-id="${id}"]`);
                 if (!card) {
                     updateScreen();
@@ -2410,6 +2426,374 @@
             });
     }
 
+    function openQueueCustomColumnModal() {
+        const overlay = document.getElementById("overlay");
+        const modal = document.getElementById("popUpCustomQueueColumn");
+        const input = document.getElementById("custom_queue_col_name");
+        if (!overlay || !modal || !input) return;
+        overlay.style.display = "block";
+        modal.style.display = "block";
+        input.value = "";
+        input.focus();
+    }
+
+    function submitCustomQueueColumn(e) {
+        e.preventDefault();
+        const input = document.getElementById("custom_queue_col_name");
+        const name = (input && input.value ? input.value : "").trim();
+        if (!name) return false;
+
+        const fd = new FormData();
+        fd.append("name", name);
+        fetch("/queue/user/custom-columns/create/", {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") },
+            credentials: "same-origin",
+            body: fd,
+        })
+        .then(async (response) => {
+            if (!response.ok) {
+                const data = await response.json().catch(() => null);
+                throw new Error(data && data.message ? data.message : "Erro ao criar coluna.");
+            }
+            return response.json();
+        })
+        .then(() => {
+            fCloseAllOverlays();
+            updateScreen();
+        })
+        .catch((err) => alert(err.message || "Erro ao criar coluna."));
+        return false;
+    }
+
+    function initInlineCustomCellEdit() {
+        const cells = document.querySelectorAll(".queue-inline-custom-cell");
+        cells.forEach((cell) => {
+            if (cell.dataset.boundCustom === "1") return;
+            cell.dataset.boundCustom = "1";
+            cell.addEventListener("click", () => startInlineCustomCellEdit(cell));
+        });
+    }
+
+    function initInlineTextEdit() {
+        const cells = document.querySelectorAll(".queue-inline-text-cell");
+        cells.forEach((cell) => {
+            if (cell.dataset.boundText === "1") return;
+            cell.dataset.boundText = "1";
+            cell.addEventListener("dblclick", () => startInlineTextEdit(cell));
+        });
+    }
+
+    function startInlineTextEdit(cell) {
+        if (cell.querySelector("input")) return;
+        const id = String(cell.dataset.id || "");
+        const field = String(cell.dataset.field || "");
+        if (!id || !field) return;
+        const current = (cell.textContent || "").trim();
+        const safeCurrent = current === "-" ? "" : current;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = field === "a_description" ? 250 : 30;
+        input.value = safeCurrent;
+        input.className = "queue-inline-input";
+        cell.textContent = "";
+        cell.appendChild(input);
+        input.focus();
+
+        const restore = () => {
+            cell.textContent = safeCurrent || "-";
+        };
+
+        const commit = () => {
+            const value = (input.value || "").trim();
+            const fd = new FormData();
+            fd.append(field, value);
+            fetch(`/queue/user/update/${id}/`, {
+                method: "POST",
+                headers: { "X-CSRFToken": getCookie("csrftoken") },
+                credentials: "same-origin",
+                body: fd,
+            })
+                .then(async (response) => {
+                    if (!response.ok) {
+                        const data = await response.json().catch(() => null);
+                        throw new Error(data && data.errors ? JSON.stringify(data.errors) : "Erro ao salvar");
+                    }
+                    return response.json();
+                })
+                .then(() => {
+                    cell.textContent = value || "-";
+                })
+                .catch((err) => {
+                    alert(err.message || "Erro ao salvar");
+                    restore();
+                });
+        };
+
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") {
+                ev.preventDefault();
+                commit();
+            } else if (ev.key === "Escape") {
+                ev.preventDefault();
+                restore();
+            }
+        });
+    }
+
+    function createBlankQueueItemFromPlus() {
+        const fd = new FormData();
+        fd.append("a_ticket", "");
+        fd.append("a_description", "");
+        fd.append("priority_level", "medium");
+        fd.append("estimated_effort_level", "medium");
+        const firstKanban = (MY_QUEUE_COLUMNS && MY_QUEUE_COLUMNS.length) ? String(MY_QUEUE_COLUMNS[0].id || "") : "";
+        fd.append("kanban_column", firstKanban);
+
+        fetch("/queue/user/create-inline/", {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") },
+            credentials: "same-origin",
+            body: fd,
+        })
+            .then(async (response) => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => null);
+                    throw new Error(data && data.message ? data.message : "Erro ao criar");
+                }
+                return response.json();
+            })
+            .then((data) => {
+                updateScreen();
+                const newId = String((data && data.id) || "");
+                if (!newId) return;
+                setTimeout(() => {
+                    const row = document.querySelector(`#container-queue tr.queue-task-row[data-id="${newId}"]`);
+                    if (!row) return;
+                    row.classList.add("is-row-selected", "is-row-new");
+                    selectedQueueRowId = newId;
+                    const descCell = row.querySelector('.queue-inline-text-cell[data-field="a_description"]');
+                    if (descCell) startInlineTextEdit(descCell);
+                    setTimeout(() => row.classList.remove("is-row-new"), 1200);
+                }, 120);
+            })
+            .catch((err) => alert(err.message || "Erro ao criar"));
+    }
+
+    function startInlineCustomCellEdit(cell) {
+        if (cell.querySelector("input")) return;
+        const current = String(cell.dataset.value || "");
+        const itemId = String(cell.dataset.id || "");
+        const columnId = String(cell.dataset.columnId || "");
+        if (!itemId || !columnId) return;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.maxLength = 250;
+        input.value = current;
+        input.className = "queue-inline-input";
+        cell.textContent = "";
+        cell.appendChild(input);
+        input.focus();
+
+        const cancel = () => {
+            const val = String(cell.dataset.value || "");
+            cell.textContent = val || "-";
+        };
+
+        const commit = () => {
+            const value = (input.value || "").trim();
+            const fd = new FormData();
+            fd.append("column_id", columnId);
+            fd.append("value", value);
+            fetch(`/queue/user/custom-value/${itemId}/`, {
+                method: "POST",
+                headers: { "X-CSRFToken": getCookie("csrftoken") },
+                credentials: "same-origin",
+                body: fd,
+            })
+            .then(async (response) => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => null);
+                    throw new Error(data && data.message ? data.message : "Erro ao salvar");
+                }
+                return response.json();
+            })
+            .then(() => {
+                cell.dataset.value = value;
+                cell.textContent = value || "-";
+            })
+            .catch((err) => {
+                alert(err.message || "Erro ao salvar");
+                cancel();
+            });
+        };
+
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter") {
+                ev.preventDefault();
+                commit();
+            } else if (ev.key === "Escape") {
+                ev.preventDefault();
+                cancel();
+            }
+        });
+    }
+
+    function getInlineSelectOptions(kind) {
+        if (kind === "kanban_column") {
+            return (MY_QUEUE_COLUMNS || []).map((c) => ({ value: String(c.id), label: c.name, color: c.color || "#61688c" }));
+        }
+        if (kind === "priority") return QUEUE_PRIORITY_OPTIONS;
+        if (kind === "effort") return QUEUE_EFFORT_OPTIONS;
+        if (kind === "task_type") return QUEUE_TASK_TYPE_OPTIONS;
+        return [];
+    }
+
+    function renderInlineCellContent(kind, value) {
+        const selected = getInlineSelectOptions(kind).find((o) => String(o.value) === String(value || ""));
+        if (!selected) return "-";
+        if (kind === "kanban_column") return `<span class="queue-inline-value"><span class="queue-status-chip" style="background:${selected.color || "#61688c"};">${selected.label}</span><span class="queue-inline-hint">...</span></span>`;
+        if (kind === "priority") return `<span class="queue-inline-value"><span class="queue-priority-chip priority-${selected.value}">${selected.label}</span><span class="queue-inline-hint">...</span></span>`;
+        if (kind === "task_type") return `<span class="queue-inline-value"><span class="type-badge" style="background:${selected.color};">${selected.label}</span><span class="queue-inline-hint">...</span></span>`;
+        return `<span class="queue-inline-value"><span class="queue-effort-chip">${selected.label}</span><span class="queue-inline-hint">...</span></span>`;
+    }
+
+    function syncRowStatusCell(itemId, columnId) {
+        const id = String(itemId || "");
+        const colId = String(columnId || "");
+        if (!id) return;
+        const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
+        if (!row) return;
+        row.dataset.kanbanColumn = colId;
+        const statusCell = row.querySelector('.queue-inline-select[data-field="kanban_column"]');
+        if (!statusCell) return;
+        statusCell.dataset.value = colId;
+        statusCell.innerHTML = renderInlineCellContent("kanban_column", colId);
+    }
+
+    function closeInlineSelectMenu() {
+        document.querySelectorAll(".queue-inline-select-menu").forEach((el) => el.remove());
+    }
+
+    let selectedQueueRowId = null;
+
+    function initQueueRowDeleteShortcut() {
+        const rows = document.querySelectorAll("#container-queue tr.queue-task-row[data-id]");
+        rows.forEach((row) => {
+            if (row.dataset.boundRowSelect === "1") return;
+            row.dataset.boundRowSelect = "1";
+            row.addEventListener("click", (ev) => {
+                if (ev.target.closest("button,input,select,textarea,a")) return;
+                selectedQueueRowId = String(row.dataset.id || "");
+                rows.forEach((r) => r.classList.toggle("is-row-selected", String(r.dataset.id || "") === selectedQueueRowId));
+            });
+        });
+        if (!document.body.dataset.boundDeleteShortcut) {
+            document.body.dataset.boundDeleteShortcut = "1";
+            document.addEventListener("keydown", (ev) => {
+                if (ev.key !== "Delete") return;
+                const activeTag = (document.activeElement && document.activeElement.tagName || "").toLowerCase();
+                if (["input", "textarea", "select"].includes(activeTag)) return;
+                if (!selectedQueueRowId) return;
+                ev.preventDefault();
+                deleteRegister(selectedQueueRowId);
+                selectedQueueRowId = null;
+            });
+        }
+    }
+
+    function initInlineSelectEdit() {
+        const cells = document.querySelectorAll(".queue-inline-select");
+        cells.forEach((cell) => {
+            if (cell.dataset.boundSelect === "1") return;
+            cell.dataset.boundSelect = "1";
+            cell.addEventListener("click", (e) => {
+                e.stopPropagation();
+                startInlineSelectEdit(cell);
+            });
+        });
+        if (!document.body.dataset.inlineSelectGlobalBound) {
+            document.body.dataset.inlineSelectGlobalBound = "1";
+            document.addEventListener("click", closeInlineSelectMenu);
+            window.addEventListener("scroll", closeInlineSelectMenu, true);
+            window.addEventListener("resize", closeInlineSelectMenu);
+        }
+    }
+
+    function startInlineSelectEdit(cell) {
+        closeInlineSelectMenu();
+        const kind = cell.dataset.selectKind;
+        const field = cell.dataset.field;
+        const id = cell.dataset.id;
+        const currentValue = String(cell.dataset.value || "");
+        const options = getInlineSelectOptions(kind);
+        if (!field || !id || !options.length) return;
+
+        const menu = document.createElement("div");
+        menu.className = "queue-inline-select-menu";
+        let renderedOptions = [];
+
+        if (kind === "task_type") {
+            const search = document.createElement("input");
+            search.type = "search";
+            search.className = "queue-inline-select-search";
+            search.placeholder = "Buscar tipo...";
+            menu.appendChild(search);
+            search.addEventListener("input", () => {
+                const q = String(search.value || "").trim().toLowerCase();
+                renderedOptions.forEach(({ btn, label }) => {
+                    btn.style.display = !q || label.includes(q) ? "" : "none";
+                });
+            });
+        }
+
+        options.forEach((opt) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = `queue-inline-select-option${String(opt.value) === currentValue ? " is-active" : ""}`;
+            btn.innerHTML = `<span class="queue-inline-dot" style="background:${opt.color || "#61688c"};"></span><span>${opt.label}</span>`;
+            btn.addEventListener("click", async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const formData = new FormData();
+                formData.append(field, String(opt.value));
+                try {
+                    const response = await fetch(`/queue/user/update/${id}/`, {
+                        method: "POST",
+                        headers: { "X-CSRFToken": getCookie("csrftoken") },
+                        credentials: "same-origin",
+                        body: formData,
+                    });
+                    if (!response.ok) {
+                        const data = await response.json().catch(() => null);
+                        throw new Error(data && data.errors ? JSON.stringify(data.errors) : "Erro ao salvar");
+                    }
+                    cell.dataset.value = String(opt.value);
+                    cell.innerHTML = renderInlineCellContent(kind, opt.value);
+                    if (kind === "kanban_column") {
+                        syncRowStatusCell(id, String(opt.value));
+                        renderMyQueueKanban();
+                    }
+                    closeInlineSelectMenu();
+                } catch (err) {
+                    alert(err.message || "Erro ao salvar");
+                }
+            });
+            menu.appendChild(btn);
+            renderedOptions.push({ btn, label: String(opt.label || "").toLowerCase() });
+        });
+
+        document.body.appendChild(menu);
+        const rect = cell.getBoundingClientRect();
+        menu.style.left = `${rect.left + window.scrollX}px`;
+        menu.style.top = `${rect.bottom + window.scrollY + 6}px`;
+        menu.style.minWidth = `${Math.max(rect.width, 160)}px`;
+    }
+
     function initInlineRealEdit() {
         const cells = document.querySelectorAll('.queue-editable');
         cells.forEach(cell => {
@@ -2422,13 +2806,15 @@
     function startInlineEdit(cell) {
         if (cell.querySelector('input')) return;
 
-        const type = cell.dataset.type;
-        const field = cell.dataset.field;
+        const dateField = cell.dataset.fieldDate;
+        const timeField = cell.dataset.fieldTime;
         const id = cell.dataset.id;
-        const iso = cell.dataset.iso || "";
+        const isoDate = cell.dataset.isoDate || "";
+        const isoTime = cell.dataset.isoTime || "00:00";
+        const iso = isoDate ? `${isoDate}T${isoTime}` : "";
 
         const input = document.createElement('input');
-        input.type = type;
+        input.type = 'datetime-local';
         input.value = iso;
         input.className = 'queue-inline-input';
 
@@ -2438,7 +2824,7 @@
 
         const commit = () => {
             const value = input.value || "";
-            saveInlineValue(id, field, value, type, cell);
+            saveInlineValue(id, dateField, timeField, value, cell);
         };
 
         input.addEventListener('blur', commit);
@@ -2449,27 +2835,30 @@
             }
             if (e.key === 'Escape') {
                 e.preventDefault();
-                restoreCell(cell, iso, type);
+                restoreCell(cell, isoDate, isoTime);
             }
         });
     }
 
-    function restoreCell(cell, iso, type) {
-        if (type === 'date' && iso) {
-            const [y, m, d] = iso.split('-');
-            cell.textContent = `${d}/${m}/${y}`;
-        } else if (type === 'time' && iso) {
-            cell.textContent = iso;
+    function restoreCell(cell, isoDate, isoTime) {
+        if (isoDate) {
+            const [y, m, d] = isoDate.split('-');
+            const hour = isoTime ? ` ${isoTime}` : "";
+            cell.textContent = `${d}/${m}/${y}${hour}`;
         } else {
             cell.textContent = '-';
         }
-        cell.dataset.iso = iso || "";
+        cell.dataset.isoDate = isoDate || "";
+        cell.dataset.isoTime = isoTime || "";
     }
 
-    function saveInlineValue(id, field, value, type, cell) {
+    function saveInlineValue(id, dateField, timeField, value, cell) {
         const csrfToken = getCookie('csrftoken');
         const formData = new FormData();
-        formData.append(field, value);
+        const [datePart, timePartRaw] = String(value || "").split("T");
+        const timePart = (timePartRaw || "").slice(0, 5);
+        formData.append(dateField, datePart || "");
+        formData.append(timeField, timePart || "");
 
         fetch(`/queue/user/update/${id}/`, {
             method: 'POST',
@@ -2487,20 +2876,11 @@
             return response.json();
         })
         .then(() => {
-            const iso = value || "";
-            if (type === 'date' && iso) {
-                const [y, m, d] = iso.split('-');
-                cell.textContent = `${d}/${m}/${y}`;
-            } else if (type === 'time' && iso) {
-                cell.textContent = iso;
-            } else {
-                cell.textContent = '-';
-            }
-            cell.dataset.iso = iso;
+            restoreCell(cell, datePart || "", timePart || "");
         })
         .catch((err) => {
             alert(err.message || 'Erro ao salvar');
-            restoreCell(cell, cell.dataset.iso || "", type);
+            restoreCell(cell, cell.dataset.isoDate || "", cell.dataset.isoTime || "");
         });
     }
 
