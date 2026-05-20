@@ -816,17 +816,22 @@
             return Array.from(body.querySelectorAll('tr.queue-item-row[data-id]'));
         }
 
-        function persistOrder(movedId) {
+        function persistOrder() {
             const ids = rows().map(r => parseInt(r.dataset.id, 10)).filter(n => Number.isFinite(n));
             if (!ids.length) return;
             postJson('/queue/user/reorder/', { order: ids }).then(() => {
                 updateScreen();
-                if (movedId) openPredictedEdit(movedId);
             });
         }
 
         body.addEventListener('dragstart', (e) => {
             if (e.target.closest('button, a, input, select, textarea')) {
+                e.preventDefault();
+                return;
+            }
+            const table = body.closest("table");
+            const sortKey = table ? (table.dataset.sortKey || "") : "";
+            if (sortKey && sortKey !== "position") {
                 e.preventDefault();
                 return;
             }
@@ -842,9 +847,8 @@
 
         body.addEventListener('dragend', () => {
             if (draggingRow) draggingRow.classList.remove('is-dragging');
-            const movedId = draggingRow ? draggingRow.dataset.id : null;
             draggingRow = null;
-            if (orderChanged) persistOrder(movedId);
+            if (orderChanged) persistOrder();
         });
 
         body.addEventListener('dragover', (e) => {
