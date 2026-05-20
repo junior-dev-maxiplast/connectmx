@@ -2107,14 +2107,35 @@ def createQueueItemInline(request):
 def updateQueueItem(request, id):
     item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
     post_data = request.POST.copy()
-    fallback_required = {
-        "priority_level": item.priority_level or userQueue.PRIORITY_MEDIUM,
-        "estimated_effort_level": item.estimated_effort_level or userQueue.ESTIMATE_MEDIUM,
-        "kanban_sort_order": str(item.kanban_sort_order or 0),
-    }
-    for field_name, fallback_value in fallback_required.items():
-        if not (post_data.get(field_name) or "").strip():
-            post_data[field_name] = fallback_value
+
+    def _as_form_value(field_name):
+        try:
+            model_field = item._meta.get_field(field_name)
+        except Exception:
+            model_field = None
+
+        # For FK fields, ModelForm expects the related PK value.
+        if getattr(model_field, "many_to_one", False):
+            rel_id = getattr(item, f"{field_name}_id", None)
+            return "" if rel_id is None else str(rel_id)
+
+        value = getattr(item, field_name, None)
+        if value is None:
+            return ""
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+        if hasattr(value, "strftime") and not isinstance(value, str):
+            try:
+                return value.strftime("%H:%M")
+            except Exception:
+                pass
+        return str(value)
+
+    # Partial inline updates: keep all non-posted fields from current instance.
+    probe_form = UserQueueUpdateForm(instance=item)
+    for field_name in probe_form.fields.keys():
+        if field_name not in post_data:
+            post_data[field_name] = _as_form_value(field_name)
 
     # Normaliza pares data/hora para evitar falhas de validação quando apenas a data é informada.
     for date_key, time_key in (
@@ -2180,6 +2201,35 @@ def createUserQueueCustomColumn(request):
     except IntegrityError:
         return JsonResponse({"status": "error", "message": "Ja existe uma coluna com este nome."}, status=400)
     return JsonResponse({"status": "ok", "id": column.id, "name": column.name})
+
+
+@login_required
+@require_POST
+def createTaskTypeQuick(request):
+    group_raw = (request.POST.get("group_id") or "").strip()
+    name = (request.POST.get("name") or "").strip()
+    color = (request.POST.get("color") or "#5CD6A3").strip() or "#5CD6A3"
+    if not group_raw.isdigit():
+        return JsonResponse({"status": "error", "message": "Grupo invalido."}, status=400)
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome obrigatorio."}, status=400)
+    group = TaskGroup.objects.filter(id=int(group_raw)).first()
+    if not group:
+        return JsonResponse({"status": "error", "message": "Grupo nao encontrado."}, status=400)
+    try:
+        row = TaskType.objects.create(group=group, name=name[:80], color=color[:7])
+    except IntegrityError:
+        return JsonResponse({"status": "error", "message": "Este tipo ja existe no grupo."}, status=400)
+    return JsonResponse(
+        {
+            "status": "ok",
+            "id": row.id,
+            "name": row.name,
+            "color": row.color,
+            "group_id": row.group_id,
+            "group_name": group.name,
+        }
+    )
 
 
 @login_required

@@ -21,6 +21,7 @@ urlpatterns = [
     path('queue/user/current/<int:id>/', views.toggleCurrentTask, name='toggleCurrentTask'),
     path('queue/user/custom-columns/create/', views.createUserQueueCustomColumn, name='createUserQueueCustomColumn'),
     path('queue/user/custom-value/<int:id>/', views.setUserQueueCustomValue, name='setUserQueueCustomValue'),
+    path('queue/user/task-type/quick-create/', views.createTaskTypeQuick, name='createTaskTypeQuick'),
     path('queue/user/sync-sm/', views.syncQueueWithSM, name='syncQueueWithSM'),
     path('queue/user/link-project/<int:id>/', views.linkQueueItemToProject, name='linkQueueItemToProject'),
     path('queue/user/reorder/', views.reorderQueueItems, name='reorderQueueItems'),

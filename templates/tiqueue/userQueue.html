@@ -297,6 +297,38 @@
             </form>
         </div>
 
+        <div style="display: none;" id="popUpQuickTaskType" class="formNewItemMain">
+            <div class="modal-header">
+                <div class="modal-title">Novo tipo</div>
+                <button type="button" class="modal-close" onclick="fCloseAllOverlays()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="quickTaskTypeForm" class="modal-form" onsubmit="return submitQuickTaskType(event)">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field">
+                        <label for="quick_task_type_group">Grupo</label>
+                        <select id="quick_task_type_group" name="group_id" class="queue-select" required>
+                            {% for g in task_groups %}
+                                <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="quick_task_type_name">Tipo</label>
+                        <input id="quick_task_type_name" name="name" type="text" maxlength="80" required>
+                    </div>
+                    <div class="field">
+                        <label for="quick_task_type_color">Cor</label>
+                        <input id="quick_task_type_color" name="color" type="color" class="queue-color" value="#5CD6A3">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="fCloseAllOverlays()">Cancelar</button>
+                    <button type="submit" class="queue-primary-btn">Salvar tipo</button>
+                </div>
+            </form>
+        </div>
+
         <div id="bulkDueDateModal" class="queue-modal-overlay" style="display:none;">
             <div class="queue-modal-card queue-bulk-due-modal">
                 <div class="queue-modal-head">
@@ -421,7 +453,7 @@
             { id: "{{ c.id }}", name: "{{ c.name|escapejs }}", color: "{{ c.color }}" }{% if not forloop.last %},{% endif %}
         {% endfor %}
     ];
-    const QUEUE_TASK_TYPE_OPTIONS = [
+    let QUEUE_TASK_TYPE_OPTIONS = [
         {% for t in task_types %}
             { value: "{{ t.id }}", label: "{{ t.name|escapejs }}", color: "{{ t.color }}" }{% if not forloop.last %},{% endif %}
         {% endfor %}
@@ -437,6 +469,7 @@
         { value: "large", label: "Grande", color: "#7d5fb0" },
     ];
     const MY_QUEUE_DEFAULT_COLUMN_ID = "{{ my_kanban_default_col_id|default:'' }}";
+    let currentInlineTypeCell = null;
 
     function getQueueSortValue(row, key) {
         const cells = row.querySelectorAll("td");
@@ -918,12 +951,14 @@
         divPopUpPredictedEdit = document.getElementById("popUpPredictedEdit");
         divPopUpLinkProject = document.getElementById("popUpLinkProject");
         divPopUpCustomQueueColumn = document.getElementById("popUpCustomQueueColumn");
+        divPopUpQuickTaskType = document.getElementById("popUpQuickTaskType");
         document.getElementById("overlay").style.display = "none";
         divPopUpFormNewItem.style.display = "none";
         if (divPopUpFormEditItem) divPopUpFormEditItem.style.display = "none";
         if (divPopUpPredictedEdit) divPopUpPredictedEdit.style.display = "none";
         if (divPopUpLinkProject) divPopUpLinkProject.style.display = "none";
         if (divPopUpCustomQueueColumn) divPopUpCustomQueueColumn.style.display = "none";
+        if (divPopUpQuickTaskType) divPopUpQuickTaskType.style.display = "none";
     }
 
     let currentEditQueueItemId = null;
@@ -2466,6 +2501,71 @@
         return false;
     }
 
+    function openQuickTaskTypeModal(cell) {
+        currentInlineTypeCell = cell || null;
+        const overlay = document.getElementById("overlay");
+        const modal = document.getElementById("popUpQuickTaskType");
+        const input = document.getElementById("quick_task_type_name");
+        if (!overlay || !modal) return;
+        overlay.style.display = "block";
+        modal.style.display = "block";
+        if (input) {
+            input.value = "";
+            input.focus();
+        }
+    }
+
+    function submitQuickTaskType(e) {
+        e.preventDefault();
+        const groupId = (document.getElementById("quick_task_type_group")?.value || "").trim();
+        const name = (document.getElementById("quick_task_type_name")?.value || "").trim();
+        const color = (document.getElementById("quick_task_type_color")?.value || "#5CD6A3").trim();
+        if (!groupId || !name) return false;
+
+        const fd = new FormData();
+        fd.append("group_id", groupId);
+        fd.append("name", name);
+        fd.append("color", color);
+        fetch("/queue/user/task-type/quick-create/", {
+            method: "POST",
+            headers: { "X-CSRFToken": getCookie("csrftoken") },
+            credentials: "same-origin",
+            body: fd,
+        })
+            .then(async (response) => {
+                if (!response.ok) {
+                    const data = await response.json().catch(() => null);
+                    throw new Error(data && data.message ? data.message : "Erro ao criar tipo.");
+                }
+                return response.json();
+            })
+            .then((data) => {
+                QUEUE_TASK_TYPE_OPTIONS.push({
+                    value: String(data.id),
+                    label: data.name || name,
+                    color: data.color || color || "#5CD6A3",
+                });
+                if (currentInlineTypeCell) {
+                    const itemId = String(currentInlineTypeCell.dataset.id || "");
+                    const formData = new FormData();
+                    formData.append("task_type", String(data.id));
+                    fetch(`/queue/user/update/${itemId}/`, {
+                        method: "POST",
+                        headers: { "X-CSRFToken": getCookie("csrftoken") },
+                        credentials: "same-origin",
+                        body: formData,
+                    }).then(() => {
+                        currentInlineTypeCell.dataset.value = String(data.id);
+                        currentInlineTypeCell.innerHTML = renderInlineCellContent("task_type", String(data.id));
+                    });
+                }
+                fCloseAllOverlays();
+                closeInlineSelectMenu();
+            })
+            .catch((err) => alert(err.message || "Erro ao criar tipo."));
+        return false;
+    }
+
     function initInlineCustomCellEdit() {
         const cells = document.querySelectorAll(".queue-inline-custom-cell");
         cells.forEach((cell) => {
@@ -2725,6 +2825,12 @@
     }
 
     function startInlineSelectEdit(cell) {
+        const ownerKey = `${cell.dataset.id || ""}:${cell.dataset.field || ""}`;
+        const opened = document.querySelector(`.queue-inline-select-menu[data-owner="${ownerKey}"]`);
+        if (opened) {
+            closeInlineSelectMenu();
+            return;
+        }
         closeInlineSelectMenu();
         const kind = cell.dataset.selectKind;
         const field = cell.dataset.field;
@@ -2735,14 +2841,30 @@
 
         const menu = document.createElement("div");
         menu.className = "queue-inline-select-menu";
+        menu.dataset.owner = ownerKey;
         let renderedOptions = [];
 
         if (kind === "task_type") {
+            const head = document.createElement("div");
+            head.className = "queue-inline-select-head";
+
             const search = document.createElement("input");
             search.type = "search";
             search.className = "queue-inline-select-search";
             search.placeholder = "Buscar tipo...";
-            menu.appendChild(search);
+            const addBtn = document.createElement("button");
+            addBtn.type = "button";
+            addBtn.className = "queue-inline-type-add-btn";
+            addBtn.textContent = "+";
+            addBtn.title = "Adicionar novo tipo";
+            addBtn.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                openQuickTaskTypeModal(cell);
+            });
+            head.appendChild(search);
+            head.appendChild(addBtn);
+            menu.appendChild(head);
             search.addEventListener("input", () => {
                 const q = String(search.value || "").trim().toLowerCase();
                 renderedOptions.forEach(({ btn, label }) => {
@@ -2789,9 +2911,41 @@
 
         document.body.appendChild(menu);
         const rect = cell.getBoundingClientRect();
-        menu.style.left = `${rect.left + window.scrollX}px`;
-        menu.style.top = `${rect.bottom + window.scrollY + 6}px`;
         menu.style.minWidth = `${Math.max(rect.width, 160)}px`;
+
+        const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        const scrollX = window.scrollX || window.pageXOffset || 0;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        const margin = 8;
+
+        const menuWidth = menu.offsetWidth || 220;
+        const menuHeight = menu.offsetHeight || 180;
+
+        // Default: below the cell.
+        let left = rect.left + scrollX;
+        let top = rect.bottom + scrollY + 6;
+
+        // Clamp horizontally to viewport.
+        const maxLeft = scrollX + vw - menuWidth - margin;
+        if (left > maxLeft) left = maxLeft;
+        if (left < scrollX + margin) left = scrollX + margin;
+
+        // If there is not enough room below, render above.
+        const bottomSpace = vh - rect.bottom;
+        const topSpace = rect.top;
+        if (bottomSpace < (menuHeight + 10) && topSpace > bottomSpace) {
+            top = rect.top + scrollY - menuHeight - 6;
+        }
+
+        // Final vertical clamp.
+        const minTop = scrollY + margin;
+        const maxTop = scrollY + vh - menuHeight - margin;
+        if (top < minTop) top = minTop;
+        if (top > maxTop) top = maxTop;
+
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
     }
 
     function initInlineRealEdit() {
