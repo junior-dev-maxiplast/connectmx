@@ -55,6 +55,8 @@ from .models import (
     KnowledgeEntry,
     KnowledgeEntryAttachment,
     UserQueueKanbanColumn,
+    UserQueueCustomColumn,
+    UserQueueCustomValue,
     SystemConfig,
     DemandTemplate,
     DemandTemplateDetail,
@@ -1577,9 +1579,31 @@ def _ensure_user_queue_kanban_columns(user):
     return created
 
 
+def _user_queue_custom_columns(user):
+    return list(UserQueueCustomColumn.objects.filter(user=user).order_by("sort_order", "id"))
+
+
+def _attach_queue_custom_values(items, custom_columns):
+    if not items:
+        return
+    item_ids = [i.n_register for i in items]
+    col_ids = [c.id for c in custom_columns]
+    values_map = {
+        (row["queue_item_id"], row["column_id"]): (row["value"] or "")
+        for row in UserQueueCustomValue.objects.filter(queue_item_id__in=item_ids, column_id__in=col_ids)
+        .values("queue_item_id", "column_id", "value")
+    }
+    for item in items:
+        item.custom_values_render = [
+            {"column_id": col.id, "value": values_map.get((item.n_register, col.id), "")}
+            for col in custom_columns
+        ]
+
+
 def _build_queue_user_context(request):
     user = request.user.userId
     kanban_columns = _ensure_user_queue_kanban_columns(request.user)
+    custom_columns = _user_queue_custom_columns(request.user)
     default_col_id = kanban_columns[0].id if kanban_columns else None
 
     # Backfill defensivo para dados legados:
@@ -1624,6 +1648,10 @@ def _build_queue_user_context(request):
     except ObjectDoesNotExist:
         queue_data = 0
         queue_working = 0
+    if queue_data and custom_columns:
+        _attach_queue_custom_values(queue_data, custom_columns)
+    if queue_working and custom_columns:
+        _attach_queue_custom_values(queue_working, custom_columns)
 
     form = UserQueueCreateForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
@@ -1724,6 +1752,7 @@ def _build_queue_user_context(request):
         'demand_templates_payload': templates_payload,
         'my_kanban_columns': kanban_columns,
         'my_kanban_default_col_id': default_col_id,
+        'queue_custom_columns': custom_columns,
     }
 
 
@@ -1810,6 +1839,7 @@ def endQueueItem(request, id):
 @login_required
 def listQueueUpdate(request):
     user = request.user.userId
+    custom_columns = _user_queue_custom_columns(request.user)
 
     try:
         queue_working = list(
@@ -1843,7 +1873,15 @@ def listQueueUpdate(request):
     except ObjectDoesNotExist:
         queue_data = 0
         queue_working = 0
-    return render(request, 'partials/queue.html', {'queue_data': queue_data, 'queue_working':queue_working})
+    if queue_data and custom_columns:
+        _attach_queue_custom_values(queue_data, custom_columns)
+    if queue_working and custom_columns:
+        _attach_queue_custom_values(queue_working, custom_columns)
+    return render(
+        request,
+        'partials/queue.html',
+        {'queue_data': queue_data, 'queue_working': queue_working, 'queue_custom_columns': custom_columns},
+    )
 
 def listCreateStatus(request):
 
@@ -1978,6 +2016,8 @@ def queueItemDetails(request, id):
             "a_description": item.a_description or "",
             "task_group": item.task_group_id or "",
             "task_type": item.task_type_id or "",
+            "priority_level": item.priority_level or userQueue.PRIORITY_MEDIUM,
+            "estimated_effort_level": item.estimated_effort_level or userQueue.ESTIMATE_MEDIUM,
             "d_predicted_date_start": _date(item.d_predicted_date_start),
             "t_predicted_time_start": _time(item.t_predicted_time_start),
             "d_predicted_date_end": _date(item.d_predicted_date_end),
@@ -1989,11 +2029,92 @@ def queueItemDetails(request, id):
         }
     )
 
+
+@login_required
+@require_POST
+def createQueueItemInline(request):
+    user_code = request.user.userId
+
+    next_position = (
+        userQueue.objects.filter(user_code=user_code).aggregate(max_pos=models.Max("n_queue_position")).get("max_pos") or 0
+    ) + 1
+
+    ticket = (request.POST.get("a_ticket") or "").strip() or None
+    description = (request.POST.get("a_description") or "").strip() or None
+    priority_level = (request.POST.get("priority_level") or userQueue.PRIORITY_MEDIUM).strip()
+    estimated_effort_level = (request.POST.get("estimated_effort_level") or userQueue.ESTIMATE_MEDIUM).strip()
+    task_type_raw = (request.POST.get("task_type") or "").strip()
+    kanban_column_raw = (request.POST.get("kanban_column") or "").strip()
+
+    def _parse_date(v):
+        v = (v or "").strip()
+        if not v:
+            return None
+        try:
+            return datetime.strptime(v, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    def _parse_time(v):
+        v = (v or "").strip()
+        if not v:
+            return None
+        try:
+            return datetime.strptime(v, "%H:%M").time()
+        except ValueError:
+            return None
+
+    d_real_date_start = _parse_date(request.POST.get("d_real_date_start"))
+    d_real_time_start = _parse_time(request.POST.get("d_real_time_start"))
+    d_real_date_end = _parse_date(request.POST.get("d_real_date_end"))
+    t_real_time_end = _parse_time(request.POST.get("t_real_time_end"))
+
+    item = userQueue.objects.create(
+        user_code=user_code,
+        a_ticket=ticket,
+        a_description=description,
+        n_queue_position=next_position,
+        kanban_sort_order=next_position,
+        priority_level=priority_level if priority_level in {x[0] for x in userQueue.PRIORITY_CHOICES} else userQueue.PRIORITY_MEDIUM,
+        estimated_effort_level=(
+            estimated_effort_level if estimated_effort_level in {x[0] for x in userQueue.ESTIMATE_CHOICES} else userQueue.ESTIMATE_MEDIUM
+        ),
+        d_real_date_start=d_real_date_start,
+        d_real_time_start=d_real_time_start,
+        d_real_date_end=d_real_date_end,
+        t_real_time_end=t_real_time_end,
+        is_current=False,
+    )
+
+    if task_type_raw.isdigit():
+        item.task_type_id = int(task_type_raw)
+        item.n_type_code = item.task_type_id
+        item.task_group_id = item.task_type.group_id if item.task_type_id else None
+        item.n_type_group = item.task_group_id
+        item.save(update_fields=["task_type", "n_type_code", "task_group", "n_type_group"])
+
+    if kanban_column_raw.isdigit():
+        col = UserQueueKanbanColumn.objects.filter(id=int(kanban_column_raw), user=request.user, is_active=True).first()
+        if col:
+            item.kanban_column = col
+            item.save(update_fields=["kanban_column"])
+
+    return JsonResponse({"status": "ok", "id": item.n_register})
+
+
 @login_required
 @require_POST
 def updateQueueItem(request, id):
     item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
     post_data = request.POST.copy()
+    fallback_required = {
+        "priority_level": item.priority_level or userQueue.PRIORITY_MEDIUM,
+        "estimated_effort_level": item.estimated_effort_level or userQueue.ESTIMATE_MEDIUM,
+        "kanban_sort_order": str(item.kanban_sort_order or 0),
+    }
+    for field_name, fallback_value in fallback_required.items():
+        if not (post_data.get(field_name) or "").strip():
+            post_data[field_name] = fallback_value
 
     # Normaliza pares data/hora para evitar falhas de validação quando apenas a data é informada.
     for date_key, time_key in (
@@ -2041,6 +2162,38 @@ def toggleCurrentTask(request, id):
     is_current = bool(payload.get("is_current"))
     item.is_current = is_current
     item.save(update_fields=["is_current"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def createUserQueueCustomColumn(request):
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome obrigatorio."}, status=400)
+    max_sort = (
+        UserQueueCustomColumn.objects.filter(user=request.user).aggregate(max_sort=models.Max("sort_order")).get("max_sort")
+        or 0
+    )
+    try:
+        column = UserQueueCustomColumn.objects.create(user=request.user, name=name[:60], sort_order=int(max_sort) + 1)
+    except IntegrityError:
+        return JsonResponse({"status": "error", "message": "Ja existe uma coluna com este nome."}, status=400)
+    return JsonResponse({"status": "ok", "id": column.id, "name": column.name})
+
+
+@login_required
+@require_POST
+def setUserQueueCustomValue(request, id):
+    item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
+    column_id_raw = (request.POST.get("column_id") or "").strip()
+    if not column_id_raw.isdigit():
+        return JsonResponse({"status": "error", "message": "Coluna invalida."}, status=400)
+    column = get_object_or_404(UserQueueCustomColumn, id=int(column_id_raw), user=request.user)
+    value = (request.POST.get("value") or "")[:250]
+    obj, _ = UserQueueCustomValue.objects.get_or_create(queue_item=item, column=column)
+    obj.value = value
+    obj.save(update_fields=["value", "updated_at"])
     return JsonResponse({"status": "ok"})
 
 

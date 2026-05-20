@@ -6,6 +6,10 @@
         <div class="brand_text">ConnectMX</div>
     </div>
 
+    <div class="sidebar_search_wrap" aria-label="Buscar funcionalidades">
+        <input id="sidebarSearchInput" class="sidebar_search_input" type="search" placeholder="Buscar módulo..." autocomplete="off">
+    </div>
+
     <div class="sidebar_theme" aria-label="Tema">
         <div class="theme-toggle">
             <span class="theme-icon" aria-hidden="true">&#9728;</span>
@@ -22,287 +26,174 @@
         <li class="dropdown">
             <div class="dropdown_button">
                 <a href="{% url 'index' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/hub.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Voltar ao HUB</span>
-                    </div>
-                </a>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_user.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Usu&#225;rio</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'createUser' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Cadastro</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_fila.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Fila</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'queueUserPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Minha fila</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'queueMainPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Geral</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'queueConcludedPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Concluidas</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'myAgendaPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Minha agenda</span>
-                        </div>
-                    </a>
-                    <div class="dropdownIndividualItem">
-                        <span>Outros</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Cadastro</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'listCreateStatus' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Status - fila</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'manageTaskTypes' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Tipos de tarefa</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'manageDemandTemplates' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Modelos de demanda</span>
-                        </div>
-                    </a>
-                    <div class="dropdownIndividualItem">
-                        <span>Tipo - fila</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="dropdown_button">
-                <a href="{% url 'contractsPage' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/contratos.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Contratos</span>
-                    </div>
-                </a>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/base_conhecimento.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Base de conhecimento</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'knowledgeCategoriesPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Categorias</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'knowledgeEntriesPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Registros</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'knowledgeConsultPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Consulta</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/hub.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">HUB</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'manageHubTools' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Cadastro HUB geral</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'manageMyHubTools' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Cadastro Meu HUB</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/projetos.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Projetos</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'projectCatalogPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Em aberto</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'projectCatalogConcludedPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Concluídos</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'manageProjects' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Cadastro</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/atualizacoes.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Atualizacoes</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'seniorUpdatesPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Sistemas Senior</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/manutencao.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Manutencoes</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'maintenanceCatalogPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Cadastro rápido</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'maintenanceOutagePage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Indisponibilidades</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'maintenanceSchedulePage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Agendamentos</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'maintenanceCalendarPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Calendario</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/wifi.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Wifi</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'wifiVoucherPage' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Controle de vouchers</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader">
-                    <img src="{% static 'assets/sistemas.png' %}" class="sidebar_icon" alt="">
-                    <span class="sidebar_text">Sistemas externos</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
-                    <a href="{% url 'hqbooking_login' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Reserva da sede</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'lunch_booking' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Reserva de almoço</span>
-                        </div>
-                    </a>
-                    <a href="{% url 'truck_tire_control' %}">
-                        <div class="dropdownIndividualItem">
-                            <span>Logística - Pneus</span>
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <div class="dropdown_button">
-                <a href="{% url 'maxibotPage' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/maxibot.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Maxibot</span>
+                    <div class="dropdownHeader sidebar_primary_header">
+                        <img src="{% static 'assets/home.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text sidebar_primary_text">Página Inicial</span>
                     </div>
                 </a>
             </div>
 
             <div class="dropdown_button">
-                <a href="{% url 'systemSettingsPage' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/configuracao.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Configuracoes</span>
+                <a href="{% url 'queueUserPage' %}">
+                    <div class="dropdownHeader sidebar_primary_header">
+                        <img src="{% static 'assets/minha_fila_main.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text sidebar_primary_text">Minha Fila</span>
                     </div>
                 </a>
             </div>
 
             <div class="dropdown_button">
-                <a href="{% url 'serviceAgentPage' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/servicos.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Servicos</span>
+                <a href="{% url 'queueMainPage' %}">
+                    <div class="dropdownHeader sidebar_primary_header">
+                        <img src="{% static 'assets/fila_geral.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text sidebar_primary_text">Fila Geral</span>
                     </div>
                 </a>
             </div>
 
-            <div class="dropdown_button">
-                <a href="{% url 'dataModelerPage' %}">
-                    <div class="dropdownHeader">
-                        <img src="{% static 'assets/banco_dados.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text">Modelagem BD</span>
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader sidebar_primary_header">
+                    <img src="{% static 'assets/funcionalidades.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text sidebar_primary_text">Funcionalidades</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_fila.png' %}" class="sidebar_sub_icon" alt=""><span>Fila</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'queueConcludedPage' %}"><div class="dropdownIndividualItem"><span>Tarefas concluídas</span></div></a>
+                            <a href="{% url 'myAgendaPage' %}"><div class="dropdownIndividualItem"><span>Minha agenda</span></div></a>
+                        </div>
                     </div>
-                </a>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_user.png' %}" class="sidebar_sub_icon" alt=""><span>Usuário</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'createUser' %}"><div class="dropdownIndividualItem"><span>Cadastro</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_sub_icon" alt=""><span>Cadastro</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'listCreateStatus' %}"><div class="dropdownIndividualItem"><span>Status - fila</span></div></a>
+                            <a href="{% url 'manageTaskTypes' %}"><div class="dropdownIndividualItem"><span>Tipos de tarefa</span></div></a>
+                            <a href="{% url 'manageDemandTemplates' %}"><div class="dropdownIndividualItem"><span>Modelos de demanda</span></div></a>
+                            <a href="{% url 'contractsPage' %}"><div class="dropdownIndividualItem"><span>Contratos</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/base_conhecimento.png' %}" class="sidebar_sub_icon" alt=""><span>Base de conhecimento</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'knowledgeCategoriesPage' %}"><div class="dropdownIndividualItem"><span>Categorias</span></div></a>
+                            <a href="{% url 'knowledgeEntriesPage' %}"><div class="dropdownIndividualItem"><span>Registros</span></div></a>
+                            <a href="{% url 'knowledgeConsultPage' %}"><div class="dropdownIndividualItem"><span>Consulta</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/hub.png' %}" class="sidebar_sub_icon" alt=""><span>HUB</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'manageHubTools' %}"><div class="dropdownIndividualItem"><span>Cadastro HUB geral</span></div></a>
+                            <a href="{% url 'manageMyHubTools' %}"><div class="dropdownIndividualItem"><span>Cadastro Meu HUB</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/projetos.png' %}" class="sidebar_sub_icon" alt=""><span>Projetos</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'projectCatalogPage' %}"><div class="dropdownIndividualItem"><span>Em aberto</span></div></a>
+                            <a href="{% url 'projectCatalogConcludedPage' %}"><div class="dropdownIndividualItem"><span>Concluídos</span></div></a>
+                            <a href="{% url 'manageProjects' %}"><div class="dropdownIndividualItem"><span>Cadastro</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/atualizacoes.png' %}" class="sidebar_sub_icon" alt=""><span>Atualizações</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'seniorUpdatesPage' %}"><div class="dropdownIndividualItem"><span>Sistemas Senior</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/manutencao.png' %}" class="sidebar_sub_icon" alt=""><span>Manutenções</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'maintenanceCatalogPage' %}"><div class="dropdownIndividualItem"><span>Cadastro rápido</span></div></a>
+                            <a href="{% url 'maintenanceOutagePage' %}"><div class="dropdownIndividualItem"><span>Indisponibilidades</span></div></a>
+                            <a href="{% url 'maintenanceSchedulePage' %}"><div class="dropdownIndividualItem"><span>Agendamentos</span></div></a>
+                            <a href="{% url 'maintenanceCalendarPage' %}"><div class="dropdownIndividualItem"><span>Calendário</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/wifi.png' %}" class="sidebar_sub_icon" alt=""><span>Wifi</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'wifiVoucherPage' %}"><div class="dropdownIndividualItem"><span>Controle de vouchers</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/sistemas.png' %}" class="sidebar_sub_icon" alt=""><span>Sistemas externos</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'hqbooking_login' %}"><div class="dropdownIndividualItem"><span>Reserva da sede</span></div></a>
+                            <a href="{% url 'lunch_booking' %}"><div class="dropdownIndividualItem"><span>Reserva de almoço</span></div></a>
+                            <a href="{% url 'truck_tire_control' %}"><div class="dropdownIndividualItem"><span>Logística - Pneus</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/maxibot.png' %}" class="sidebar_sub_icon" alt=""><span>Assistente</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'maxibotPage' %}"><div class="dropdownIndividualItem"><span>Maxibot</span></div></a>
+                        </div>
+                    </div>
+
+                    <div class="sidebar_subcategory">
+                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/configuracao.png' %}" class="sidebar_sub_icon" alt=""><span>Sistema</span></div>
+                            <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
+                        </div>
+                        <div class="sidebar_subcategory_items">
+                            <a href="{% url 'systemSettingsPage' %}"><div class="dropdownIndividualItem"><span>Configurações</span></div></a>
+                            <a href="{% url 'serviceAgentPage' %}"><div class="dropdownIndividualItem"><span>Serviços</span></div></a>
+                            <a href="{% url 'dataModelerPage' %}"><div class="dropdownIndividualItem"><span>Modelagem BD</span></div></a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </li>
     </ul>
@@ -325,16 +216,113 @@
 
 <script>
     const sidebar = document.querySelector(".sidebar");
+    const sidebarSearchInput = document.getElementById("sidebarSearchInput");
+    const sidebarButtons = Array.from(sidebar.querySelectorAll(".dropdown > .dropdown_button"));
+
+    function normalizeSidebarText(value) {
+        return String(value || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .trim();
+    }
+
+    function buildSearchIndex(el) {
+        const chunks = [];
+        const header = el.querySelector(".dropdownHeader");
+        if (header) {
+            const headerText = Array.from(header.querySelectorAll("span")).map((n) => n.textContent || "").join(" ");
+            chunks.push(headerText);
+        }
+        const items = Array.from(el.querySelectorAll(".dropdownItens .dropdownIndividualItem span")).map((n) => n.textContent || "");
+        chunks.push(items.join(" "));
+        return normalizeSidebarText(chunks.join(" "));
+    }
+
+    const sidebarIndex = sidebarButtons.map((el) => ({ el, search: buildSearchIndex(el) }));
+    const functionalitiesButton = sidebarButtons.find((el) =>
+        normalizeSidebarText(el.querySelector(".sidebar_primary_text")?.textContent || "") === "funcionalidades"
+    );
+
+    function applySidebarSearchFilter() {
+        const query = normalizeSidebarText(sidebarSearchInput ? sidebarSearchInput.value : "");
+        const isSearching = !!query;
+
+        sidebarIndex.forEach(({ el, search }) => {
+            const isFunc = el === functionalitiesButton;
+            if (!isFunc) {
+                const match = !isSearching || search.includes(query);
+                el.style.display = match ? "" : "none";
+                return;
+            }
+
+            // Funcionalidades: filtro interno por subcategoria e item.
+            const dropdown = el.querySelector(".dropdownItens");
+            const subcategories = Array.from(el.querySelectorAll(".sidebar_subcategory"));
+            let anySubMatch = false;
+
+            subcategories.forEach((cat) => {
+                const headText = normalizeSidebarText(
+                    Array.from(cat.querySelectorAll(".sidebar_subcategory_head span")).map((n) => n.textContent || "").join(" ")
+                );
+                let catMatch = !isSearching || headText.includes(query);
+                const items = Array.from(cat.querySelectorAll(".dropdownIndividualItem"));
+
+                cat.style.display = catMatch ? "" : "none";
+                if (catMatch) {
+                    anySubMatch = true;
+                    if (isSearching) cat.classList.add("is-open");
+                    items.forEach((item) => item.style.display = "");
+                } else {
+                    cat.classList.remove("is-open");
+                    items.forEach((item) => item.style.display = "");
+                }
+            });
+
+            const directMatch = !isSearching || search.includes(query);
+            const showFunc = directMatch || anySubMatch;
+            el.style.display = showFunc ? "" : "none";
+
+            if (showFunc && dropdown) {
+                if (isSearching) {
+                    el.classList.add("active");
+                } else {
+                    // Ao limpar busca, mantém menu recolhido por padrão e restaura itens.
+                    el.classList.remove("active");
+                    subcategories.forEach((cat) => {
+                        cat.classList.remove("is-open");
+                        Array.from(cat.querySelectorAll(".dropdownIndividualItem")).forEach((item) => item.style.display = "");
+                        cat.style.display = "";
+                    });
+                }
+            }
+        });
+    }
 
     sidebar.addEventListener("mouseleave", () => {
         const dropdowns = sidebar.querySelectorAll(".dropdown_button");
-
-        dropdowns.forEach(el => {
-            el.classList.remove("active");
-        });
+        if (sidebarSearchInput && sidebarSearchInput.value) return;
+        dropdowns.forEach(el => el.classList.remove("active"));
     });
 
     function toggleDrop(element) {
+        const hasSearch = !!normalizeSidebarText(sidebarSearchInput ? sidebarSearchInput.value : "");
+        // Durante busca, mantém aberto para facilitar navegação.
+        if (hasSearch) {
+            element.classList.add("active");
+            return;
+        }
         element.classList.toggle("active");
+    }
+
+    function toggleSubcategory(event, head) {
+        if (event) event.stopPropagation();
+        const root = head ? head.closest(".sidebar_subcategory") : null;
+        if (!root) return;
+        root.classList.toggle("is-open");
+    }
+
+    if (sidebarSearchInput) {
+        sidebarSearchInput.addEventListener("input", applySidebarSearchFilter);
     }
 </script>

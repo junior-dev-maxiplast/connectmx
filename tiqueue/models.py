@@ -48,7 +48,38 @@ class UserQueueKanbanColumn(models.Model):
         return f"{self.user.username} - {self.name}"
 
 
+class UserQueueCustomColumn(models.Model):
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="queue_custom_columns")
+    name = models.CharField(max_length=60)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("user", "name")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+
 class userQueue(models.Model):
+    PRIORITY_LOW = "low"
+    PRIORITY_MEDIUM = "medium"
+    PRIORITY_HIGH = "high"
+    PRIORITY_CHOICES = [
+        (PRIORITY_LOW, "Baixa"),
+        (PRIORITY_MEDIUM, "Media"),
+        (PRIORITY_HIGH, "Alta"),
+    ]
+
+    ESTIMATE_SMALL = "small"
+    ESTIMATE_MEDIUM = "medium"
+    ESTIMATE_LARGE = "large"
+    ESTIMATE_CHOICES = [
+        (ESTIMATE_SMALL, "Pequeno"),
+        (ESTIMATE_MEDIUM, "Medio"),
+        (ESTIMATE_LARGE, "Grande"),
+    ]
 
     user_code = models.CharField(max_length=10)
     n_register = models.AutoField(primary_key=True)
@@ -58,6 +89,8 @@ class userQueue(models.Model):
     a_description = models.CharField(max_length=250, blank=True, null=True)
     a_demand_detail = models.TextField(blank=True, null=True)
     a_notes = models.TextField(blank=True, null=True)
+    priority_level = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
+    estimated_effort_level = models.CharField(max_length=10, choices=ESTIMATE_CHOICES, default=ESTIMATE_MEDIUM)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
@@ -87,6 +120,19 @@ class userQueue(models.Model):
     def __str__(self):
         return self.a_description
 
+
+class UserQueueCustomValue(models.Model):
+    queue_item = models.ForeignKey(userQueue, on_delete=models.CASCADE, related_name="custom_values")
+    column = models.ForeignKey(UserQueueCustomColumn, on_delete=models.CASCADE, related_name="values")
+    value = models.CharField(max_length=250, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("queue_item", "column")
+
+    def __str__(self):
+        return f"{self.queue_item_id} - {self.column_id}"
+
 class concludedTasks(models.Model):
 
     user_code = models.CharField(max_length=10)
@@ -95,6 +141,8 @@ class concludedTasks(models.Model):
     f_conclusion_rate = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     n_status_code = models.IntegerField(blank=True, null=True)
     a_description = models.CharField(max_length=250, blank=True, null=True)
+    priority_level = models.CharField(max_length=10, choices=userQueue.PRIORITY_CHOICES, default=userQueue.PRIORITY_MEDIUM)
+    estimated_effort_level = models.CharField(max_length=10, choices=userQueue.ESTIMATE_CHOICES, default=userQueue.ESTIMATE_MEDIUM)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
