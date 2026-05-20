@@ -1,0 +1,63 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Cadastro de Manutenções</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main maintenance-page">
+    <div class="headerMain"><div class="headerTitle"><h1>Cadastro de Manutenções</h1></div></div>
+    <section class="checklist-card checklist-form-card maintenance-catalog-card maintenance-catalog-modern">
+        <h3>Cadastros rápidos</h3>
+        <div class="maintenance-catalog-grid maintenance-catalog-grid-modern">
+            <div class="maintenance-catalog-block">
+                <div class="maintenance-catalog-head">Tipos</div>
+                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_type">{{ type_form.name }}{{ type_form.color }}<button class="queue-secondary-btn" type="submit">+ Tipo</button></form>
+                <div class="maintenance-chip-list">
+                    {% for item in types %}<span class="maintenance-chip" style="--chip-color: {{ item.color|default:'#343955' }}">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem tipos cadastrados.</span>{% endfor %}
+                </div>
+            </div>
+
+            <div class="maintenance-catalog-block">
+                <div class="maintenance-catalog-head">Situações</div>
+                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_situation">{{ situation_form.name }}<button class="queue-secondary-btn" type="submit">+ Situação</button></form>
+                <div class="maintenance-chip-list">
+                    {% for item in situations %}<span class="maintenance-chip">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem situações cadastradas.</span>{% endfor %}
+                </div>
+            </div>
+
+            <div class="maintenance-catalog-block">
+                <div class="maintenance-catalog-head">Indicativos</div>
+                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_indicator">{{ indicator_form.name }}<label class="queue-checkbox-label">{{ indicator_form.is_incident }} Queda</label><button class="queue-secondary-btn" type="submit">+ Indicativo</button></form>
+                <div class="maintenance-chip-list">
+                    {% for item in indicators %}<span class="maintenance-chip {% if item.is_incident %}maintenance-chip-alert{% endif %}">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem indicativos cadastrados.</span>{% endfor %}
+                </div>
+            </div>
+
+            <div class="maintenance-catalog-block">
+                <div class="maintenance-catalog-head">Grupos de sistemas</div>
+                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_group">{{ group_form.name }}<button class="queue-secondary-btn" type="submit">+ Grupo</button></form>
+                <div class="maintenance-chip-list">
+                    {% for item in system_groups %}<span class="maintenance-chip">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem grupos cadastrados.</span>{% endfor %}
+                </div>
+            </div>
+
+            <div class="maintenance-catalog-block">
+                <div class="maintenance-catalog-head">Sistemas</div>
+                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_system">{{ system_form.group }}{{ system_form.name }}<button class="queue-secondary-btn" type="submit">+ Sistema</button></form>
+                <div class="maintenance-chip-list">
+                    {% for item in systems %}<span class="maintenance-chip">{{ item.group.name }} · {{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem sistemas cadastrados.</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+</body>
+</html>

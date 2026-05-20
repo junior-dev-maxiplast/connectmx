@@ -1,0 +1,370 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Servicos do Servidor</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div id="overlay" onclick="closeErpCleanupModal()" style="display:none;"></div>
+
+    <div class="queue_main">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Servicos do Servidor</h1>
+            </div>
+        </div>
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+
+        <div class="queue-actions service-agent-toolbar">
+            <input id="serviceSearch" class="queue-filter-input service-search-input" type="text" placeholder="Buscar serviço...">
+            <button id="serviceRefreshBtn" class="queue-secondary-btn" type="button">Atualizar</button>
+            {% if can_manage %}
+                <button id="erpCleanupBtn" class="queue-secondary-btn sa-btn-danger" type="button">Limpar usuarios ERP</button>
+            {% endif %}
+        </div>
+
+        <div class="queue-card service-agent-accordion-card">
+            <button id="serverAccordionBtn" class="service-agent-accordion-btn" type="button">
+                <span class="service-agent-accordion-left">
+                    <span id="serverChevron" class="service-agent-chevron">&#9656;</span>
+                <span class="service-agent-server-name">Servidor de Aplicação Sênior</span>
+                </span>
+                <span class="service-agent-header-right">
+                    <span id="serverSummary" class="service-agent-server-summary">0/0 ativos</span>
+                    {% if can_manage %}
+                        <button id="serviceStartAllBtn" class="queue-secondary-btn sa-bulk-btn" type="button">Iniciar todos</button>
+                        <button id="serviceStopAllBtn" class="queue-secondary-btn sa-bulk-btn sa-btn-danger" type="button">Parar todos</button>
+                    {% endif %}
+                </span>
+            </button>
+
+            <div id="serverAccordionBody" class="service-agent-accordion-body">
+                <div id="serviceRows" class="service-list">
+                    <div class="service-row-message">Carregando serviços...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if can_manage %}
+        <div id="erpCleanupModal" class="formNewItemMain" style="display:none;">
+            <div class="modal-header">
+                <div class="modal-title">Confirmar limpeza de usuarios ERP</div>
+                <button type="button" class="modal-close" onclick="closeErpCleanupModal()" aria-label="Fechar">&#x2715;</button>
+            </div>
+            <form id="erpCleanupForm" class="modal-form" onsubmit="return false;">
+                {% csrf_token %}
+                <div class="modal-grid">
+                    <div class="field span-2">
+                        <label>Esta acao executa DELETE em R911MOD e R911SEC</label>
+                        <input type="text" value="Operacao irreversivel" readonly>
+                    </div>
+                    <div class="field span-2">
+                        <label for="erpCleanupConfirmText">Digite: LIMPAR USUARIOS ERP</label>
+                        <input id="erpCleanupConfirmText" type="text" placeholder="LIMPAR USUARIOS ERP">
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="queue-secondary-btn" onclick="closeErpCleanupModal()">Cancelar</button>
+                    <button type="button" id="erpCleanupConfirmBtn" class="queue-primary-btn">Executar limpeza</button>
+                </div>
+            </form>
+        </div>
+    {% endif %}
+
+    <script>
+        (function() {
+            const canManage = {% if can_manage %}true{% else %}false{% endif %};
+            const listUrl = "{% url 'serviceAgentList' %}";
+            const actionBase = "{% url 'serviceAgentAction' '__NAME__' '__ACTION__' %}";
+            const cleanupUrl = "{% url 'serviceAgentErpCleanupUsers' %}";
+            const rowsEl = document.getElementById("serviceRows");
+            const searchEl = document.getElementById("serviceSearch");
+            const refreshBtn = document.getElementById("serviceRefreshBtn");
+            const accordionBtn = document.getElementById("serverAccordionBtn");
+            const accordionBody = document.getElementById("serverAccordionBody");
+            const chevron = document.getElementById("serverChevron");
+            const summaryEl = document.getElementById("serverSummary");
+            const startAllBtn = document.getElementById("serviceStartAllBtn");
+            const stopAllBtn = document.getElementById("serviceStopAllBtn");
+            const erpCleanupBtn = document.getElementById("erpCleanupBtn");
+            const erpCleanupConfirmBtn = document.getElementById("erpCleanupConfirmBtn");
+            let isAccordionOpen = false;
+            let currentItems = [];
+
+            function getCSRFToken() {
+                const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+                return tokenInput ? tokenInput.value : "";
+            }
+
+            function normalizeStatus(status) {
+                const raw = (status ?? "").toString().trim();
+                const lower = raw.toLowerCase();
+                const numeric = parseInt(raw, 10);
+
+                // Windows ServiceControllerStatus enum: 4 = Running, 1 = Stopped.
+                if (!Number.isNaN(numeric)) {
+                    if (numeric === 4) return "Running";
+                    if (numeric === 1) return "Stopped";
+                    if (numeric === 2) return "StartPending";
+                    if (numeric === 3) return "StopPending";
+                    if (numeric === 5) return "ContinuePending";
+                    if (numeric === 6) return "PausePending";
+                    if (numeric === 7) return "Paused";
+                }
+                if (lower.includes("running")) return "Running";
+                if (lower.includes("stopped")) return "Stopped";
+                if (lower.includes("startpending")) return "StartPending";
+                if (lower.includes("stoppending")) return "StopPending";
+                if (lower.includes("paused")) return "Paused";
+                return raw || "-";
+            }
+
+            function isRunning(status) {
+                return normalizeStatus(status).toLowerCase() === "running";
+            }
+
+            function rowHtml(item) {
+                const name = item.name || "-";
+                const displayName = item.display_name || "-";
+                const status = normalizeStatus(item.status);
+                const running = isRunning(status);
+                const actionButtons = canManage
+                    ? `
+                        <div class="sa-actions">
+                            <button class="queue-secondary-btn sa-btn" data-action="start" data-service="${name}">Iniciar</button>
+                            <button class="queue-secondary-btn sa-btn" data-action="restart" data-service="${name}">Reiniciar</button>
+                            <button class="queue-secondary-btn sa-btn sa-btn-danger" data-action="stop" data-service="${name}">Parar</button>
+                        </div>
+                      `
+                    : "-";
+
+                return `
+                    <div class="service-row">
+                        <div class="service-main">
+                            <span class="service-dot ${running ? "service-dot-running" : "service-dot-stopped"}"></span>
+                            <div class="service-texts">
+                                <div class="service-name">${displayName}</div>
+                                <div class="service-display-name">${name}</div>
+                            </div>
+                        </div>
+                        <div class="service-right">
+                            <span class="sa-status ${running ? "sa-status-running" : "sa-status-stopped"}">${status}</span>
+                            ${actionButtons}
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderRows(items) {
+                currentItems = Array.isArray(items) ? items.slice() : [];
+                if (!items || !items.length) {
+                    rowsEl.innerHTML = `<div class="service-row-message">Nenhum serviço encontrado.</div>`;
+                    summaryEl.textContent = "0/0 ativos";
+                    return;
+                }
+                const runningCount = items.filter(item => isRunning(item.status)).length;
+                summaryEl.textContent = `${runningCount}/${items.length} ativos`;
+                rowsEl.innerHTML = items.map(rowHtml).join("");
+            }
+
+            async function loadServices() {
+                const q = (searchEl.value || "").trim();
+                const url = q ? `${listUrl}?q=${encodeURIComponent(q)}` : listUrl;
+                rowsEl.innerHTML = `<div class="service-row-message">Carregando serviços...</div>`;
+                try {
+                    const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+                    const data = await response.json();
+                    if (!response.ok || data.status !== "ok") {
+                        rowsEl.innerHTML = `<div class="service-row-message">${data.message || "Falha ao carregar serviços."}</div>`;
+                        summaryEl.textContent = "0/0 ativos";
+                        return;
+                    }
+                    renderRows(data.items || []);
+                } catch (e) {
+                    rowsEl.innerHTML = `<div class="service-row-message">Erro de conexão ao carregar serviços.</div>`;
+                    summaryEl.textContent = "0/0 ativos";
+                }
+            }
+
+            async function triggerAction(serviceName, action) {
+                if (!canManage) return;
+                const url = actionBase.replace("__NAME__", encodeURIComponent(serviceName)).replace("__ACTION__", action);
+                try {
+                    const response = await fetch(url, {
+                        method: "POST",
+                        headers: {
+                            "X-CSRFToken": getCSRFToken(),
+                            "X-Requested-With": "XMLHttpRequest"
+                        }
+                    });
+                    const data = await response.json();
+                    if (!response.ok || data.status !== "ok") {
+                        alert(data.message || "Falha ao executar acao.");
+                        return;
+                    }
+                    await loadServices();
+                } catch (e) {
+                    alert("Erro de conexao ao executar acao.");
+                }
+            }
+
+            async function triggerBulkAction(action) {
+                if (!canManage || !Array.isArray(currentItems) || !currentItems.length) return;
+
+                const shouldRun = action === "start";
+                const targets = currentItems.filter(item => shouldRun ? !isRunning(item.status) : isRunning(item.status));
+                if (!targets.length) return;
+
+                if (startAllBtn) startAllBtn.disabled = true;
+                if (stopAllBtn) stopAllBtn.disabled = true;
+                if (refreshBtn) refreshBtn.disabled = true;
+
+                try {
+                    for (const item of targets) {
+                        const serviceName = item && item.name ? String(item.name) : "";
+                        if (!serviceName) continue;
+                        const url = actionBase
+                            .replace("__NAME__", encodeURIComponent(serviceName))
+                            .replace("__ACTION__", action);
+                        try {
+                            await fetch(url, {
+                                method: "POST",
+                                headers: {
+                                    "X-CSRFToken": getCSRFToken(),
+                                    "X-Requested-With": "XMLHttpRequest"
+                                }
+                            });
+                        } catch (e) {
+                            // Continua para os demais serviços mesmo que um falhe.
+                        }
+                    }
+                } finally {
+                    if (startAllBtn) startAllBtn.disabled = false;
+                    if (stopAllBtn) stopAllBtn.disabled = false;
+                    if (refreshBtn) refreshBtn.disabled = false;
+                    await loadServices();
+                }
+            }
+
+            rowsEl.addEventListener("click", function(ev) {
+                const btn = ev.target.closest(".sa-btn");
+                if (!btn) return;
+                const service = btn.getAttribute("data-service");
+                const action = btn.getAttribute("data-action");
+                if (!service || !action) return;
+                triggerAction(service, action);
+            });
+
+            let searchTimer = null;
+            searchEl.addEventListener("input", function() {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(loadServices, 280);
+            });
+            refreshBtn.addEventListener("click", loadServices);
+            if (startAllBtn) {
+                startAllBtn.addEventListener("click", function(ev) {
+                    ev.stopPropagation();
+                    triggerBulkAction("start");
+                });
+            }
+            if (stopAllBtn) {
+                stopAllBtn.addEventListener("click", function(ev) {
+                    ev.stopPropagation();
+                    const confirmed = window.confirm("Tem certeza que deseja parar todos os serviços?");
+                    if (!confirmed) return;
+                    triggerBulkAction("stop");
+                });
+            }
+            function openErpCleanupModal() {
+                const overlay = document.getElementById("overlay");
+                const modal = document.getElementById("erpCleanupModal");
+                const input = document.getElementById("erpCleanupConfirmText");
+                if (overlay) overlay.style.display = "block";
+                if (modal) modal.style.display = "block";
+                if (input) {
+                    input.value = "";
+                    input.focus();
+                }
+            }
+
+            window.closeErpCleanupModal = function() {
+                const overlay = document.getElementById("overlay");
+                const modal = document.getElementById("erpCleanupModal");
+                if (overlay) overlay.style.display = "none";
+                if (modal) modal.style.display = "none";
+            };
+
+            async function executeErpCleanup() {
+                const confirmInput = document.getElementById("erpCleanupConfirmText");
+                const value = confirmInput ? (confirmInput.value || "").trim() : "";
+                if (value !== "LIMPAR USUARIOS ERP") {
+                    alert('Digite exatamente "LIMPAR USUARIOS ERP" para confirmar.');
+                    return;
+                }
+                if (erpCleanupConfirmBtn) {
+                    erpCleanupConfirmBtn.disabled = true;
+                    erpCleanupConfirmBtn.textContent = "Executando...";
+                }
+                try {
+                    const fd = new FormData();
+                    fd.append("confirm_text", value);
+                    const response = await fetch(cleanupUrl, {
+                        method: "POST",
+                        headers: {
+                            "X-CSRFToken": getCSRFToken(),
+                            "X-Requested-With": "XMLHttpRequest"
+                        },
+                        body: fd
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || data.status !== "ok") {
+                        alert(data.message || "Falha ao executar limpeza ERP.");
+                        return;
+                    }
+                    alert(data.message || "Limpeza ERP executada com sucesso.");
+                    window.closeErpCleanupModal();
+                } catch (e) {
+                    alert("Erro de conexao ao executar limpeza ERP.");
+                } finally {
+                    if (erpCleanupConfirmBtn) {
+                        erpCleanupConfirmBtn.disabled = false;
+                        erpCleanupConfirmBtn.textContent = "Executar limpeza";
+                    }
+                }
+            }
+
+            if (erpCleanupBtn) {
+                erpCleanupBtn.addEventListener("click", function(ev) {
+                    ev.stopPropagation();
+                    openErpCleanupModal();
+                });
+            }
+            if (erpCleanupConfirmBtn) {
+                erpCleanupConfirmBtn.addEventListener("click", function(ev) {
+                    ev.preventDefault();
+                    executeErpCleanup();
+                });
+            }
+
+            accordionBtn.addEventListener("click", function() {
+                isAccordionOpen = !isAccordionOpen;
+                accordionBody.classList.toggle("open", isAccordionOpen);
+                chevron.innerHTML = isAccordionOpen ? "&#9662;" : "&#9656;";
+            });
+
+            loadServices();
+        })();
+    </script>
+</body>
+</html>

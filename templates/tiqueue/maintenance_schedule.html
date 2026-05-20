@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Agendamentos de Manutenção</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main maintenance-page">
+    <div class="headerMain"><div class="headerTitle"><h1>Agendamentos de Manutenção</h1></div></div>
+    <section class="checklist-card checklist-form-card maintenance-form-card">
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="create_schedule">
+            <div class="modal-grid">
+                <div class="field"><label>Título</label>{{ schedule_form.title }}</div>
+                <div class="field"><label>Tipo</label>{{ schedule_form.maintenance_type }}</div>
+                <div class="field"><label>Situação</label>{{ schedule_form.situation }}</div>
+                <div class="field"><label>Indicativo</label>{{ schedule_form.indicator }}</div>
+                <div class="field"><label>Grupo</label>{{ schedule_form.system_group }}</div>
+                <div class="field"><label>Data/Hora agendada</label>{{ schedule_form.scheduled_start }}</div>
+                <div class="field"><label>Previsão de retorno</label>{{ schedule_form.expected_return }}</div>
+                <div class="field"><label>Retorno real</label>{{ schedule_form.real_return }}</div>
+                <div class="field span-2"><label>Descrição curta</label>{{ schedule_form.short_description }}</div>
+                <div class="field span-2"><label>Descrição completa</label>{{ schedule_form.full_description }}</div>
+                <div class="field span-2"><label>Sistemas afetados</label><div class="maintenance-systems-list">{{ schedule_form.affected_systems }}</div></div>
+            </div>
+            <div class="modal-actions"><button class="queue-primary-btn" type="submit">Salvar agendamento</button></div>
+        </form>
+    </section>
+    <section class="queue-card maintenance-history-card">
+        <h3>Próximos agendamentos</h3>
+        <div class="queue-table-wrap">
+            <table class="queue-table queue-table-modern">
+                <thead><tr><th>Agendamento</th><th>Título</th><th>Tipo</th><th>Grupo</th></tr></thead>
+                <tbody>
+                {% for ev in recent_schedule %}
+                    <tr><td>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</td><td>{{ ev.title }}</td><td>{% if ev.maintenance_type %}{{ ev.maintenance_type.name }}{% else %}-{% endif %}</td><td>{% if ev.system_group %}{{ ev.system_group.name }}{% else %}-{% endif %}</td></tr>
+                {% empty %}<tr><td colspan="4">Sem agendamentos cadastrados.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+</body>
+</html>

@@ -66,6 +66,11 @@
                             <span>Concluidas</span>
                         </div>
                     </a>
+                    <a href="{% url 'myAgendaPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Minha agenda</span>
+                        </div>
+                    </a>
                     <div class="dropdownIndividualItem">
                         <span>Outros</span>
                     </div>
@@ -98,6 +103,15 @@
                         <span>Tipo - fila</span>
                     </div>
                 </div>
+            </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'contractsPage' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/contratos.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Contratos</span>
+                    </div>
+                </a>
             </div>
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
@@ -154,7 +168,12 @@
                 <div class="dropdownItens">
                     <a href="{% url 'projectCatalogPage' %}">
                         <div class="dropdownIndividualItem">
-                            <span>Projetos</span>
+                            <span>Em aberto</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'projectCatalogConcludedPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Concluídos</span>
                         </div>
                     </a>
                     <a href="{% url 'manageProjects' %}">
@@ -182,6 +201,36 @@
 
             <div class="dropdown_button" onclick="toggleDrop(this)">
                 <div class="dropdownHeader">
+                    <img src="{% static 'assets/manutencao.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Manutencoes</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'maintenanceCatalogPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Cadastro rápido</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'maintenanceOutagePage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Indisponibilidades</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'maintenanceSchedulePage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Agendamentos</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'maintenanceCalendarPage' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Calendario</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
                     <img src="{% static 'assets/wifi.png' %}" class="sidebar_icon" alt="">
                     <span class="sidebar_text">Wifi</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
@@ -190,6 +239,31 @@
                     <a href="{% url 'wifiVoucherPage' %}">
                         <div class="dropdownIndividualItem">
                             <span>Controle de vouchers</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown_button" onclick="toggleDrop(this)">
+                <div class="dropdownHeader">
+                    <img src="{% static 'assets/sistemas.png' %}" class="sidebar_icon" alt="">
+                    <span class="sidebar_text">Sistemas externos</span>
+                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
+                </div>
+                <div class="dropdownItens">
+                    <a href="{% url 'hqbooking_login' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Reserva da sede</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'lunch_booking' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Reserva de almoço</span>
+                        </div>
+                    </a>
+                    <a href="{% url 'truck_tire_control' %}">
+                        <div class="dropdownIndividualItem">
+                            <span>Logística - Pneus</span>
                         </div>
                     </a>
                 </div>
@@ -207,8 +281,26 @@
             <div class="dropdown_button">
                 <a href="{% url 'systemSettingsPage' %}">
                     <div class="dropdownHeader">
-                        <img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_icon" alt="">
+                        <img src="{% static 'assets/configuracao.png' %}" class="sidebar_icon" alt="">
                         <span class="sidebar_text">Configuracoes</span>
+                    </div>
+                </a>
+            </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'serviceAgentPage' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/servicos.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Servicos</span>
+                    </div>
+                </a>
+            </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'dataModelerPage' %}">
+                    <div class="dropdownHeader">
+                        <img src="{% static 'assets/banco_dados.png' %}" class="sidebar_icon" alt="">
+                        <span class="sidebar_text">Modelagem BD</span>
                     </div>
                 </a>
             </div>

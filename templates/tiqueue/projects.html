@@ -40,6 +40,23 @@
                             {{ project_form.developer.label_tag }}
                             {{ project_form.developer }}
                         </div>
+                        <div class="field span-2">
+                            {{ project_form.participants.label_tag }}
+                            <select id="projectParticipantsSelect" name="project-participants" multiple style="display:none;">
+                                {% for u in users %}
+                                    <option value="{{ u.id }}">
+                                        {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="project-participant-picker" data-target-select="projectParticipantsSelect">
+                                {% for u in users %}
+                                    <button type="button" class="project-participant-card" data-user-id="{{ u.id }}">
+                                        {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        </div>
                         <div class="field">
                             {{ project_form.status.label_tag }}
                             {{ project_form.status }}
@@ -115,7 +132,8 @@
                             <th>Status</th>
                             <th>Inicio</th>
                             <th>Fim</th>
-                            <th>Desenvolvedor</th>
+                            <th>Responsável</th>
+                            <th>Participantes</th>
                             <th>Cor</th>
                             <th>A&#231;&#245;es</th>
                         </tr>
@@ -142,7 +160,7 @@
                                 </td>
                                 <td>
                                     <select class="queue-input-sm table-input" name="developer_id" form="project-form-{{ p.id }}">
-                                        <option value="">Sem desenvolvedor</option>
+                                        <option value="">Sem responsável</option>
                                         {% for u in users %}
                                             <option value="{{ u.id }}" {% if p.developer_id == u.id %}selected{% endif %}>
                                                 {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
@@ -151,9 +169,24 @@
                                     </select>
                                 </td>
                                 <td>
+                                    <div class="project-participant-picker project-participant-picker-inline" data-target-form="project-form-{{ p.id }}">
+                                        {% for u in users %}
+                                            <button type="button" class="project-participant-card {% if u in p.participants.all %}is-selected{% endif %}" data-user-id="{{ u.id }}">
+                                                {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                            </button>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="project-participant-hidden" data-hidden-target="project-form-{{ p.id }}">
+                                        {% for u in p.participants.all %}
+                                            <input type="hidden" name="participants_ids" value="{{ u.id }}" form="project-form-{{ p.id }}">
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td>
                                     <input class="queue-color" type="color" name="color" value="{{ p.color }}" form="project-form-{{ p.id }}">
                                 </td>
                                 <td>
+                                    <div class="projects-actions-scroll">
                                     <div class="table-actions">
                                         <form method="POST" id="project-form-{{ p.id }}">
                                             {% csrf_token %}
@@ -164,10 +197,11 @@
                                         <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectBoard' p.id %}">Kanban</a>
                                         <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectRoadmapView' p.id %}">Roadmap</a>
                                     </div>
+                                    </div>
                                 </td>
                             </tr>
                         {% empty %}
-                            <tr><td colspan="7" class="queue-empty">Nenhum projeto cadastrado.</td></tr>
+                            <tr><td colspan="8" class="queue-empty">Nenhum projeto cadastrado.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -175,4 +209,53 @@
         </div>
 
     </div>
+
+    <script>
+    (function() {
+        function syncSelectPicker(picker, selectId) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            const selected = new Set(Array.from(select.options).filter(o => o.selected).map(o => o.value));
+            picker.querySelectorAll(".project-participant-card").forEach(card => {
+                const id = card.getAttribute("data-user-id");
+                card.classList.toggle("is-selected", selected.has(id));
+                card.addEventListener("click", () => {
+                    card.classList.toggle("is-selected");
+                    const option = Array.from(select.options).find(o => o.value === id);
+                    if (option) option.selected = card.classList.contains("is-selected");
+                });
+            });
+        }
+
+        function syncFormPicker(picker, formId) {
+            const hiddenWrap = document.querySelector(`.project-participant-hidden[data-hidden-target="${formId}"]`);
+            if (!hiddenWrap) return;
+            function renderHidden() {
+                hiddenWrap.innerHTML = "";
+                picker.querySelectorAll(".project-participant-card.is-selected").forEach(card => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = "participants_ids";
+                    input.value = card.getAttribute("data-user-id");
+                    input.setAttribute("form", formId);
+                    hiddenWrap.appendChild(input);
+                });
+            }
+            picker.querySelectorAll(".project-participant-card").forEach(card => {
+                card.addEventListener("click", () => {
+                    card.classList.toggle("is-selected");
+                    renderHidden();
+                });
+            });
+            renderHidden();
+        }
+
+        document.querySelectorAll(".project-participant-picker").forEach(picker => {
+            const targetSelect = picker.getAttribute("data-target-select");
+            const targetForm = picker.getAttribute("data-target-form");
+            if (targetSelect) syncSelectPicker(picker, targetSelect);
+            if (targetForm) syncFormPicker(picker, targetForm);
+        });
+    })();
+    </script>
 </body>

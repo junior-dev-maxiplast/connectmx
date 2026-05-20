@@ -61,6 +61,7 @@ def createUser(request):
                 email = (request.POST.get("email") or "").strip()
                 name_user = (request.POST.get("nameUser") or "").strip()
                 id_sm = (request.POST.get("id_sm") or "").strip()
+                id_erp = (request.POST.get("id_erp") or "").strip()
                 is_system_admin = request.POST.get("is_system_admin") == "on"
                 password = (request.POST.get("password") or "").strip()
 
@@ -78,6 +79,7 @@ def createUser(request):
                     user.email = email
                     user.nameUser = name_user
                     user.id_sm = id_sm or None
+                    user.id_erp = id_erp or None
                     user.is_system_admin = is_system_admin
                     if password:
                         user.set_password(password)
@@ -89,6 +91,7 @@ def createUser(request):
             email = (request.POST.get("email") or "").strip()
             username = (request.POST.get("username") or "").strip()
             id_sm = (request.POST.get("id_sm") or "").strip()
+            id_erp = (request.POST.get("id_erp") or "").strip()
             is_system_admin = request.POST.get("is_system_admin") == "on"
             password = (request.POST.get("password") or "").strip()
 
@@ -102,6 +105,7 @@ def createUser(request):
                         email=email,
                         nameUser=name_user,
                         id_sm=id_sm or None,
+                        id_erp=id_erp or None,
                         is_system_admin=is_system_admin,
                         password=password,
                     )

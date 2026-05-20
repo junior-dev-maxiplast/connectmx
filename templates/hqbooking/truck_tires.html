@@ -1,0 +1,352 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logística | Modelos e Caminhões</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body class="hq-page">
+    <div class="theme-fab" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <div class="hq-container hq-truck-page hq-truck-wide">
+        <header class="hq-header">
+            <div>
+                <h1 class="hq-title">Logística de Pneus</h1>
+                <p class="hq-subtitle">Cadastre modelos de caminhão e aplique em caminhões reais com controle de trocas.</p>
+            </div>
+        </header>
+
+        <section class="hq-card">
+            <div class="truck-top-tabs">
+                <a class="truck-tab {% if active_tab == 'models' %}is-active{% endif %}" href="?tab=models{% if selected_model %}&model={{ selected_model.id }}{% endif %}">Cadastro de modelo</a>
+                <a class="truck-tab {% if active_tab == 'trucks' %}is-active{% endif %}" href="?tab=trucks{% if selected_truck %}&truck={{ selected_truck.id }}{% endif %}">Cadastro de caminhões</a>
+            </div>
+        </section>
+
+        {% if active_tab == "models" %}
+        <section class="hq-card">
+            <form method="GET" class="hq-form hq-form-grid hq-truck-filter-grid">
+                <input type="hidden" name="tab" value="models">
+                <div class="hq-field">
+                    <label class="hq-label" for="model_select">Modelo salvo</label>
+                    <select class="hq-input" id="model_select" name="model" onchange="this.form.submit()">
+                        {% for m in models %}
+                            <option value="{{ m.id }}" {% if selected_model and selected_model.id == m.id %}selected{% endif %}>
+                                {{ m.name }} ({{ m.axle_count }} eixos / {{ m.wheel_count }} rodas)
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </section>
+
+        <section class="hq-card">
+            <form method="POST" id="truckModelForm" class="hq-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="save_model">
+                <input type="hidden" name="model_id" value="{% if selected_model %}{{ selected_model.id }}{% endif %}">
+                <input type="hidden" id="structure_json" name="structure_json">
+                <div class="hq-form-grid hq-truck-config-grid">
+                    <div class="hq-field">
+                        <label class="hq-label" for="model_name">Nome do modelo</label>
+                        <input class="hq-input" id="model_name" name="name" type="text" value="{% if selected_model %}{{ selected_model.name }}{% endif %}" required>
+                    </div>
+                    <div class="hq-actions">
+                        <button type="button" class="hq-button hq-button-secondary" onclick="addAxle()">Adicionar eixo</button>
+                        <button type="button" class="hq-button hq-button-secondary" onclick="toggleSpare()">Adicionar/Remover estepe</button>
+                        <button type="submit" class="hq-button">Salvar modelo</button>
+                    </div>
+                </div>
+
+                <div class="truck-editor-wrap">
+                    <div class="truck-editor-body"></div>
+                    <div id="truckEditorCanvas" class="truck-editor-canvas"></div>
+                </div>
+            </form>
+        </section>
+
+        {% if selected_model %}
+        <section class="hq-card">
+            <form method="POST" onsubmit="return confirm('Excluir este modelo?');">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="delete_model">
+                <input type="hidden" name="model_id" value="{{ selected_model.id }}">
+                <button type="submit" class="hq-button hq-button-secondary">Excluir modelo selecionado</button>
+            </form>
+        </section>
+        {% endif %}
+        {% endif %}
+
+        {% if active_tab == "trucks" %}
+        <section class="hq-card">
+            <form method="GET" class="hq-form hq-form-grid hq-truck-filter-grid">
+                <input type="hidden" name="tab" value="trucks">
+                <div class="hq-field">
+                    <label class="hq-label" for="truck_select">Caminhão</label>
+                    <select class="hq-input" id="truck_select" name="truck" onchange="this.form.submit()">
+                        {% for t in trucks %}
+                            <option value="{{ t.id }}" {% if selected_truck and selected_truck.id == t.id %}selected{% endif %}>
+                                {{ t.identifier }}{% if t.model_template %} - {{ t.model_template.name }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </section>
+
+        <section class="hq-card">
+            <form method="POST" class="hq-form hq-form-grid hq-truck-config-grid">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="save_truck">
+                <input type="hidden" name="truck_id" value="{% if selected_truck %}{{ selected_truck.id }}{% endif %}">
+                <div class="hq-field">
+                    <label class="hq-label" for="truck_identifier">Identificação do caminhão</label>
+                    <input class="hq-input" id="truck_identifier" name="truck_identifier" type="text" value="{% if selected_truck %}{{ selected_truck.identifier }}{% endif %}" required>
+                </div>
+                <div class="hq-field">
+                    <label class="hq-label" for="truck_model_id">Modelo base</label>
+                    <select class="hq-input" id="truck_model_id" name="truck_model_id" required>
+                        {% for m in models %}
+                            <option value="{{ m.id }}" {% if selected_truck and selected_truck.model_template_id == m.id %}selected{% endif %}>{{ m.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="hq-actions">
+                    <button type="submit" class="hq-button">Salvar caminhão</button>
+                </div>
+            </form>
+        </section>
+
+        {% if selected_truck %}
+        <section class="hq-card">
+            <h2 class="hq-card-title">{{ selected_truck.identifier }} - rodas por eixo</h2>
+            <div class="truck-map-wrap">
+                <div class="truck-map-vline"></div>
+                {% for row in truck_rows %}
+                    <div class="truck-map-row">
+                        <div class="truck-map-side left">
+                            {% for slot in row.left_slots %}
+                                <button
+                                    type="button"
+                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}"
+                                    data-tire-number="{{ slot.tire_number }}"
+                                    data-tire-code="{{ slot.tire_code }}"
+                                    data-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
+                                    data-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }}{% endif %}"
+                                    data-note="{% if slot.change and slot.change.note %}{{ slot.change.note }}{% endif %}"
+                                    onclick="openTireModal(this)"
+                                >
+                                    <span>{{ slot.tire_code }}</span>
+                                </button>
+                            {% endfor %}
+                        </div>
+                        <div class="truck-map-axle"></div>
+                        <div class="truck-map-side right">
+                            {% for slot in row.right_slots %}
+                                <button
+                                    type="button"
+                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}"
+                                    data-tire-number="{{ slot.tire_number }}"
+                                    data-tire-code="{{ slot.tire_code }}"
+                                    data-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
+                                    data-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }}{% endif %}"
+                                    data-note="{% if slot.change and slot.change.note %}{{ slot.change.note }}{% endif %}"
+                                    onclick="openTireModal(this)"
+                                >
+                                    <span>{{ slot.tire_code }}</span>
+                                </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="hq-card">
+            <h2 class="hq-card-title">Histórico de trocas</h2>
+            <div class="hq-history-table-wrap">
+                <table class="hq-history-table">
+                    <thead>
+                        <tr>
+                            <th>Data registro</th>
+                            <th>Pneu</th>
+                            <th>Data troca</th>
+                            <th>KM</th>
+                            <th>Observação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for h in truck_history_rows %}
+                            <tr>
+                                <td>{{ h.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ h.tire_code|default:"-" }} (#{{ h.tire_number }})</td>
+                                <td>{% if h.changed_on %}{{ h.changed_on|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if h.odometer_km %}{{ h.odometer_km }}{% else %}-{% endif %}</td>
+                                <td>{{ h.note|default:"-" }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="5">Sem histórico.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    {% if selected_truck %}
+    <div id="truckTireModalOverlay" class="hq-modal-overlay" style="display:none;" onclick="closeTireModal()"></div>
+    <div id="truckTireModal" class="hq-modal hq-truck-modal" style="display:none;">
+        <div class="hq-modal-head">
+            <h3 class="hq-modal-title">Atualizar pneu <span id="modalTireCode"></span></h3>
+        </div>
+        <form method="POST" class="hq-form hq-form-grid">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="tire_update">
+            <input type="hidden" name="truck_id" value="{{ selected_truck.id }}">
+            <input type="hidden" id="modalTireNumber" name="tire_number">
+            <input type="hidden" id="modalTireCodeInput" name="tire_code">
+            <div class="hq-field">
+                <label class="hq-label" for="modalChangedOn">Data da troca</label>
+                <input class="hq-input" id="modalChangedOn" name="changed_on" type="date">
+            </div>
+            <div class="hq-field">
+                <label class="hq-label" for="modalKm">KM</label>
+                <input class="hq-input" id="modalKm" name="odometer_km" type="number" min="0">
+            </div>
+            <div class="hq-field hq-field-span-2">
+                <label class="hq-label" for="modalNote">Observação</label>
+                <input class="hq-input" id="modalNote" name="note" type="text" maxlength="180">
+            </div>
+            <div class="hq-actions">
+                <button type="button" class="hq-button hq-button-secondary" onclick="closeTireModal()">Cancelar</button>
+                <button type="submit" class="hq-button">Salvar</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <script>
+        const activeTab = "{{ active_tab }}";
+        if (activeTab === "models") {
+            let modelStructure = {{ selected_structure_json|safe }};
+            const editorCanvas = document.getElementById("truckEditorCanvas");
+            const hiddenStructure = document.getElementById("structure_json");
+
+            function newWheel(defaultName) { return { name: defaultName || "Nova roda" }; }
+
+            function renderEditor() {
+                editorCanvas.innerHTML = "";
+                modelStructure.forEach((axle, axleIdx) => {
+                    const row = document.createElement("div");
+                    row.className = "truck-editor-row";
+                    const axleBg = document.createElement("div");
+                    axleBg.className = "truck-editor-row-axle";
+
+                    const leftSide = document.createElement("div");
+                    leftSide.className = "truck-editor-side left";
+                    axle.left = axle.left || [];
+                    leftSide.appendChild(renderAddWheelButton(axleIdx, "left"));
+                    axle.left.forEach((wheel, wheelIdx) => leftSide.appendChild(renderWheelChip(axleIdx, "left", wheelIdx, wheel.name || "")));
+
+                    const center = document.createElement("div");
+                    center.className = "truck-editor-center";
+                    center.innerHTML = `<div class="truck-axis-label">Eixo ${axleIdx + 1}</div><button type="button" class="hq-button hq-button-secondary truck-axis-remove" onclick="removeAxle(${axleIdx})">Remover eixo</button>`;
+
+                    const rightSide = document.createElement("div");
+                    rightSide.className = "truck-editor-side right";
+                    axle.right = axle.right || [];
+                    axle.right.forEach((wheel, wheelIdx) => rightSide.appendChild(renderWheelChip(axleIdx, "right", wheelIdx, wheel.name || "")));
+                    rightSide.appendChild(renderAddWheelButton(axleIdx, "right"));
+
+                    row.appendChild(axleBg);
+                    row.appendChild(leftSide);
+                    row.appendChild(center);
+                    row.appendChild(rightSide);
+                    editorCanvas.appendChild(row);
+                });
+
+                if (modelStructure.some((a) => !!a.spare)) {
+                    const spare = document.createElement("div");
+                    spare.className = "truck-spare-block";
+                    const name = modelStructure.find((a) => !!a.spare)?.spare?.name || "Estepe";
+                    spare.innerHTML = `<label class="hq-label">Estepe</label><input class="hq-input" type="text" value="${escapeHtml(name)}" oninput="updateSpareName(this.value)">`;
+                    editorCanvas.appendChild(spare);
+                }
+                hiddenStructure.value = JSON.stringify(modelStructure);
+            }
+
+            function renderWheelChip(axleIdx, side, wheelIdx, wheelName) {
+                const wrap = document.createElement("div");
+                wrap.className = "truck-wheel-chip";
+                wrap.innerHTML = `
+                    <span class="truck-wheel-label">${escapeHtml(wheelName || "Roda")}</span>
+                    <button type="button" class="truck-wheel-edit" onclick="editWheelName(${axleIdx}, '${side}', ${wheelIdx})">&#9998;</button>
+                    <button type="button" class="truck-wheel-remove" onclick="removeWheel(${axleIdx}, '${side}', ${wheelIdx})">&#10005;</button>
+                `;
+                return wrap;
+            }
+
+            function renderAddWheelButton(axleIdx, side) {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "truck-wheel-add";
+                btn.textContent = "+ roda";
+                btn.onclick = () => addWheel(axleIdx, side);
+                return btn;
+            }
+
+            window.addAxle = function() { modelStructure.push({ left: [newWheel("DE")], right: [newWheel("DD")], spare: null }); renderEditor(); };
+            window.removeAxle = function(axleIdx) { modelStructure.splice(axleIdx, 1); if (!modelStructure.length) modelStructure = [{ left: [newWheel("DE")], right: [newWheel("DD")], spare: null }]; renderEditor(); };
+            window.addWheel = function(axleIdx, side) { const list = modelStructure[axleIdx][side] || []; list.push(newWheel((side === "left" ? "E" : "D") + (list.length + 1))); modelStructure[axleIdx][side] = list; renderEditor(); };
+            window.removeWheel = function(axleIdx, side, wheelIdx) { const list = modelStructure[axleIdx][side] || []; list.splice(wheelIdx, 1); modelStructure[axleIdx][side] = list; renderEditor(); };
+            window.renameWheel = function(axleIdx, side, wheelIdx, val) { modelStructure[axleIdx][side][wheelIdx].name = val || ""; hiddenStructure.value = JSON.stringify(modelStructure); };
+            window.editWheelName = function(axleIdx, side, wheelIdx) {
+                const current = modelStructure[axleIdx][side][wheelIdx].name || "";
+                const next = window.prompt("Nome da roda:", current);
+                if (next === null) return;
+                modelStructure[axleIdx][side][wheelIdx].name = (next || "").trim() || current || "Roda";
+                hiddenStructure.value = JSON.stringify(modelStructure);
+                renderEditor();
+            };
+            window.toggleSpare = function() { const e = modelStructure.find((a) => !!a.spare); if (e) e.spare = null; else { if (!modelStructure.length) modelStructure.push({ left: [], right: [], spare: null }); modelStructure[0].spare = { name: "Estepe" }; } renderEditor(); };
+            window.updateSpareName = function(val) { const e = modelStructure.find((a) => !!a.spare); if (e && e.spare) { e.spare.name = val || ""; hiddenStructure.value = JSON.stringify(modelStructure);} };
+            function escapeHtml(str) { return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+            document.getElementById("truckModelForm").addEventListener("submit", () => { hiddenStructure.value = JSON.stringify(modelStructure); });
+            renderEditor();
+        }
+
+        window.openTireModal = function(btn) {
+            const code = btn.dataset.tireCode || "";
+            document.getElementById("modalTireCode").textContent = code ? `(${code})` : "";
+            document.getElementById("modalTireCodeInput").value = code;
+            document.getElementById("modalTireNumber").value = btn.dataset.tireNumber || "";
+            document.getElementById("modalChangedOn").value = btn.dataset.date || "";
+            document.getElementById("modalKm").value = btn.dataset.km || "";
+            document.getElementById("modalNote").value = btn.dataset.note || "";
+            document.getElementById("truckTireModalOverlay").style.display = "block";
+            document.getElementById("truckTireModal").style.display = "block";
+        };
+        window.closeTireModal = function() {
+            const ov = document.getElementById("truckTireModalOverlay");
+            const md = document.getElementById("truckTireModal");
+            if (ov) ov.style.display = "none";
+            if (md) md.style.display = "none";
+        };
+    </script>
+</body>
+</html>

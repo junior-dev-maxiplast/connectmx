@@ -8,7 +8,16 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .models import HeadquartersDateBlock, HeadquartersEnvironment, HeadquartersReservation, LunchReservation
+from .models import (
+    HeadquartersDateBlock,
+    HeadquartersEnvironment,
+    HeadquartersReservation,
+    LunchReservation,
+    Truck,
+    TruckTireChange,
+    TruckTireChangeHistory,
+    TruckModelTemplate,
+)
 
 SESSION_KEY_EMPLOYEE_ID = "hqbooking_employee_id"
 SESSION_KEY_ADMIN_ID = "hqbooking_admin_id"
@@ -713,5 +722,300 @@ def lunch_booking_admin_page(request):
         {
             "grouped": grouped,
             "selected_date": selected_date,
+        },
+    )
+
+
+TRUCK_LAYOUT_PRESETS = {
+    "BASCULANTE_4": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["TE"], "right": ["TD"]},
+    ],
+    "TRUCK_6": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["1EE", "1EI"], "right": ["1DI", "1DE"]},
+    ],
+    "BASCULANTE_8": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["1EE", "1EI"], "right": ["1DI", "1DE"]},
+        {"left": ["2EE"], "right": ["2DE"]},
+    ],
+    "BASCULANTE_10": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["1EE", "1EI"], "right": ["1DI", "1DE"]},
+        {"left": ["2EE", "2EI"], "right": ["2DI", "2DE"]},
+    ],
+    "BASCULANTE_12": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["1EE", "1EI"], "right": ["1DI", "1DE"]},
+        {"left": ["2EE", "2EI"], "right": ["2DI", "2DE"]},
+        {"left": ["3EE"], "right": ["3DE"]},
+    ],
+    "CARRETA_14": [
+        {"left": ["DE"], "right": ["DD"]},
+        {"left": ["1EE", "1EI"], "right": ["1DI", "1DE"]},
+        {"left": ["2EE", "2EI"], "right": ["2DI", "2DE"]},
+        {"left": ["3EE", "3EI"], "right": ["3DI", "3DE"]},
+    ],
+}
+
+
+def _build_auto_axle_layout(axle_count):
+    axle_count = max(2, int(axle_count or 2))
+    rows = [{"left": ["DE"], "right": ["DD"]}]
+    for i in range(1, axle_count):
+        rows.append(
+            {
+                "left": [f"{i}EE", f"{i}EI"],
+                "right": [f"{i}DI", f"{i}DE"],
+            }
+        )
+    return rows
+
+
+def _flatten_layout_rows(base_rows, tire_count):
+    tire_count = max(2, int(tire_count or 2))
+    current = []
+    for row in base_rows:
+        for code in row.get("left", []):
+            current.append(("left", code))
+        for code in row.get("right", []):
+            current.append(("right", code))
+
+    if len(current) > tire_count:
+        current = current[:tire_count]
+    elif len(current) < tire_count:
+        idx = len(current) + 1
+        while len(current) < tire_count:
+            current.append(("left" if len(current) % 2 == 0 else "right", f"COD {idx}"))
+            idx += 1
+
+    numbered = []
+    for idx, (side, code) in enumerate(current, start=1):
+        numbered.append({"tire_number": idx, "tire_code": code, "side": side})
+
+    # Reagrupa em linhas visuais (left / right)
+    rows = []
+    li = [x for x in numbered if x["side"] == "left"]
+    ri = [x for x in numbered if x["side"] == "right"]
+    max_len = max(len(li), len(ri))
+    for i in range(max_len):
+        rows.append(
+            {
+                "left_slots": li[i : i + 1],
+                "right_slots": ri[i : i + 1],
+            }
+        )
+    return rows
+
+
+def truck_tire_control_page(request):
+    def _parse_structure(raw):
+        try:
+            parsed = json.loads(raw or "[]")
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+        return []
+
+    def _rows_from_structure(structure):
+        rows = []
+        tire_no = 1
+        for axle_idx, axle in enumerate(structure, start=1):
+            left = axle.get("left") or []
+            right = axle.get("right") or []
+            left_slots = []
+            right_slots = []
+            for wheel in left:
+                left_slots.append({"tire_number": tire_no, "tire_code": (wheel.get("name") or f"L{tire_no}")})
+                tire_no += 1
+            for wheel in right:
+                right_slots.append({"tire_number": tire_no, "tire_code": (wheel.get("name") or f"R{tire_no}")})
+                tire_no += 1
+            rows.append({"axle_index": axle_idx, "left_slots": left_slots, "right_slots": right_slots})
+        return rows, tire_no - 1
+
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        if form_id == "save_model":
+            model_id_raw = (request.POST.get("model_id") or "").strip()
+            name = (request.POST.get("name") or "").strip()
+            structure_raw = (request.POST.get("structure_json") or "[]").strip()
+            if name:
+                try:
+                    structure = json.loads(structure_raw)
+                    if not isinstance(structure, list):
+                        structure = []
+                except Exception:
+                    structure = []
+
+                axle_count = len(structure)
+                wheel_count = 0
+                for axle in structure:
+                    wheel_count += len(axle.get("left", [])) + len(axle.get("right", []))
+                    if axle.get("spare"):
+                        wheel_count += 1
+
+                if model_id_raw.isdigit():
+                    row = TruckModelTemplate.objects.filter(pk=int(model_id_raw)).first()
+                    if row:
+                        row.name = name
+                        row.axle_count = axle_count
+                        row.wheel_count = wheel_count
+                        row.structure_json = json.dumps(structure, ensure_ascii=False)
+                        row.save(update_fields=["name", "axle_count", "wheel_count", "structure_json", "updated_at"])
+                        return redirect(f"{request.path}?model={row.id}")
+
+                row = TruckModelTemplate.objects.create(
+                    name=name,
+                    axle_count=axle_count,
+                    wheel_count=wheel_count,
+                    structure_json=json.dumps(structure, ensure_ascii=False),
+                )
+                return redirect(f"{request.path}?model={row.id}")
+
+        elif form_id == "delete_model":
+            model_id_raw = (request.POST.get("model_id") or "").strip()
+            if model_id_raw.isdigit():
+                TruckModelTemplate.objects.filter(pk=int(model_id_raw)).delete()
+            return redirect(request.path)
+
+        elif form_id == "save_truck":
+            truck_id_raw = (request.POST.get("truck_id") or "").strip()
+            identifier = (request.POST.get("truck_identifier") or "").strip()
+            model_id_raw = (request.POST.get("truck_model_id") or "").strip()
+            template = TruckModelTemplate.objects.filter(pk=int(model_id_raw)).first() if model_id_raw.isdigit() else None
+            if identifier and template:
+                if truck_id_raw.isdigit():
+                    truck = Truck.objects.filter(pk=int(truck_id_raw)).first()
+                else:
+                    truck = None
+
+                if truck:
+                    truck.identifier = identifier
+                    truck.model_template = template
+                    truck.tire_count = int(template.wheel_count or 0)
+                    truck.layout_model = "TEMPLATE"
+                    truck.save(update_fields=["identifier", "model_template", "tire_count", "layout_model", "updated_at"])
+                else:
+                    truck = Truck.objects.create(
+                        identifier=identifier,
+                        model_template=template,
+                        tire_count=int(template.wheel_count or 0),
+                        layout_model="TEMPLATE",
+                    )
+                return redirect(f"{request.path}?tab=trucks&truck={truck.id}&model={template.id}")
+
+        elif form_id == "tire_update":
+            truck_id = (request.POST.get("truck_id") or "").strip()
+            tire_number_raw = (request.POST.get("tire_number") or "").strip()
+            tire_code = (request.POST.get("tire_code") or "").strip() or None
+            changed_on_raw = (request.POST.get("changed_on") or "").strip()
+            odometer_raw = (request.POST.get("odometer_km") or "").strip()
+            note = (request.POST.get("note") or "").strip() or None
+
+            if truck_id.isdigit() and tire_number_raw.isdigit():
+                truck = Truck.objects.filter(pk=int(truck_id)).first()
+                tire_number = int(tire_number_raw)
+                if truck and tire_number >= 1:
+                    changed_on = None
+                    if changed_on_raw:
+                        try:
+                            changed_on = date.fromisoformat(changed_on_raw)
+                        except ValueError:
+                            changed_on = None
+                    odometer_km = int(odometer_raw) if odometer_raw.isdigit() else None
+
+                    row, _ = TruckTireChange.objects.get_or_create(truck=truck, tire_number=tire_number)
+                    row.tire_code = tire_code
+                    row.changed_on = changed_on
+                    row.odometer_km = odometer_km
+                    row.note = note
+                    row.save(update_fields=["tire_code", "changed_on", "odometer_km", "note", "updated_at"])
+
+                    TruckTireChangeHistory.objects.create(
+                        truck=truck,
+                        tire_number=tire_number,
+                        tire_code=tire_code,
+                        changed_on=changed_on,
+                        odometer_km=odometer_km,
+                        note=note,
+                    )
+                    return redirect(f"{request.path}?tab=trucks&truck={truck.id}")
+
+    models_qs = TruckModelTemplate.objects.all().order_by("name")
+    trucks_qs = Truck.objects.select_related("model_template").all().order_by("identifier")
+    active_tab = (request.GET.get("tab") or "models").strip().lower()
+    if active_tab not in {"models", "trucks"}:
+        active_tab = "models"
+
+    selected_model = None
+    model_id = (request.GET.get("model") or "").strip()
+    if model_id.isdigit():
+        selected_model = TruckModelTemplate.objects.filter(pk=int(model_id)).first()
+    if not selected_model:
+        selected_model = models_qs.first()
+
+    selected_truck = None
+    truck_id = (request.GET.get("truck") or "").strip()
+    if truck_id.isdigit():
+        selected_truck = trucks_qs.filter(pk=int(truck_id)).first()
+    if not selected_truck:
+        selected_truck = trucks_qs.first()
+
+    structure = []
+    if selected_model and selected_model.structure_json:
+        structure = _parse_structure(selected_model.structure_json)
+
+    if not structure:
+        structure = [{"left": [{"name": "DE"}], "right": [{"name": "DD"}], "spare": None}]
+
+    truck_structure = []
+    truck_rows = []
+    truck_history_rows = []
+    if selected_truck and selected_truck.model_template:
+        truck_structure = _parse_structure(selected_truck.model_template.structure_json)
+        if not truck_structure:
+            truck_structure = structure
+        truck_rows, _ = _rows_from_structure(truck_structure)
+        latest = {
+            r.tire_number: r
+            for r in TruckTireChange.objects.filter(truck=selected_truck).order_by("tire_number")
+        }
+        for row in truck_rows:
+            for slot in row["left_slots"]:
+                slot["change"] = latest.get(slot["tire_number"])
+            for slot in row["right_slots"]:
+                slot["change"] = latest.get(slot["tire_number"])
+
+        truck_history_rows = list(
+            TruckTireChangeHistory.objects.filter(truck=selected_truck).order_by("-created_at", "-id")[:250]
+        )
+
+    models_payload = [
+        {
+            "id": m.id,
+            "name": m.name,
+            "axle_count": int(m.axle_count or 0),
+            "wheel_count": int(m.wheel_count or 0),
+            "structure_json": m.structure_json or "[]",
+        }
+        for m in models_qs
+    ]
+
+    return render(
+        request,
+        "hqbooking/truck_tires.html",
+        {
+            "active_tab": active_tab,
+            "models": models_qs,
+            "selected_model": selected_model,
+            "selected_structure_json": json.dumps(structure, ensure_ascii=False),
+            "models_payload": json.dumps(models_payload, ensure_ascii=False),
+            "trucks": trucks_qs,
+            "selected_truck": selected_truck,
+            "truck_rows": truck_rows,
+            "truck_history_rows": truck_history_rows,
         },
     )

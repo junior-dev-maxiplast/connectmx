@@ -1,0 +1,119 @@
+{% load static %}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Contratos</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+</head>
+
+<!DOCTYPE html>
+<body>
+    {% include 'partials/sidebar.html' %}
+    <div id="overlay" onclick="closeContractModal()" style="display:none;"></div>
+
+    <div class="queue_main senior-page">
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Contratos</h1>
+                <div class="subtitle">Tabela baseada no Demonstrativo 2026</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <button type="button" class="queue-primary-btn" onclick="openContractModal()">Novo contrato</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="queue senior-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Mês</th>
+                        <th>Maxiplast</th>
+                        <th>CNPJ</th>
+                        <th>Fornecedores</th>
+                        <th>NF</th>
+                        <th>Emissão</th>
+                        <th>Vencimento</th>
+                        <th>Valor</th>
+                        <th>Item</th>
+                        <th>Solicitação</th>
+                        <th>Contrato</th>
+                        <th>Transação</th>
+                        <th>Centro Custo</th>
+                        <th>Observação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in contracts %}
+                        <tr>
+                            <td>{{ c.reference_month|default:"-" }}</td>
+                            <td>{{ c.company|default:"-" }}</td>
+                            <td>{{ c.cnpj|default:"-" }}</td>
+                            <td>{{ c.supplier|default:"-" }}</td>
+                            <td>{{ c.invoice_number|default:"-" }}</td>
+                            <td>{% if c.issue_date %}{{ c.issue_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td>{% if c.due_date %}{{ c.due_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                            <td>{% if c.amount %}R$ {{ c.amount }}{% else %}-{% endif %}</td>
+                            <td>{{ c.item|default:"-" }}</td>
+                            <td>{{ c.request_code|default:"-" }}</td>
+                            <td>{{ c.contract_code|default:"-" }}</td>
+                            <td>{{ c.transaction_type|default:"-" }}</td>
+                            <td>{{ c.cost_center|default:"-" }}</td>
+                            <td class="queue-text-ellipsis" title="{{ c.observation|default:'' }}">{{ c.observation|default:"-" }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="14">Nenhum contrato cadastrado.</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="contractModal" class="formNewItemMain" style="display:none;">
+        <div class="modal-header">
+            <div class="modal-title">Novo contrato</div>
+            <button type="button" class="modal-close" onclick="closeContractModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <div class="modal-grid">
+                <div class="field"><label>Mês</label><input type="text" name="reference_month" placeholder="Ex: JAN/2026"></div>
+                <div class="field"><label>Maxiplast</label><input type="text" name="company"></div>
+                <div class="field"><label>CNPJ</label><input type="text" name="cnpj"></div>
+                <div class="field"><label>Fornecedores</label><input type="text" name="supplier"></div>
+                <div class="field"><label>NF</label><input type="text" name="invoice_number"></div>
+                <div class="field"><label>Emissão</label><input type="date" name="issue_date"></div>
+                <div class="field"><label>Vencimento</label><input type="date" name="due_date"></div>
+                <div class="field"><label>Valor</label><input type="text" name="amount" placeholder="0,00"></div>
+                <div class="field"><label>Item</label><input type="text" name="item"></div>
+                <div class="field"><label>Solicitação</label><input type="text" name="request_code"></div>
+                <div class="field"><label>Contrato</label><input type="text" name="contract_code"></div>
+                <div class="field"><label>Transação</label><input type="text" name="transaction_type"></div>
+                <div class="field"><label>Centro Custo</label><input type="text" name="cost_center"></div>
+                <div class="field span-2"><label>Observação</label><textarea name="observation" rows="3"></textarea></div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeContractModal()">Cancelar</button>
+                <button type="submit" class="queue-primary-btn">Salvar</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+<script>
+    function openContractModal() {
+        document.getElementById("overlay").style.display = "block";
+        document.getElementById("contractModal").style.display = "block";
+    }
+    function closeContractModal() {
+        document.getElementById("overlay").style.display = "none";
+        document.getElementById("contractModal").style.display = "none";
+    }
+</script>

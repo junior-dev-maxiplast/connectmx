@@ -1,0 +1,166 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Minha Agenda</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main">
+    <div class="headerMain"><div class="headerTitle"><h1>Minha Agenda</h1></div></div>
+    <div class="queue-card maintenance-calendar-card">
+        <div class="maintenance-calendar-head">
+            <button id="aPrev" class="queue-secondary-btn" type="button">&#9664;</button>
+            <h3 id="aTitle"></h3>
+            <button id="aNext" class="queue-secondary-btn" type="button">&#9654;</button>
+        </div>
+        <div class="maintenance-weekdays">
+            <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+        </div>
+        <div id="aGrid" class="maintenance-calendar-grid"></div>
+    </div>
+
+    <section class="queue-card maintenance-history-card">
+        <h3>Próximos lembretes</h3>
+        <div class="queue-table-wrap">
+            <table class="queue-table queue-table-modern">
+                <thead><tr><th>Data</th><th>Hora</th><th>Título</th><th>Cor</th><th>Prioridade</th><th>Status</th><th>Ação</th></tr></thead>
+                <tbody>
+                {% for rem in upcoming %}
+                    <tr>
+                        <td>{{ rem.reminder_date|date:"d/m/Y" }}</td>
+                        <td>{% if rem.reminder_time %}{{ rem.reminder_time|time:"H:i" }}{% else %}-{% endif %}</td>
+                        <td>{{ rem.title }}</td>
+                        <td>
+                            <span class="maintenance-day-event" style="--event-color:{% if rem.color %}{{ rem.color }}{% else %}#4a87ff{% endif %};">■</span>
+                        </td>
+                        <td>{{ rem.get_priority_display }}</td>
+                        <td>{% if rem.is_done %}Concluído{% else %}Pendente{% endif %}</td>
+                        <td>
+                            <form method="POST">{% csrf_token %}
+                                <input type="hidden" name="form_id" value="toggle_done">
+                                <input type="hidden" name="reminder_id" value="{{ rem.id }}">
+                                <button type="submit" class="queue-secondary-btn">{% if rem.is_done %}Reabrir{% else %}Concluir{% endif %}</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">Sem lembretes cadastrados.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div id="agendaCreateModal" class="queue-modal-overlay" style="display:none;">
+    <div class="queue-modal-card maintenance-modal-card">
+        <div class="queue-modal-head">
+            <h3>Novo lembrete</h3>
+            <button id="agendaModalClose" type="button" class="queue-secondary-btn">Fechar</button>
+        </div>
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="create_reminder">
+            <div class="modal-grid">
+                <div class="field span-2"><label>Título</label><input name="rem-title" type="text" required></div>
+                <div class="field"><label>Data</label><input id="agendaDateInput" name="rem-reminder_date" type="date" required></div>
+                <div class="field"><label>Hora</label><input name="rem-reminder_time" type="time"></div>
+                <div class="field"><label>Cor</label><input name="rem-color" type="color" value="#4a87ff"></div>
+                <div class="field"><label>Prioridade</label>
+                    <select name="rem-priority">
+                        <option value="low">Baixa</option>
+                        <option value="medium" selected>Média</option>
+                        <option value="high">Alta</option>
+                    </select>
+                </div>
+                <div class="field span-2"><label>Descrição</label><textarea name="rem-description" rows="4"></textarea></div>
+            </div>
+            <div class="modal-actions"><button class="queue-primary-btn" type="submit">Salvar lembrete</button></div>
+        </form>
+    </div>
+</div>
+
+<script>
+(() => {
+    const items = {{ calendar_items_json|safe }};
+    const grid = document.getElementById("aGrid");
+    const title = document.getElementById("aTitle");
+    const prev = document.getElementById("aPrev");
+    const next = document.getElementById("aNext");
+    const modal = document.getElementById("agendaCreateModal");
+    const modalClose = document.getElementById("agendaModalClose");
+    const dateInput = document.getElementById("agendaDateInput");
+    let view = new Date();
+    view.setDate(1);
+
+    function key(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+    function eventLabel(ev) {
+        if (!ev || !ev.start) return ev && ev.title ? ev.title : "";
+        const dt = new Date(ev.start);
+        const hasTime = !Number.isNaN(dt.getTime()) && (ev.start.includes("T") || ev.start.includes(" "));
+        if (!hasTime) return ev.title || "";
+        const hh = String(dt.getHours()).padStart(2, "0");
+        const mm = String(dt.getMinutes()).padStart(2, "0");
+        return `${ev.title || ""} (${hh}:${mm})`;
+    }
+    function render(){
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const y = view.getFullYear();
+        const m = view.getMonth();
+        title.textContent = view.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+        const start = new Date(y, m, 1);
+        const end = new Date(y, m + 1, 0);
+        const firstWeekday = start.getDay();
+        const totalCells = Math.ceil((firstWeekday + end.getDate()) / 7) * 7;
+        const byDay = {};
+        for (const ev of items) {
+            if (!ev.start) continue;
+            const d = new Date(ev.start);
+            const k = key(d);
+            if (!byDay[k]) byDay[k] = [];
+            byDay[k].push(ev);
+        }
+        const html = [];
+        for (let i=0;i<totalCells;i++){
+            const dayNum = i - firstWeekday + 1;
+            const inMonth = dayNum >= 1 && dayNum <= end.getDate();
+            const d = new Date(y,m,inMonth ? dayNum : 1);
+            const k = inMonth ? key(d) : "";
+            const isPast = inMonth && d < today;
+            const events = inMonth ? (byDay[k] || []) : [];
+            html.push(`<div class="maintenance-day ${inMonth ? "" : "is-out"} ${isPast ? "is-past" : ""}" ${inMonth && !isPast ? `data-date="${k}"` : ""}>
+                <div class="maintenance-day-num">${inMonth ? dayNum : ""}</div>
+                <div class="maintenance-day-events">
+                    ${events.map(ev => `<span class="maintenance-day-event" style="--event-color:${ev.color || "#4a87ff"}">${eventLabel(ev)}</span>`).join("")}
+                </div>
+            </div>`);
+        }
+        grid.innerHTML = html.join("");
+    }
+    function openDay(day) {
+        if (!day) return;
+        dateInput.value = day;
+        modal.style.display = "flex";
+    }
+    prev.addEventListener("click", ()=>{ view.setMonth(view.getMonth()-1); render(); });
+    next.addEventListener("click", ()=>{ view.setMonth(view.getMonth()+1); render(); });
+    grid.addEventListener("dblclick", (ev)=> {
+        const day = ev.target.closest(".maintenance-day[data-date]");
+        if (!day) return;
+        openDay(day.getAttribute("data-date"));
+    });
+    modalClose.addEventListener("click", ()=>{ modal.style.display = "none"; });
+    modal.addEventListener("click", (ev)=>{ if (ev.target === modal) modal.style.display = "none"; });
+    render();
+})();
+</script>
+</body>
+</html>

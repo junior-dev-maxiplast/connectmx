@@ -1,0 +1,56 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Indisponibilidades</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+{% include 'partials/sidebar.html' %}
+<div class="queue_main maintenance-page">
+    <div class="headerMain"><div class="headerTitle"><h1>Registro de Indisponibilidades</h1></div></div>
+    <section class="checklist-card checklist-form-card maintenance-form-card">
+        <form method="POST" class="modal-form">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="create_outage">
+            <div class="modal-grid">
+                <div class="field"><label>Título</label>{{ outage_form.title }}</div>
+                <div class="field"><label>Tipo</label>{{ outage_form.maintenance_type }}</div>
+                <div class="field"><label>Situação</label>{{ outage_form.situation }}</div>
+                <div class="field"><label>Indicativo</label>{{ outage_form.indicator }}</div>
+                <div class="field"><label>Grupo</label>{{ outage_form.system_group }}</div>
+                <div class="field"><label>Data/Hora da ocorrência</label>{{ outage_form.scheduled_start }}</div>
+                <div class="field"><label>Previsão de retorno</label>{{ outage_form.expected_return }}</div>
+                <div class="field"><label>Retorno real</label>{{ outage_form.real_return }}</div>
+                <div class="field span-2"><label>Descrição curta</label>{{ outage_form.short_description }}</div>
+                <div class="field span-2"><label>Descrição completa</label>{{ outage_form.full_description }}</div>
+                <div class="field span-2"><label>Sistemas afetados</label><div class="maintenance-systems-list">{{ outage_form.affected_systems }}</div></div>
+            </div>
+            <div class="modal-actions"><button class="queue-danger-btn" type="submit">Salvar indisponibilidade</button></div>
+        </form>
+    </section>
+    <section class="queue-card maintenance-history-card">
+        <h3>Últimos registros</h3>
+        <div class="queue-table-wrap">
+            <table class="queue-table queue-table-modern">
+                <thead><tr><th>Data/Hora</th><th>Título</th><th>Situação</th><th>Sistemas</th></tr></thead>
+                <tbody>
+                {% for ev in recent_outage %}
+                    <tr class="maintenance-outage-row">
+                        <td>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</td><td>{{ ev.title }}</td>
+                        <td>{% if ev.situation %}{{ ev.situation.name }}{% else %}-{% endif %}</td>
+                        <td>{% for s in ev.affected_systems.all %}<span class="task-type-chip">{{ s.name }}</span>{% empty %}-{% endfor %}</td>
+                    </tr>
+                {% empty %}<tr><td colspan="4">Sem indisponibilidades registradas.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+</body>
+</html>

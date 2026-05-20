@@ -69,3 +69,72 @@ class LunchReservation(models.Model):
 
     def __str__(self):
         return f"{self.employee_id} - {self.reserved_date}"
+
+
+class Truck(models.Model):
+    identifier = models.CharField(max_length=80, unique=True)
+    model_template = models.ForeignKey(
+        "TruckModelTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trucks",
+    )
+    tire_count = models.PositiveIntegerField(default=6)
+    layout_model = models.CharField(max_length=30, default="BASCULANTE_10")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["identifier", "id"]
+
+    def __str__(self):
+        return self.identifier
+
+
+class TruckTireChange(models.Model):
+    truck = models.ForeignKey(Truck, on_delete=models.CASCADE, related_name="tire_changes")
+    tire_number = models.PositiveIntegerField()
+    tire_code = models.CharField(max_length=12, blank=True, null=True)
+    changed_on = models.DateField(blank=True, null=True)
+    odometer_km = models.PositiveIntegerField(blank=True, null=True)
+    note = models.CharField(max_length=180, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("truck", "tire_number")
+        ordering = ["tire_number", "id"]
+
+    def __str__(self):
+        return f"{self.truck.identifier} - Pneu {self.tire_number}"
+
+
+class TruckTireChangeHistory(models.Model):
+    truck = models.ForeignKey(Truck, on_delete=models.CASCADE, related_name="tire_history")
+    tire_number = models.PositiveIntegerField()
+    tire_code = models.CharField(max_length=12, blank=True, null=True)
+    changed_on = models.DateField(blank=True, null=True)
+    odometer_km = models.PositiveIntegerField(blank=True, null=True)
+    note = models.CharField(max_length=180, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.truck.identifier} - {self.tire_code or self.tire_number}"
+
+
+class TruckModelTemplate(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    axle_count = models.PositiveIntegerField(default=1)
+    wheel_count = models.PositiveIntegerField(default=2)
+    structure_json = models.TextField(default="[]")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
