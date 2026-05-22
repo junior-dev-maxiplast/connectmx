@@ -2158,17 +2158,32 @@ def updateQueueItem(request, id):
 
     item = form.save()
 
-    task_group_raw = (request.POST.get("task_group") or "").strip()
-    task_type_raw = (request.POST.get("task_type") or "").strip()
+    update_type_fields = []
 
-    task_group_id = int(task_group_raw) if task_group_raw.isdigit() else None
-    task_type_id = int(task_type_raw) if task_type_raw.isdigit() else None
+    if "task_group" in request.POST:
+        task_group_raw = (request.POST.get("task_group") or "").strip()
+        task_group_id = int(task_group_raw) if task_group_raw.isdigit() else None
+        item.task_group_id = task_group_id
+        item.n_type_group = task_group_id
+        update_type_fields.extend(["task_group", "n_type_group"])
 
-    item.task_group_id = task_group_id
-    item.task_type_id = task_type_id
-    item.n_type_group = task_group_id
-    item.n_type_code = task_type_id
-    item.save(update_fields=["task_group", "task_type", "n_type_group", "n_type_code"])
+    if "task_type" in request.POST:
+        task_type_raw = (request.POST.get("task_type") or "").strip()
+        task_type_id = int(task_type_raw) if task_type_raw.isdigit() else None
+        item.task_type_id = task_type_id
+        item.n_type_code = task_type_id
+        # Keep group coherent when type is explicitly changed.
+        if task_type_id:
+            tt = TaskType.objects.filter(id=task_type_id).only("group_id").first()
+            if tt:
+                item.task_group_id = tt.group_id
+                item.n_type_group = tt.group_id
+                if "task_group" not in update_type_fields:
+                    update_type_fields.extend(["task_group", "n_type_group"])
+        update_type_fields.extend(["task_type", "n_type_code"])
+
+    if update_type_fields:
+        item.save(update_fields=list(dict.fromkeys(update_type_fields)))
     return JsonResponse({"status": "ok"})
 
 @login_required
@@ -2414,7 +2429,7 @@ def linkQueueItemToProject(request, id):
 def reorderQueueItems(request):
     """
     Receives an ordered list of queue item ids (n_register) and persists positions
-    for the authenticated user. Only reorders items with n_queue_position >= 2.
+    for the authenticated user.
     """
     try:
         payload = json.loads(request.body.decode("utf-8") or "{}")
@@ -2441,17 +2456,18 @@ def reorderQueueItems(request):
     if len(items) != len(set(order_ids)):
         return HttpResponseBadRequest("One or more items not found")
 
-    if any(i["n_queue_position"] == 1 for i in items):
-        return HttpResponseBadRequest("Cannot reorder current working item")
-
-    # Persist sequential positions starting at 2 (position 1 is reserved for current item).
+    # Persist exact visual order from top to bottom starting at 1.
     whens = []
+    whens_sort = []
     for index, item_id in enumerate(order_ids):
-        whens.append(When(n_register=item_id, then=Value(index + 2)))
+        pos = index + 1
+        whens.append(When(n_register=item_id, then=Value(pos)))
+        whens_sort.append(When(n_register=item_id, then=Value(pos)))
 
     with transaction.atomic():
         userQueue.objects.filter(user_code=user_code, n_register__in=order_ids).update(
-            n_queue_position=Case(*whens, output_field=IntegerField())
+            n_queue_position=Case(*whens, output_field=IntegerField()),
+            kanban_sort_order=Case(*whens_sort, output_field=IntegerField()),
         )
 
         return JsonResponse({"status": "ok"})
