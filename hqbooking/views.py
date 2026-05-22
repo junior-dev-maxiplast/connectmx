@@ -927,6 +927,26 @@ def truck_tire_control_page(request):
                             changed_on = None
                     odometer_km = int(odometer_raw) if odometer_raw.isdigit() else None
 
+                    previous_row = TruckTireChange.objects.filter(truck=truck, tire_number=tire_number).first()
+                    previous_tire_code = previous_row.tire_code if previous_row else None
+                    previous_changed_on = previous_row.changed_on if previous_row else None
+                    previous_odometer_km = previous_row.odometer_km if previous_row else None
+
+                    run_days = None
+                    run_km = None
+                    if (
+                        previous_changed_on
+                        and changed_on
+                        and changed_on >= previous_changed_on
+                    ):
+                        run_days = (changed_on - previous_changed_on).days
+                    if (
+                        previous_odometer_km is not None
+                        and odometer_km is not None
+                        and odometer_km >= previous_odometer_km
+                    ):
+                        run_km = odometer_km - previous_odometer_km
+
                     row, _ = TruckTireChange.objects.get_or_create(truck=truck, tire_number=tire_number)
                     row.tire_code = tire_code
                     row.changed_on = changed_on
@@ -940,6 +960,11 @@ def truck_tire_control_page(request):
                         tire_code=tire_code,
                         changed_on=changed_on,
                         odometer_km=odometer_km,
+                        previous_tire_code=previous_tire_code,
+                        previous_changed_on=previous_changed_on,
+                        previous_odometer_km=previous_odometer_km,
+                        run_days=run_days,
+                        run_km=run_km,
                         note=note,
                     )
                     return redirect(f"{request.path}?tab=trucks&truck={truck.id}")
@@ -951,17 +976,19 @@ def truck_tire_control_page(request):
         active_tab = "models"
 
     selected_model = None
+    new_model_mode = (request.GET.get("new_model") or "").strip() in {"1", "true", "yes", "on"}
     model_id = (request.GET.get("model") or "").strip()
     if model_id.isdigit():
         selected_model = TruckModelTemplate.objects.filter(pk=int(model_id)).first()
-    if not selected_model:
+    if not selected_model and not (active_tab == "models" and new_model_mode):
         selected_model = models_qs.first()
 
     selected_truck = None
+    new_truck_mode = (request.GET.get("new") or "").strip() in {"1", "true", "yes", "on"}
     truck_id = (request.GET.get("truck") or "").strip()
     if truck_id.isdigit():
         selected_truck = trucks_qs.filter(pk=int(truck_id)).first()
-    if not selected_truck:
+    if not selected_truck and not (active_tab == "trucks" and new_truck_mode):
         selected_truck = trucks_qs.first()
 
     structure = []
@@ -975,6 +1002,9 @@ def truck_tire_control_page(request):
     truck_rows = []
     truck_history_rows = []
     if selected_truck and selected_truck.model_template:
+        tire_heat_max_days = 180
+        today = timezone.localdate()
+
         truck_structure = _parse_structure(selected_truck.model_template.structure_json)
         if not truck_structure:
             truck_structure = structure
@@ -983,15 +1013,39 @@ def truck_tire_control_page(request):
             r.tire_number: r
             for r in TruckTireChange.objects.filter(truck=selected_truck).order_by("tire_number")
         }
+        history_qs = TruckTireChangeHistory.objects.filter(truck=selected_truck).order_by("-created_at", "-id")
+        truck_history_rows = list(history_qs[:250])
+
+        last_run_metrics_by_tire = {}
+        for item in history_qs.iterator(chunk_size=500):
+            if item.tire_number in last_run_metrics_by_tire:
+                continue
+            if item.run_km is None and item.run_days is None:
+                continue
+            last_run_metrics_by_tire[item.tire_number] = item
+
+        def _enrich_tire_slot(slot):
+            change = latest.get(slot["tire_number"])
+            slot["change"] = change
+            slot["last_metrics"] = last_run_metrics_by_tire.get(slot["tire_number"])
+
+            tire_age_days = None
+            tire_heat = None
+            tire_heat_css = None
+            if change and change.changed_on:
+                tire_age_days = max((today - change.changed_on).days, 0)
+                tire_heat = min(float(tire_age_days) / float(tire_heat_max_days), 1.0)
+                tire_heat_css = f"{tire_heat:.4f}"
+
+            slot["tire_age_days"] = tire_age_days
+            slot["tire_heat"] = tire_heat
+            slot["tire_heat_css"] = tire_heat_css
+
         for row in truck_rows:
             for slot in row["left_slots"]:
-                slot["change"] = latest.get(slot["tire_number"])
+                _enrich_tire_slot(slot)
             for slot in row["right_slots"]:
-                slot["change"] = latest.get(slot["tire_number"])
-
-        truck_history_rows = list(
-            TruckTireChangeHistory.objects.filter(truck=selected_truck).order_by("-created_at", "-id")[:250]
-        )
+                _enrich_tire_slot(slot)
 
     models_payload = [
         {
@@ -1011,11 +1065,40 @@ def truck_tire_control_page(request):
             "active_tab": active_tab,
             "models": models_qs,
             "selected_model": selected_model,
+            "new_model_mode": bool(new_model_mode and active_tab == "models"),
             "selected_structure_json": json.dumps(structure, ensure_ascii=False),
             "models_payload": json.dumps(models_payload, ensure_ascii=False),
             "trucks": trucks_qs,
             "selected_truck": selected_truck,
+            "new_truck_mode": bool(new_truck_mode and active_tab == "trucks"),
             "truck_rows": truck_rows,
             "truck_history_rows": truck_history_rows,
+        },
+    )
+
+
+def truck_tire_history_page(request):
+    trucks_qs = Truck.objects.select_related("model_template").all().order_by("identifier")
+
+    selected_truck = None
+    truck_id = (request.GET.get("truck") or "").strip()
+    if truck_id.isdigit():
+        selected_truck = trucks_qs.filter(pk=int(truck_id)).first()
+    if not selected_truck:
+        selected_truck = trucks_qs.first()
+
+    history_rows = []
+    if selected_truck:
+        history_rows = list(
+            TruckTireChangeHistory.objects.filter(truck=selected_truck).order_by("-created_at", "-id")[:1000]
+        )
+
+    return render(
+        request,
+        "hqbooking/truck_tire_history.html",
+        {
+            "trucks": trucks_qs,
+            "selected_truck": selected_truck,
+            "history_rows": history_rows,
         },
     )

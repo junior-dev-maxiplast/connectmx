@@ -29,10 +29,18 @@
             </div>
         </header>
 
-        <section class="hq-card">
-            <div class="truck-top-tabs">
-                <a class="truck-tab {% if active_tab == 'models' %}is-active{% endif %}" href="?tab=models{% if selected_model %}&model={{ selected_model.id }}{% endif %}">Cadastro de modelo</a>
-                <a class="truck-tab {% if active_tab == 'trucks' %}is-active{% endif %}" href="?tab=trucks{% if selected_truck %}&truck={{ selected_truck.id }}{% endif %}">Cadastro de caminhões</a>
+        <section class="hq-card hq-card-tabs">
+            <div class="truck-tab-browser">
+                <div class="truck-tab-browser-head" aria-hidden="true">
+                    <span class="truck-tab-dot is-red"></span>
+                    <span class="truck-tab-dot is-yellow"></span>
+                    <span class="truck-tab-dot is-green"></span>
+                    <span class="truck-tab-browser-title">Navegacao</span>
+                </div>
+                <div class="truck-top-tabs" role="tablist" aria-label="Modulos de logistica">
+                    <a class="truck-tab {% if active_tab == 'models' %}is-active{% endif %}" href="?tab=models{% if selected_model %}&model={{ selected_model.id }}{% elif new_model_mode %}&new_model=1{% endif %}">Cadastro de modelo</a>
+                    <a class="truck-tab {% if active_tab == 'trucks' %}is-active{% endif %}" href="?tab=trucks{% if selected_truck %}&truck={{ selected_truck.id }}{% elif new_truck_mode %}&new=1{% endif %}">Cadastro de caminhões</a>
+                </div>
             </div>
         </section>
 
@@ -50,36 +58,53 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="hq-actions truck-filter-actions">
+                    <a class="hq-button truck-new-truck-btn" href="?tab=models&new_model=1">+ Novo modelo</a>
+                    {% if selected_model and not new_model_mode %}
+                        <a class="hq-button hq-button-secondary truck-delete-model-link" href="#model-delete-section">Remover modelo</a>
+                    {% endif %}
+                </div>
             </form>
         </section>
 
         <section class="hq-card">
+            <h2 class="hq-card-title truck-form-title">
+                {% if new_model_mode or not selected_model %}Novo modelo{% else %}Editar modelo{% endif %}
+            </h2>
             <form method="POST" id="truckModelForm" class="hq-form">
                 {% csrf_token %}
                 <input type="hidden" name="form_id" value="save_model">
-                <input type="hidden" name="model_id" value="{% if selected_model %}{{ selected_model.id }}{% endif %}">
+                <input type="hidden" name="model_id" value="{% if selected_model and not new_model_mode %}{{ selected_model.id }}{% endif %}">
                 <input type="hidden" id="structure_json" name="structure_json">
-                <div class="hq-form-grid hq-truck-config-grid">
+                <div class="hq-form-grid hq-truck-config-grid truck-workspace-toolbar">
                     <div class="hq-field">
                         <label class="hq-label" for="model_name">Nome do modelo</label>
-                        <input class="hq-input" id="model_name" name="name" type="text" value="{% if selected_model %}{{ selected_model.name }}{% endif %}" required>
+                        <input class="hq-input" id="model_name" name="name" type="text" value="{% if selected_model and not new_model_mode %}{{ selected_model.name }}{% endif %}" required>
                     </div>
                     <div class="hq-actions">
                         <button type="button" class="hq-button hq-button-secondary" onclick="addAxle()">Adicionar eixo</button>
                         <button type="button" class="hq-button hq-button-secondary" onclick="toggleSpare()">Adicionar/Remover estepe</button>
-                        <button type="submit" class="hq-button">Salvar modelo</button>
+                        <button type="submit" class="hq-button">{% if new_model_mode or not selected_model %}Criar modelo{% else %}Salvar modelo{% endif %}</button>
                     </div>
                 </div>
 
-                <div class="truck-editor-wrap">
+                <div class="truck-editor-wrap truck-workspace-surface">
+                    <div class="truck-direction-chip is-front" aria-hidden="true">
+                        <span class="truck-direction-icon">&#8593;</span>
+                        <span>Frente do caminhao</span>
+                    </div>
                     <div class="truck-editor-body"></div>
                     <div id="truckEditorCanvas" class="truck-editor-canvas"></div>
+                    <div class="truck-direction-chip is-rear" aria-hidden="true">
+                        <span class="truck-direction-icon">&#8595;</span>
+                        <span>Traseira do caminhao</span>
+                    </div>
                 </div>
             </form>
         </section>
 
-        {% if selected_model %}
-        <section class="hq-card">
+        {% if selected_model and not new_model_mode %}
+        <section class="hq-card" id="model-delete-section">
             <form method="POST" onsubmit="return confirm('Excluir este modelo?');">
                 {% csrf_token %}
                 <input type="hidden" name="form_id" value="delete_model">
@@ -104,10 +129,16 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="hq-actions truck-filter-actions">
+                    <a class="hq-button truck-new-truck-btn" href="?tab=trucks&new=1">+ Novo caminhão</a>
+                </div>
             </form>
         </section>
 
         <section class="hq-card">
+            <h2 class="hq-card-title truck-form-title">
+                {% if new_truck_mode or not selected_truck %}Novo caminhão{% else %}Editar caminhão{% endif %}
+            </h2>
             <form method="POST" class="hq-form hq-form-grid hq-truck-config-grid">
                 {% csrf_token %}
                 <input type="hidden" name="form_id" value="save_truck">
@@ -125,7 +156,7 @@
                     </select>
                 </div>
                 <div class="hq-actions">
-                    <button type="submit" class="hq-button">Salvar caminhão</button>
+                    <button type="submit" class="hq-button">{% if new_truck_mode or not selected_truck %}Criar caminhão{% else %}Salvar caminhão{% endif %}</button>
                 </div>
             </form>
         </section>
@@ -133,23 +164,40 @@
         {% if selected_truck %}
         <section class="hq-card">
             <h2 class="hq-card-title">{{ selected_truck.identifier }} - rodas por eixo</h2>
-            <div class="truck-map-wrap">
+            <div class="truck-map-wrap truck-workspace-surface">
+                <div class="truck-direction-chip is-front" aria-hidden="true">
+                    <span class="truck-direction-icon">&#8593;</span>
+                    <span>Frente do caminhao</span>
+                </div>
+                <div class="truck-heat-legend" aria-hidden="true">
+                    <span class="truck-heat-legend-label">Termometro de troca</span>
+                    <div class="truck-heat-legend-bar"></div>
+                    <span class="truck-heat-legend-scale">Recente</span>
+                    <span class="truck-heat-legend-scale is-old">Antigo</span>
+                </div>
                 <div class="truck-map-vline"></div>
                 {% for row in truck_rows %}
-                    <div class="truck-map-row">
+                    <div class="truck-map-row" style="--left-count: {{ row.left_slots|length }}; --right-count: {{ row.right_slots|length }};">
                         <div class="truck-map-side left">
                             {% for slot in row.left_slots %}
                                 <button
                                     type="button"
-                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}"
+                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}{% if slot.tire_heat is not None %} has-heat{% endif %}"
+                                    style="{% if slot.tire_heat_css %}--tire-heat: {{ slot.tire_heat_css }};{% endif %}"
                                     data-tire-number="{{ slot.tire_number }}"
-                                    data-tire-code="{{ slot.tire_code }}"
+                                    data-tire-code="{% if slot.change and slot.change.tire_code %}{{ slot.change.tire_code }}{% else %}{{ slot.tire_code }}{% endif %}"
                                     data-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
                                     data-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }}{% endif %}"
+                                    data-hover-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'d/m/Y' }}{% else %}Sem registro{% endif %}"
+                                    data-hover-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }} km{% else %}Sem registro{% endif %}"
                                     data-note="{% if slot.change and slot.change.note %}{{ slot.change.note }}{% endif %}"
+                                    data-tire-age-days="{% if slot.tire_age_days is not None %}{{ slot.tire_age_days }}{% endif %}"
+                                    data-last-run-days="{% if slot.last_metrics and slot.last_metrics.run_days is not None %}{{ slot.last_metrics.run_days }}{% endif %}"
+                                    data-last-run-km="{% if slot.last_metrics and slot.last_metrics.run_km is not None %}{{ slot.last_metrics.run_km }}{% endif %}"
+                                    data-last-run-date="{% if slot.last_metrics and slot.last_metrics.changed_on %}{{ slot.last_metrics.changed_on|date:'Y-m-d' }}{% endif %}"
                                     onclick="openTireModal(this)"
                                 >
-                                    <span>{{ slot.tire_code }}</span>
+                                    <span>{% if slot.change and slot.change.tire_code %}{{ slot.change.tire_code }}{% else %}{{ slot.tire_code }}{% endif %}</span>
                                 </button>
                             {% endfor %}
                         </div>
@@ -158,25 +206,39 @@
                             {% for slot in row.right_slots %}
                                 <button
                                     type="button"
-                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}"
+                                    class="truck-map-wheel {% if slot.change %}has-data{% endif %}{% if slot.tire_heat is not None %} has-heat{% endif %}"
+                                    style="{% if slot.tire_heat_css %}--tire-heat: {{ slot.tire_heat_css }};{% endif %}"
                                     data-tire-number="{{ slot.tire_number }}"
-                                    data-tire-code="{{ slot.tire_code }}"
+                                    data-tire-code="{% if slot.change and slot.change.tire_code %}{{ slot.change.tire_code }}{% else %}{{ slot.tire_code }}{% endif %}"
                                     data-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
                                     data-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }}{% endif %}"
+                                    data-hover-date="{% if slot.change and slot.change.changed_on %}{{ slot.change.changed_on|date:'d/m/Y' }}{% else %}Sem registro{% endif %}"
+                                    data-hover-km="{% if slot.change and slot.change.odometer_km %}{{ slot.change.odometer_km }} km{% else %}Sem registro{% endif %}"
                                     data-note="{% if slot.change and slot.change.note %}{{ slot.change.note }}{% endif %}"
+                                    data-tire-age-days="{% if slot.tire_age_days is not None %}{{ slot.tire_age_days }}{% endif %}"
+                                    data-last-run-days="{% if slot.last_metrics and slot.last_metrics.run_days is not None %}{{ slot.last_metrics.run_days }}{% endif %}"
+                                    data-last-run-km="{% if slot.last_metrics and slot.last_metrics.run_km is not None %}{{ slot.last_metrics.run_km }}{% endif %}"
+                                    data-last-run-date="{% if slot.last_metrics and slot.last_metrics.changed_on %}{{ slot.last_metrics.changed_on|date:'Y-m-d' }}{% endif %}"
                                     onclick="openTireModal(this)"
                                 >
-                                    <span>{{ slot.tire_code }}</span>
+                                    <span>{% if slot.change and slot.change.tire_code %}{{ slot.change.tire_code }}{% else %}{{ slot.tire_code }}{% endif %}</span>
                                 </button>
                             {% endfor %}
                         </div>
                     </div>
                 {% endfor %}
+                <div class="truck-direction-chip is-rear" aria-hidden="true">
+                    <span class="truck-direction-icon">&#8595;</span>
+                    <span>Traseira do caminhao</span>
+                </div>
             </div>
         </section>
 
         <section class="hq-card">
             <h2 class="hq-card-title">Histórico de trocas</h2>
+            <div class="hq-actions truck-history-open-row">
+                <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_history' %}?truck={{ selected_truck.id }}">Abrir historico em pagina separada</a>
+            </div>
             <div class="hq-history-table-wrap">
                 <table class="hq-history-table">
                     <thead>
@@ -185,6 +247,9 @@
                             <th>Pneu</th>
                             <th>Data troca</th>
                             <th>KM</th>
+                            <th>Pneu anterior</th>
+                            <th>Rodou (dias)</th>
+                            <th>Rodou (KM)</th>
                             <th>Observação</th>
                         </tr>
                     </thead>
@@ -195,10 +260,13 @@
                                 <td>{{ h.tire_code|default:"-" }} (#{{ h.tire_number }})</td>
                                 <td>{% if h.changed_on %}{{ h.changed_on|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                                 <td>{% if h.odometer_km %}{{ h.odometer_km }}{% else %}-{% endif %}</td>
+                                <td>{{ h.previous_tire_code|default:"-" }}</td>
+                                <td>{% if h.run_days is not None %}{{ h.run_days }}{% else %}-{% endif %}</td>
+                                <td>{% if h.run_km is not None %}{{ h.run_km }}{% else %}-{% endif %}</td>
                                 <td>{{ h.note|default:"-" }}</td>
                             </tr>
                         {% empty %}
-                            <tr><td colspan="5">Sem histórico.</td></tr>
+                            <tr><td colspan="8">Sem histórico.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -212,14 +280,17 @@
     <div id="truckTireModalOverlay" class="hq-modal-overlay" style="display:none;" onclick="closeTireModal()"></div>
     <div id="truckTireModal" class="hq-modal hq-truck-modal" style="display:none;">
         <div class="hq-modal-head">
-            <h3 class="hq-modal-title">Atualizar pneu <span id="modalTireCode"></span></h3>
+            <h3 class="hq-modal-title">Registrar troca de pneu <span id="modalTireCode"></span></h3>
         </div>
         <form method="POST" class="hq-form hq-form-grid">
             {% csrf_token %}
             <input type="hidden" name="form_id" value="tire_update">
             <input type="hidden" name="truck_id" value="{{ selected_truck.id }}">
             <input type="hidden" id="modalTireNumber" name="tire_number">
-            <input type="hidden" id="modalTireCodeInput" name="tire_code">
+            <div class="hq-field">
+                <label class="hq-label" for="modalTireCodeInput">Codigo do pneu</label>
+                <input class="hq-input" id="modalTireCodeInput" name="tire_code" type="text" maxlength="12">
+            </div>
             <div class="hq-field">
                 <label class="hq-label" for="modalChangedOn">Data da troca</label>
                 <input class="hq-input" id="modalChangedOn" name="changed_on" type="date">
@@ -227,6 +298,18 @@
             <div class="hq-field">
                 <label class="hq-label" for="modalKm">KM</label>
                 <input class="hq-input" id="modalKm" name="odometer_km" type="number" min="0">
+            </div>
+            <div class="hq-field hq-field-span-2">
+                <div class="truck-tire-metrics">
+                    <div class="truck-tire-metric">
+                        <span class="truck-tire-metric-label">Rodagem da troca anterior</span>
+                        <strong id="modalLastRun">-</strong>
+                    </div>
+                    <div class="truck-tire-metric">
+                        <span class="truck-tire-metric-label">Ultimo registro de troca</span>
+                        <strong id="modalLastRunDate">-</strong>
+                    </div>
+                </div>
             </div>
             <div class="hq-field hq-field-span-2">
                 <label class="hq-label" for="modalNote">Observação</label>
@@ -254,6 +337,8 @@
                 modelStructure.forEach((axle, axleIdx) => {
                     const row = document.createElement("div");
                     row.className = "truck-editor-row";
+                    row.style.setProperty("--left-count", String((axle.left || []).length || 1));
+                    row.style.setProperty("--right-count", String((axle.right || []).length || 1));
                     const axleBg = document.createElement("div");
                     axleBg.className = "truck-editor-row-axle";
 
@@ -332,15 +417,36 @@
 
         window.openTireModal = function(btn) {
             const code = btn.dataset.tireCode || "";
+            const tireAgeDays = btn.dataset.tireAgeDays || "";
+            const lastRunDays = btn.dataset.lastRunDays || "";
+            const lastRunKm = btn.dataset.lastRunKm || "";
+            const lastRunDate = btn.dataset.lastRunDate || "";
             document.getElementById("modalTireCode").textContent = code ? `(${code})` : "";
             document.getElementById("modalTireCodeInput").value = code;
             document.getElementById("modalTireNumber").value = btn.dataset.tireNumber || "";
             document.getElementById("modalChangedOn").value = btn.dataset.date || "";
             document.getElementById("modalKm").value = btn.dataset.km || "";
             document.getElementById("modalNote").value = btn.dataset.note || "";
+            const runParts = [];
+            if (lastRunKm) runParts.push(`${lastRunKm} KM`);
+            if (lastRunDays) runParts.push(`${lastRunDays} dias`);
+            if (runParts.length) {
+                document.getElementById("modalLastRun").textContent = runParts.join(" em ");
+            } else if (tireAgeDays) {
+                document.getElementById("modalLastRun").textContent = `Sem diferenca de KM/dias no ultimo registro (${tireAgeDays} dias desde a ultima troca)`;
+            } else {
+                document.getElementById("modalLastRun").textContent = "-";
+            }
+            document.getElementById("modalLastRunDate").textContent = formatDateYmd(lastRunDate);
             document.getElementById("truckTireModalOverlay").style.display = "block";
             document.getElementById("truckTireModal").style.display = "block";
         };
+        function formatDateYmd(ymd) {
+            if (!ymd || ymd.indexOf("-") < 0) return "-";
+            const parts = ymd.split("-");
+            if (parts.length !== 3) return ymd;
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
         window.closeTireModal = function() {
             const ov = document.getElementById("truckTireModalOverlay");
             const md = document.getElementById("truckTireModal");

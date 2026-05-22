@@ -115,6 +115,11 @@ class TruckTireChangeHistory(models.Model):
     tire_code = models.CharField(max_length=12, blank=True, null=True)
     changed_on = models.DateField(blank=True, null=True)
     odometer_km = models.PositiveIntegerField(blank=True, null=True)
+    previous_tire_code = models.CharField(max_length=12, blank=True, null=True)
+    previous_changed_on = models.DateField(blank=True, null=True)
+    previous_odometer_km = models.PositiveIntegerField(blank=True, null=True)
+    run_days = models.PositiveIntegerField(blank=True, null=True)
+    run_km = models.PositiveIntegerField(blank=True, null=True)
     note = models.CharField(max_length=180, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
