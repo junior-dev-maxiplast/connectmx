@@ -1,0 +1,98 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logistica | Historico de Trocas</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body class="hq-page">
+    <div class="theme-fab" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <div class="hq-container hq-truck-page hq-truck-wide">
+        <header class="hq-header">
+            <div>
+                <h1 class="hq-title">Historico de Trocas de Pneus</h1>
+                <p class="hq-subtitle">Consulte o historico completo por caminhao e acompanhe rodagem entre trocas.</p>
+            </div>
+        </header>
+
+        <section class="hq-card">
+            <form method="GET" class="hq-form hq-form-grid hq-truck-filter-grid">
+                <div class="hq-field">
+                    <label class="hq-label" for="truck_select">Caminhao</label>
+                    <select class="hq-input" id="truck_select" name="truck" onchange="this.form.submit()">
+                        {% for t in trucks %}
+                            <option value="{{ t.id }}" {% if selected_truck and selected_truck.id == t.id %}selected{% endif %}>
+                                {{ t.identifier }}{% if t.model_template %} - {{ t.model_template.name }}{% endif %}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="hq-actions truck-filter-actions">
+                    {% if selected_truck %}
+                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks&truck={{ selected_truck.id }}">Voltar para visualizacao do caminhao</a>
+                    {% else %}
+                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks">Voltar para visualizacao do caminhao</a>
+                    {% endif %}
+                </div>
+            </form>
+        </section>
+
+        <section class="hq-card">
+            <h2 class="hq-card-title">
+                {% if selected_truck %}
+                    {{ selected_truck.identifier }} - historico completo
+                {% else %}
+                    Historico
+                {% endif %}
+            </h2>
+
+            <div class="hq-history-table-wrap">
+                <table class="hq-history-table">
+                    <thead>
+                        <tr>
+                            <th>Data registro</th>
+                            <th>Pneu</th>
+                            <th>Data troca</th>
+                            <th>KM</th>
+                            <th>Pneu anterior</th>
+                            <th>Rodou (dias)</th>
+                            <th>Rodou (KM)</th>
+                            <th>Observacao</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for h in history_rows %}
+                            <tr>
+                                <td>{{ h.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ h.tire_code|default:"-" }} (#{{ h.tire_number }})</td>
+                                <td>{% if h.changed_on %}{{ h.changed_on|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+                                <td>{% if h.odometer_km %}{{ h.odometer_km }}{% else %}-{% endif %}</td>
+                                <td>{{ h.previous_tire_code|default:"-" }}</td>
+                                <td>{% if h.run_days is not None %}{{ h.run_days }}{% else %}-{% endif %}</td>
+                                <td>{% if h.run_km is not None %}{{ h.run_km }}{% else %}-{% endif %}</td>
+                                <td>{{ h.note|default:"-" }}</td>
+                            </tr>
+                        {% empty %}
+                            <tr><td colspan="8">Sem historico para este caminhao.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
