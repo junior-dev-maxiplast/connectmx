@@ -43,6 +43,7 @@ from .models import (
     ChecklistAnswer,
     Project,
     ProjectRoadmapItem,
+    ProjectRoadmapSubtask,
     ProjectKanbanColumn,
     ProjectKanbanCard,
     WifiVoucherGroup,
@@ -56,7 +57,10 @@ from .models import (
     KnowledgeEntryAttachment,
     UserQueueKanbanColumn,
     UserQueueCustomColumn,
+    UserQueueCustomColumnOption,
     UserQueueCustomValue,
+    UserQueueFieldOption,
+    UserQueueSavedView,
     SystemConfig,
     DemandTemplate,
     DemandTemplateDetail,
@@ -67,6 +71,7 @@ from .models import (
     MaintenanceSystem,
     MaintenanceEvent,
     MyAgendaReminder,
+    MaxiTetrisHighScore,
     ContractRecord,
     SystemNotification,
     DataModelLaunch,
@@ -82,6 +87,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseBadRequest
+from django.utils import timezone
 import json
 import unicodedata
 from django.db import transaction, models, IntegrityError
@@ -92,6 +98,7 @@ from django import forms
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta, datetime
 from django.utils import timezone
+from django.utils.text import slugify
 import io
 import re
 from django.core.paginator import Paginator
@@ -148,8 +155,50 @@ def index(request):
             "categories": categories,
             "my_tools_grouped": my_tools_grouped,
             "active_notifications": SystemNotification.objects.filter(is_active=True)[:8],
+            "tetris_highscores": _get_tetris_highscores(request.user),
+            "tetris_personal_best": _get_tetris_personal_best(request.user),
         },
     )
+
+
+def _serialize_tetris_score(entry, position, current_user_id=None):
+    user = getattr(entry, "user", None)
+    display_name = (getattr(user, "nameUser", "") or getattr(user, "username", "") or "Usuario").strip()
+    return {
+        "rank": position,
+        "user_id": user.id if user else None,
+        "user_name": display_name,
+        "score": int(entry.best_score or 0),
+        "lines": int(entry.best_lines or 0),
+        "level": int(entry.best_level or 1),
+        "is_current_user": bool(current_user_id and user and user.id == current_user_id),
+    }
+
+
+def _get_tetris_highscores(current_user=None, limit=10):
+    current_user_id = getattr(current_user, "id", None)
+    entries = (
+        MaxiTetrisHighScore.objects.filter(best_score__gt=0)
+        .select_related("user")
+        .order_by("-best_score", "-best_lines", "-best_level", "id")[:limit]
+    )
+    return [
+        _serialize_tetris_score(entry, position=index + 1, current_user_id=current_user_id)
+        for index, entry in enumerate(entries)
+    ]
+
+
+def _get_tetris_personal_best(user):
+    if not getattr(user, "is_authenticated", False):
+        return None
+    entry = MaxiTetrisHighScore.objects.filter(user=user, best_score__gt=0).first()
+    if not entry:
+        return None
+    return {
+        "score": int(entry.best_score or 0),
+        "lines": int(entry.best_lines or 0),
+        "level": int(entry.best_level or 1),
+    }
 
 
 def _sync_service_notifications():
@@ -269,6 +318,60 @@ def hubQuickAddItem(request):
         return JsonResponse({"status": "error", "message": f"Falha ao salvar item: {exc}"}, status=500)
 
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_GET
+def maxiTetrisHighscores(request):
+    return JsonResponse(
+        {
+            "status": "ok",
+            "leaderboard": _get_tetris_highscores(request.user),
+            "personal_best": _get_tetris_personal_best(request.user),
+        }
+    )
+
+
+@login_required
+@require_POST
+def maxiTetrisSubmitScore(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    try:
+        score = max(0, int(payload.get("score") or 0))
+        lines = max(0, int(payload.get("lines") or 0))
+        level = max(1, int(payload.get("level") or 1))
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Pontuacao invalida."}, status=400)
+
+    leaderboard_entry, _ = MaxiTetrisHighScore.objects.get_or_create(user=request.user)
+    is_better_score = (
+        score > leaderboard_entry.best_score
+        or (score == leaderboard_entry.best_score and lines > leaderboard_entry.best_lines)
+        or (
+            score == leaderboard_entry.best_score
+            and lines == leaderboard_entry.best_lines
+            and level > leaderboard_entry.best_level
+        )
+    )
+
+    if is_better_score:
+        leaderboard_entry.best_score = score
+        leaderboard_entry.best_lines = lines
+        leaderboard_entry.best_level = level
+        leaderboard_entry.save(update_fields=["best_score", "best_lines", "best_level", "updated_at"])
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "saved": bool(is_better_score),
+            "leaderboard": _get_tetris_highscores(request.user),
+            "personal_best": _get_tetris_personal_best(request.user),
+        }
+    )
 
 
 def _query_sm_tickets(attendant_id: str, closed: bool = False):
@@ -545,6 +648,49 @@ def _sync_roadmap_item_to_kanban(item):
     )
 
 
+def _parse_iso_date(raw_value):
+    raw_value = (raw_value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _parse_user_id(raw_value):
+    raw_value = str(raw_value or "").strip()
+    return int(raw_value) if raw_value.isdigit() else None
+
+
+def _serialize_roadmap_subtask(subtask):
+    return {
+        "id": subtask.id,
+        "description": subtask.description,
+        "is_done": subtask.is_done,
+    }
+
+
+def _serialize_roadmap_item(item):
+    subtasks = list(getattr(item, "prefetched_subtasks", []) or item.subtasks.all().order_by("sort_order", "id"))
+    subtask_total = len(subtasks)
+    subtask_done = sum(1 for subtask in subtasks if subtask.is_done)
+    responsible = getattr(item, "responsible", None)
+    return {
+        "id": item.id,
+        "title": item.title,
+        "description": item.description or "",
+        "status": item.status,
+        "start": (item.start_date.isoformat() if item.start_date else ""),
+        "end": (item.end_date.isoformat() if item.end_date else ""),
+        "responsible_id": responsible.id if responsible else "",
+        "responsible_name": (responsible.nameUser or responsible.username) if responsible else "",
+        "subtasks": [_serialize_roadmap_subtask(subtask) for subtask in subtasks],
+        "subtask_total": subtask_total,
+        "subtask_done": subtask_done,
+    }
+
+
 @login_required
 def manageProjects(request):
     project_form = ProjectForm(prefix="project")
@@ -599,8 +745,10 @@ def manageProjects(request):
                 start_date = request.POST.get("start_date") or None
                 end_date = request.POST.get("end_date") or None
                 sort_order = request.POST.get("sort_order")
+                responsible = User.objects.filter(pk=_parse_user_id(request.POST.get("responsible"))).first()
                 if title:
                     item.title = title
+                    item.responsible = responsible
                     item.description = description or None
                     item.status = status
                     item.start_date = start_date or None
@@ -629,7 +777,7 @@ def manageProjects(request):
     projects = Project.objects.select_related("developer").prefetch_related("participants").all().order_by("name")
     users = User.objects.order_by("nameUser", "username")
     roadmap_items = (
-        ProjectRoadmapItem.objects.select_related("project").order_by("project__name", "sort_order", "id")
+        ProjectRoadmapItem.objects.select_related("project", "responsible").order_by("project__name", "sort_order", "id")
     )
     columns = ProjectKanbanColumn.objects.select_related("project").order_by("project__name", "sort_order", "id")
     cards = ProjectKanbanCard.objects.select_related("project", "column").order_by(
@@ -1214,7 +1362,12 @@ def projectCardDelete(request, card_id):
 @login_required
 def projectRoadmapView(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    items = list(ProjectRoadmapItem.objects.filter(project=project).order_by("sort_order", "id"))
+    items = list(
+        ProjectRoadmapItem.objects.filter(project=project)
+        .select_related("responsible")
+        .prefetch_related(Prefetch("subtasks", queryset=ProjectRoadmapSubtask.objects.order_by("sort_order", "id"), to_attr="prefetched_subtasks"))
+        .order_by("sort_order", "id")
+    )
 
     # Build a timeline window
     starts = [i.start_date for i in items if i.start_date] + ([project.start_date] if project.start_date else [])
@@ -1250,18 +1403,7 @@ def projectRoadmapView(request, project_id):
     visual_items = []
     for it in items:
         left, width = _span(it.start_date, it.end_date)
-        visual_items.append(
-            {
-                "id": it.id,
-                "title": it.title,
-                "description": it.description or "",
-                "status": it.status,
-                "start": (it.start_date.isoformat() if it.start_date else ""),
-                "end": (it.end_date.isoformat() if it.end_date else ""),
-                "left": left,
-                "width": width,
-            }
-        )
+        visual_items.append(_serialize_roadmap_item(it) | {"left": left, "width": width})
 
     done_count = sum(1 for i in items if i.status == "done")
     total_count = len(items)
@@ -1271,11 +1413,12 @@ def projectRoadmapView(request, project_id):
         request,
         "tiqueue/project_roadmap.html",
         {
-            "project": project,
-            "items": visual_items,
-            "window_start": window_start,
-            "window_end": window_end,
-            "done_count": done_count,
+        "project": project,
+        "items": visual_items,
+        "users": User.objects.order_by("nameUser", "username"),
+        "window_start": window_start,
+        "window_end": window_end,
+        "done_count": done_count,
             "total_count": total_count,
             "progress_pct": progress_pct,
         },
@@ -1296,9 +1439,11 @@ def projectRoadmapItemCreate(request, project_id):
         return JsonResponse({"status": "error", "message": "Titulo obrigatorio"}, status=400)
 
     status = (payload.get("status") or "planned").strip() or "planned"
-    start_date = payload.get("start_date") or None
-    end_date = payload.get("end_date") or None
+    start_date = _parse_iso_date(payload.get("start_date"))
+    end_date = _parse_iso_date(payload.get("end_date"))
     description = (payload.get("description") or "").strip() or None
+    responsible_id = _parse_user_id(payload.get("responsible_id"))
+    responsible = User.objects.filter(pk=responsible_id).first() if responsible_id else None
 
     max_sort = (
         ProjectRoadmapItem.objects.filter(project=project)
@@ -1309,15 +1454,41 @@ def projectRoadmapItemCreate(request, project_id):
 
     item = ProjectRoadmapItem.objects.create(
         project=project,
+        responsible=responsible,
         title=title,
         description=description,
         status=status,
-        start_date=start_date or None,
-        end_date=end_date or None,
+        start_date=start_date,
+        end_date=end_date,
         sort_order=next_sort,
     )
     _sync_roadmap_item_to_kanban(item)
-    return JsonResponse({"status": "ok", "id": item.id})
+    return JsonResponse({"status": "ok", "id": item.id, "item": _serialize_roadmap_item(item)})
+
+
+@login_required
+@require_POST
+def projectRoadmapItemUpdate(request, project_id, item_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    title = (payload.get("title") or "").strip()
+    if not title:
+        return JsonResponse({"status": "error", "message": "Titulo obrigatorio"}, status=400)
+
+    item.title = title
+    item.responsible = User.objects.filter(pk=_parse_user_id(payload.get("responsible_id"))).first()
+    item.description = (payload.get("description") or "").strip() or None
+    item.status = (payload.get("status") or "planned").strip() or "planned"
+    item.start_date = _parse_iso_date(payload.get("start_date"))
+    item.end_date = _parse_iso_date(payload.get("end_date"))
+    item.save(update_fields=["title", "responsible", "description", "status", "start_date", "end_date"])
+    _sync_roadmap_item_to_kanban(item)
+    return JsonResponse({"status": "ok", "item": _serialize_roadmap_item(item)})
 
 
 @login_required
@@ -1334,6 +1505,79 @@ def projectRoadmapItemConclude(request, project_id, item_id):
     done = ProjectRoadmapItem.objects.filter(project=project, status="done").count()
     progress_pct = int(round((done / total) * 100)) if total else 0
     return JsonResponse({"status": "ok", "done": done, "total": total, "progress_pct": progress_pct})
+
+
+@login_required
+@require_POST
+def projectRoadmapSubtaskCreate(request, project_id, item_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    description = (payload.get("description") or "").strip()
+    if not description:
+        return JsonResponse({"status": "error", "message": "Descricao obrigatoria"}, status=400)
+
+    max_sort = item.subtasks.aggregate(models.Max("sort_order")).get("sort_order__max")
+    subtask = ProjectRoadmapSubtask.objects.create(
+        roadmap_item=item,
+        description=description,
+        sort_order=int(max_sort or 0) + 1,
+    )
+    return JsonResponse({"status": "ok", "subtask": _serialize_roadmap_subtask(subtask)})
+
+
+@login_required
+@require_POST
+def projectRoadmapSubtaskUpdate(request, project_id, item_id, subtask_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    subtask = get_object_or_404(ProjectRoadmapSubtask, pk=subtask_id, roadmap_item=item)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    description = (payload.get("description") or "").strip()
+    if not description:
+        return JsonResponse({"status": "error", "message": "Descricao obrigatoria"}, status=400)
+
+    subtask.description = description
+    subtask.save(update_fields=["description", "updated_at"])
+    return JsonResponse({"status": "ok", "subtask": _serialize_roadmap_subtask(subtask)})
+
+
+@login_required
+@require_POST
+def projectRoadmapSubtaskToggle(request, project_id, item_id, subtask_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    subtask = get_object_or_404(ProjectRoadmapSubtask, pk=subtask_id, roadmap_item=item)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    requested_value = payload.get("is_done")
+    if requested_value in (True, False):
+        subtask.is_done = requested_value
+    else:
+        subtask.is_done = not subtask.is_done
+    subtask.save(update_fields=["is_done", "updated_at"])
+    return JsonResponse({"status": "ok", "subtask": _serialize_roadmap_subtask(subtask)})
+
+
+@login_required
+@require_POST
+def projectRoadmapSubtaskDelete(request, project_id, item_id, subtask_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    subtask = get_object_or_404(ProjectRoadmapSubtask, pk=subtask_id, roadmap_item=item)
+    subtask.delete()
+    return JsonResponse({"status": "ok", "subtask_id": subtask_id})
 
 def queueMainPage(request):
     pending_details_prefetch = Prefetch(
@@ -1417,7 +1661,9 @@ def queueMainPage(request):
 @login_required
 def queueDemandDetailPage(request, item_id):
     item = get_object_or_404(
-        userQueue.objects.select_related("task_group", "task_type", "linked_project", "linked_roadmap_item"),
+        userQueue.objects.select_related("task_group", "task_type", "linked_project", "linked_roadmap_item").prefetch_related(
+            _queue_collaborators_prefetch()
+        ),
         n_register=item_id,
     )
     if request.method == "POST":
@@ -1450,6 +1696,11 @@ def queueDemandDetailPage(request, item_id):
             task_group_raw = (request.POST.get("task_group") or "").strip()
             task_type_raw = (request.POST.get("task_type") or "").strip()
             project_raw = (request.POST.get("linked_project") or "").strip()
+            collaborator_ids = [
+                int(value)
+                for value in request.POST.getlist("extra_collaborators")
+                if str(value).isdigit()
+            ]
 
             item.task_group_id = int(task_group_raw) if task_group_raw.isdigit() else None
             item.task_type_id = int(task_type_raw) if task_type_raw.isdigit() else None
@@ -1462,6 +1713,7 @@ def queueDemandDetailPage(request, item_id):
             item.d_real_date_start, item.d_real_time_start = _split_datetime_local("real_start_dt")
             item.d_real_date_end, item.t_real_time_end = _split_datetime_local("real_end_dt")
             item.save()
+            item.extra_collaborators.set(User.objects.filter(id__in=collaborator_ids))
         elif form_id == "subtask_add":
             description = (request.POST.get("subtask_description") or "").strip()
             if description:
@@ -1493,6 +1745,7 @@ def queueDemandDetailPage(request, item_id):
     task_groups = TaskGroup.objects.order_by("name")
     task_types = TaskType.objects.select_related("group").order_by("group__name", "name")
     projects = Project.objects.order_by("name")
+    collaborator_users = User.objects.exclude(userId=item.user_code).order_by("nameUser", "username")
 
     def _datetime_local(date_value, time_value):
         if not date_value or not time_value:
@@ -1511,6 +1764,8 @@ def queueDemandDetailPage(request, item_id):
             "task_groups": task_groups,
             "task_types": task_types,
             "projects": projects,
+            "collaborator_users": collaborator_users,
+            "selected_collaborator_ids": [collaborator.id for collaborator in getattr(item, "extra_collaborators_prefetched", [])],
             "predicted_start_dt": _datetime_local(item.d_predicted_date_start, item.t_predicted_time_start),
             "predicted_end_dt": _datetime_local(item.d_predicted_date_end, item.t_predicted_time_end),
             "real_start_dt": _datetime_local(item.d_real_date_start, item.d_real_time_start),
@@ -1580,7 +1835,401 @@ def _ensure_user_queue_kanban_columns(user):
 
 
 def _user_queue_custom_columns(user):
-    return list(UserQueueCustomColumn.objects.filter(user=user).order_by("sort_order", "id"))
+    return list(
+        UserQueueCustomColumn.objects.filter(user=user)
+        .prefetch_related(
+            Prefetch(
+                "options",
+                queryset=UserQueueCustomColumnOption.objects.filter(is_active=True).order_by("sort_order", "id"),
+            )
+        )
+        .order_by("sort_order", "id")
+    )
+
+
+def _build_queue_option_value(label, existing_values):
+    base = slugify(unicodedata.normalize("NFKD", str(label or "")))[:32] or "opcao"
+    candidate = base
+    counter = 2
+    while candidate in existing_values:
+        suffix = f"-{counter}"
+        candidate = f"{base[: max(1, 40 - len(suffix))]}{suffix}"
+        counter += 1
+    return candidate[:40]
+
+
+def _serialize_queue_field_option(option, usage_count=0, affected_count=None, can_delete=True, remove_reason=""):
+    return {
+        "id": option.id,
+        "value": option.value,
+        "label": option.label,
+        "color": option.color or "#61688c",
+        "usage_count": int(usage_count or 0),
+        "affected_count": int(usage_count if affected_count is None else affected_count),
+        "can_delete": bool(can_delete),
+        "remove_reason": remove_reason or "",
+    }
+
+
+def _serialize_queue_custom_column_option(option, usage_count=0, can_delete=True, remove_reason=""):
+    return {
+        "id": option.id,
+        "value": option.value,
+        "label": option.label,
+        "color": option.color or "#61688c",
+        "usage_count": int(usage_count or 0),
+        "can_delete": bool(can_delete),
+        "remove_reason": remove_reason or "",
+    }
+
+
+def _serialize_queue_custom_column(column, option_usage_map=None):
+    option_usage_map = option_usage_map or {}
+    options = list(getattr(column, "_prefetched_objects_cache", {}).get("options", []))
+    return {
+        "id": column.id,
+        "name": column.name,
+        "field_type": column.field_type,
+        "color": column.color or "#61688c",
+        "option_count": len(options),
+        "options": [
+            _serialize_queue_custom_column_option(
+                opt,
+                usage_count=option_usage_map.get((column.id, opt.value), 0),
+            )
+            for opt in options
+        ],
+    }
+
+
+def _ensure_user_queue_field_options(user, field_key):
+    options = list(
+        UserQueueFieldOption.objects.filter(user=user, field_key=field_key, is_active=True).order_by("sort_order", "id")
+    )
+    if options:
+        return options
+
+    defaults = userQueue.default_field_options(field_key)
+    created = []
+    for index, (value, label, color) in enumerate(defaults, start=1):
+        created.append(
+            UserQueueFieldOption.objects.create(
+                user=user,
+                field_key=field_key,
+                value=value,
+                label=label,
+                color=color,
+                sort_order=index,
+                is_active=True,
+            )
+        )
+    return created
+
+
+def _queue_field_option_payload(user):
+    priority_options = _ensure_user_queue_field_options(user, userQueue.FIELD_PRIORITY)
+    effort_options = _ensure_user_queue_field_options(user, userQueue.FIELD_EFFORT)
+
+    def _usage_maps(field_key):
+        current_rows = (
+            userQueue.objects.filter(user_code=user.userId)
+            .exclude(**{field_key: ""})
+            .values(field_key)
+            .annotate(total=Count("n_register"))
+        )
+        concluded_rows = (
+            concludedTasks.objects.filter(user_code=user.userId)
+            .exclude(**{field_key: ""})
+            .values(field_key)
+            .annotate(total=Count("n_register"))
+        )
+        current_map = {str(row[field_key] or ""): int(row["total"] or 0) for row in current_rows}
+        concluded_map = {str(row[field_key] or ""): int(row["total"] or 0) for row in concluded_rows}
+        return current_map, concluded_map
+
+    priority_current_map, priority_concluded_map = _usage_maps(userQueue.FIELD_PRIORITY)
+    effort_current_map, effort_concluded_map = _usage_maps(userQueue.FIELD_EFFORT)
+
+    return {
+        "priority_options": [
+            _serialize_queue_field_option(
+                opt,
+                usage_count=priority_current_map.get(opt.value, 0),
+                affected_count=priority_current_map.get(opt.value, 0) + priority_concluded_map.get(opt.value, 0),
+                can_delete=len(priority_options) > 1,
+                remove_reason="" if len(priority_options) > 1 else "Mantenha pelo menos uma opcao ativa.",
+            )
+            for opt in priority_options
+        ],
+        "effort_options": [
+            _serialize_queue_field_option(
+                opt,
+                usage_count=effort_current_map.get(opt.value, 0),
+                affected_count=effort_current_map.get(opt.value, 0) + effort_concluded_map.get(opt.value, 0),
+                can_delete=len(effort_options) > 1,
+                remove_reason="" if len(effort_options) > 1 else "Mantenha pelo menos uma opcao ativa.",
+            )
+            for opt in effort_options
+        ],
+    }
+
+
+def _queue_property_payload(user, kanban_columns=None, custom_columns=None):
+    kanban_columns = kanban_columns or _ensure_user_queue_kanban_columns(user)
+    custom_columns = custom_columns or _user_queue_custom_columns(user)
+    field_payload = _queue_field_option_payload(user)
+    status_usage_rows = (
+        userQueue.objects.filter(user_code=user.userId, kanban_column__isnull=False)
+        .values("kanban_column_id")
+        .annotate(total=Count("n_register"))
+    )
+    status_usage_map = {int(row["kanban_column_id"]): int(row["total"] or 0) for row in status_usage_rows}
+    custom_option_usage_rows = (
+        UserQueueCustomValue.objects.filter(column__user=user)
+        .exclude(value__isnull=True)
+        .exclude(value="")
+        .values("column_id", "value")
+        .annotate(total=Count("id"))
+    )
+    custom_option_usage_map = {
+        (int(row["column_id"]), str(row["value"] or "")): int(row["total"] or 0)
+        for row in custom_option_usage_rows
+    }
+    active_status_count = len(kanban_columns)
+    return {
+        **field_payload,
+        "status_options": [
+            {
+                "id": col.id,
+                "value": str(col.id),
+                "label": col.name,
+                "color": col.color or "#61688c",
+                "usage_count": status_usage_map.get(col.id, 0),
+                "can_delete": active_status_count > 1 and status_usage_map.get(col.id, 0) == 0,
+                "remove_reason": (
+                    "Nao e possivel remover um status com tarefas vinculadas."
+                    if status_usage_map.get(col.id, 0) > 0
+                    else ("Mantenha pelo menos um status ativo." if active_status_count <= 1 else "")
+                ),
+            }
+            for col in kanban_columns
+        ],
+        "custom_columns": [
+            _serialize_queue_custom_column(col, option_usage_map=custom_option_usage_map)
+            for col in custom_columns
+        ],
+    }
+
+
+def _resolve_queue_field_render(option_map, fallback_map, value):
+    chosen = option_map.get(value or "") or fallback_map.get(value or "")
+    if chosen:
+        return chosen
+    normalized = str(value or "").strip()
+    return {
+        "value": normalized or "",
+        "label": normalized or "-",
+        "color": "#61688c",
+    }
+
+
+def _normalize_user_queue_field_value(user, field_key, candidate):
+    allowed = [opt.value for opt in _ensure_user_queue_field_options(user, field_key)]
+    normalized = str(candidate or "").strip()
+    if normalized and normalized in allowed:
+        return normalized
+    if allowed:
+        return allowed[0]
+    defaults = userQueue.default_field_options(field_key)
+    return defaults[0][0] if defaults else ""
+
+
+def _format_custom_column_value(column, raw_value):
+    value = str(raw_value or "").strip()
+    field_type = column.field_type or UserQueueCustomColumn.FIELD_TEXT
+
+    if field_type == UserQueueCustomColumn.FIELD_SELECT:
+        option_map = {
+            opt.value: opt for opt in list(getattr(column, "_prefetched_objects_cache", {}).get("options", []))
+        }
+        selected = option_map.get(value)
+        return {
+            "raw_value": value,
+            "display": (selected.label if selected else value or "-"),
+            "display_color": (selected.color if selected else column.color or "#61688c"),
+            "is_checked": False,
+        }
+
+    if field_type == UserQueueCustomColumn.FIELD_CHECKBOX:
+        is_checked = value.lower() in {"1", "true", "yes", "sim", "on"}
+        return {
+            "raw_value": "1" if is_checked else "",
+            "display": "Concluido" if is_checked else "-",
+            "display_color": column.color or "#00bf63",
+            "is_checked": is_checked,
+        }
+
+    if field_type == UserQueueCustomColumn.FIELD_DATE:
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d").date() if value else None
+        except ValueError:
+            parsed = None
+        return {
+            "raw_value": value,
+            "display": parsed.strftime("%d/%m/%Y") if parsed else (value or "-"),
+            "display_color": column.color or "#61688c",
+            "is_checked": False,
+        }
+
+    return {
+        "raw_value": value,
+        "display": value or "-",
+        "display_color": column.color or "#61688c",
+        "is_checked": False,
+    }
+
+
+def _normalize_custom_column_value(column, raw_value):
+    value = str(raw_value or "").strip()
+    field_type = column.field_type or UserQueueCustomColumn.FIELD_TEXT
+
+    if field_type == UserQueueCustomColumn.FIELD_SELECT:
+        if not value:
+            return ""
+        allowed_values = {
+            opt.value for opt in list(getattr(column, "_prefetched_objects_cache", {}).get("options", []))
+        }
+        if value not in allowed_values:
+            raise ValueError("Opcao invalida para esta coluna.")
+        return value[:40]
+
+    if field_type == UserQueueCustomColumn.FIELD_NUMBER:
+        if not value:
+            return ""
+        normalized = value.replace(",", ".")
+        try:
+            Decimal(normalized)
+        except Exception as exc:
+            raise ValueError("Informe um numero valido.") from exc
+        return normalized[:250]
+
+    if field_type == UserQueueCustomColumn.FIELD_DATE:
+        if not value:
+            return ""
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("Informe uma data valida.") from exc
+        return parsed.isoformat()
+
+    if field_type == UserQueueCustomColumn.FIELD_CHECKBOX:
+        return "1" if value.lower() in {"1", "true", "yes", "sim", "on"} else ""
+
+    return value[:250]
+
+
+def _queue_collaborator_display_name(user_obj):
+    if not user_obj:
+        return "-"
+    return (user_obj.nameUser or user_obj.username or user_obj.userId or "-").strip() or "-"
+
+
+def _queue_collaborator_initials(user_obj):
+    name = _queue_collaborator_display_name(user_obj)
+    parts = [part for part in re.split(r"\s+", name) if part]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return f"{parts[0][:1]}{parts[-1][:1]}".upper()
+
+
+def _serialize_queue_collaborator(user_obj):
+    return {
+        "id": user_obj.id,
+        "name": _queue_collaborator_display_name(user_obj),
+        "initials": _queue_collaborator_initials(user_obj),
+        "user_id": user_obj.userId or "",
+    }
+
+
+def _decorate_queue_items(items, user, custom_columns):
+    priority_options = _ensure_user_queue_field_options(user, userQueue.FIELD_PRIORITY)
+    effort_options = _ensure_user_queue_field_options(user, userQueue.FIELD_EFFORT)
+    priority_map = {opt.value: _serialize_queue_field_option(opt) for opt in priority_options}
+    effort_map = {opt.value: _serialize_queue_field_option(opt) for opt in effort_options}
+    default_priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
+    default_effort_map = userQueue.default_field_option_map(userQueue.FIELD_EFFORT)
+
+    for item in items or []:
+        item.priority_render = _resolve_queue_field_render(priority_map, default_priority_map, item.priority_level)
+        item.effort_render = _resolve_queue_field_render(effort_map, default_effort_map, item.estimated_effort_level)
+        collaborators = list(getattr(item, "extra_collaborators_prefetched", None) or item.extra_collaborators.all())
+        item.extra_collaborators_render = [_serialize_queue_collaborator(collaborator) for collaborator in collaborators]
+        item.extra_collaborators_display = ", ".join(
+            collaborator["name"] for collaborator in item.extra_collaborators_render
+        )
+
+
+def _serialize_user_queue_saved_view(saved_view):
+    return {
+        "id": saved_view.id,
+        "name": saved_view.name,
+        "filters": saved_view.filters_json or {},
+    }
+
+
+def _queue_collaborators_prefetch():
+    return Prefetch(
+        "extra_collaborators",
+        queryset=User.objects.only("id", "userId", "nameUser", "username").order_by("nameUser", "username"),
+        to_attr="extra_collaborators_prefetched",
+    )
+
+
+def _normalize_user_queue_saved_view_filters(filters):
+    if not isinstance(filters, dict):
+        filters = {}
+
+    allowed_quick_filters = {"", "today", "delayed", "no_deadline", "high_priority", "current"}
+
+    def _string(name, max_len=120):
+        return str(filters.get(name) or "").strip()[:max_len]
+
+    def _bool(name):
+        return bool(filters.get(name))
+
+    def _date_string(name):
+        value = _string(name, 10)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
+            return value
+        return ""
+
+    type_value = _string("type", 20)
+    if type_value and not type_value.isdigit():
+        type_value = ""
+
+    workspace_view = _string("workspace_view", 20).lower()
+    if workspace_view not in {"demands", "kanban", "gantt"}:
+        workspace_view = "demands"
+
+    quick_filter = _string("quick_filter", 40).lower()
+    if quick_filter not in allowed_quick_filters:
+        quick_filter = ""
+
+    return {
+        "description": _string("description", 120),
+        "ticket": _string("ticket", 80),
+        "type": type_value,
+        "date_from": _date_string("date_from"),
+        "date_to": _date_string("date_to"),
+        "today_only": _bool("today_only"),
+        "operation_mode": _bool("operation_mode"),
+        "quick_filter": quick_filter,
+        "workspace_view": workspace_view,
+        "layout_modern": _bool("layout_modern"),
+        "focus_mode": _bool("focus_mode"),
+    }
 
 
 def _attach_queue_custom_values(items, custom_columns):
@@ -1595,7 +2244,13 @@ def _attach_queue_custom_values(items, custom_columns):
     }
     for item in items:
         item.custom_values_render = [
-            {"column_id": col.id, "value": values_map.get((item.n_register, col.id), "")}
+            {
+                "column_id": col.id,
+                "column_name": col.name,
+                "column_type": col.field_type,
+                "column_color": col.color or "#61688c",
+                **_format_custom_column_value(col, values_map.get((item.n_register, col.id), "")),
+            }
             for col in custom_columns
         ]
 
@@ -1604,6 +2259,11 @@ def _build_queue_user_context(request):
     user = request.user.userId
     kanban_columns = _ensure_user_queue_kanban_columns(request.user)
     custom_columns = _user_queue_custom_columns(request.user)
+    collaborator_users = list(
+        User.objects.exclude(pk=request.user.pk).order_by("nameUser", "username")
+    )
+    queue_property_payload = _queue_property_payload(request.user, kanban_columns=kanban_columns, custom_columns=custom_columns)
+    saved_views = list(UserQueueSavedView.objects.filter(user=request.user).order_by("name", "id"))
     default_col_id = kanban_columns[0].id if kanban_columns else None
 
     # Backfill defensivo para dados legados:
@@ -1620,6 +2280,7 @@ def _build_queue_user_context(request):
         queue_working = list(
             userQueue.objects.filter(is_current=True, user_code=user)
             .select_related("task_type", "linked_project", "kanban_column")
+            .prefetch_related(_queue_collaborators_prefetch())
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1634,6 +2295,7 @@ def _build_queue_user_context(request):
         queue_data = list(
             userQueue.objects.filter(is_current=False, user_code=user)
             .select_related("task_type", "linked_project", "kanban_column")
+            .prefetch_related(_queue_collaborators_prefetch())
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1652,8 +2314,10 @@ def _build_queue_user_context(request):
         _attach_queue_custom_values(queue_data, custom_columns)
     if queue_working and custom_columns:
         _attach_queue_custom_values(queue_working, custom_columns)
+    _decorate_queue_items(queue_data or [], request.user, custom_columns)
+    _decorate_queue_items(queue_working or [], request.user, custom_columns)
 
-    form = UserQueueCreateForm(request.POST or None)
+    form = UserQueueCreateForm(request.POST or None, user=request.user)
     if request.method == 'POST' and form.is_valid():
         selected_template_id = (request.POST.get("demand_template_id") or "").strip()
         service.userQueueSaveItem(request, form.cleaned_data)
@@ -1753,6 +2417,10 @@ def _build_queue_user_context(request):
         'my_kanban_columns': kanban_columns,
         'my_kanban_default_col_id': default_col_id,
         'queue_custom_columns': custom_columns,
+        'queue_saved_views': saved_views,
+        'queue_saved_views_payload': [_serialize_user_queue_saved_view(v) for v in saved_views],
+        'queue_property_payload': queue_property_payload,
+        'queue_collaborator_users': collaborator_users,
     }
 
 
@@ -1768,6 +2436,15 @@ def queueUserPage(request):
 @login_required
 def queueUserPageKanbanLab(request):
     return redirect("queueUserPage")
+
+
+@login_required
+@require_POST
+def queueUserPropertyPayloadData(request):
+    kanban_columns = _ensure_user_queue_kanban_columns(request.user)
+    custom_columns = _user_queue_custom_columns(request.user)
+    return JsonResponse(_queue_property_payload(request.user, kanban_columns=kanban_columns, custom_columns=custom_columns))
+
 
 @login_required
 @require_POST
@@ -1790,7 +2467,11 @@ def deleteQueueItem(request, id):
 @login_required
 @require_POST
 def duplicateQueueItem(request, id):
-    original = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
+    original = get_object_or_404(
+        userQueue.objects.prefetch_related(_queue_collaborators_prefetch()),
+        n_register=id,
+        user_code=request.user.userId,
+    )
 
     user_code = request.user.userId
     next_position = (
@@ -1804,6 +2485,10 @@ def duplicateQueueItem(request, id):
             f_conclusion_rate=Decimal("0.00"),
             n_status_code=original.n_status_code,
             a_description=original.a_description,
+            a_demand_detail=original.a_demand_detail,
+            a_notes=original.a_notes,
+            priority_level=original.priority_level,
+            estimated_effort_level=original.estimated_effort_level,
             n_type_group=original.n_type_group,
             n_type_code=original.n_type_code,
             task_group=original.task_group,
@@ -1827,6 +2512,7 @@ def duplicateQueueItem(request, id):
             kanban_sort_order=next_position,
             is_current=False,
         )
+        cloned.extra_collaborators.set(getattr(original, "extra_collaborators_prefetched", []))
 
     return JsonResponse({"status": "ok", "new_id": cloned.n_register})
 
@@ -1845,6 +2531,7 @@ def listQueueUpdate(request):
         queue_working = list(
             userQueue.objects.filter(is_current=True, user_code=user)
             .select_related("task_type", "linked_project", "kanban_column")
+            .prefetch_related(_queue_collaborators_prefetch())
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1859,6 +2546,7 @@ def listQueueUpdate(request):
         queue_data = list(
             userQueue.objects.filter(is_current=False, user_code=user)
             .select_related("task_type", "linked_project", "kanban_column")
+            .prefetch_related(_queue_collaborators_prefetch())
             .annotate(
                 detail_count=Count("details"),
                 detail_done_count=Count("details", filter=Q(details__is_done=True)),
@@ -1877,6 +2565,8 @@ def listQueueUpdate(request):
         _attach_queue_custom_values(queue_data, custom_columns)
     if queue_working and custom_columns:
         _attach_queue_custom_values(queue_working, custom_columns)
+    _decorate_queue_items(queue_data or [], request.user, custom_columns)
+    _decorate_queue_items(queue_working or [], request.user, custom_columns)
     return render(
         request,
         'partials/queue.html',
@@ -2000,7 +2690,13 @@ def manageDemandTemplates(request):
 @login_required
 @require_GET
 def queueItemDetails(request, id):
-    item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
+    item = get_object_or_404(
+        userQueue.objects.select_related("task_group", "task_type", "linked_project", "kanban_column").prefetch_related(
+            _queue_collaborators_prefetch()
+        ),
+        n_register=id,
+        user_code=request.user.userId,
+    )
 
     def _date(d):
         return d.isoformat() if d else ""
@@ -2008,16 +2704,42 @@ def queueItemDetails(request, id):
     def _time(t):
         return t.strftime("%H:%M") if t else ""
 
+    detail_counts = QueueTaskDetail.objects.filter(queue_item=item).aggregate(
+        total=Count("id"),
+        done=Count("id", filter=Q(is_done=True)),
+    )
+    detail_total = int(detail_counts.get("total") or 0)
+    detail_done = int(detail_counts.get("done") or 0)
+    detail_hours_total = _calc_task_total_hours(item)
+
     return JsonResponse(
         {
             "n_register": item.n_register,
             "a_ticket": item.a_ticket or "",
             "f_conclusion_rate": "" if item.f_conclusion_rate is None else str(item.f_conclusion_rate),
             "a_description": item.a_description or "",
+            "a_demand_detail": item.a_demand_detail or "",
+            "a_notes": item.a_notes or "",
             "task_group": item.task_group_id or "",
+            "task_group_name": item.task_group.name if item.task_group else "",
             "task_type": item.task_type_id or "",
+            "task_type_name": item.task_type.name if item.task_type else "",
             "priority_level": item.priority_level or userQueue.PRIORITY_MEDIUM,
             "estimated_effort_level": item.estimated_effort_level or userQueue.ESTIMATE_MEDIUM,
+            "kanban_column": item.kanban_column_id or "",
+            "kanban_column_name": item.kanban_column.name if item.kanban_column else "",
+            "kanban_column_color": item.kanban_column.color if item.kanban_column else "#61688c",
+            "linked_project_id": item.linked_project_id or "",
+            "linked_project_name": item.linked_project.name if item.linked_project else "",
+            "extra_collaborators_ids": [collaborator.id for collaborator in getattr(item, "extra_collaborators_prefetched", [])],
+            "extra_collaborators": [
+                _serialize_queue_collaborator(collaborator)
+                for collaborator in getattr(item, "extra_collaborators_prefetched", [])
+            ],
+            "is_current": bool(item.is_current),
+            "detail_total": detail_total,
+            "detail_done": detail_done,
+            "detail_hours_total": f"{detail_hours_total:.2f}",
             "d_predicted_date_start": _date(item.d_predicted_date_start),
             "t_predicted_time_start": _time(item.t_predicted_time_start),
             "d_predicted_date_end": _date(item.d_predicted_date_end),
@@ -2041,10 +2763,23 @@ def createQueueItemInline(request):
 
     ticket = (request.POST.get("a_ticket") or "").strip() or None
     description = (request.POST.get("a_description") or "").strip() or None
-    priority_level = (request.POST.get("priority_level") or userQueue.PRIORITY_MEDIUM).strip()
-    estimated_effort_level = (request.POST.get("estimated_effort_level") or userQueue.ESTIMATE_MEDIUM).strip()
+    priority_level = _normalize_user_queue_field_value(
+        request.user,
+        userQueue.FIELD_PRIORITY,
+        request.POST.get("priority_level") or userQueue.PRIORITY_MEDIUM,
+    )
+    estimated_effort_level = _normalize_user_queue_field_value(
+        request.user,
+        userQueue.FIELD_EFFORT,
+        request.POST.get("estimated_effort_level") or userQueue.ESTIMATE_MEDIUM,
+    )
     task_type_raw = (request.POST.get("task_type") or "").strip()
     kanban_column_raw = (request.POST.get("kanban_column") or "").strip()
+    collaborator_ids = [
+        int(value)
+        for value in request.POST.getlist("extra_collaborators")
+        if str(value).isdigit()
+    ]
 
     def _parse_date(v):
         v = (v or "").strip()
@@ -2075,10 +2810,8 @@ def createQueueItemInline(request):
         a_description=description,
         n_queue_position=next_position,
         kanban_sort_order=next_position,
-        priority_level=priority_level if priority_level in {x[0] for x in userQueue.PRIORITY_CHOICES} else userQueue.PRIORITY_MEDIUM,
-        estimated_effort_level=(
-            estimated_effort_level if estimated_effort_level in {x[0] for x in userQueue.ESTIMATE_CHOICES} else userQueue.ESTIMATE_MEDIUM
-        ),
+        priority_level=priority_level,
+        estimated_effort_level=estimated_effort_level,
         d_real_date_start=d_real_date_start,
         d_real_time_start=d_real_time_start,
         d_real_date_end=d_real_date_end,
@@ -2099,6 +2832,10 @@ def createQueueItemInline(request):
             item.kanban_column = col
             item.save(update_fields=["kanban_column"])
 
+    if collaborator_ids:
+        collaborators = User.objects.filter(id__in=collaborator_ids).exclude(pk=request.user.pk)
+        item.extra_collaborators.set(collaborators)
+
     return JsonResponse({"status": "ok", "id": item.n_register})
 
 
@@ -2118,6 +2855,8 @@ def updateQueueItem(request, id):
         if getattr(model_field, "many_to_one", False):
             rel_id = getattr(item, f"{field_name}_id", None)
             return "" if rel_id is None else str(rel_id)
+        if getattr(model_field, "many_to_many", False):
+            return ""
 
         value = getattr(item, field_name, None)
         if value is None:
@@ -2132,7 +2871,16 @@ def updateQueueItem(request, id):
         return str(value)
 
     # Partial inline updates: keep all non-posted fields from current instance.
-    probe_form = UserQueueUpdateForm(instance=item)
+    if "priority_level" in post_data:
+        post_data["priority_level"] = _normalize_user_queue_field_value(
+            request.user, userQueue.FIELD_PRIORITY, post_data.get("priority_level")
+        )
+    if "estimated_effort_level" in post_data:
+        post_data["estimated_effort_level"] = _normalize_user_queue_field_value(
+            request.user, userQueue.FIELD_EFFORT, post_data.get("estimated_effort_level")
+        )
+
+    probe_form = UserQueueUpdateForm(instance=item, user=request.user)
     for field_name in probe_form.fields.keys():
         if field_name not in post_data:
             post_data[field_name] = _as_form_value(field_name)
@@ -2152,7 +2900,7 @@ def updateQueueItem(request, id):
             post_data[date_key] = ""
             post_data[time_key] = ""
 
-    form = UserQueueUpdateForm(post_data, instance=item)
+    form = UserQueueUpdateForm(post_data, instance=item, user=request.user)
     if not form.is_valid():
         return JsonResponse({"status": "error", "errors": form.errors}, status=400)
 
@@ -2184,7 +2932,56 @@ def updateQueueItem(request, id):
 
     if update_type_fields:
         item.save(update_fields=list(dict.fromkeys(update_type_fields)))
+
+    if "extra_collaborators_present" in request.POST:
+        collaborator_ids = [
+            int(value)
+            for value in request.POST.getlist("extra_collaborators")
+            if str(value).isdigit()
+        ]
+        collaborators = User.objects.filter(id__in=collaborator_ids).exclude(pk=request.user.pk)
+        item.extra_collaborators.set(collaborators)
+
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def updateQueueGanttRange(request, id):
+    item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
+
+    def _parse_date(val):
+        val = (val or "").strip()
+        if not val:
+            return None
+        try:
+            return date.fromisoformat(val)
+        except ValueError:
+            return None
+
+    def _parse_time(val):
+        val = (val or "").strip()
+        if not val:
+            return None
+        try:
+            return datetime.strptime(val, "%H:%M").time()
+        except ValueError:
+            return None
+
+    item.d_real_date_start = _parse_date(request.POST.get("d_real_date_start"))
+    item.d_real_date_end = _parse_date(request.POST.get("d_real_date_end"))
+    update_fields = ["d_real_date_start", "d_real_date_end"]
+
+    if "d_real_time_start" in request.POST:
+        item.d_real_time_start = _parse_time(request.POST.get("d_real_time_start"))
+        update_fields.append("d_real_time_start")
+    if "t_real_time_end" in request.POST:
+        item.t_real_time_end = _parse_time(request.POST.get("t_real_time_end"))
+        update_fields.append("t_real_time_end")
+
+    item.save(update_fields=update_fields)
+    return JsonResponse({"status": "ok"})
+
 
 @login_required
 @require_POST
@@ -2205,17 +3002,46 @@ def toggleCurrentTask(request, id):
 @require_POST
 def createUserQueueCustomColumn(request):
     name = (request.POST.get("name") or "").strip()
+    field_type = (request.POST.get("field_type") or UserQueueCustomColumn.FIELD_TEXT).strip().lower()
+    color = (request.POST.get("color") or "#61688c").strip() or "#61688c"
+    initial_option_label = (request.POST.get("initial_option_label") or "").strip()
+    initial_option_color = (request.POST.get("initial_option_color") or color).strip() or color
     if not name:
         return JsonResponse({"status": "error", "message": "Nome obrigatorio."}, status=400)
+    allowed_types = {choice[0] for choice in UserQueueCustomColumn.FIELD_TYPE_CHOICES}
+    if field_type not in allowed_types:
+        return JsonResponse({"status": "error", "message": "Tipo de coluna invalido."}, status=400)
     max_sort = (
         UserQueueCustomColumn.objects.filter(user=request.user).aggregate(max_sort=models.Max("sort_order")).get("max_sort")
         or 0
     )
     try:
-        column = UserQueueCustomColumn.objects.create(user=request.user, name=name[:60], sort_order=int(max_sort) + 1)
+        column = UserQueueCustomColumn.objects.create(
+            user=request.user,
+            name=name[:60],
+            field_type=field_type,
+            color=color[:7],
+            sort_order=int(max_sort) + 1,
+        )
     except IntegrityError:
         return JsonResponse({"status": "error", "message": "Ja existe uma coluna com este nome."}, status=400)
-    return JsonResponse({"status": "ok", "id": column.id, "name": column.name})
+    if field_type == UserQueueCustomColumn.FIELD_SELECT and initial_option_label:
+        UserQueueCustomColumnOption.objects.create(
+            column=column,
+            value=_build_queue_option_value(initial_option_label, set()),
+            label=initial_option_label[:80],
+            color=initial_option_color[:7],
+            sort_order=1,
+            is_active=True,
+        )
+    column = (
+        UserQueueCustomColumn.objects.filter(pk=column.pk)
+        .prefetch_related(
+            Prefetch("options", queryset=UserQueueCustomColumnOption.objects.filter(is_active=True).order_by("sort_order", "id"))
+        )
+        .first()
+    )
+    return JsonResponse({"status": "ok", "column": _serialize_queue_custom_column(column)})
 
 
 @login_required
@@ -2249,16 +3075,211 @@ def createTaskTypeQuick(request):
 
 @login_required
 @require_POST
+def createUserQueueFieldOption(request):
+    field_key = (request.POST.get("field_key") or "").strip()
+    label = (request.POST.get("label") or "").strip()
+    color = (request.POST.get("color") or "#61688c").strip() or "#61688c"
+    allowed_fields = {UserQueueFieldOption.FIELD_PRIORITY, UserQueueFieldOption.FIELD_EFFORT}
+    if field_key not in allowed_fields:
+        return JsonResponse({"status": "error", "message": "Campo invalido."}, status=400)
+    if not label:
+        return JsonResponse({"status": "error", "message": "Nome da opcao obrigatorio."}, status=400)
+
+    existing = list(
+        UserQueueFieldOption.objects.filter(user=request.user, field_key=field_key).values_list("value", flat=True)
+    )
+    value = _build_queue_option_value(label, set(existing))
+    max_sort = (
+        UserQueueFieldOption.objects.filter(user=request.user, field_key=field_key)
+        .aggregate(models.Max("sort_order"))
+        .get("sort_order__max")
+        or 0
+    )
+    option = UserQueueFieldOption.objects.create(
+        user=request.user,
+        field_key=field_key,
+        value=value,
+        label=label[:60],
+        color=color[:7],
+        sort_order=int(max_sort) + 1,
+        is_active=True,
+    )
+    return JsonResponse({"status": "ok", "option": _serialize_queue_field_option(option)})
+
+
+@login_required
+@require_POST
+def deleteUserQueueFieldOption(request, option_id):
+    option = get_object_or_404(UserQueueFieldOption, pk=option_id, user=request.user, is_active=True)
+    remaining_options = list(
+        UserQueueFieldOption.objects.filter(user=request.user, field_key=option.field_key, is_active=True)
+        .exclude(pk=option.pk)
+        .order_by("sort_order", "id")
+    )
+    if not remaining_options:
+        return JsonResponse(
+            {"status": "error", "message": "E necessario manter pelo menos uma opcao ativa."},
+            status=400,
+        )
+
+    replacement = remaining_options[0]
+    field_name = option.field_key
+    with transaction.atomic():
+        userQueue.objects.filter(user_code=request.user.userId, **{field_name: option.value}).update(
+            **{field_name: replacement.value}
+        )
+        concludedTasks.objects.filter(user_code=request.user.userId, **{field_name: option.value}).update(
+            **{field_name: replacement.value}
+        )
+        option.is_active = False
+        option.save(update_fields=["is_active"])
+
+    field_payload = _queue_field_option_payload(request.user)
+    active_options = field_payload[
+        "priority_options" if option.field_key == UserQueueFieldOption.FIELD_PRIORITY else "effort_options"
+    ]
+    return JsonResponse(
+        {
+            "status": "ok",
+            "field_key": option.field_key,
+            "replacement_value": replacement.value,
+            "active_options": active_options,
+        }
+    )
+
+
+@login_required
+@require_POST
+def createUserQueueCustomColumnOption(request, column_id):
+    column = get_object_or_404(UserQueueCustomColumn, pk=column_id, user=request.user)
+    if column.field_type != UserQueueCustomColumn.FIELD_SELECT:
+        return JsonResponse({"status": "error", "message": "A coluna precisa ser do tipo lista."}, status=400)
+
+    label = (request.POST.get("label") or "").strip()
+    color = (request.POST.get("color") or column.color or "#61688c").strip() or "#61688c"
+    if not label:
+        return JsonResponse({"status": "error", "message": "Nome da opcao obrigatorio."}, status=400)
+
+    existing = list(
+        UserQueueCustomColumnOption.objects.filter(column=column).values_list("value", flat=True)
+    )
+    value = _build_queue_option_value(label, set(existing))
+    max_sort = (
+        UserQueueCustomColumnOption.objects.filter(column=column)
+        .aggregate(models.Max("sort_order"))
+        .get("sort_order__max")
+        or 0
+    )
+    option = UserQueueCustomColumnOption.objects.create(
+        column=column,
+        value=value,
+        label=label[:80],
+        color=color[:7],
+        sort_order=int(max_sort) + 1,
+        is_active=True,
+    )
+    return JsonResponse({"status": "ok", "column_id": column.id, "option": _serialize_queue_custom_column_option(option)})
+
+
+@login_required
+@require_POST
+def deleteUserQueueCustomColumnOption(request, option_id):
+    option = get_object_or_404(
+        UserQueueCustomColumnOption.objects.select_related("column"),
+        pk=option_id,
+        column__user=request.user,
+        is_active=True,
+    )
+
+    with transaction.atomic():
+        UserQueueCustomValue.objects.filter(column=option.column, value=option.value).update(
+            value="",
+            updated_at=timezone.now(),
+        )
+        option.is_active = False
+        option.save(update_fields=["is_active"])
+
+    column = (
+        UserQueueCustomColumn.objects.filter(pk=option.column_id, user=request.user)
+        .prefetch_related(
+            Prefetch(
+                "options",
+                queryset=UserQueueCustomColumnOption.objects.filter(is_active=True).order_by("sort_order", "id"),
+            )
+        )
+        .first()
+    )
+    usage_rows = (
+        UserQueueCustomValue.objects.filter(column_id=option.column_id)
+        .exclude(value__isnull=True)
+        .exclude(value="")
+        .values("column_id", "value")
+        .annotate(total=Count("id"))
+    )
+    usage_map = {
+        (int(row["column_id"]), str(row["value"] or "")): int(row["total"] or 0)
+        for row in usage_rows
+    }
+    return JsonResponse(
+        {
+            "status": "ok",
+            "column_id": option.column_id,
+            "column": _serialize_queue_custom_column(column, option_usage_map=usage_map) if column else None,
+        }
+    )
+
+
+@login_required
+@require_POST
 def setUserQueueCustomValue(request, id):
     item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
     column_id_raw = (request.POST.get("column_id") or "").strip()
     if not column_id_raw.isdigit():
         return JsonResponse({"status": "error", "message": "Coluna invalida."}, status=400)
-    column = get_object_or_404(UserQueueCustomColumn, id=int(column_id_raw), user=request.user)
+    column = get_object_or_404(
+        UserQueueCustomColumn.objects.prefetch_related(
+            Prefetch("options", queryset=UserQueueCustomColumnOption.objects.filter(is_active=True).order_by("sort_order", "id"))
+        ),
+        id=int(column_id_raw),
+        user=request.user,
+    )
     value = (request.POST.get("value") or "")[:250]
+    try:
+        value = _normalize_custom_column_value(column, value)
+    except ValueError as exc:
+        return JsonResponse({"status": "error", "message": str(exc)}, status=400)
     obj, _ = UserQueueCustomValue.objects.get_or_create(queue_item=item, column=column)
     obj.value = value
     obj.save(update_fields=["value", "updated_at"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_POST
+def saveUserQueueView(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    name = str(payload.get("name") or "").strip()[:80]
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nome obrigatorio."}, status=400)
+
+    filters = _normalize_user_queue_saved_view_filters(payload.get("filters") or {})
+    saved_view, _ = UserQueueSavedView.objects.update_or_create(
+        user=request.user,
+        name=name,
+        defaults={"filters_json": filters},
+    )
+    return JsonResponse({"status": "ok", "view": _serialize_user_queue_saved_view(saved_view)})
+
+
+@login_required
+@require_POST
+def deleteUserQueueView(request, view_id):
+    saved_view = get_object_or_404(UserQueueSavedView, pk=view_id, user=request.user)
+    saved_view.delete()
     return JsonResponse({"status": "ok"})
 
 
@@ -2389,12 +3410,13 @@ def linkQueueItemToProject(request, id):
         if item.linked_roadmap_item_id and item.linked_roadmap_item and item.linked_roadmap_item.project_id == project.id:
             roadmap_item = item.linked_roadmap_item
             roadmap_item.title = title
+            roadmap_item.responsible = request.user
             roadmap_item.description = roadmap_description
             roadmap_item.status = status
             roadmap_item.start_date = item.d_predicted_date_start
             roadmap_item.end_date = item.d_predicted_date_end
             roadmap_item.save(
-                update_fields=["title", "description", "status", "start_date", "end_date"]
+                update_fields=["title", "responsible", "description", "status", "start_date", "end_date"]
             )
         else:
             max_sort = (
@@ -2402,6 +3424,7 @@ def linkQueueItemToProject(request, id):
             )
             roadmap_item = ProjectRoadmapItem.objects.create(
                 project=project,
+                responsible=request.user,
                 title=title,
                 description=roadmap_description,
                 status=status,

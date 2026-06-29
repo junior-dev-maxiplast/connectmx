@@ -1,9 +1,11 @@
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from accounts.models import User
+from .forms import ForgotPasswordForm
 
 
 def index(request):
@@ -14,6 +16,10 @@ def loginPage(request):
     if request.user.is_authenticated:
         return redirect("index")
 
+    error_message = None
+    success_message = None
+    redirect_to = request.POST.get(REDIRECT_FIELD_NAME) or request.GET.get(REDIRECT_FIELD_NAME) or ""
+
     if request.method == "POST":
         accessField = request.POST.get("login")
         passwordField = request.POST.get("password")
@@ -21,9 +27,40 @@ def loginPage(request):
         user = authenticate(request, username=accessField, password=passwordField)
         if user:
             login(request, user)
+            if redirect_to and url_has_allowed_host_and_scheme(
+                url=redirect_to,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                return redirect(redirect_to)
             return redirect("index")
+        error_message = "Login ou senha invalidos."
 
-    return render(request, "general/login.html")
+    if request.GET.get("password_reset") == "1":
+        success_message = "Senha atualizada com sucesso. Voce ja pode entrar novamente."
+
+    return render(
+        request,
+        "general/login.html",
+        {
+            "erro": error_message,
+            "success_message": success_message,
+            "next_url": redirect_to,
+        },
+    )
+
+
+def forgotPasswordPage(request):
+    if request.user.is_authenticated:
+        return redirect("index")
+
+    form = ForgotPasswordForm(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("/main/login/?password_reset=1")
+
+    return render(request, "general/forgotPassword.html", {"form": form})
 
 
 def logoutPage(request):

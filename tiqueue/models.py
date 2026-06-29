@@ -49,8 +49,23 @@ class UserQueueKanbanColumn(models.Model):
 
 
 class UserQueueCustomColumn(models.Model):
+    FIELD_TEXT = "text"
+    FIELD_SELECT = "select"
+    FIELD_NUMBER = "number"
+    FIELD_DATE = "date"
+    FIELD_CHECKBOX = "checkbox"
+    FIELD_TYPE_CHOICES = [
+        (FIELD_TEXT, "Texto"),
+        (FIELD_SELECT, "Lista"),
+        (FIELD_NUMBER, "Numero"),
+        (FIELD_DATE, "Data"),
+        (FIELD_CHECKBOX, "Checkbox"),
+    ]
+
     user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="queue_custom_columns")
     name = models.CharField(max_length=60)
+    field_type = models.CharField(max_length=20, choices=FIELD_TYPE_CHOICES, default=FIELD_TEXT)
+    color = models.CharField(max_length=7, default="#61688c")
     sort_order = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -62,23 +77,82 @@ class UserQueueCustomColumn(models.Model):
         return f"{self.user.username} - {self.name}"
 
 
+class UserQueueCustomColumnOption(models.Model):
+    column = models.ForeignKey(UserQueueCustomColumn, on_delete=models.CASCADE, related_name="options")
+    value = models.CharField(max_length=40)
+    label = models.CharField(max_length=80)
+    color = models.CharField(max_length=7, default="#61688c")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("column", "value")
+
+    def __str__(self):
+        return f"{self.column.name} - {self.label}"
+
+
+class UserQueueFieldOption(models.Model):
+    FIELD_PRIORITY = "priority_level"
+    FIELD_EFFORT = "estimated_effort_level"
+    FIELD_CHOICES = [
+        (FIELD_PRIORITY, "Prioridade"),
+        (FIELD_EFFORT, "Nivel estimado"),
+    ]
+
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="queue_field_options")
+    field_key = models.CharField(max_length=40, choices=FIELD_CHOICES)
+    value = models.CharField(max_length=40)
+    label = models.CharField(max_length=60)
+    color = models.CharField(max_length=7, default="#61688c")
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("user", "field_key", "value")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.field_key} - {self.label}"
+
+
+class UserQueueSavedView(models.Model):
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="queue_saved_views")
+    name = models.CharField(max_length=80)
+    filters_json = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        unique_together = ("user", "name")
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+
 class userQueue(models.Model):
     PRIORITY_LOW = "low"
     PRIORITY_MEDIUM = "medium"
     PRIORITY_HIGH = "high"
-    PRIORITY_CHOICES = [
-        (PRIORITY_LOW, "Baixa"),
-        (PRIORITY_MEDIUM, "Media"),
-        (PRIORITY_HIGH, "Alta"),
+    FIELD_PRIORITY = UserQueueFieldOption.FIELD_PRIORITY
+    DEFAULT_PRIORITY_OPTIONS = [
+        (PRIORITY_LOW, "Baixa", "#2d8f66"),
+        (PRIORITY_MEDIUM, "Media", "#ad8d2e"),
+        (PRIORITY_HIGH, "Alta", "#b14f59"),
     ]
 
     ESTIMATE_SMALL = "small"
     ESTIMATE_MEDIUM = "medium"
     ESTIMATE_LARGE = "large"
-    ESTIMATE_CHOICES = [
-        (ESTIMATE_SMALL, "Pequeno"),
-        (ESTIMATE_MEDIUM, "Medio"),
-        (ESTIMATE_LARGE, "Grande"),
+    FIELD_EFFORT = UserQueueFieldOption.FIELD_EFFORT
+    DEFAULT_EFFORT_OPTIONS = [
+        (ESTIMATE_SMALL, "Pequeno", "#2f9d9c"),
+        (ESTIMATE_MEDIUM, "Medio", "#4b668f"),
+        (ESTIMATE_LARGE, "Grande", "#7d5fb0"),
     ]
 
     user_code = models.CharField(max_length=10)
@@ -89,8 +163,8 @@ class userQueue(models.Model):
     a_description = models.CharField(max_length=250, blank=True, null=True)
     a_demand_detail = models.TextField(blank=True, null=True)
     a_notes = models.TextField(blank=True, null=True)
-    priority_level = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default=PRIORITY_MEDIUM)
-    estimated_effort_level = models.CharField(max_length=10, choices=ESTIMATE_CHOICES, default=ESTIMATE_MEDIUM)
+    priority_level = models.CharField(max_length=40, default=PRIORITY_MEDIUM)
+    estimated_effort_level = models.CharField(max_length=40, default=ESTIMATE_MEDIUM)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
@@ -98,6 +172,11 @@ class userQueue(models.Model):
     linked_project = models.ForeignKey("Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items")
     linked_roadmap_item = models.ForeignKey(
         "ProjectRoadmapItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items"
+    )
+    extra_collaborators = models.ManyToManyField(
+        "accounts.User",
+        blank=True,
+        related_name="extra_queue_collaborations",
     )
     kanban_column = models.ForeignKey(
         UserQueueKanbanColumn, on_delete=models.SET_NULL, null=True, blank=True, related_name="queue_items"
@@ -117,6 +196,35 @@ class userQueue(models.Model):
     n_queue_position = models.IntegerField(blank=True, null=True)
     is_current = models.BooleanField(default=False)
     
+    @classmethod
+    def default_field_options(cls, field_key):
+        if field_key == cls.FIELD_PRIORITY:
+            return cls.DEFAULT_PRIORITY_OPTIONS
+        if field_key == cls.FIELD_EFFORT:
+            return cls.DEFAULT_EFFORT_OPTIONS
+        return []
+
+    @classmethod
+    def default_field_option_map(cls, field_key):
+        return {
+            value: {"value": value, "label": label, "color": color}
+            for value, label, color in cls.default_field_options(field_key)
+        }
+
+    def get_priority_level_display(self):
+        return (
+            self.default_field_option_map(self.FIELD_PRIORITY).get(self.priority_level or "", {}).get("label")
+            or self.priority_level
+            or "-"
+        )
+
+    def get_estimated_effort_level_display(self):
+        return (
+            self.default_field_option_map(self.FIELD_EFFORT).get(self.estimated_effort_level or "", {}).get("label")
+            or self.estimated_effort_level
+            or "-"
+        )
+
     def __str__(self):
         return self.a_description
 
@@ -141,8 +249,8 @@ class concludedTasks(models.Model):
     f_conclusion_rate = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     n_status_code = models.IntegerField(blank=True, null=True)
     a_description = models.CharField(max_length=250, blank=True, null=True)
-    priority_level = models.CharField(max_length=10, choices=userQueue.PRIORITY_CHOICES, default=userQueue.PRIORITY_MEDIUM)
-    estimated_effort_level = models.CharField(max_length=10, choices=userQueue.ESTIMATE_CHOICES, default=userQueue.ESTIMATE_MEDIUM)
+    priority_level = models.CharField(max_length=40, default=userQueue.PRIORITY_MEDIUM)
+    estimated_effort_level = models.CharField(max_length=40, default=userQueue.ESTIMATE_MEDIUM)
     n_type_group = models.IntegerField(blank=True, null=True)
     n_type_code = models.IntegerField(blank=True, null=True)
     task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
@@ -152,6 +260,11 @@ class concludedTasks(models.Model):
     )
     linked_roadmap_item = models.ForeignKey(
         "ProjectRoadmapItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="concluded_queue_items"
+    )
+    extra_collaborators = models.ManyToManyField(
+        "accounts.User",
+        blank=True,
+        related_name="extra_concluded_queue_collaborations",
     )
     d_predicted_date_start = models.DateField(blank=True, null=True)
     d_predicted_date_end = models.DateField(blank=True, null=True)
@@ -168,6 +281,20 @@ class concludedTasks(models.Model):
     d_conclusion_date = models.DateField(auto_now=True)
     d_conclusion_time = models.TimeField(auto_now=True)
     
+    def get_priority_level_display(self):
+        return (
+            userQueue.default_field_option_map(userQueue.FIELD_PRIORITY).get(self.priority_level or "", {}).get("label")
+            or self.priority_level
+            or "-"
+        )
+
+    def get_estimated_effort_level_display(self):
+        return (
+            userQueue.default_field_option_map(userQueue.FIELD_EFFORT).get(self.estimated_effort_level or "", {}).get("label")
+            or self.estimated_effort_level
+            or "-"
+        )
+
     def __str__(self):
         return self.a_description
 
@@ -254,6 +381,13 @@ class ProjectRoadmapItem(models.Model):
     ]
 
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="roadmap_items")
+    responsible = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="roadmap_responsibilities",
+    )
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True, null=True)
     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="planned")
@@ -266,6 +400,21 @@ class ProjectRoadmapItem(models.Model):
 
     def __str__(self):
         return f"{self.project.name} - {self.title}"
+
+
+class ProjectRoadmapSubtask(models.Model):
+    roadmap_item = models.ForeignKey(ProjectRoadmapItem, on_delete=models.CASCADE, related_name="subtasks")
+    description = models.CharField(max_length=240)
+    is_done = models.BooleanField(default=False)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return f"{self.roadmap_item.title} - {self.description}"
 
 
 class ProjectKanbanColumn(models.Model):
@@ -749,6 +898,26 @@ class MyAgendaReminder(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
+
+
+class MaxiTetrisHighScore(models.Model):
+    user = models.OneToOneField(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="maxi_tetris_highscore",
+    )
+    best_score = models.PositiveIntegerField(default=0)
+    best_lines = models.PositiveIntegerField(default=0)
+    best_level = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-best_score", "-best_lines", "-best_level", "id"]
+
+    def __str__(self):
+        display_name = self.user.nameUser or self.user.username
+        return f"{display_name} - {self.best_score}"
 
 
 class DataModelLaunch(models.Model):

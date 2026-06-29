@@ -4,6 +4,7 @@ from .models import (
     userQueue,
     TaskGroup,
     TaskType,
+    UserQueueFieldOption,
     ChecklistTemplate,
     ChecklistSection,
     ChecklistField,
@@ -48,6 +49,56 @@ class TaskTypeSelect(forms.Select):
         return option
 
 class UserQueueCreateForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        collaborator_queryset = User.objects.exclude(pk=getattr(user, "pk", None)).order_by('nameUser', 'username')
+        self.fields['task_group'].queryset = TaskGroup.objects.all().order_by('name')
+        self.fields['task_type'].queryset = TaskType.objects.select_related('group').order_by('group__name', 'name')
+        self.fields['extra_collaborators'].queryset = collaborator_queryset
+        self.fields['task_group'].required = False
+        self.fields['task_type'].required = False
+        self.fields['extra_collaborators'].required = False
+
+        self.fields['task_group'].widget.attrs.update({'class': 'queue-select'})
+        self.fields['task_type'].widget = TaskTypeSelect(attrs={'class': 'queue-select'})
+        self.fields['task_type'].widget.choices = self.fields['task_type'].choices
+        self.fields['extra_collaborators'].widget = forms.SelectMultiple(
+            attrs={'class': 'queue-collaborator-select', 'style': 'display:none;'}
+        )
+
+        priority_choices = self._field_option_choices(
+            user,
+            UserQueueFieldOption.FIELD_PRIORITY,
+            userQueue.default_field_options(userQueue.FIELD_PRIORITY),
+        )
+        effort_choices = self._field_option_choices(
+            user,
+            UserQueueFieldOption.FIELD_EFFORT,
+            userQueue.default_field_options(userQueue.FIELD_EFFORT),
+        )
+        self.fields['priority_level'] = forms.ChoiceField(
+            choices=priority_choices,
+            required=False,
+            label='Prioridade',
+            widget=forms.Select(attrs={'class': 'queue-select'}),
+        )
+        self.fields['estimated_effort_level'] = forms.ChoiceField(
+            choices=effort_choices,
+            required=False,
+            label='Nivel estimado',
+            widget=forms.Select(attrs={'class': 'queue-select'}),
+        )
+
+    @staticmethod
+    def _field_option_choices(user, field_key, defaults):
+        if user is not None:
+            rows = list(
+                UserQueueFieldOption.objects.filter(user=user, field_key=field_key, is_active=True).order_by('sort_order', 'id')
+            )
+            if rows:
+                return [(row.value, row.label) for row in rows]
+        return [(value, label) for value, label, _ in defaults]
+
     class Meta:
         model = userQueue
         fields = [
@@ -56,6 +107,7 @@ class UserQueueCreateForm(forms.ModelForm):
             'a_description',
             'task_group',
             'task_type',
+            'extra_collaborators',
             'priority_level',
             'estimated_effort_level',
             'd_real_date_start',
@@ -73,6 +125,7 @@ class UserQueueCreateForm(forms.ModelForm):
             'a_description':'Descrição',
             'task_group': 'Grupo',
             'task_type': 'Tipo',
+            'extra_collaborators': 'Colaboradores extras',
             'n_type_group':'Tipo - Grupo',
             'n_type_code':'Tipo - Código',
             'd_predicted_date_start':'Início Previsto - Data',
@@ -98,20 +151,33 @@ class UserQueueCreateForm(forms.ModelForm):
             'n_queue_position':forms.HiddenInput()
         }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['task_group'].queryset = TaskGroup.objects.all().order_by('name')
-        self.fields['task_type'].queryset = TaskType.objects.select_related('group').order_by('group__name', 'name')
-        self.fields['task_group'].required = False
-        self.fields['task_type'].required = False
-
-        self.fields['task_group'].widget.attrs.update({'class': 'queue-select'})
-        # Replace widget but keep bound choices so create_option receives ModelChoiceIteratorValue (.instance).
-        self.fields['task_type'].widget = TaskTypeSelect(attrs={'class': 'queue-select'})
-        self.fields['task_type'].widget.choices = self.fields['task_type'].choices
-
 
 class UserQueueUpdateForm(forms.ModelForm):
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        priority_choices = UserQueueCreateForm._field_option_choices(
+            user,
+            UserQueueFieldOption.FIELD_PRIORITY,
+            userQueue.default_field_options(userQueue.FIELD_PRIORITY),
+        )
+        effort_choices = UserQueueCreateForm._field_option_choices(
+            user,
+            UserQueueFieldOption.FIELD_EFFORT,
+            userQueue.default_field_options(userQueue.FIELD_EFFORT),
+        )
+        self.fields['priority_level'] = forms.ChoiceField(
+            choices=priority_choices,
+            required=False,
+            label='Prioridade',
+            widget=forms.Select(attrs={'class': 'queue-select'}),
+        )
+        self.fields['estimated_effort_level'] = forms.ChoiceField(
+            choices=effort_choices,
+            required=False,
+            label='Nivel estimado',
+            widget=forms.Select(attrs={'class': 'queue-select'}),
+        )
+
     class Meta:
         model = userQueue
         exclude = [
@@ -120,6 +186,7 @@ class UserQueueUpdateForm(forms.ModelForm):
             'f_total_predicted_time',
             'f_total_real_time',
             'f_predicted_real_diference',
+            'extra_collaborators',
             'task_group',
             'task_type',
             'linked_project',
@@ -279,10 +346,11 @@ class ProjectForm(forms.ModelForm):
 class ProjectRoadmapItemForm(forms.ModelForm):
     class Meta:
         model = ProjectRoadmapItem
-        fields = ["project", "title", "description", "status", "start_date", "end_date", "sort_order"]
+        fields = ["project", "responsible", "title", "description", "status", "start_date", "end_date", "sort_order"]
 
         labels = {
             "project": "Projeto",
+            "responsible": "Responsavel",
             "title": "Etapa",
             "description": "Descricao",
             "status": "Status",
@@ -296,6 +364,10 @@ class ProjectRoadmapItemForm(forms.ModelForm):
             "start_date": forms.DateInput(attrs={"type": "date"}),
             "end_date": forms.DateInput(attrs={"type": "date"}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["responsible"].queryset = User.objects.order_by("nameUser", "username")
 
 
 class DemandTemplateForm(forms.ModelForm):
