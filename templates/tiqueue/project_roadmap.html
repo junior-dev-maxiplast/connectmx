@@ -52,7 +52,7 @@
     <div id="overlay" onclick="closeRoadmapModal()" style="display:none;"></div>
     <div id="roadmapModal" class="formNewItemMain roadmap-modal" style="display:none;">
         <div class="modal-header">
-            <div class="modal-title">Nova etapa</div>
+            <div id="roadmapModalTitle" class="modal-title">Nova etapa</div>
             <button type="button" class="modal-close" onclick="closeRoadmapModal()" aria-label="Fechar">&#x2715;</button>
         </div>
         <form class="modal-form" onsubmit="return submitRoadmapItem(event)">
@@ -75,6 +75,15 @@
                         <option value="done">Concluido</option>
                     </select>
                 </div>
+                <div class="field span-2">
+                    <label for="rm_responsible">Responsavel</label>
+                    <select id="rm_responsible" class="queue-select">
+                        <option value="">Sem responsavel definido</option>
+                        {% for roadmap_user in users %}
+                            <option value="{{ roadmap_user.id }}">{{ roadmap_user.nameUser|default:roadmap_user.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="field">
                     <label for="rm_start">Inicio</label>
                     <input id="rm_start" type="date">
@@ -83,6 +92,29 @@
                     <label for="rm_end">Fim</label>
                     <input id="rm_end" type="date">
                 </div>
+            </div>
+            <div id="rm_subtask_hint" class="roadmap-subtask-hint">
+                Salve a etapa para liberar o cadastro de subtarefas.
+            </div>
+            <div id="rm_subtasks_panel" class="roadmap-subtasks-panel is-hidden">
+                <div class="roadmap-subtasks-head">
+                    <div>
+                        <div class="roadmap-subtasks-title">Subtarefas</div>
+                        <div id="rm_subtasks_meta" class="roadmap-subtasks-meta">0/0 concluidas</div>
+                    </div>
+                    <div id="rm_subtasks_chip" class="roadmap-subtasks-chip">0%</div>
+                </div>
+                <div class="roadmap-subtasks-progress">
+                    <div class="roadmap-subtasks-progress-bar">
+                        <div id="rm_subtasks_fill" class="roadmap-subtasks-progress-fill" style="width:0%;"></div>
+                    </div>
+                </div>
+                <div class="roadmap-subtasks-add">
+                    <input id="rm_subtask_input" type="text" maxlength="240" placeholder="Adicionar subtarefa..." onkeydown="handleRoadmapSubtaskAddKeydown(event)">
+                    <button id="rm_subtask_add_btn" type="button" class="queue-primary-btn" onclick="addRoadmapSubtask()">Adicionar</button>
+                </div>
+                <div id="rm_subtasks_empty" class="roadmap-subtasks-empty">Nenhuma subtarefa cadastrada.</div>
+                <div id="rm_subtasks_list" class="roadmap-subtasks-list"></div>
             </div>
             <div class="modal-actions">
                 <button type="button" class="queue-secondary-btn" onclick="closeRoadmapModal()">Cancelar</button>
@@ -119,76 +151,18 @@
         });
     }
 
-    function openRoadmapModal() {
-        document.getElementById('rm_title').value = '';
-        document.getElementById('rm_description').value = '';
-        document.getElementById('rm_status').value = 'planned';
-        document.getElementById('rm_start').value = '';
-        document.getElementById('rm_end').value = '';
-
-        const overlay = document.getElementById('overlay');
-        const modal = document.getElementById('roadmapModal');
-        overlay.style.display = 'block';
-        modal.style.display = 'block';
-        overlay.classList.add('is-show');
-        modal.classList.add('is-show');
-        setTimeout(() => document.getElementById('rm_title').focus(), 0);
-    }
-
-    function closeRoadmapModal() {
-        const overlay = document.getElementById('overlay');
-        const modal = document.getElementById('roadmapModal');
-        overlay.classList.remove('is-show');
-        modal.classList.remove('is-show');
-        setTimeout(() => {
-            overlay.style.display = 'none';
-            modal.style.display = 'none';
-        }, 180);
-    }
-
-    function submitRoadmapItem(e) {
-        e.preventDefault();
-        const title = (document.getElementById('rm_title').value || '').trim();
-        if (!title) return false;
-
-        const btn = document.getElementById('rm_submit');
-        btn.disabled = true;
-        btn.classList.add('is-loading');
-
-        postJson(`/projects/{{ project.id }}/roadmap/add/`, {
-            title,
-            description: (document.getElementById('rm_description').value || '').trim(),
-            status: document.getElementById('rm_status').value,
-            start_date: document.getElementById('rm_start').value,
-            end_date: document.getElementById('rm_end').value,
-        })
-        .then((data) => {
-            if (data && data.status === "ok") {
-                roadmapItems.push({
-                    id: data.id,
-                    title,
-                    description: (document.getElementById('rm_description').value || '').trim(),
-                    status: document.getElementById('rm_status').value,
-                    start: document.getElementById('rm_start').value || "",
-                    end: document.getElementById('rm_end').value || "",
-                });
-                renderRoadmapFlow();
-            }
-            closeRoadmapModal();
-        })
-        .catch((err) => {
-            alert(err.message || 'Erro');
-        })
-        .finally(() => {
-            btn.disabled = false;
-            btn.classList.remove('is-loading');
-        });
-
-        return false;
+    function normalizeRoadmapItem(item) {
+        const normalized = item || {};
+        normalized.subtasks = Array.isArray(normalized.subtasks) ? normalized.subtasks : [];
+        normalized.subtask_total = normalized.subtasks.length;
+        normalized.subtask_done = normalized.subtasks.filter((subtask) => !!subtask.is_done).length;
+        return normalized;
     }
 
     // RoadmapFlow: renders cards in a horizontal "S" pattern with arrows.
-    const roadmapItems = JSON.parse(document.getElementById("roadmap-data").textContent || "[]");
+    const roadmapItems = JSON.parse(document.getElementById("roadmap-data").textContent || "[]").map(normalizeRoadmapItem);
+    let roadmapModalMode = "create";
+    let currentRoadmapItemId = null;
 
     const STATUS_LABELS = {
         planned: "Planejado",
@@ -232,6 +206,326 @@
         return Math.max(1, Math.floor(numerator / denominator));
     }
 
+    function findRoadmapItem(itemId) {
+        return roadmapItems.find((item) => String(item.id) === String(itemId)) || null;
+    }
+
+    function upsertRoadmapItem(itemData) {
+        const normalized = normalizeRoadmapItem(itemData);
+        const idx = roadmapItems.findIndex((item) => String(item.id) === String(normalized.id));
+        if (idx >= 0) {
+            roadmapItems[idx] = normalized;
+        } else {
+            roadmapItems.push(normalized);
+        }
+        return normalized;
+    }
+
+    function updateHeroProgressFromState() {
+        const total = roadmapItems.length;
+        const done = roadmapItems.filter((item) => item.status === "done").length;
+        updateHeroProgress(done, total);
+    }
+
+    function resetRoadmapModalFields() {
+        document.getElementById('rm_title').value = '';
+        document.getElementById('rm_description').value = '';
+        document.getElementById('rm_status').value = 'planned';
+        document.getElementById('rm_responsible').value = '';
+        document.getElementById('rm_start').value = '';
+        document.getElementById('rm_end').value = '';
+        document.getElementById('rm_subtask_input').value = '';
+    }
+
+    function renderRoadmapModalSubtasks() {
+        const panel = document.getElementById('rm_subtasks_panel');
+        const hint = document.getElementById('rm_subtask_hint');
+        const empty = document.getElementById('rm_subtasks_empty');
+        const list = document.getElementById('rm_subtasks_list');
+        const meta = document.getElementById('rm_subtasks_meta');
+        const chip = document.getElementById('rm_subtasks_chip');
+        const fill = document.getElementById('rm_subtasks_fill');
+
+        const item = findRoadmapItem(currentRoadmapItemId);
+        if (!item) {
+            panel.classList.add('is-hidden');
+            hint.classList.remove('is-hidden');
+            list.innerHTML = '';
+            empty.style.display = 'block';
+            meta.textContent = '0/0 concluidas';
+            chip.textContent = '0%';
+            fill.style.width = '0%';
+            return;
+        }
+
+        hint.classList.add('is-hidden');
+        panel.classList.remove('is-hidden');
+        meta.textContent = `${item.subtask_done}/${item.subtask_total} concluidas`;
+        const pct = item.subtask_total ? Math.round((item.subtask_done / item.subtask_total) * 100) : 0;
+        chip.textContent = `${pct}%`;
+        fill.style.width = `${pct}%`;
+
+        if (!item.subtasks.length) {
+            list.innerHTML = '';
+            empty.style.display = 'block';
+            return;
+        }
+
+        empty.style.display = 'none';
+        list.innerHTML = item.subtasks.map((subtask, index) => `
+            <div class="roadmap-subtask-row ${subtask.is_done ? 'is-done' : ''}" data-subtask-id="${subtask.id}" style="animation-delay:${index * 40}ms;">
+                <label class="roadmap-subtask-check">
+                    <input type="checkbox" ${subtask.is_done ? 'checked' : ''} onchange="toggleRoadmapSubtask('${subtask.id}', this.checked)">
+                    <span></span>
+                </label>
+                <input
+                    type="text"
+                    class="roadmap-subtask-text"
+                    value="${escapeHtml(subtask.description)}"
+                    onfocus="rememberRoadmapSubtaskValue(this)"
+                    onkeydown="handleRoadmapSubtaskKeydown(event)"
+                    onblur="saveRoadmapSubtaskDescription('${subtask.id}', this)"
+                >
+                <button type="button" class="roadmap-subtask-delete" onclick="deleteRoadmapSubtask('${subtask.id}')" aria-label="Excluir subtarefa" title="Excluir subtarefa">&#10005;</button>
+            </div>
+        `).join('');
+    }
+
+    function setRoadmapModalMode(mode, itemId) {
+        roadmapModalMode = mode === 'edit' ? 'edit' : 'create';
+        currentRoadmapItemId = roadmapModalMode === 'edit' ? String(itemId || '') : null;
+        document.getElementById('roadmapModalTitle').textContent = roadmapModalMode === 'edit' ? 'Editar etapa' : 'Nova etapa';
+        document.getElementById('rm_submit').textContent = roadmapModalMode === 'edit' ? 'Salvar' : 'Adicionar';
+    }
+
+    function openRoadmapModal(mode = 'create', itemId = null) {
+        setRoadmapModalMode(mode, itemId);
+        resetRoadmapModalFields();
+
+        if (roadmapModalMode === 'edit') {
+            const item = findRoadmapItem(itemId);
+            if (!item) return;
+            document.getElementById('rm_title').value = item.title || '';
+            document.getElementById('rm_description').value = item.description || '';
+            document.getElementById('rm_status').value = item.status || 'planned';
+            document.getElementById('rm_responsible').value = item.responsible_id || '';
+            document.getElementById('rm_start').value = item.start || '';
+            document.getElementById('rm_end').value = item.end || '';
+        }
+
+        renderRoadmapModalSubtasks();
+
+        const overlay = document.getElementById('overlay');
+        const modal = document.getElementById('roadmapModal');
+        overlay.style.display = 'block';
+        modal.style.display = 'block';
+        overlay.classList.add('is-show');
+        modal.classList.add('is-show');
+        setTimeout(() => document.getElementById('rm_title').focus(), 0);
+    }
+
+    function closeRoadmapModal() {
+        const overlay = document.getElementById('overlay');
+        const modal = document.getElementById('roadmapModal');
+        overlay.classList.remove('is-show');
+        modal.classList.remove('is-show');
+        setTimeout(() => {
+            overlay.style.display = 'none';
+            modal.style.display = 'none';
+            setRoadmapModalMode('create', null);
+            resetRoadmapModalFields();
+            renderRoadmapModalSubtasks();
+        }, 180);
+    }
+
+    function submitRoadmapItem(e) {
+        e.preventDefault();
+        const title = (document.getElementById('rm_title').value || '').trim();
+        if (!title) return false;
+
+        const btn = document.getElementById('rm_submit');
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+
+        const payload = {
+            title,
+            description: (document.getElementById('rm_description').value || '').trim(),
+            status: document.getElementById('rm_status').value,
+            responsible_id: document.getElementById('rm_responsible').value,
+            start_date: document.getElementById('rm_start').value,
+            end_date: document.getElementById('rm_end').value,
+        };
+        const url = roadmapModalMode === 'edit' && currentRoadmapItemId
+            ? `/projects/{{ project.id }}/roadmap/item/${currentRoadmapItemId}/update/`
+            : `/projects/{{ project.id }}/roadmap/add/`;
+
+        postJson(url, payload)
+            .then((data) => {
+                if (data && data.status === "ok") {
+                    upsertRoadmapItem(data.item || payload);
+                    renderRoadmapFlow();
+                    updateHeroProgressFromState();
+                }
+                closeRoadmapModal();
+            })
+            .catch((err) => {
+                alert(err.message || 'Erro');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.classList.remove('is-loading');
+            });
+
+        return false;
+    }
+
+    function rememberRoadmapSubtaskValue(input) {
+        input.dataset.originalValue = input.value || '';
+    }
+
+    function handleRoadmapSubtaskKeydown(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            event.target.blur();
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.target.value = event.target.dataset.originalValue || '';
+            event.target.blur();
+        }
+    }
+
+    function handleRoadmapSubtaskAddKeydown(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addRoadmapSubtask();
+        }
+    }
+
+    function addRoadmapSubtask() {
+        if (!currentRoadmapItemId) return;
+        const input = document.getElementById('rm_subtask_input');
+        const button = document.getElementById('rm_subtask_add_btn');
+        const description = (input.value || '').trim();
+        if (!description) return;
+
+        button.disabled = true;
+        postJson(`/projects/{{ project.id }}/roadmap/item/${currentRoadmapItemId}/subtasks/add/`, { description })
+            .then((data) => {
+                const item = findRoadmapItem(currentRoadmapItemId);
+                if (!item || !data || data.status !== 'ok') return;
+                item.subtasks.push(data.subtask);
+                normalizeRoadmapItem(item);
+                input.value = '';
+                renderRoadmapModalSubtasks();
+                renderRoadmapFlow();
+            })
+            .catch((err) => alert(err.message || 'Erro'))
+            .finally(() => { button.disabled = false; });
+    }
+
+    function saveRoadmapSubtaskDescription(subtaskId, input) {
+        if (!currentRoadmapItemId) return;
+        const item = findRoadmapItem(currentRoadmapItemId);
+        if (!item) return;
+        const subtask = item.subtasks.find((entry) => String(entry.id) === String(subtaskId));
+        if (!subtask) return;
+
+        const description = (input.value || '').trim();
+        if (!description) {
+            input.value = subtask.description || '';
+            return;
+        }
+        if (description === subtask.description) return;
+
+        input.disabled = true;
+        postJson(`/projects/{{ project.id }}/roadmap/item/${currentRoadmapItemId}/subtasks/${subtaskId}/update/`, { description })
+            .then((data) => {
+                subtask.description = data.subtask.description;
+                normalizeRoadmapItem(item);
+                renderRoadmapModalSubtasks();
+                renderRoadmapFlow();
+            })
+            .catch((err) => {
+                input.value = subtask.description || '';
+                alert(err.message || 'Erro');
+            })
+            .finally(() => { input.disabled = false; });
+    }
+
+    function toggleRoadmapSubtask(subtaskId, isDone) {
+        if (!currentRoadmapItemId) return;
+        const item = findRoadmapItem(currentRoadmapItemId);
+        if (!item) return;
+        const subtask = item.subtasks.find((entry) => String(entry.id) === String(subtaskId));
+        if (!subtask) return;
+
+        postJson(`/projects/{{ project.id }}/roadmap/item/${currentRoadmapItemId}/subtasks/${subtaskId}/toggle/`, { is_done: !!isDone })
+            .then((data) => {
+                subtask.is_done = !!data.subtask.is_done;
+                normalizeRoadmapItem(item);
+                renderRoadmapModalSubtasks();
+                renderRoadmapFlow();
+            })
+            .catch((err) => {
+                alert(err.message || 'Erro');
+                renderRoadmapModalSubtasks();
+            });
+    }
+
+    function deleteRoadmapSubtask(subtaskId) {
+        if (!currentRoadmapItemId) return;
+        const item = findRoadmapItem(currentRoadmapItemId);
+        if (!item) return;
+
+        postJson(`/projects/{{ project.id }}/roadmap/item/${currentRoadmapItemId}/subtasks/${subtaskId}/delete/`)
+            .then(() => {
+                item.subtasks = item.subtasks.filter((entry) => String(entry.id) !== String(subtaskId));
+                normalizeRoadmapItem(item);
+                renderRoadmapModalSubtasks();
+                renderRoadmapFlow();
+            })
+            .catch((err) => alert(err.message || 'Erro'));
+    }
+
+    function renderRoadmapSubtaskPreview(item) {
+        const subtasks = Array.isArray(item.subtasks) ? item.subtasks : [];
+        const pct = item.subtask_total ? Math.round((item.subtask_done / item.subtask_total) * 100) : 0;
+        if (!subtasks.length) {
+            return `
+                <div class="roadmap-card-checklist is-empty">
+                    <div class="roadmap-card-checklist-head">
+                        <span>Checklist</span>
+                        <strong>0/0</strong>
+                    </div>
+                    <div class="roadmap-card-subtask-empty">Sem subtarefas</div>
+                </div>
+            `;
+        }
+
+        const preview = subtasks.slice(0, 2).map((subtask) => `
+            <div class="roadmap-card-subtask ${subtask.is_done ? 'is-done' : ''}">
+                <span class="roadmap-card-subtask-mark">${subtask.is_done ? '&#10003;' : '&#9675;'}</span>
+                <span class="roadmap-card-subtask-label">${escapeHtml(subtask.description)}</span>
+            </div>
+        `).join('');
+        const remaining = Math.max(0, subtasks.length - 2);
+
+        return `
+            <div class="roadmap-card-checklist">
+                <div class="roadmap-card-checklist-head">
+                    <span>Checklist</span>
+                    <strong>${item.subtask_done}/${item.subtask_total}</strong>
+                </div>
+                <div class="roadmap-card-checklist-progress">
+                    <span class="roadmap-card-checklist-fill" style="width:${pct}%;"></span>
+                </div>
+                ${preview}
+                ${remaining ? `<div class="roadmap-card-subtask-more">+${remaining} restante(s)</div>` : ''}
+            </div>
+        `;
+    }
+
     function RoadmapCard(item) {
         if (item && item.isAddCard) {
             return `
@@ -243,7 +537,10 @@
 
         const isDone = item.status === "done";
         const desc = (item.description || "").trim();
-        const dates = `${fmtDate(item.start)} -> ${fmtDate(item.end)}`;
+        const responsible = (item.responsible_name || "").trim();
+        const hasStart = !!item.start;
+        const hasEnd = !!item.end;
+        const dates = hasStart || hasEnd ? `${fmtDate(item.start)} -> ${fmtDate(item.end)}` : "Sem prazo definido";
         return `
             <div class="roadmap-card ${isDone ? "is-done" : ""}" data-item-id="${item.id}">
                 <div class="roadmap-card-head">
@@ -251,29 +548,87 @@
                     <span class="roadmap-status s-${escapeHtml(item.status)}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
                 </div>
                 ${desc ? `<div class="roadmap-card-desc">${escapeHtml(desc)}</div>` : ``}
+                ${responsible ? `<div class="roadmap-card-owner">Responsavel: <strong>${escapeHtml(responsible)}</strong></div>` : ``}
+                ${renderRoadmapSubtaskPreview(item)}
                 <div class="roadmap-card-foot">
                     <div class="roadmap-card-dates">${escapeHtml(dates)}</div>
-                    <button class="roadmap-done-btn ${isDone ? "is-disabled" : ""}" type="button" ${isDone ? "disabled" : ""} onclick="concludeRoadmapItem('${item.id}')">Concluir</button>
+                    <div class="roadmap-card-actions">
+                        <button class="roadmap-edit-btn" type="button" onclick="openRoadmapModal('edit', '${item.id}')">Editar</button>
+                        <button class="roadmap-done-btn ${isDone ? "is-disabled" : ""}" type="button" ${isDone ? "disabled" : ""} onclick="concludeRoadmapItem('${item.id}')">Concluir</button>
+                    </div>
                 </div>
             </div>
         `;
     }
 
     function RoadmapRow(items, direction) {
-        const arrow = direction === "rtl" ? "&larr;" : "&rarr;";
         const nodes = [];
         items.forEach((it, idx) => {
             nodes.push(RoadmapCard(it));
             if (idx < items.length - 1) {
-                nodes.push(`<div class="roadmap-arrow a-${direction}" aria-hidden="true">${arrow}</div>`);
+                nodes.push(`
+                    <div class="roadmap-arrow a-${direction}" aria-hidden="true">
+                        <span class="roadmap-arrow-line"></span>
+                        <span class="roadmap-arrow-head"></span>
+                    </div>
+                `);
             }
         });
         return `<div class="roadmap-rowflow d-${direction}">${nodes.join("")}</div>`;
     }
 
     function RoadmapTurn(direction) {
-        // A small down arrow at the end of each row to indicate continuation to the next row.
-        return `<div class="roadmap-turn t-${direction}" aria-hidden="true">&darr;</div>`;
+        return `
+            <div class="roadmap-turn t-${direction}" aria-hidden="true">
+                <span class="roadmap-turn-corner"></span>
+                <span class="roadmap-turn-drop"></span>
+                <span class="roadmap-turn-dot"></span>
+            </div>
+        `;
+    }
+
+    function positionRoadmapTurns() {
+        const host = document.getElementById("roadmapFlow");
+        if (!host) return;
+
+        const hostRect = host.getBoundingClientRect();
+        const rows = Array.from(host.querySelectorAll(".roadmap-rowflow"));
+        const turns = Array.from(host.querySelectorAll(".roadmap-turn"));
+
+        turns.forEach((turn, idx) => {
+            const row = rows[idx];
+            const nextRow = rows[idx + 1];
+            if (!row) return;
+
+            const direction = row.classList.contains("d-rtl") ? "rtl" : "ltr";
+            const cards = Array.from(row.querySelectorAll(".roadmap-card"));
+            if (!cards.length) return;
+
+            const anchorCard = direction === "ltr" ? cards[cards.length - 1] : cards[0];
+            const anchorRect = anchorCard.getBoundingClientRect();
+            const rawAnchorX = direction === "ltr"
+                ? anchorRect.right - hostRect.left
+                : anchorRect.left - hostRect.left;
+            const anchorX = Math.max(12, Math.min(hostRect.width - 12, rawAnchorX));
+
+            const availableSpace = direction === "ltr"
+                ? Math.max(24, anchorX - 12)
+                : Math.max(24, hostRect.width - anchorX - 12);
+            const cornerWidth = Math.max(28, Math.min(58, Math.round(availableSpace * 0.26)));
+            const rowRect = row.getBoundingClientRect();
+            const nextRowRect = nextRow ? nextRow.getBoundingClientRect() : null;
+            const rowStyles = window.getComputedStyle(row);
+            const rowMarginBottom = parseFloat(rowStyles.marginBottom || "0") || 0;
+            const turnGap = nextRowRect
+                ? Math.max(44, Math.round(nextRowRect.top - rowRect.bottom - rowMarginBottom))
+                : 52;
+            const curveHeight = Math.max(18, Math.min(26, Math.round(turnGap * 0.42)));
+
+            turn.style.setProperty("--turn-anchor", `${Math.round(anchorX)}px`);
+            turn.style.setProperty("--turn-corner-width", `${cornerWidth}px`);
+            turn.style.setProperty("--turn-gap", `${turnGap}px`);
+            turn.style.setProperty("--turn-curve-height", `${curveHeight}px`);
+        });
     }
 
     function renderRoadmapFlow() {
@@ -297,6 +652,7 @@
         });
 
         host.innerHTML = blocks.join("");
+        positionRoadmapTurns();
 
         // Animate cards entrance
         requestAnimationFrame(() => {
@@ -331,13 +687,13 @@
             .then((data) => {
                 const idx = roadmapItems.findIndex(i => String(i.id) === id);
                 if (idx >= 0) roadmapItems[idx].status = "done";
-                card.classList.remove("is-busy");
-                card.classList.add("is-done");
-                card.classList.add("is-pulse");
-                const btn = card.querySelector(".roadmap-done-btn");
-                if (btn) { btn.disabled = true; btn.classList.add("is-disabled"); }
+                renderRoadmapFlow();
                 updateHeroProgress(data.done, data.total);
-                setTimeout(() => card.classList.remove("is-pulse"), 400);
+                const refreshedCard = document.querySelector(`.roadmap-card[data-item-id="${id}"]`);
+                if (refreshedCard) {
+                    refreshedCard.classList.add("is-pulse");
+                    setTimeout(() => refreshedCard.classList.remove("is-pulse"), 400);
+                }
             })
             .catch((err) => {
                 card.classList.remove("is-busy");
@@ -351,4 +707,5 @@
     });
 
     renderRoadmapFlow();
+    updateHeroProgressFromState();
 </script>

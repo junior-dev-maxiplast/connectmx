@@ -188,14 +188,27 @@
                         <div>Espaco: queda rapida</div>
                         <div>Esc: sair</div>
                     </div>
+                    <div class="tetris-leaderboard">
+                        <div class="tetris-leaderboard-head">
+                            <span>Highscores</span>
+                            <button type="button" class="tetris-refresh-btn" onclick="refreshTetrisLeaderboard(true)">Atualizar</button>
+                        </div>
+                        <div id="tetrisLeaderboardList" class="tetris-leaderboard-list"></div>
+                        <div id="tetrisPersonalBest" class="tetris-personal-best"></div>
+                    </div>
                 </div>
             </div>
             <div id="tetrisGameOver" class="tetris-gameover" style="display:none;">
-                <div class="tetris-gameover-title">Game Over</div>
+                <div class="tetris-gameover-copy">
+                    <div class="tetris-gameover-title">Game Over</div>
+                    <div id="tetrisSaveFeedback" class="tetris-save-feedback"></div>
+                </div>
                 <button type="button" class="queue-primary-btn" onclick="restartTetris()">Jogar novamente</button>
             </div>
         </div>
     </div>
+    {{ tetris_highscores|json_script:"tetrisLeaderboardSeed" }}
+    {{ tetris_personal_best|json_script:"tetrisPersonalBestSeed" }}
 </body>
 
 <script>
@@ -208,6 +221,25 @@
             }
         }
         return null;
+    }
+
+    function parseJsonScript(id, fallbackValue) {
+        const node = document.getElementById(id);
+        if (!node) return fallbackValue;
+        try {
+            return JSON.parse(node.textContent || "");
+        } catch (err) {
+            return fallbackValue;
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
     }
 
     function normalizeCategory(value) {
@@ -310,6 +342,8 @@
         "ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown",
         "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "b", "a"
     ];
+    let tetrisLeaderboard = parseJsonScript("tetrisLeaderboardSeed", []);
+    let tetrisPersonalBest = parseJsonScript("tetrisPersonalBestSeed", null);
     let konamiBuffer = [];
     let tetrisRunning = false;
     let tetrisAnimationId = null;
@@ -321,6 +355,8 @@
     let tetrisScore = 0;
     let tetrisLines = 0;
     let tetrisLevel = 1;
+    let tetrisScoreSubmitted = false;
+    let tetrisSubmittingScore = false;
     const TETRIS_COLS = 10;
     const TETRIS_ROWS = 20;
     const TETRIS_BLOCK = 24;
@@ -350,6 +386,107 @@
             konamiBuffer = [];
             openTetrisModal();
         }
+    }
+
+    function setTetrisFeedback(message, tone = "info") {
+        const feedback = document.getElementById("tetrisSaveFeedback");
+        if (!feedback) return;
+        feedback.className = `tetris-save-feedback is-${tone}`;
+        feedback.textContent = String(message || "").trim();
+    }
+
+    function renderTetrisLeaderboard() {
+        const listEl = document.getElementById("tetrisLeaderboardList");
+        const personalEl = document.getElementById("tetrisPersonalBest");
+        if (listEl) {
+            if (!Array.isArray(tetrisLeaderboard) || !tetrisLeaderboard.length) {
+                listEl.innerHTML = '<div class="tetris-empty">Nenhum recorde salvo ainda.</div>';
+            } else {
+                listEl.innerHTML = tetrisLeaderboard.map((entry) => `
+                    <div class="tetris-rank-row ${entry.is_current_user ? "is-self" : ""}">
+                        <div class="tetris-rank-main">
+                            <span class="tetris-rank-pos">#${entry.rank}</span>
+                            <span class="tetris-rank-name">${escapeHtml(entry.user_name)}</span>
+                        </div>
+                        <div class="tetris-rank-score">${entry.score}</div>
+                        <div class="tetris-rank-meta">${entry.lines}L / Nv ${entry.level}</div>
+                    </div>
+                `).join("");
+            }
+        }
+        if (personalEl) {
+            personalEl.innerHTML = tetrisPersonalBest
+                ? `Seu recorde: <strong>${tetrisPersonalBest.score}</strong> pontos, ${tetrisPersonalBest.lines} linhas, nivel ${tetrisPersonalBest.level}`
+                : "Seu recorde: nenhuma pontuacao registrada ainda.";
+        }
+    }
+
+    function refreshTetrisLeaderboard(showFeedback = false) {
+        return fetch("/hub/tetris/highscores/", {
+            method: "GET",
+            credentials: "same-origin",
+            headers: {
+                "Accept": "application/json",
+            },
+        })
+            .then(async (response) => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Falha ao atualizar o ranking.");
+                }
+                tetrisLeaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+                tetrisPersonalBest = data.personal_best || null;
+                renderTetrisLeaderboard();
+                if (showFeedback) setTetrisFeedback("Ranking atualizado.", "info");
+            })
+            .catch((err) => {
+                if (showFeedback) {
+                    setTetrisFeedback(err && err.message ? err.message : "Falha ao atualizar o ranking.", "error");
+                }
+            });
+    }
+
+    function submitTetrisScore() {
+        if (tetrisScoreSubmitted || tetrisSubmittingScore || tetrisScore <= 0) return;
+        tetrisScoreSubmitted = true;
+        tetrisSubmittingScore = true;
+        setTetrisFeedback("Salvando highscore...", "info");
+
+        fetch("/hub/tetris/highscores/submit/", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCookie("csrftoken") || "",
+            },
+            body: JSON.stringify({
+                score: tetrisScore,
+                lines: tetrisLines,
+                level: tetrisLevel,
+            }),
+        })
+            .then(async (response) => {
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data || data.status !== "ok") {
+                    throw new Error((data && data.message) || "Falha ao salvar highscore.");
+                }
+                tetrisLeaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+                tetrisPersonalBest = data.personal_best || null;
+                renderTetrisLeaderboard();
+                setTetrisFeedback(
+                    data.saved
+                        ? "Novo recorde pessoal salvo no ranking."
+                        : "Partida encerrada. Seu recorde atual foi mantido.",
+                    data.saved ? "success" : "info"
+                );
+            })
+            .catch((err) => {
+                tetrisScoreSubmitted = false;
+                setTetrisFeedback(err && err.message ? err.message : "Falha ao salvar highscore.", "error");
+            })
+            .finally(() => {
+                tetrisSubmittingScore = false;
+            });
     }
 
     function createMatrix(w, h) {
@@ -516,6 +653,7 @@
         if (tetrisAnimationId) cancelAnimationFrame(tetrisAnimationId);
         const over = document.getElementById("tetrisGameOver");
         if (over) over.style.display = "flex";
+        submitTetrisScore();
     }
 
     function restartTetris() {
@@ -523,11 +661,15 @@
         tetrisScore = 0;
         tetrisLines = 0;
         tetrisLevel = 1;
+        tetrisScoreSubmitted = false;
+        tetrisSubmittingScore = false;
         tetrisDropInterval = 700;
         tetrisDropCounter = 0;
         tetrisLastTime = 0;
         const over = document.getElementById("tetrisGameOver");
         if (over) over.style.display = "none";
+        setTetrisFeedback("", "info");
+        renderTetrisLeaderboard();
         resetPlayer();
         updateTetrisHud();
         tetrisRunning = true;
@@ -554,6 +696,8 @@
         const overlay = document.getElementById("tetrisOverlay");
         if (!overlay) return;
         overlay.style.display = "flex";
+        renderTetrisLeaderboard();
+        refreshTetrisLeaderboard();
         restartTetris();
         document.addEventListener("keydown", handleTetrisKey);
     }
@@ -564,8 +708,10 @@
         tetrisRunning = false;
         if (tetrisAnimationId) cancelAnimationFrame(tetrisAnimationId);
         document.removeEventListener("keydown", handleTetrisKey);
+        setTetrisFeedback("", "info");
     }
 
     document.addEventListener("keydown", onHubKonami);
     applyHubFilters();
+    renderTetrisLeaderboard();
 </script>

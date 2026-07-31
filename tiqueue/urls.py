@@ -15,12 +15,20 @@ urlpatterns = [
     path('queue/user/delete/<int:id>', views.deleteQueueItem, name='deleteQueueItem'),
     path('queue/user/end/<int:id>', views.endQueueItem, name='endQueueItem'),
     path('queue/user/list/', views.listQueueUpdate, name='listQueueUpdate'),
+    path('queue/user/properties/', views.queueUserPropertyPayloadData, name='queueUserPropertyPayloadData'),
     path('queue/user/item/<int:id>/', views.queueItemDetails, name='queueItemDetails'),
     path('queue/user/create-inline/', views.createQueueItemInline, name='createQueueItemInline'),
     path('queue/user/update/<int:id>/', views.updateQueueItem, name='updateQueueItem'),
+    path('queue/user/gantt-range/<int:id>/', views.updateQueueGanttRange, name='updateQueueGanttRange'),
     path('queue/user/current/<int:id>/', views.toggleCurrentTask, name='toggleCurrentTask'),
     path('queue/user/custom-columns/create/', views.createUserQueueCustomColumn, name='createUserQueueCustomColumn'),
+    path('queue/user/custom-columns/<int:column_id>/options/create/', views.createUserQueueCustomColumnOption, name='createUserQueueCustomColumnOption'),
+    path('queue/user/custom-columns/options/<int:option_id>/delete/', views.deleteUserQueueCustomColumnOption, name='deleteUserQueueCustomColumnOption'),
+    path('queue/user/field-options/create/', views.createUserQueueFieldOption, name='createUserQueueFieldOption'),
+    path('queue/user/field-options/<int:option_id>/delete/', views.deleteUserQueueFieldOption, name='deleteUserQueueFieldOption'),
     path('queue/user/custom-value/<int:id>/', views.setUserQueueCustomValue, name='setUserQueueCustomValue'),
+    path('queue/user/views/save/', views.saveUserQueueView, name='saveUserQueueView'),
+    path('queue/user/views/<int:view_id>/delete/', views.deleteUserQueueView, name='deleteUserQueueView'),
     path('queue/user/task-type/quick-create/', views.createTaskTypeQuick, name='createTaskTypeQuick'),
     path('queue/user/sync-sm/', views.syncQueueWithSM, name='syncQueueWithSM'),
     path('queue/user/link-project/<int:id>/', views.linkQueueItemToProject, name='linkQueueItemToProject'),
@@ -45,6 +53,10 @@ urlpatterns = [
     path('hub/tools/', views.manageHubTools, name='manageHubTools')
     ,
     path('hub/tools/quick-add/', views.hubQuickAddItem, name='hubQuickAddItem')
+    ,
+    path('hub/tetris/highscores/', views.maxiTetrisHighscores, name='maxiTetrisHighscores')
+    ,
+    path('hub/tetris/highscores/submit/', views.maxiTetrisSubmitScore, name='maxiTetrisSubmitScore')
     ,
     path('hub/tools/general/', views.manageHubTools, name='manageHubToolsGeneral')
     ,
@@ -101,7 +113,12 @@ urlpatterns = [
     path('projects/<int:project_id>/board/', views.projectBoard, name='projectBoard'),
     path('projects/<int:project_id>/roadmap/', views.projectRoadmapView, name='projectRoadmapView'),
     path('projects/<int:project_id>/roadmap/add/', views.projectRoadmapItemCreate, name='projectRoadmapItemCreate'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/update/', views.projectRoadmapItemUpdate, name='projectRoadmapItemUpdate'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/done/', views.projectRoadmapItemConclude, name='projectRoadmapItemConclude'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/add/', views.projectRoadmapSubtaskCreate, name='projectRoadmapSubtaskCreate'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/<int:subtask_id>/update/', views.projectRoadmapSubtaskUpdate, name='projectRoadmapSubtaskUpdate'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/<int:subtask_id>/toggle/', views.projectRoadmapSubtaskToggle, name='projectRoadmapSubtaskToggle'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/<int:subtask_id>/delete/', views.projectRoadmapSubtaskDelete, name='projectRoadmapSubtaskDelete'),
     path('projects/<int:project_id>/card/create/', views.projectCardCreate, name='projectCardCreate'),
     path('projects/card/<int:card_id>/move/', views.projectCardMove, name='projectCardMove'),
     path('projects/card/<int:card_id>/delete/', views.projectCardDelete, name='projectCardDelete')

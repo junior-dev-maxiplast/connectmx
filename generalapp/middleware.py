@@ -14,6 +14,7 @@ class RequireLoginMiddleware:
 
     EXEMPT_PREFIXES = (
         "/main/login/",
+        "/main/forgot-password/",
         "/accounts/login/",
         "/main/logout/",
         "/admin/login/",

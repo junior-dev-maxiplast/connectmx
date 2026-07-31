@@ -70,6 +70,24 @@
                                 {% endfor %}
                             </select>
                         </div>
+
+                        <div class="project-meta-item demand-detail-item demand-detail-item-full">
+                            <label for="demandDetailExtraCollaborators" class="project-meta-label">Colaboradores extras</label>
+                            <select id="demandDetailExtraCollaborators" name="extra_collaborators" multiple style="display:none;">
+                                {% for u in collaborator_users %}
+                                    <option value="{{ u.id }}" {% if u.id in selected_collaborator_ids %}selected{% endif %}>
+                                        {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <div class="project-participant-picker queue-collaborator-picker" data-target-select="demandDetailExtraCollaborators">
+                                {% for u in collaborator_users %}
+                                    <button type="button" class="project-participant-card {% if u.id in selected_collaborator_ids %}is-selected{% endif %}" data-user-id="{{ u.id }}">
+                                        {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -240,6 +258,44 @@
 
         groupSelect.addEventListener("change", apply);
         apply();
+    })();
+
+    (function initDemandCollaboratorPicker() {
+        const pickers = document.querySelectorAll(".queue-collaborator-picker[data-target-select]");
+        if (!pickers.length) return;
+
+        const syncPicker = (selectId) => {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            const selected = new Set(
+                Array.from(select.options || [])
+                    .filter((option) => option.selected)
+                    .map((option) => String(option.value))
+            );
+            document.querySelectorAll(`.queue-collaborator-picker[data-target-select="${selectId}"] .project-participant-card`).forEach((card) => {
+                card.classList.toggle("is-selected", selected.has(String(card.dataset.userId || "")));
+            });
+        };
+
+        pickers.forEach((picker) => {
+            const selectId = String(picker.dataset.targetSelect || "");
+            const select = document.getElementById(selectId);
+            if (!select) return;
+
+            picker.querySelectorAll(".project-participant-card[data-user-id]").forEach((card) => {
+                card.addEventListener("click", () => {
+                    const value = String(card.dataset.userId || "");
+                    Array.from(select.options || []).forEach((option) => {
+                        if (String(option.value) === value) {
+                            option.selected = !option.selected;
+                        }
+                    });
+                    syncPicker(selectId);
+                });
+            });
+
+            syncPicker(selectId);
+        });
     })();
 
     function copyPredictedToRealOnDemandDetail() {

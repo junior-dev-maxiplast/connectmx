@@ -6,6 +6,7 @@ from django.db.models import Max
 
 def userQueueSaveInDatabase(request, data):
     user_code = request.user.userId
+    extra_collaborators = data.pop("extra_collaborators", None)
     updatedPosition = (
         userQueue.objects.filter(user_code=user_code).aggregate(max_pos=Max("n_queue_position")).get("max_pos") or 0
     )
@@ -13,7 +14,9 @@ def userQueueSaveInDatabase(request, data):
     data['n_queue_position'] = updatedPosition
     data['kanban_sort_order'] = updatedPosition
     data['user_code'] = user_code
-    userQueue.objects.create(**data)
+    item = userQueue.objects.create(**data)
+    if extra_collaborators is not None:
+        item.extra_collaborators.set(extra_collaborators)
 
 def moveQueueItemUp(request, ref_id):
     with transaction.atomic():
@@ -71,7 +74,8 @@ def endQueueItem(request, ref_id):
 
         data = {field_name: getattr(objectCurrent, field_name) for field_name in allowed_fields}
 
-        concludedTasks.objects.create(**data)
+        concluded = concludedTasks.objects.create(**data)
+        concluded.extra_collaborators.set(objectCurrent.extra_collaborators.all())
 
         objectCurrent.delete()
 
