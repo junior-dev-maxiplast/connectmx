@@ -1,0 +1,98 @@
+<section class="support-card support-admin-nav-shell">
+    <div class="support-card-head support-admin-nav-head">
+        <div>
+            <span class="support-kicker">Gestão do portal</span>
+            <h2>{{ portal_admin_page_title }}</h2>
+        </div>
+        <div class="queue-toolbar">
+            <a href="{% url 'portalDemandPage' %}" class="queue-secondary-btn">Início do portal</a>
+        </div>
+    </div>
+
+    <div class="support-admin-nav-links">
+        <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'pending' %} is-active{% endif %}">Fila pendente</a>
+        <a href="{% url 'portalRequesterAdminPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'requesters' %} is-active{% endif %}">Solicitantes</a>
+        <a href="{% url 'portalDemandFieldsConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'fields' %} is-active{% endif %}">Campos de abertura</a>
+        <a href="{% url 'portalDemandSlaConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'sla' %} is-active{% endif %}">SLA e metas</a>
+        <a href="{% url 'portalDemandResponsesConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'responses' %} is-active{% endif %}">Respostas prontas</a>
+    </div>
+
+    {% if can_manage and portal_admin_overview %}
+        <section class="support-admin-alert-shell">
+            <div class="support-admin-alert-metrics">
+                <article class="support-admin-alert-metric is-critical">
+                    <span>Cr&iacute;ticas</span>
+                    <strong>{{ portal_admin_overview.critical_count }}</strong>
+                    <small>Com SLA de resposta vencido</small>
+                </article>
+                <article class="support-admin-alert-metric is-warning">
+                    <span>Alta aten&ccedil;&atilde;o</span>
+                    <strong>{{ portal_admin_overview.high_attention_count }}</strong>
+                    <small>Cr&iacute;ticas ou vencendo em at&eacute; 1 hora</small>
+                </article>
+                <article class="support-admin-alert-metric">
+                    <span>Pendentes</span>
+                    <strong>{{ portal_admin_overview.pending_count }}</strong>
+                    <small>Aguardando assumir</small>
+                </article>
+                <article class="support-admin-alert-metric">
+                    <span>Em atendimento</span>
+                    <strong>{{ portal_admin_overview.assumed_count }}</strong>
+                    <small>J&aacute; com atendente vinculado</small>
+                </article>
+            </div>
+
+            <div class="support-admin-alert-panel">
+                <div class="support-admin-alert-panel-head">
+                    <div>
+                        <span class="support-kicker">Radar operacional</span>
+                        <h3>{{ portal_admin_overview.spotlight_title }}</h3>
+                    </div>
+                    <div class="support-admin-alert-panel-actions">
+                        <a href="{{ portal_admin_overview.critical_queue_url }}" class="support-btn support-btn-secondary">Ver cr&iacute;ticas</a>
+                        <a href="{{ portal_admin_overview.attention_queue_url }}" class="support-btn support-btn-secondary">Ver alta aten&ccedil;&atilde;o</a>
+                    </div>
+                </div>
+
+                {% if portal_admin_overview.spotlight_demands %}
+                    <div class="support-admin-alert-list">
+                        {% for demand in portal_admin_overview.spotlight_demands %}
+                            <article class="support-admin-alert-item">
+                                <div class="support-admin-alert-copy">
+                                    <div class="support-admin-alert-copy-head">
+                                        <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
+                                        <span class="support-chip {{ demand.triage_css }}">{{ demand.triage_label }}</span>
+                                        <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                                    </div>
+                                    <strong>{{ demand.title }}</strong>
+                                    <small>
+                                        {{ demand.requester_display }}
+                                        {% if demand.assigned_display != "-" %} · Respons&aacute;vel: {{ demand.assigned_display }}{% endif %}
+                                        · {{ demand.sla_next_label }} at&eacute; {{ demand.sla_next_display }}
+                                    </small>
+                                </div>
+                                <div class="support-admin-alert-actions">
+                                    {% if demand.status == 'pending' %}
+                                        <form method="POST" action="{% url 'portalDemandAssume' demand.id %}" class="support-inline-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="next" value="{{ demand.detail_url }}">
+                                            <button type="submit" class="queue-primary-btn">Assumir agora</button>
+                                        </form>
+                                    {% endif %}
+                                    <a href="{{ demand.detail_url }}" class="{% if demand.status == 'pending' %}queue-secondary-btn{% else %}queue-primary-btn{% endif %}">
+                                        {% if demand.status == 'pending' %}Abrir demanda{% else %}Abrir atendimento{% endif %}
+                                    </a>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="support-empty compact">
+                        <strong>Nada cr&iacute;tico por aqui</strong>
+                        <span>{{ portal_admin_overview.spotlight_empty }}</span>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+    {% endif %}
+</section>

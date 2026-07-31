@@ -1,0 +1,261 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Respostas do Portal</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body support-admin-queue-body">
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main support-admin-page support-admin-queue-page">
+        {% include 'tiqueue/partials/portal_admin_nav.html' %}
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+        {% if canned_created_flag %}
+            <div class="support-banner is-success">Resposta pronta criada com sucesso.</div>
+        {% endif %}
+        {% if canned_updated_flag %}
+            <div class="support-banner is-success">Resposta pronta atualizada com sucesso.</div>
+        {% endif %}
+        {% if canned_toggled_flag %}
+            <div class="support-banner is-success">Status da resposta atualizado com sucesso.</div>
+        {% endif %}
+
+        {% if can_manage %}
+            <section class="queue-dashboard support-pending-dashboard">
+                <article class="queue-dashboard-card support-pending-metric is-highlight">
+                    <span class="queue-dashboard-label">Respostas prontas</span>
+                    <strong class="queue-dashboard-value">{{ summary.canned_responses }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Pendentes</span>
+                    <strong class="queue-dashboard-value">{{ summary.pending }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Campos</span>
+                    <strong class="queue-dashboard-value">{{ summary.custom_fields }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">SLA</span>
+                    <strong class="queue-dashboard-value">{{ summary.sla_policies }}</strong>
+                </article>
+            </section>
+
+            <section id="portal-canned-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Atendimento padronizado</span>
+                        <h2>{% if editing_canned_response %}Editar resposta pronta{% else %}Biblioteca de respostas{% endif %}</h2>
+                    </div>
+                    {% if editing_canned_response %}
+                        <a href="{% url 'portalDemandResponsesConfigPage' %}" class="support-btn support-btn-secondary">Cancelar edi&ccedil;&atilde;o</a>
+                    {% endif %}
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_canned_response %}update_canned{% else %}create_canned{% endif %}">
+                    {% if editing_canned_response %}
+                        <input type="hidden" name="canned_id" value="{{ editing_canned_response.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ canned_response_form.title.id_for_label }}">{{ canned_response_form.title.label }}</label>
+                            {{ canned_response_form.title }}
+                            {% if canned_response_form.title.errors %}<div class="support-field-error">{{ canned_response_form.title.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ canned_response_form.task_group.id_for_label }}">{{ canned_response_form.task_group.label }}</label>
+                            {{ canned_response_form.task_group }}
+                            {% if canned_response_form.task_group.errors %}<div class="support-field-error">{{ canned_response_form.task_group.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ canned_response_form.task_type.id_for_label }}">{{ canned_response_form.task_type.label }}</label>
+                            {{ canned_response_form.task_type }}
+                            {% if canned_response_form.task_type.errors %}<div class="support-field-error">{{ canned_response_form.task_type.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ canned_response_form.message.id_for_label }}">{{ canned_response_form.message.label }}</label>
+                            {{ canned_response_form.message }}
+                            {% if canned_response_form.message.errors %}<div class="support-field-error">{{ canned_response_form.message.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox">
+                            {{ canned_response_form.suggest_internal }}
+                            <span>{{ canned_response_form.suggest_internal.label }}</span>
+                        </label>
+                        <label class="support-inline-checkbox">
+                            {{ canned_response_form.is_active }}
+                            <span>{{ canned_response_form.is_active.label }}</span>
+                        </label>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">
+                            {% if editing_canned_response %}Salvar altera&ccedil;&otilde;es{% else %}Salvar resposta{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            {% if canned_responses %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Consulta</span>
+                            <h2>Explorar respostas cadastradas</h2>
+                        </div>
+                    </div>
+
+                    <div class="support-config-toolbar">
+                        <input id="portalResponseSearch" type="search" class="support-portal-search" placeholder="Buscar por t&iacute;tulo, conte&uacute;do ou autor...">
+                        <select id="portalResponseStatusFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os status</option>
+                            <option value="ativa">Ativas</option>
+                            <option value="inativa">Inativas</option>
+                        </select>
+                        <select id="portalResponseGroupFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os grupos</option>
+                            {% for canned in canned_responses %}
+                                {% if canned.task_group %}
+                                    <option value="{{ canned.task_group.name|lower }}">{{ canned.task_group.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="support-config-toolbar">
+                        <select id="portalResponseKindFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os tipos</option>
+                            <option value="publica">P&uacute;blicas</option>
+                            <option value="interna">Internas</option>
+                        </select>
+                    </div>
+
+                    <div class="support-toolbar-meta">
+                        <span id="portalResponseVisibleCount">{{ canned_responses|length }}</span>
+                        <span>resposta(s) vis&iacute;vel(is)</span>
+                    </div>
+
+                    <section id="portalResponseList" class="support-card-list">
+                        {% for canned in canned_responses %}
+                            <article
+                                class="support-config-card{% if editing_canned_response and editing_canned_response.id == canned.id %} is-active-edit{% endif %}"
+                                data-response-card
+                                data-title="{{ canned.title|lower }}"
+                                data-message="{{ canned.message|lower }}"
+                                data-group="{% if canned.task_group %}{{ canned.task_group.name|lower }}{% endif %}"
+                                data-kind="{% if canned.suggest_internal %}interna{% else %}publica{% endif %}"
+                                data-status="{% if canned.is_active %}ativa{% else %}inativa{% endif %}"
+                                data-author="{% if canned.created_by %}{{ canned.created_by.nameUser|default:canned.created_by.username|lower }}{% endif %}"
+                            >
+                                <div class="support-config-card-head">
+                                    <strong>{{ canned.title }}</strong>
+                                    <span class="support-chip {% if canned.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if canned.is_active %}Ativa{% else %}Inativa{% endif %}
+                                    </span>
+                                </div>
+                                <p>{{ canned.message }}</p>
+                                <div class="support-inline-pills">
+                                    <span class="support-meta-pill">{% if canned.task_group %}{{ canned.task_group.name }}{% else %}Todos os grupos{% endif %}</span>
+                                    <span class="support-meta-pill">{% if canned.task_type %}{{ canned.task_type.name }}{% else %}Todos os tipos{% endif %}</span>
+                                    <span class="support-meta-pill">{% if canned.suggest_internal %}Sugere nota interna{% else %}Resposta p&uacute;blica{% endif %}</span>
+                                </div>
+                                <div class="support-config-card-stats">
+                                    <span>Criada por: {% if canned.created_by %}{{ canned.created_by.nameUser|default:canned.created_by.username }}{% else %}-{% endif %}</span>
+                                    <span>Ordem: {{ canned.sort_order }}</span>
+                                </div>
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalDemandResponsesConfigPage' %}?edit={{ canned.id }}#portal-canned-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_canned">
+                                        <input type="hidden" name="canned_id" value="{{ canned.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if canned.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% else %}
+                <div class="support-empty compact">
+                    <strong>Nenhuma resposta pronta cadastrada</strong>
+                    <span>Monte aqui os textos mais usados para responder com mais agilidade e consist&ecirc;ncia.</span>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <script>
+        (function() {
+            const list = document.getElementById("portalResponseList");
+            if (!list) return;
+
+            const rows = Array.from(list.querySelectorAll("[data-response-card]"));
+            const searchInput = document.getElementById("portalResponseSearch");
+            const statusFilter = document.getElementById("portalResponseStatusFilter");
+            const groupFilter = document.getElementById("portalResponseGroupFilter");
+            const kindFilter = document.getElementById("portalResponseKindFilter");
+            const visibleCount = document.getElementById("portalResponseVisibleCount");
+
+            const seenGroups = new Set();
+            if (groupFilter) {
+                Array.from(groupFilter.options).forEach((option) => {
+                    if (!option.value) return;
+                    if (seenGroups.has(option.value)) {
+                        option.remove();
+                    } else {
+                        seenGroups.add(option.value);
+                    }
+                });
+            }
+
+            function matches(row) {
+                const query = (searchInput?.value || "").trim().toLowerCase();
+                const status = (statusFilter?.value || "").trim().toLowerCase();
+                const group = (groupFilter?.value || "").trim().toLowerCase();
+                const kind = (kindFilter?.value || "").trim().toLowerCase();
+
+                const haystack = [
+                    row.dataset.title || "",
+                    row.dataset.message || "",
+                    row.dataset.author || "",
+                ].join(" ");
+                if (query && !haystack.includes(query)) return false;
+                if (status && (row.dataset.status || "") !== status) return false;
+                if (group && (row.dataset.group || "") !== group) return false;
+                if (kind && (row.dataset.kind || "") !== kind) return false;
+                return true;
+            }
+
+            function render() {
+                let total = 0;
+                rows.forEach((row) => {
+                    const show = matches(row);
+                    row.style.display = show ? "" : "none";
+                    if (show) total += 1;
+                });
+                if (visibleCount) visibleCount.textContent = String(total);
+            }
+
+            [searchInput, statusFilter, groupFilter, kindFilter].forEach((node) => {
+                if (!node) return;
+                node.addEventListener("input", render);
+                node.addEventListener("change", render);
+            });
+
+            render();
+        })();
+    </script>
+</body>
+</html>

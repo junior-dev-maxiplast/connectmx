@@ -1,0 +1,365 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Solicitantes do Portal</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body support-admin-queue-body">
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main support-admin-page support-admin-queue-page">
+        {% include 'tiqueue/partials/portal_admin_nav.html' %}
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+        {% if sector_created_flag %}
+            <div class="support-banner is-success">Setor cadastrado com sucesso.</div>
+        {% endif %}
+        {% if sector_updated_flag %}
+            <div class="support-banner is-success">Setor atualizado com sucesso.</div>
+        {% endif %}
+        {% if sector_toggled_flag %}
+            <div class="support-banner is-success">Status do setor atualizado com sucesso.</div>
+        {% endif %}
+        {% if collaborator_created_flag %}
+            <div class="support-banner is-success">Colaborador cadastrado com sucesso.</div>
+        {% endif %}
+        {% if collaborator_updated_flag %}
+            <div class="support-banner is-success">Colaborador atualizado com sucesso.</div>
+        {% endif %}
+        {% if collaborator_toggled_flag %}
+            <div class="support-banner is-success">Status do colaborador atualizado com sucesso.</div>
+        {% endif %}
+        {% if account_created_flag %}
+            <div class="support-banner is-success">Usu&aacute;rio do portal criado com sucesso.</div>
+        {% endif %}
+        {% if account_updated_flag %}
+            <div class="support-banner is-success">Usu&aacute;rio do portal atualizado com sucesso.</div>
+        {% endif %}
+        {% if account_toggled_flag %}
+            <div class="support-banner is-success">Status do acesso do portal atualizado com sucesso.</div>
+        {% endif %}
+
+        {% if can_manage %}
+            <section class="queue-dashboard support-pending-dashboard">
+                <article class="queue-dashboard-card support-pending-metric is-highlight">
+                    <span class="queue-dashboard-label">Setores</span>
+                    <strong class="queue-dashboard-value">{{ summary.active_sectors }}/{{ summary.sectors }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Colaboradores</span>
+                    <strong class="queue-dashboard-value">{{ summary.active_collaborators }}/{{ summary.collaborators }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Acessos ativos</span>
+                    <strong class="queue-dashboard-value">{{ summary.active_accounts }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Usu&aacute;rios portal</span>
+                    <strong class="queue-dashboard-value">{{ summary.accounts }}</strong>
+                </article>
+            </section>
+
+            <section id="portal-requester-sector-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Passo 1</span>
+                        <h2>{% if editing_sector %}Editar setor{% else %}Cadastrar setor{% endif %}</h2>
+                    </div>
+                    {% if editing_sector %}
+                        <a href="{% url 'portalRequesterAdminPage' %}#portal-requester-sector-form" class="support-btn support-btn-secondary">Cancelar edi&ccedil;&atilde;o</a>
+                    {% endif %}
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_sector %}update_sector{% else %}create_sector{% endif %}">
+                    {% if editing_sector %}
+                        <input type="hidden" name="sector_id" value="{{ editing_sector.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field">
+                            <label for="{{ sector_form.name.id_for_label }}">{{ sector_form.name.label }}</label>
+                            {{ sector_form.name }}
+                            {% if sector_form.name.errors %}<div class="support-field-error">{{ sector_form.name.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox">
+                            {{ sector_form.is_active }}
+                            <span>{{ sector_form.is_active.label }}</span>
+                        </label>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ sector_form.description.id_for_label }}">{{ sector_form.description.label }}</label>
+                            {{ sector_form.description }}
+                            {% if sector_form.description.errors %}<div class="support-field-error">{{ sector_form.description.errors|join:", " }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">{% if editing_sector %}Salvar setor{% else %}Adicionar setor{% endif %}</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if sectors %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Estrutura</span>
+                            <h2>Setores cadastrados</h2>
+                        </div>
+                    </div>
+                    <section class="support-card-list">
+                        {% for sector in sectors %}
+                            <article class="support-config-card{% if editing_sector and editing_sector.id == sector.id %} is-active-edit{% endif %}">
+                                <div class="support-config-card-head">
+                                    <strong>{{ sector.name }}</strong>
+                                    <span class="support-chip {% if sector.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if sector.is_active %}Ativo{% else %}Inativo{% endif %}
+                                    </span>
+                                </div>
+                                <p>{{ sector.description|default:"Sem descri&ccedil;&atilde;o adicional." }}</p>
+                                <div class="support-config-card-stats">
+                                    <span>{{ sector.collaborator_total }} colaborador(es)</span>
+                                    <span>{{ sector.active_collaborator_total }} ativo(s)</span>
+                                </div>
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalRequesterAdminPage' %}?edit_sector={{ sector.id }}#portal-requester-sector-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_sector">
+                                        <input type="hidden" name="sector_id" value="{{ sector.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if sector.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% endif %}
+
+            <section id="portal-requester-collaborator-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Passo 2</span>
+                        <h2>{% if editing_collaborator %}Editar colaborador{% else %}Cadastrar colaborador{% endif %}</h2>
+                    </div>
+                    {% if editing_collaborator %}
+                        <a href="{% url 'portalRequesterAdminPage' %}#portal-requester-collaborator-form" class="support-btn support-btn-secondary">Cancelar edi&ccedil;&atilde;o</a>
+                    {% endif %}
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_collaborator %}update_collaborator{% else %}create_collaborator{% endif %}">
+                    {% if editing_collaborator %}
+                        <input type="hidden" name="collaborator_id" value="{{ editing_collaborator.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.sector.id_for_label }}">{{ collaborator_form.sector.label }}</label>
+                            {{ collaborator_form.sector }}
+                            {% if collaborator_form.sector.errors %}<div class="support-field-error">{{ collaborator_form.sector.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.full_name.id_for_label }}">{{ collaborator_form.full_name.label }}</label>
+                            {{ collaborator_form.full_name }}
+                            {% if collaborator_form.full_name.errors %}<div class="support-field-error">{{ collaborator_form.full_name.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.registration_code.id_for_label }}">{{ collaborator_form.registration_code.label }}</label>
+                            {{ collaborator_form.registration_code }}
+                            {% if collaborator_form.registration_code.errors %}<div class="support-field-error">{{ collaborator_form.registration_code.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.email.id_for_label }}">{{ collaborator_form.email.label }}</label>
+                            {{ collaborator_form.email }}
+                            {% if collaborator_form.email.errors %}<div class="support-field-error">{{ collaborator_form.email.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.role_title.id_for_label }}">{{ collaborator_form.role_title.label }}</label>
+                            {{ collaborator_form.role_title }}
+                            {% if collaborator_form.role_title.errors %}<div class="support-field-error">{{ collaborator_form.role_title.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ collaborator_form.phone.id_for_label }}">{{ collaborator_form.phone.label }}</label>
+                            {{ collaborator_form.phone }}
+                            {% if collaborator_form.phone.errors %}<div class="support-field-error">{{ collaborator_form.phone.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ collaborator_form.notes.id_for_label }}">{{ collaborator_form.notes.label }}</label>
+                            {{ collaborator_form.notes }}
+                            {% if collaborator_form.notes.errors %}<div class="support-field-error">{{ collaborator_form.notes.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox support-field-span-2">
+                            {{ collaborator_form.is_active }}
+                            <span>{{ collaborator_form.is_active.label }}</span>
+                        </label>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">{% if editing_collaborator %}Salvar colaborador{% else %}Adicionar colaborador{% endif %}</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if collaborators %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Solicitantes</span>
+                            <h2>Colaboradores cadastrados</h2>
+                        </div>
+                    </div>
+                    <section class="support-card-list">
+                        {% for collaborator in collaborators %}
+                            <article class="support-config-card{% if editing_collaborator and editing_collaborator.id == collaborator.id %} is-active-edit{% endif %}">
+                                <div class="support-config-card-head">
+                                    <strong>{{ collaborator.full_name }}</strong>
+                                    <span class="support-chip {% if collaborator.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if collaborator.is_active %}Ativo{% else %}Inativo{% endif %}
+                                    </span>
+                                </div>
+                                <div class="support-inline-pills">
+                                    <span class="support-meta-pill">{{ collaborator.sector.name }}</span>
+                                    <span class="support-meta-pill">Matr&iacute;cula {{ collaborator.registration_code }}</span>
+                                    {% if collaborator.role_title %}<span class="support-meta-pill">{{ collaborator.role_title }}</span>{% endif %}
+                                    {% if collaborator.access_enabled %}
+                                        <span class="support-chip is-assumed">Acesso habilitado</span>
+                                    {% elif collaborator.account %}
+                                        <span class="support-chip is-pending">Aguardando ativa&ccedil;&atilde;o</span>
+                                    {% else %}
+                                        <span class="support-chip is-soft-neutral">Sem usu&aacute;rio</span>
+                                    {% endif %}
+                                </div>
+                                <p>
+                                    {{ collaborator.email }}
+                                    {% if collaborator.phone %} · {{ collaborator.phone }}{% endif %}
+                                </p>
+                                {% if collaborator.notes %}
+                                    <p>{{ collaborator.notes }}</p>
+                                {% endif %}
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalRequesterAdminPage' %}?edit_collaborator={{ collaborator.id }}#portal-requester-collaborator-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_collaborator">
+                                        <input type="hidden" name="collaborator_id" value="{{ collaborator.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if collaborator.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% endif %}
+
+            <section id="portal-requester-account-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Passo 3</span>
+                        <h2>{% if editing_account %}Editar usu&aacute;rio do portal{% else %}Criar usu&aacute;rio do portal{% endif %}</h2>
+                    </div>
+                    {% if editing_account %}
+                        <a href="{% url 'portalRequesterAdminPage' %}#portal-requester-account-form" class="support-btn support-btn-secondary">Cancelar edi&ccedil;&atilde;o</a>
+                    {% endif %}
+                </div>
+
+                <div class="support-banner">
+                    Nome, e-mail e matr&iacute;cula s&atilde;o herdados do colaborador selecionado. Aqui voc&ecirc; define apenas o login, a senha e se o acesso ao portal de TI est&aacute; ativo.
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_account %}update_account{% else %}create_account{% endif %}">
+                    {% if editing_account %}
+                        <input type="hidden" name="account_id" value="{{ editing_account.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field">
+                            <label for="{{ account_form.collaborator.id_for_label }}">{{ account_form.collaborator.label }}</label>
+                            {{ account_form.collaborator }}
+                            {% if account_form.collaborator.errors %}<div class="support-field-error">{{ account_form.collaborator.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ account_form.username.id_for_label }}">{{ account_form.username.label }}</label>
+                            {{ account_form.username }}
+                            {% if account_form.username.errors %}<div class="support-field-error">{{ account_form.username.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ account_form.password.id_for_label }}">{{ account_form.password.label }}</label>
+                            {{ account_form.password }}
+                            {% if account_form.password.errors %}<div class="support-field-error">{{ account_form.password.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox">
+                            {{ account_form.is_active }}
+                            <span>{{ account_form.is_active.label }}</span>
+                        </label>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">{% if editing_account %}Salvar usu&aacute;rio{% else %}Criar usu&aacute;rio{% endif %}</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if accounts %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Acessos</span>
+                            <h2>Usu&aacute;rios aptos a abrir demandas</h2>
+                        </div>
+                    </div>
+                    <section class="support-card-list">
+                        {% for account in accounts %}
+                            <article class="support-config-card{% if editing_account and editing_account.id == account.id %} is-active-edit{% endif %}">
+                                <div class="support-config-card-head">
+                                    <strong>{{ account.collaborator.full_name }}</strong>
+                                    <span class="support-chip {% if account.is_active and account.collaborator.is_active and account.collaborator.sector.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if account.is_active and account.collaborator.is_active and account.collaborator.sector.is_active %}Liberado{% else %}Bloqueado{% endif %}
+                                    </span>
+                                </div>
+                                <div class="support-inline-pills">
+                                    <span class="support-meta-pill">{{ account.collaborator.sector.name }}</span>
+                                    <span class="support-meta-pill">Login {{ account.user.username }}</span>
+                                    <span class="support-meta-pill">Matr&iacute;cula {{ account.user.userId }}</span>
+                                </div>
+                                <div class="support-config-card-stats">
+                                    <span>{{ account.user.email }}</span>
+                                    <span>{% if account.created_by %}Criado por {{ account.created_by.nameUser|default:account.created_by.username }}{% else %}Criado pelo sistema{% endif %}</span>
+                                    <span>Atualizado em {{ account.updated_at|date:"d/m/Y H:i" }}</span>
+                                </div>
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalRequesterAdminPage' %}?edit_account={{ account.id }}#portal-requester-account-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_account">
+                                        <input type="hidden" name="account_id" value="{{ account.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if account.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% else %}
+                <div class="support-empty compact">
+                    <strong>Nenhum usu&aacute;rio do portal configurado</strong>
+                    <span>Depois de cadastrar setor e colaborador, crie o acesso que permitir&aacute; abrir demandas para o TI.</span>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

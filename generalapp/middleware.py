@@ -19,7 +19,10 @@ class RequireLoginMiddleware:
         "/main/logout/",
         "/admin/login/",
         "/static/",
+        "/portal/chamados/api/ai/",
         "/sede/",
+        "/almoco/",
+        "/logistica/",
     )
 
     def __init__(self, get_response):

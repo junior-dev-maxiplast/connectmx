@@ -1,0 +1,125 @@
+<section class="dashboard-delivery-section">
+    <article class="dashboard-panel">
+        <div class="dashboard-panel-head">
+            <div>
+                <h2>{{ timeline_title|default:"Timeline de projetos" }}</h2>
+                <div class="subtitle">{{ timeline_subtitle|default:"Uma linha por responsável, barras pela duração real de cada entrega" }}</div>
+            </div>
+            <div class="dashboard-calendar-head-tools">
+                {% if calendar_user_options %}
+                    <div class="dashboard-calendar-filter">
+                        <label class="dashboard-calendar-filter-label" for="projectTimelineUserFilter">Respons&aacute;vel</label>
+                        <select id="projectTimelineUserFilter" class="dashboard-calendar-select" data-timeline-user-filter>
+                            <option value="">Todos os respons&aacute;veis</option>
+                            {% for option in calendar_user_options %}
+                                <option value="{{ option.id }}"{% if calendar_user_id == option.id %} selected{% endif %}>{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endif %}
+                <div class="dashboard-calendar-nav">
+                    <button type="button" class="queue-secondary-btn dashboard-calendar-nav-btn" data-timeline-scroll="prev">&#8592; M&ecirc;s</button>
+                    <button type="button" class="queue-secondary-btn dashboard-calendar-nav-btn" data-timeline-scroll="today">Hoje</button>
+                    <button type="button" class="queue-secondary-btn dashboard-calendar-nav-btn" data-timeline-scroll="next">M&ecirc;s &#8594;</button>
+                </div>
+                <div class="dashboard-calendar-head-meta">
+                    <span class="dashboard-calendar-badge">{{ timeline.responsible_count }} responsável(eis)</span>
+                    <span class="dashboard-calendar-badge">arraste ou role para navegar entre os meses</span>
+                </div>
+            </div>
+        </div>
+
+        {% if timeline.has_data %}
+            <div class="project-timeline-legend">
+                <span class="project-timeline-legend-item"><span class="project-timeline-legend-track"></span>Período do projeto</span>
+                <span class="project-timeline-legend-item"><span class="project-timeline-legend-step"></span>Etapa dentro do projeto</span>
+                <span class="project-timeline-legend-item"><span class="project-timeline-legend-dot"></span>Marco (1 dia, sem etapas)</span>
+                <span class="project-timeline-legend-item"><span class="project-timeline-legend-line"></span>Hoje</span>
+            </div>
+
+            <div class="project-timeline-scroll-wrap" id="project-timeline-scroll" data-today-column="{{ timeline.today_grid_column|default:'' }}">
+                <div class="project-timeline-grid" style="--timeline-days: {{ timeline.total_days }};">
+                    {% for column in timeline.weekend_columns %}
+                        <div class="project-timeline-weekend-band" style="grid-column: {{ column }}; grid-row: 1 / span {{ timeline.row_count }};"></div>
+                    {% endfor %}
+
+                    {% if timeline.today_grid_column %}
+                        <div class="project-timeline-today-band" style="grid-column: {{ timeline.today_grid_column }}; grid-row: 1 / span {{ timeline.row_count }};"></div>
+                    {% endif %}
+
+                    {% for month in timeline.month_headers %}
+                        <span class="project-timeline-month-label" id="tl-month-{{ month.key }}" data-month-key="{{ month.key }}" style="grid-column: {{ month.grid_column_start }} / span {{ month.span }}; grid-row: 1;">{{ month.label }}</span>
+                    {% endfor %}
+
+                    {% if timeline.today_grid_column %}
+                        <span class="project-timeline-today-flag" style="grid-column: {{ timeline.today_grid_column }}; grid-row: 1;">Hoje</span>
+                    {% endif %}
+
+                    {% for day in timeline.day_headers %}
+                        <span class="project-timeline-weekday{% if day.is_today %} is-today{% endif %}" style="grid-column: {{ day.grid_column }}; grid-row: 2;">{{ day.weekday_label }}</span>
+                    {% endfor %}
+                    {% for day in timeline.day_headers %}
+                        <span class="project-timeline-daycell{% if day.is_today %} is-today{% endif %}{% if day.is_weekend %} is-weekend{% endif %}" style="grid-column: {{ day.grid_column }}; grid-row: 3;">{{ day.day_number }}</span>
+                    {% endfor %}
+
+                    {% for row in timeline.rows %}
+                        {% if row.is_first_sub_lane %}
+                            <div class="project-timeline-row-label" style="grid-row: {{ row.label_row_start }} / span {{ row.label_rowspan }};">
+                                <span class="project-timeline-avatar">{{ row.initials }}</span>
+                                <span class="project-timeline-row-name" title="{{ row.label }}">{{ row.label }}</span>
+                                <span class="project-timeline-row-count">{{ row.person_item_count }}</span>
+                            </div>
+                        {% endif %}
+                        {% for entry in row.entries %}
+                            {% if entry.steps %}
+                                <div
+                                    class="project-timeline-entry is-track"
+                                    style="grid-column: {{ entry.grid_column_start }} / span {{ entry.duration }}; grid-row: {{ row.row_number }}; --entry-color: {{ entry.color }};"
+                                    title="{{ entry.title }} ({{ entry.status }}) — {{ entry.steps|length }} etapa(s)"
+                                >
+                                    <a class="project-timeline-track-label" href="{{ entry.url }}">{{ entry.title }}</a>
+                                    <div class="project-timeline-track-steps">
+                                        {% for step in entry.steps %}
+                                            <a
+                                                class="project-timeline-step"
+                                                style="left: {{ step.pct_left }}%; width: {{ step.pct_width }}%; --entry-color: {{ step.color }};"
+                                                href="{{ step.url }}"
+                                                title="{{ step.title }} — {{ entry.project_name }} ({{ step.status }}) · {{ step.responsible_name }}"
+                                            >
+                                                <span class="project-timeline-step-label">{{ step.title }}</span>
+                                            </a>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            {% elif entry.is_milestone %}
+                                <a
+                                    class="project-timeline-entry is-milestone"
+                                    style="grid-column: {{ entry.grid_column_start }} / span {{ entry.duration }}; grid-row: {{ row.row_number }}; --entry-color: {{ entry.color }};"
+                                    href="{{ entry.url }}"
+                                    title="{{ entry.title }} — {{ entry.project_name }} ({{ entry.status }})"
+                                >
+                                    <span class="project-timeline-diamond"></span>
+                                    <span class="project-timeline-entry-label is-floating">{{ entry.title }}</span>
+                                </a>
+                            {% else %}
+                                <a
+                                    class="project-timeline-entry is-range{% if entry.overflow_start %} is-open-start{% endif %}{% if entry.overflow_end %} is-open-end{% endif %}"
+                                    style="grid-column: {{ entry.grid_column_start }} / span {{ entry.duration }}; grid-row: {{ row.row_number }}; --entry-color: {{ entry.color }};"
+                                    href="{{ entry.url }}"
+                                    title="{{ entry.title }} — {{ entry.project_name }} ({{ entry.status }})"
+                                >
+                                    <span class="project-timeline-entry-label">{{ entry.title }}</span>
+                                </a>
+                            {% endif %}
+                        {% endfor %}
+                        {% if row.is_last_sub_lane %}
+                            <div class="project-timeline-row-divider" style="grid-row: {{ row.row_number }};"></div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        {% else %}
+            <div class="queue-empty">Nenhuma entrega com data no período selecionado.</div>
+        {% endif %}
+    </article>
+</section>

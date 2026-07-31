@@ -1,0 +1,137 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Pomodoro</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        {% include 'partials/system_notifications_dropdown.html' %}
+
+        <div class="pomodoro-page" id="pomodoroPage" data-mode="focus">
+            <div class="pomodoro-glow" aria-hidden="true"></div>
+
+            <header class="pomodoro-head">
+                <div class="pomodoro-kicker">Modo foco</div>
+                <h1>Pomodoro</h1>
+                <div class="subtitle">Um ciclo de cada vez. Foque, descanse, registre o que voc&ecirc; realizou.</div>
+            </header>
+
+            <div class="pomodoro-stats-row">
+                <div class="pomodoro-stat">
+                    <strong id="pmStatToday">{{ pomodoro_stats.today_sessions }}</strong>
+                    <span>Ciclos hoje</span>
+                </div>
+                <div class="pomodoro-stat">
+                    <strong id="pmStatTodayMin">{{ pomodoro_stats.today_minutes }}</strong>
+                    <span>Minutos hoje</span>
+                </div>
+                <div class="pomodoro-stat">
+                    <strong id="pmStatWeek">{{ pomodoro_stats.week_sessions }}</strong>
+                    <span>Ciclos na semana</span>
+                </div>
+                <div class="pomodoro-stat">
+                    <strong id="pmStatTotal">{{ pomodoro_stats.total_sessions }}</strong>
+                    <span>Ciclos no total</span>
+                </div>
+            </div>
+
+            <div class="pomodoro-core">
+                <div class="pomodoro-ring-wrap">
+                    <div class="pomodoro-mode-pill" id="pmModePill">Foco</div>
+
+                    <div class="pomodoro-ring" id="pmRing">
+                        <svg class="pomodoro-ring-svg" viewBox="0 0 220 220" aria-hidden="true">
+                            <circle class="pomodoro-ring-track" cx="110" cy="110" r="98" pathLength="100"></circle>
+                            <circle class="pomodoro-ring-progress" id="pmRingProgress" cx="110" cy="110" r="98" pathLength="100"></circle>
+                        </svg>
+                        <div class="pomodoro-ring-center">
+                            <span class="pomodoro-time" id="pmTime">25:00</span>
+                            <span class="pomodoro-cycle" id="pmCycleLabel">Ciclo 1</span>
+                        </div>
+                    </div>
+
+                    <div class="pomodoro-controls">
+                        <button type="button" class="pomodoro-btn is-ghost" id="pmResetBtn" title="Reiniciar">&#8635;</button>
+                        <button type="button" class="pomodoro-btn is-primary" id="pmStartBtn">Iniciar</button>
+                        <button type="button" class="pomodoro-btn is-ghost" id="pmSkipBtn" title="Pular etapa">&#8677;</button>
+                    </div>
+                </div>
+
+                <div class="pomodoro-side">
+                    <div class="pomodoro-card">
+                        <div class="pomodoro-card-title">Personalizar</div>
+                        <div class="pomodoro-field-row">
+                            <label class="pomodoro-field">
+                                <span>Foco (min)</span>
+                                <input type="number" id="pmFocusInput" min="1" max="180" value="25">
+                            </label>
+                            <label class="pomodoro-field">
+                                <span>Pausa (min)</span>
+                                <input type="number" id="pmBreakInput" min="1" max="60" value="5">
+                            </label>
+                        </div>
+                        <div class="pomodoro-presets">
+                            <button type="button" class="pomodoro-preset-btn" data-focus="25" data-break="5">25 / 5</button>
+                            <button type="button" class="pomodoro-preset-btn" data-focus="50" data-break="10">50 / 10</button>
+                            <button type="button" class="pomodoro-preset-btn" data-focus="15" data-break="3">15 / 3</button>
+                        </div>
+                    </div>
+
+                    <div class="pomodoro-card pomodoro-log-card" id="pmLogCard" hidden>
+                        <div class="pomodoro-card-title">O que voc&ecirc; realizou nesse ciclo?</div>
+                        <textarea id="pmAccomplishment" class="pomodoro-log-input" maxlength="240" placeholder="Ex.: Revisei o chamado 482 e finalizei o relat&oacute;rio de fila." rows="3"></textarea>
+                        <div class="pomodoro-log-actions">
+                            <button type="button" class="pomodoro-btn is-ghost is-small" id="pmSkipLogBtn">Pular</button>
+                            <button type="button" class="pomodoro-btn is-primary is-small" id="pmSaveLogBtn">Salvar e continuar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section class="pomodoro-history">
+                <div class="pomodoro-history-head">
+                    <h2>Registros</h2>
+                    <span class="subtitle">O que voc&ecirc; foi realizando ciclo a ciclo</span>
+                </div>
+                <div class="pomodoro-history-list" id="pmHistoryList">
+                    {% for entry in pomodoro_history %}
+                        <article class="pomodoro-history-item" data-session-id="{{ entry.id }}">
+                            <span class="pomodoro-history-dot"></span>
+                            <div class="pomodoro-history-body">
+                                <div class="pomodoro-history-top">
+                                    <strong>{{ entry.focus_minutes }} min de foco</strong>
+                                    <span>{{ entry.completed_at_label }}</span>
+                                </div>
+                                {% if entry.accomplishment %}
+                                    <p>{{ entry.accomplishment }}</p>
+                                {% else %}
+                                    <p class="is-muted">Sem anota&ccedil;&atilde;o.</p>
+                                {% endif %}
+                            </div>
+                            <button type="button" class="pomodoro-history-delete" data-delete-session="{{ entry.id }}" aria-label="Remover registro">&times;</button>
+                        </article>
+                    {% empty %}
+                        <div class="queue-empty" id="pmHistoryEmpty">Nenhum ciclo registrado ainda. Complete seu primeiro foco!</div>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const POMODORO_SAVE_URL = "{% url 'pomodoroSaveSession' %}";
+        const POMODORO_DELETE_URL_BASE = "/pomodoro/session/";
+
+        {% include 'partials/pomodoro_scripts.html' %}
+
+        initPomodoro();
+    </script>
+</body>

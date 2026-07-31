@@ -4,6 +4,22 @@ from . import views
 urlpatterns = [
 
     path('', views.index, name='index'),
+    path('hub/', views.hubPage, name='hubPage'),
+    path('portal/chamados/', views.portalDemandPage, name='portalDemandPage'),
+    path('portal/chamados/abrir/', views.portalDemandCreatePage, name='portalDemandCreatePage'),
+    path('portal/chamados/abrir/insights/', views.portalDemandInsightsApi, name='portalDemandInsightsApi'),
+    path('portal/chamados/api/ai/<int:demand_id>/routing-context/', views.portalDemandAiRoutingContextApi, name='portalDemandAiRoutingContextApi'),
+    path('portal/chamados/api/ai/<int:demand_id>/apply-routing/', views.portalDemandAiRoutingApplyApi, name='portalDemandAiRoutingApplyApi'),
+    path('portal/chamados/minhas/', views.portalMyDemandsPage, name='portalMyDemandsPage'),
+    path('portal/chamados/pendentes/', views.portalPendingDemandsPage, name='portalPendingDemandsPage'),
+    path('portal/chamados/configuracoes/campos/', views.portalDemandFieldsConfigPage, name='portalDemandFieldsConfigPage'),
+    path('portal/chamados/configuracoes/sla/', views.portalDemandSlaConfigPage, name='portalDemandSlaConfigPage'),
+    path('portal/chamados/configuracoes/respostas/', views.portalDemandResponsesConfigPage, name='portalDemandResponsesConfigPage'),
+    path('portal/chamados/configuracoes/solicitantes/', views.portalRequesterAdminPage, name='portalRequesterAdminPage'),
+    path('portal/chamados/codigo/<str:demand_code>/', views.portalDemandCodeDetailPage, name='portalDemandCodeDetailPage'),
+    path('portal/chamados/<int:demand_id>/', views.portalDemandDetailPage, name='portalDemandDetailPage'),
+    path('portal/chamados/<int:demand_id>/assumir/', views.portalDemandAssume, name='portalDemandAssume'),
+    path('portal/chamados/assumir-selecionadas/', views.portalDemandBulkAssume, name='portalDemandBulkAssume'),
 
     path('queue/main/', views.queueMainPage, name='queueMainPage'),
     path('queue/main/item/<int:item_id>/', views.queueDemandDetailPage, name='queueDemandDetailPage'),
@@ -58,6 +74,12 @@ urlpatterns = [
     ,
     path('hub/tetris/highscores/submit/', views.maxiTetrisSubmitScore, name='maxiTetrisSubmitScore')
     ,
+    path('pomodoro/', views.pomodoroPage, name='pomodoroPage')
+    ,
+    path('pomodoro/session/save/', views.pomodoroSaveSession, name='pomodoroSaveSession')
+    ,
+    path('pomodoro/session/<int:session_id>/delete/', views.pomodoroDeleteSession, name='pomodoroDeleteSession')
+    ,
     path('hub/tools/general/', views.manageHubTools, name='manageHubToolsGeneral')
     ,
     path('hub/tools/my/', views.manageMyHubTools, name='manageMyHubTools')
@@ -104,17 +126,22 @@ urlpatterns = [
     path('maintenance/outages/', views.maintenanceOutagePage, name='maintenanceOutagePage'),
     path('maintenance/schedules/', views.maintenanceSchedulePage, name='maintenanceSchedulePage'),
     path('maintenance/calendar/', views.maintenanceCalendarPage, name='maintenanceCalendarPage'),
-    path('projects/', views.manageProjects, name='manageProjects')
-    ,
-    path('projects/catalog/', views.projectCatalogPage, name='projectCatalogPage')
-    ,
-    path('projects/catalog/concluded/', views.projectCatalogConcludedPage, name='projectCatalogConcludedPage')
-    ,
+    path('projects/', views.manageProjects, name='manageProjects'),
+    path('projects/calendar/', views.projectCalendarPage, name='projectCalendarPage'),
+    path('projects/timeline/', views.projectTimelinePage, name='projectTimelinePage'),
+    path('projects/catalog/', views.projectCatalogPage, name='projectCatalogPage'),
+    path('projects/catalog/concluded/', views.projectCatalogConcludedPage, name='projectCatalogConcludedPage'),
+    path('projects/<int:project_id>/export/pdf/', views.projectCatalogExportPdf, name='projectCatalogExportPdf'),
     path('projects/<int:project_id>/board/', views.projectBoard, name='projectBoard'),
     path('projects/<int:project_id>/roadmap/', views.projectRoadmapView, name='projectRoadmapView'),
+    path('projects/<int:project_id>/roadmap/milestones/add/', views.projectMilestoneCreate, name='projectMilestoneCreate'),
+    path('projects/<int:project_id>/roadmap/milestones/<int:milestone_id>/update/', views.projectMilestoneUpdate, name='projectMilestoneUpdate'),
+    path('projects/<int:project_id>/roadmap/milestones/<int:milestone_id>/toggle/', views.projectMilestoneToggle, name='projectMilestoneToggle'),
+    path('projects/<int:project_id>/roadmap/milestones/<int:milestone_id>/move/', views.projectMilestoneMove, name='projectMilestoneMove'),
     path('projects/<int:project_id>/roadmap/add/', views.projectRoadmapItemCreate, name='projectRoadmapItemCreate'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/update/', views.projectRoadmapItemUpdate, name='projectRoadmapItemUpdate'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/done/', views.projectRoadmapItemConclude, name='projectRoadmapItemConclude'),
+    path('projects/<int:project_id>/roadmap/item/<int:item_id>/reopen/', views.projectRoadmapItemReopen, name='projectRoadmapItemReopen'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/add/', views.projectRoadmapSubtaskCreate, name='projectRoadmapSubtaskCreate'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/<int:subtask_id>/update/', views.projectRoadmapSubtaskUpdate, name='projectRoadmapSubtaskUpdate'),
     path('projects/<int:project_id>/roadmap/item/<int:item_id>/subtasks/<int:subtask_id>/toggle/', views.projectRoadmapSubtaskToggle, name='projectRoadmapSubtaskToggle'),

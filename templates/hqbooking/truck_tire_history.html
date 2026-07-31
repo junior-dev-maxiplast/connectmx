@@ -4,12 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logistica | Historico de Trocas</title>
+    <title>Logística | Histórico de Pneus</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
 </head>
-<body class="hq-page">
+<body class="hq-page logistics-page truck-logistics-page">
     <div class="theme-fab" aria-label="Tema">
         <div class="theme-toggle">
             <span class="theme-icon" aria-hidden="true">&#9728;</span>
@@ -21,19 +21,20 @@
         </div>
     </div>
 
-    <div class="hq-container hq-truck-page hq-truck-wide">
+    <div class="hq-container hq-truck-page hq-truck-wide logistics-shell">
         <header class="hq-header">
             <div>
-                <h1 class="hq-title">Historico de Trocas de Pneus</h1>
-                <p class="hq-subtitle">Consulte o historico completo por caminhao e acompanhe rodagem entre trocas.</p>
+                <h1 class="hq-title">Histórico de Movimentações de Pneus</h1>
+                <p class="hq-subtitle">Consulte tudo o que aconteceu com os pneus do caminhão, incluindo estoque, instalação, recape e descarte.</p>
             </div>
         </header>
 
         <section class="hq-card">
             <form method="GET" class="hq-form hq-form-grid hq-truck-filter-grid">
                 <div class="hq-field">
-                    <label class="hq-label" for="truck_select">Caminhao</label>
-                    <select class="hq-input" id="truck_select" name="truck" onchange="this.form.submit()">
+                    <label class="hq-label" for="truck_select">Caminhão</label>
+                    <select class="hq-input" id="truck_select" name="truck">
+                        <option value="">Todos os caminhões</option>
                         {% for t in trucks %}
                             <option value="{{ t.id }}" {% if selected_truck and selected_truck.id == t.id %}selected{% endif %}>
                                 {{ t.identifier }}{% if t.model_template %} - {{ t.model_template.name }}{% endif %}
@@ -41,11 +42,34 @@
                         {% endfor %}
                     </select>
                 </div>
+                <div class="hq-field">
+                    <label class="hq-label" for="movement_type">Ação</label>
+                    <select class="hq-input" id="movement_type" name="movement_type">
+                        <option value="">Todas</option>
+                        {% for value, label in movement_type_choices %}
+                            <option value="{{ value }}" {% if movement_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="hq-field">
+                    <label class="hq-label" for="history_search">Busca</label>
+                    <input class="hq-input" id="history_search" name="search" type="text" value="{{ history_search }}" placeholder="Número, marca, posição, caminhão ou observação">
+                </div>
+                <div class="hq-field">
+                    <label class="hq-label" for="date_from">De</label>
+                    <input class="hq-input" id="date_from" name="date_from" type="date" value="{{ date_from }}">
+                </div>
+                <div class="hq-field">
+                    <label class="hq-label" for="date_to">Até</label>
+                    <input class="hq-input" id="date_to" name="date_to" type="date" value="{{ date_to }}">
+                </div>
                 <div class="hq-actions truck-filter-actions">
+                    <button type="submit" class="hq-button">Filtrar</button>
+                    <a class="hq-button hq-button-secondary" href="{% url 'truck_tire_history' %}">Limpar</a>
                     {% if selected_truck %}
-                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks&truck={{ selected_truck.id }}">Voltar para visualizacao do caminhao</a>
+                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks&truck={{ selected_truck.id }}">Voltar para o caminhão</a>
                     {% else %}
-                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks">Voltar para visualizacao do caminhao</a>
+                        <a class="hq-button truck-new-truck-btn" href="{% url 'truck_tire_control' %}?tab=trucks">Voltar para o caminhão</a>
                     {% endif %}
                 </div>
             </form>
@@ -54,9 +78,9 @@
         <section class="hq-card">
             <h2 class="hq-card-title">
                 {% if selected_truck %}
-                    {{ selected_truck.identifier }} - historico completo
+                    {{ selected_truck.identifier }} - histórico completo
                 {% else %}
-                    Historico
+                    Histórico geral
                 {% endif %}
             </h2>
 
@@ -64,30 +88,34 @@
                 <table class="hq-history-table">
                     <thead>
                         <tr>
+                            <th>Caminhão</th>
+                            <th>Data movimento</th>
                             <th>Data registro</th>
+                            <th>Ação</th>
                             <th>Pneu</th>
-                            <th>Data troca</th>
+                            <th>Marca</th>
+                            <th>Posição</th>
                             <th>KM</th>
-                            <th>Pneu anterior</th>
-                            <th>Rodou (dias)</th>
-                            <th>Rodou (KM)</th>
-                            <th>Observacao</th>
+                            <th>Valor</th>
+                            <th>Observação</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for h in history_rows %}
                             <tr>
+                                <td>{% if h.truck %}{{ h.truck.identifier }}{% else %}-{% endif %}</td>
+                                <td>{% if h.movement_date %}{{ h.movement_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
                                 <td>{{ h.created_at|date:"d/m/Y H:i" }}</td>
-                                <td>{{ h.tire_code|default:"-" }} (#{{ h.tire_number }})</td>
-                                <td>{% if h.changed_on %}{{ h.changed_on|date:"d/m/Y" }}{% else %}-{% endif %}</td>
-                                <td>{% if h.odometer_km %}{{ h.odometer_km }}{% else %}-{% endif %}</td>
-                                <td>{{ h.previous_tire_code|default:"-" }}</td>
-                                <td>{% if h.run_days is not None %}{{ h.run_days }}{% else %}-{% endif %}</td>
-                                <td>{% if h.run_km is not None %}{{ h.run_km }}{% else %}-{% endif %}</td>
+                                <td>{{ h.get_movement_type_display }}</td>
+                                <td>{{ h.tire.serial_number }}</td>
+                                <td>{{ h.tire.brand }}</td>
+                                <td>{{ h.position_label|default:"-" }}</td>
+                                <td>{% if h.odometer_km is not None %}{{ h.odometer_km }}{% else %}-{% endif %}</td>
+                                <td>{% if h.movement_cost is not None %}R$ {{ h.movement_cost }}{% else %}-{% endif %}</td>
                                 <td>{{ h.note|default:"-" }}</td>
                             </tr>
                         {% empty %}
-                            <tr><td colspan="8">Sem historico para este caminhao.</td></tr>
+                            <tr><td colspan="10">Sem histórico para os filtros informados.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

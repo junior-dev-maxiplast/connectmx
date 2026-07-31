@@ -1,0 +1,83 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Portal de Chamados</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
+
+    <main class="support-shell support-home-shell">
+        {% if access_denied_message %}
+            <div class="support-banner is-danger">{{ access_denied_message }}</div>
+        {% endif %}
+
+        <section class="support-home-hero">
+            <article class="support-home-intro">
+                <span class="support-kicker">Portal do solicitante</span>
+                <h1>Abra, acompanhe e avalie suas demandas em um fluxo mais simples</h1>
+                <p>O in&iacute;cio do portal mostra apenas os indicadores principais. A partir daqui, voc&ecirc; escolhe se quer abrir uma nova solicita&ccedil;&atilde;o ou acompanhar as demandas j&aacute; registradas.</p>
+            </article>
+
+            <aside class="support-home-actions-panel">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Acesso r&aacute;pido</span>
+                        <h2>Escolha seu pr&oacute;ximo passo</h2>
+                    </div>
+                </div>
+
+                <div class="support-home-actions">
+                    {% if can_request_portal %}
+                        <a href="{% url 'portalDemandCreatePage' %}" class="support-home-action-card is-primary">
+                            <strong>Abrir demanda</strong>
+                            <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>
+                        </a>
+                    {% else %}
+                        <div class="support-home-action-card">
+                            <strong>Acesso de abertura pendente</strong>
+                            <span>Seu usu&aacute;rio ainda precisa ser vinculado a um colaborador e setor para abrir demandas ao TI.</span>
+                        </div>
+                    {% endif %}
+                    <a href="{% url 'portalMyDemandsPage' %}" class="support-home-action-card">
+                        <strong>Minhas demandas</strong>
+                        <span>Ver andamento, conversar com o atendente e enviar feedback ap&oacute;s a conclus&atilde;o.</span>
+                    </a>
+                    {% if request.user.is_system_admin or request.user.is_superuser %}
+                        <a href="{% url 'portalPendingDemandsPage' %}" class="support-home-action-card">
+                            <strong>Triagem do portal</strong>
+                            <span>Assumir rapidamente novas demandas abertas por usu&aacute;rios.</span>
+                        </a>
+                    {% endif %}
+                </div>
+            </aside>
+        </section>
+
+        <section class="support-home-bi-grid">
+            {% for card in dashboard_cards %}
+                <article class="support-home-bi-card is-{{ card.tone }}">
+                    <span>{{ card.label }}</span>
+                    <strong>{{ card.value }}</strong>
+                    <small>{{ card.hint }}</small>
+                </article>
+            {% endfor %}
+        </section>
+
+        <section class="support-home-insight-grid">
+            {% for insight in insight_cards %}
+                <article class="support-home-insight-card">
+                    <span>{{ insight.label }}</span>
+                    <strong>{{ insight.value }}</strong>
+                    <small>{{ insight.hint }}</small>
+                </article>
+            {% endfor %}
+        </section>
+    </main>
+</body>
+</html>

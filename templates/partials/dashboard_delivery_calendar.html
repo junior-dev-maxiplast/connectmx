@@ -1,0 +1,120 @@
+<section class="dashboard-delivery-section">
+    <div class="dashboard-delivery-grid">
+        <article class="dashboard-panel dashboard-delivery-panel">
+            <div class="dashboard-panel-head">
+                <div>
+                    <h2>{{ calendar_title|default:"Calendário de entregas" }}</h2>
+                    <div class="subtitle">{{ calendar_subtitle|default:"Visual mensal das entregas e etapas com acesso direto ao projeto" }}</div>
+                </div>
+                <div class="dashboard-calendar-head-tools">
+                    {% if calendar_user_options %}
+                        <div class="dashboard-calendar-filter">
+                            <label class="dashboard-calendar-filter-label" for="dashboardCalendarUserFilter">Respons&aacute;vel</label>
+                            <select id="dashboardCalendarUserFilter" class="dashboard-calendar-select" data-calendar-user-filter>
+                                <option value="">Todos os respons&aacute;veis</option>
+                                {% for option in calendar_user_options %}
+                                    <option value="{{ option.id }}"{% if calendar_user_id == option.id %} selected{% endif %}>{{ option.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    {% endif %}
+                    <div class="dashboard-calendar-nav">
+                        <a class="queue-secondary-btn dashboard-calendar-nav-btn" href="?calendar_month={{ dashboard.delivery_calendar.prev_month_key }}{% if calendar_user_id %}&calendar_user={{ calendar_user_id }}{% endif %}">Anterior</a>
+                        <a class="queue-secondary-btn dashboard-calendar-nav-btn{% if dashboard.delivery_calendar.is_current_month_view %} is-current{% endif %}" href="?calendar_month={{ dashboard.delivery_calendar.today_month_key }}{% if calendar_user_id %}&calendar_user={{ calendar_user_id }}{% endif %}">Hoje</a>
+                        <a class="queue-secondary-btn dashboard-calendar-nav-btn" href="?calendar_month={{ dashboard.delivery_calendar.next_month_key }}{% if calendar_user_id %}&calendar_user={{ calendar_user_id }}{% endif %}">Pr&oacute;ximo</a>
+                    </div>
+                    <div class="dashboard-calendar-head-meta">
+                        <span class="dashboard-calendar-badge">{{ dashboard.delivery_calendar.month_label }}</span>
+                        <span class="dashboard-calendar-badge">{{ dashboard.delivery_calendar.busy_days }} dia(s) com entrega</span>
+                        <span class="dashboard-calendar-badge">{{ dashboard.delivery_calendar.total_items }} entrega(s)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-calendar-shell">
+                <div class="dashboard-calendar-weekdays">
+                    {% for weekday in dashboard.delivery_calendar.week_labels %}
+                        <span{% if forloop.last %} class="is-sunday"{% endif %}>{{ weekday }}</span>
+                    {% endfor %}
+                </div>
+
+                <div class="dashboard-calendar-grid">
+                    {% for week in dashboard.delivery_calendar.weeks %}
+                        {% for day in week %}
+                            <article
+                                class="dashboard-calendar-day{% if not day.is_current_month %} is-other-month{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}{% if day.is_sunday %} is-sunday{% endif %}{% if day.has_items %} has-items{% endif %}{% if day.is_selected %} is-selected{% endif %}"
+                                data-day-key="{{ day.key }}"
+                                {% if day.is_current_month %}tabindex="0" role="button"{% else %}aria-disabled="true"{% endif %}
+                                {% if day.has_items %}title="{{ day.item_count }} entrega(s)"{% endif %}
+                            >
+                                <span class="dashboard-calendar-day-top">
+                                    <span class="dashboard-calendar-day-number">{{ day.day_number }}</span>
+                                    {% if day.is_today %}
+                                        <span class="dashboard-calendar-today-pill">Hoje</span>
+                                    {% elif day.item_count %}
+                                        <span class="dashboard-calendar-day-badge">{{ day.item_count }}</span>
+                                    {% endif %}
+                                </span>
+
+                                {% if day.has_items %}
+                                    <span class="dashboard-calendar-day-dots">
+                                        {% for item in day.items|slice:":5" %}
+                                            <span class="dashboard-calendar-day-dot" style="--dot-color: {{ item.color }};"></span>
+                                        {% endfor %}
+                                    </span>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    {% endfor %}
+                </div>
+            </div>
+        </article>
+
+        <article class="dashboard-panel dashboard-delivery-detail-panel">
+            <div class="dashboard-panel-head">
+                <div>
+                    <h2>{{ calendar_detail_title|default:"Detalhes do dia" }}</h2>
+                    <div class="subtitle">{{ calendar_detail_subtitle|default:"Abra o roadmap ou o Kanban sem sair do dashboard" }}</div>
+                </div>
+            </div>
+
+            <div class="dashboard-delivery-detail" id="dashboard-delivery-detail" data-selected-day="{{ dashboard.delivery_calendar.featured_day.key }}">
+                <div class="dashboard-delivery-detail-head">
+                    <div>
+                        <strong id="dashboard-delivery-label">{{ dashboard.delivery_calendar.featured_day.label }}</strong>
+                        <span id="dashboard-delivery-headline">{{ dashboard.delivery_calendar.featured_day.headline }}</span>
+                    </div>
+                    <span class="dashboard-delivery-total" id="dashboard-delivery-total">{{ dashboard.delivery_calendar.featured_day.item_count }}</span>
+                </div>
+
+                <div class="dashboard-delivery-detail-list" id="dashboard-delivery-list">
+                    {% if dashboard.delivery_calendar.featured_day.items %}
+                        {% for item in dashboard.delivery_calendar.featured_day.items %}
+                            <article class="dashboard-delivery-item" style="--delivery-accent: {{ item.color }};">
+                                <div class="dashboard-delivery-item-top">
+                                    <span class="dashboard-delivery-kind">{{ item.kind }}</span>
+                                </div>
+                                <div class="dashboard-delivery-item-copy">
+                                    <h3 class="dashboard-delivery-title">{{ item.title }}</h3>
+                                    <div class="dashboard-delivery-subtitle">{{ item.subtitle }}</div>
+                                    <div class="dashboard-delivery-meta">{{ item.meta }}</div>
+                                    {% if item.responsible_name %}
+                                        <div class="dashboard-delivery-responsible">Respons&aacute;vel: {{ item.responsible_name }}</div>
+                                    {% endif %}
+                                </div>
+                                <div class="dashboard-delivery-actions">
+                                    <a class="queue-secondary-btn dashboard-delivery-action" href="{{ item.url }}">{{ item.primary_label }}</a>
+                                    <a class="queue-secondary-btn dashboard-delivery-action is-subtle" href="{{ item.secondary_url }}">{{ item.secondary_label }}</a>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    {% else %}
+                        <div class="dashboard-delivery-empty">Nenhuma entrega programada para este dia.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </article>
+    </div>
+
+    {{ dashboard.delivery_calendar.day_payloads|json_script:"dashboard-calendar-data" }}
+</section>

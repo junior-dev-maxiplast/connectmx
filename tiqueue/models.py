@@ -1,4 +1,10 @@
+import os
+import secrets
+import string
+
 from django.db import models
+from django.urls import reverse
+from django.utils.text import slugify
 
 # Create your models here.
 
@@ -344,6 +350,522 @@ class DemandTemplateDetail(models.Model):
         return self.description
 
 
+class PortalDemandCustomField(models.Model):
+    FIELD_TEXT = "text"
+    FIELD_TEXTAREA = "textarea"
+    FIELD_SELECT = "select"
+    FIELD_NUMBER = "number"
+    FIELD_DATE = "date"
+    FIELD_CHECKBOX = "checkbox"
+    FIELD_TYPE_CHOICES = [
+        (FIELD_TEXT, "Texto"),
+        (FIELD_TEXTAREA, "Texto longo"),
+        (FIELD_SELECT, "Lista"),
+        (FIELD_NUMBER, "Numero"),
+        (FIELD_DATE, "Data"),
+        (FIELD_CHECKBOX, "Checkbox"),
+    ]
+
+    label = models.CharField(max_length=80, unique=True)
+    field_key = models.SlugField(max_length=80, unique=True, blank=True)
+    field_type = models.CharField(max_length=20, choices=FIELD_TYPE_CHOICES, default=FIELD_TEXT)
+    placeholder = models.CharField(max_length=160, blank=True, null=True)
+    help_text = models.CharField(max_length=240, blank=True, null=True)
+    is_required = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    task_groups = models.ManyToManyField(TaskGroup, blank=True, related_name="portal_custom_fields")
+    task_types = models.ManyToManyField(TaskType, blank=True, related_name="portal_custom_fields")
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_demand_custom_fields",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def save(self, *args, **kwargs):
+        base_key = slugify(self.field_key or self.label or "") or "campo-portal"
+        candidate = base_key[:80]
+        suffix = 2
+        while PortalDemandCustomField.objects.exclude(pk=self.pk).filter(field_key=candidate).exists():
+            candidate = f"{base_key[:72]}-{suffix}"
+            suffix += 1
+        self.field_key = candidate[:80]
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.label
+
+
+class PortalDemandCustomFieldOption(models.Model):
+    field = models.ForeignKey(PortalDemandCustomField, on_delete=models.CASCADE, related_name="options")
+    value = models.CharField(max_length=40)
+    label = models.CharField(max_length=80)
+    sort_order = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        unique_together = ("field", "value")
+
+    def __str__(self):
+        return f"{self.field.label} - {self.label}"
+
+
+class PortalDemandSlaPolicy(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=240, blank=True, null=True)
+    task_group = models.ForeignKey(
+        TaskGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_sla_policies",
+    )
+    task_type = models.ForeignKey(
+        TaskType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_sla_policies",
+    )
+    priority_level = models.CharField(max_length=40, blank=True, null=True)
+    first_response_minutes = models.PositiveIntegerField(default=60)
+    resolution_minutes = models.PositiveIntegerField(default=480)
+    default_attendant = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_default_sla_policies",
+    )
+    auto_assign_on_create = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class PortalCannedResponse(models.Model):
+    title = models.CharField(max_length=120)
+    message = models.TextField()
+    task_group = models.ForeignKey(
+        TaskGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_canned_responses",
+    )
+    task_type = models.ForeignKey(
+        TaskType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_canned_responses",
+    )
+    suggest_internal = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_canned_responses",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "title", "id"]
+
+    def __str__(self):
+        return self.title
+
+
+class PortalRequesterSector(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class PortalRequesterCollaborator(models.Model):
+    sector = models.ForeignKey(PortalRequesterSector, on_delete=models.PROTECT, related_name="collaborators")
+    full_name = models.CharField(max_length=160)
+    registration_code = models.CharField(max_length=40, unique=True)
+    email = models.EmailField(unique=True)
+    role_title = models.CharField(max_length=120, blank=True, null=True)
+    phone = models.CharField(max_length=40, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["full_name", "id"]
+
+    def __str__(self):
+        return f"{self.full_name} ({self.sector.name})"
+
+
+class PortalRequesterAccount(models.Model):
+    collaborator = models.OneToOneField(
+        PortalRequesterCollaborator,
+        on_delete=models.CASCADE,
+        related_name="portal_account",
+    )
+    user = models.OneToOneField(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="portal_requester_account",
+    )
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_portal_requester_accounts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["collaborator__full_name", "id"]
+
+    def __str__(self):
+        return f"{self.collaborator.full_name} -> {self.user.username}"
+
+
+class PortalDemand(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_ASSUMED = "assumed"
+    STATUS_COMPLETED = "completed"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendente"),
+        (STATUS_ASSUMED, "Em atendimento"),
+        (STATUS_COMPLETED, "Concluída"),
+        (STATUS_CANCELLED, "Cancelada"),
+    ]
+    FEEDBACK_CHOICES = [
+        (1, "Muito insatisfeito"),
+        (2, "Insatisfeito"),
+        (3, "Neutro"),
+        (4, "Satisfeito"),
+        (5, "Muito satisfeito"),
+    ]
+
+    requester = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="portal_demands")
+    assigned_to = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_portal_demands",
+    )
+    linked_queue_item = models.ForeignKey(
+        userQueue,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_sources",
+    )
+    access_code = models.CharField(max_length=9, unique=True, blank=True, null=True, db_index=True)
+    title = models.CharField(max_length=180)
+    description = models.TextField(blank=True, null=True)
+    task_group = models.ForeignKey(TaskGroup, on_delete=models.SET_NULL, null=True, blank=True)
+    task_type = models.ForeignKey(TaskType, on_delete=models.SET_NULL, null=True, blank=True)
+    priority_level = models.CharField(max_length=40, default=userQueue.PRIORITY_MEDIUM)
+    sla_policy = models.ForeignKey(
+        PortalDemandSlaPolicy,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="demands",
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    first_response_due_at = models.DateTimeField(blank=True, null=True)
+    first_response_at = models.DateTimeField(blank=True, null=True)
+    resolution_due_at = models.DateTimeField(blank=True, null=True)
+    assumed_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    feedback_rating = models.PositiveSmallIntegerField(blank=True, null=True, choices=FEEDBACK_CHOICES)
+    feedback_comment = models.TextField(blank=True, null=True)
+    feedback_submitted_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    @classmethod
+    def generate_access_code(cls):
+        while True:
+            candidate = f"{secrets.randbelow(1000):03d}-" + "".join(
+                secrets.choice(string.ascii_uppercase) for _ in range(5)
+            )
+            if not cls.objects.filter(access_code=candidate).exists():
+                return candidate
+
+    def ensure_access_code(self, commit=True):
+        if self.access_code:
+            return self.access_code
+
+        self.access_code = self.generate_access_code()
+        if commit and self.pk:
+            self.__class__.objects.filter(pk=self.pk).update(access_code=self.access_code)
+        return self.access_code
+
+    def save(self, *args, **kwargs):
+        self.ensure_access_code(commit=False)
+        super().save(*args, **kwargs)
+
+    @property
+    def protocol(self):
+        if not self.pk:
+            return "PORTAL-NOVO"
+        return self.ensure_access_code(commit=True)
+
+    def get_absolute_url(self):
+        return reverse("portalDemandCodeDetailPage", args=[self.protocol])
+
+    def get_priority_level_display(self):
+        return (
+            userQueue.default_field_option_map(userQueue.FIELD_PRIORITY).get(self.priority_level or "", {}).get("label")
+            or self.priority_level
+            or "-"
+        )
+
+    def get_priority_level_color(self):
+        return (
+            userQueue.default_field_option_map(userQueue.FIELD_PRIORITY).get(self.priority_level or "", {}).get("color")
+            or "#61688c"
+        )
+
+    @property
+    def has_feedback(self):
+        return bool(self.feedback_rating)
+
+    def get_feedback_rating_label(self):
+        return dict(self.FEEDBACK_CHOICES).get(self.feedback_rating or 0, "-")
+
+    def __str__(self):
+        return f"{self.protocol} - {self.title}"
+
+
+class PortalDemandCustomValue(models.Model):
+    demand = models.ForeignKey(PortalDemand, on_delete=models.CASCADE, related_name="custom_values")
+    field = models.ForeignKey(PortalDemandCustomField, on_delete=models.CASCADE, related_name="values")
+    value = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["field__sort_order", "field__id", "id"]
+        unique_together = ("demand", "field")
+
+    def __str__(self):
+        return f"{self.demand.protocol} - {self.field.label}"
+
+
+class PortalDemandMessage(models.Model):
+    ROLE_REQUESTER = "requester"
+    ROLE_ATTENDANT = "attendant"
+    ROLE_SYSTEM = "system"
+    ROLE_CHOICES = [
+        (ROLE_REQUESTER, "Solicitante"),
+        (ROLE_ATTENDANT, "Atendente"),
+        (ROLE_SYSTEM, "Sistema"),
+    ]
+
+    demand = models.ForeignKey(PortalDemand, on_delete=models.CASCADE, related_name="messages")
+    author = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_demand_messages",
+    )
+    author_name = models.CharField(max_length=160, blank=True, null=True)
+    author_role = models.CharField(max_length=16, choices=ROLE_CHOICES, default=ROLE_REQUESTER)
+    canned_response = models.ForeignKey(
+        "PortalCannedResponse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="messages",
+    )
+    is_internal = models.BooleanField(default=False)
+    message = models.TextField(blank=True, null=True)
+    work_started_at = models.DateTimeField(blank=True, null=True)
+    work_ended_at = models.DateTimeField(blank=True, null=True)
+    worked_minutes = models.PositiveIntegerField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def save(self, *args, **kwargs):
+        if self.work_started_at and self.work_ended_at:
+            delta_seconds = max(int((self.work_ended_at - self.work_started_at).total_seconds()), 0)
+            self.worked_minutes = delta_seconds // 60
+        else:
+            self.worked_minutes = None
+        super().save(*args, **kwargs)
+
+    @property
+    def display_author_name(self):
+        if self.author_name:
+            return self.author_name
+        if self.author_id:
+            raw_name = getattr(self.author, "nameUser", "") or getattr(self.author, "username", "")
+            if raw_name:
+                return raw_name
+        if self.author_role == self.ROLE_SYSTEM:
+            return "Sistema"
+        return "Usuário"
+
+    @property
+    def has_worklog(self):
+        return bool(self.work_started_at and self.work_ended_at and self.worked_minutes is not None)
+
+    @property
+    def worked_time_display(self):
+        total_minutes = int(self.worked_minutes or 0)
+        hours, minutes = divmod(total_minutes, 60)
+        if hours and minutes:
+            return f"{hours}h {minutes:02d}min"
+        if hours:
+            return f"{hours}h"
+        return f"{minutes}min"
+
+    def __str__(self):
+        return f"{self.demand.protocol} - {self.display_author_name}"
+
+
+class PortalDemandLog(models.Model):
+    EVENT_ASSUMED = "assumed"
+    EVENT_TRANSFERRED = "transferred"
+    EVENT_WORKLOG = "worklog"
+    EVENT_COMPLETED = "completed"
+    EVENT_CANCELLED = "cancelled"
+    EVENT_AI_ROUTED = "ai_routed"
+    EVENT_CHOICES = [
+        (EVENT_ASSUMED, "Assunção"),
+        (EVENT_TRANSFERRED, "Transferência"),
+        (EVENT_WORKLOG, "Apontamento"),
+        (EVENT_COMPLETED, "Conclusão"),
+        (EVENT_CANCELLED, "Cancelamento"),
+        (EVENT_AI_ROUTED, "Roteamento IA"),
+    ]
+
+    demand = models.ForeignKey(PortalDemand, on_delete=models.CASCADE, related_name="logs")
+    actor = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_demand_logs",
+    )
+    actor_name = models.CharField(max_length=160, blank=True, null=True)
+    event_type = models.CharField(max_length=20, choices=EVENT_CHOICES)
+    summary = models.CharField(max_length=255)
+    details = models.TextField(blank=True, null=True)
+    from_attendant = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_transfer_logs_from",
+    )
+    to_attendant = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_transfer_logs_to",
+    )
+    related_message = models.ForeignKey(
+        "PortalDemandMessage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    @property
+    def display_actor_name(self):
+        if self.actor_name:
+            return self.actor_name
+        if self.actor_id:
+            raw_name = getattr(self.actor, "nameUser", "") or getattr(self.actor, "username", "")
+            if raw_name:
+                return raw_name
+        return "Sistema"
+
+    def __str__(self):
+        return f"{self.demand.protocol} - {self.get_event_type_display()}"
+
+
+class PortalDemandAttachment(models.Model):
+    demand = models.ForeignKey(PortalDemand, on_delete=models.CASCADE, related_name="attachments")
+    message = models.ForeignKey(
+        PortalDemandMessage,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="attachments",
+    )
+    uploaded_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="portal_demand_attachments",
+    )
+    uploaded_by_name = models.CharField(max_length=160, blank=True, null=True)
+    original_name = models.CharField(max_length=255, blank=True, null=True)
+    file = models.FileField(upload_to="portal_demands/%Y/%m/")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    @property
+    def display_name(self):
+        return self.original_name or os.path.basename(self.file.name or "") or "arquivo"
+
+    def __str__(self):
+        return f"{self.demand.protocol} - {self.display_name}"
+
+
 class Project(models.Model):
     STATUS_CHOICES = [
         ("planned", "Planejado"),
@@ -415,6 +937,63 @@ class ProjectRoadmapSubtask(models.Model):
 
     def __str__(self):
         return f"{self.roadmap_item.title} - {self.description}"
+
+
+class ProjectMilestone(models.Model):
+    MILESTONE_PLANNING = "planning"
+    MILESTONE_ANALYSIS = "analysis"
+    MILESTONE_DEVELOPMENT = "development"
+    MILESTONE_VALIDATION = "validation"
+    MILESTONE_HOMOLOGATION = "homologation"
+    MILESTONE_DEPLOYMENT = "deployment"
+    MILESTONE_DELIVERY = "delivery"
+    MILESTONE_CHOICES = [
+        (MILESTONE_PLANNING, "Planejamento"),
+        (MILESTONE_ANALYSIS, "Analise"),
+        (MILESTONE_DEVELOPMENT, "Desenvolvimento"),
+        (MILESTONE_VALIDATION, "Validacao interna"),
+        (MILESTONE_HOMOLOGATION, "Homologacao"),
+        (MILESTONE_DEPLOYMENT, "Implantacao"),
+        (MILESTONE_DELIVERY, "Entrega"),
+    ]
+    MILESTONE_DEFAULTS = {
+        MILESTONE_PLANNING: {"title": "Planejamento", "color": "#7A8DBB"},
+        MILESTONE_ANALYSIS: {"title": "Analise", "color": "#5CD6A3"},
+        MILESTONE_DEVELOPMENT: {"title": "Desenvolvimento", "color": "#4A7DFF"},
+        MILESTONE_VALIDATION: {"title": "Validacao interna", "color": "#45C0BE"},
+        MILESTONE_HOMOLOGATION: {"title": "Homologacao", "color": "#F5B55E"},
+        MILESTONE_DEPLOYMENT: {"title": "Implantacao", "color": "#FF8B5D"},
+        MILESTONE_DELIVERY: {"title": "Entrega", "color": "#B392FF"},
+    }
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones")
+    anchor_item = models.ForeignKey(
+        ProjectRoadmapItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="attached_milestones",
+    )
+    milestone_key = models.CharField(max_length=40, choices=MILESTONE_CHOICES, default=MILESTONE_ANALYSIS)
+    title = models.CharField(max_length=180)
+    description = models.TextField(blank=True, null=True)
+    target_date = models.DateField(blank=True, null=True)
+    color = models.CharField(max_length=7, default="#5CD6A3")
+    is_done = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "target_date", "id"]
+
+    @classmethod
+    def template_defaults(cls, milestone_key):
+        return cls.MILESTONE_DEFAULTS.get(milestone_key or "", cls.MILESTONE_DEFAULTS[cls.MILESTONE_ANALYSIS]).copy()
+
+    def __str__(self):
+        return f"{self.project.name} - {self.title}"
 
 
 class ProjectKanbanColumn(models.Model):
@@ -918,6 +1497,25 @@ class MaxiTetrisHighScore(models.Model):
     def __str__(self):
         display_name = self.user.nameUser or self.user.username
         return f"{display_name} - {self.best_score}"
+
+
+class PomodoroSession(models.Model):
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="pomodoro_sessions",
+    )
+    focus_minutes = models.PositiveIntegerField(default=25)
+    break_minutes = models.PositiveIntegerField(default=5)
+    accomplishment = models.CharField(max_length=240, blank=True, default="")
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-completed_at", "-id"]
+
+    def __str__(self):
+        display_name = self.user.nameUser or self.user.username
+        return f"{display_name} - {self.focus_minutes}min - {self.completed_at:%d/%m %H:%M}"
 
 
 class DataModelLaunch(models.Model):

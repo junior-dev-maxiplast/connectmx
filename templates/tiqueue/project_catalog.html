@@ -7,7 +7,7 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
 </head>
 
 <!DOCTYPE html>
@@ -18,7 +18,7 @@
         <div class="headerMain">
             <div class="headerTitle">
                 <h1>{% if page_title %}{{ page_title }}{% else %}Projetos{% endif %}</h1>
-                <div class="subtitle">Visao geral com acesso rapido para Roadmap e Kanban</div>
+                <div class="subtitle">Vis&atilde;o geral com acesso r&aacute;pido para Roadmap e Kanban</div>
             </div>
             <div class="headerButton">
                 <div class="queue-toolbar">
@@ -27,29 +27,117 @@
             </div>
         </div>
 
+        {% if not is_concluded_page %}
+            <form method="get" class="projects-catalog-filters">
+                <div class="projects-catalog-filters-grid">
+                    <label class="projects-filter-field">
+                        <span>Pesquisar por nome</span>
+                        <input class="queue-input-sm" type="search" name="q" value="{{ filters.q }}" placeholder="Buscar projeto...">
+                    </label>
+                    <label class="projects-filter-field">
+                        <span>Respons&aacute;vel</span>
+                        <select class="queue-select" name="responsible">
+                            <option value="">Todos os respons&aacute;veis</option>
+                            {% for user in filter_users %}
+                                <option value="{{ user.id }}"{% if filters.responsible == user.id|stringformat:"s" %} selected{% endif %}>
+                                    {{ user.nameUser|default:user.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="projects-filter-field">
+                        <span>Participantes</span>
+                        <select class="queue-select" name="participant">
+                            <option value="">Todos os participantes</option>
+                            {% for user in filter_users %}
+                                <option value="{{ user.id }}"{% if filters.participant == user.id|stringformat:"s" %} selected{% endif %}>
+                                    {{ user.nameUser|default:user.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label class="projects-filter-field">
+                        <span>Per&iacute;odo de</span>
+                        <input class="queue-input-sm" type="date" name="date_from" value="{{ filters.date_from }}">
+                    </label>
+                    <label class="projects-filter-field">
+                        <span>Per&iacute;odo at&eacute;</span>
+                        <input class="queue-input-sm" type="date" name="date_to" value="{{ filters.date_to }}">
+                    </label>
+                </div>
+                <div class="projects-catalog-filters-actions">
+                    <button type="submit" class="queue-primary-btn">Filtrar</button>
+                    <a class="queue-secondary-btn" href="{% url 'projectCatalogPage' %}">Limpar</a>
+                    <div class="projects-filter-result">{{ projects|length }} projeto(s) exibido(s)</div>
+                </div>
+            </form>
+        {% endif %}
+
         <div class="projects-catalog-grid">
             {% for p in projects %}
-                <article class="projects-catalog-card">
+                <article class="projects-catalog-card" style="{{ p.card_style }}">
                     <header class="projects-catalog-head">
-                        <div class="projects-color" style="background-color: {{ p.color }};"></div>
+                        <div class="projects-color"></div>
                         <div class="projects-title-wrap">
                             <h2 class="projects-title">{{ p.name }}</h2>
                             <span class="projects-status">{{ p.get_status_display }}</span>
                         </div>
+                        <details class="projects-card-menu">
+                            <summary class="projects-card-menu-toggle" aria-label="Mais opcoes">...</summary>
+                            <div class="projects-card-menu-panel">
+                                <a class="projects-menu-link" href="{% url 'projectCatalogExportPdf' p.id %}" target="_blank" rel="noopener noreferrer">
+                                    <span class="projects-menu-link-label">Exportar PDF</span>
+                                    <span class="projects-menu-link-hint">Baixar vis&atilde;o completa</span>
+                                </a>
+                                {% if not is_concluded_page %}
+                                    <button type="button" class="projects-menu-link projects-menu-button" onclick="openProjectEditModal({{ p.id }}, this)">
+                                        <span class="projects-menu-link-label">Editar projeto</span>
+                                        <span class="projects-menu-link-hint">Abrir edi&ccedil;&atilde;o do projeto</span>
+                                    </button>
+                                    <details class="projects-submenu">
+                                        <summary class="projects-submenu-toggle">
+                                            <span class="projects-menu-link-label">Alterar cor do projeto</span>
+                                            <span class="projects-menu-link-hint">Abrir seletor de cor</span>
+                                        </summary>
+                                        <div class="projects-submenu-panel">
+                                            <form method="post" class="projects-color-form">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_id" value="update_project_color">
+                                                <input type="hidden" name="project_id" value="{{ p.id }}">
+                                                <input type="hidden" name="return_query" value="{{ current_querystring }}">
+                                                <label class="projects-color-form-label" for="project-color-{{ p.id }}">Cor do projeto</label>
+                                                <input id="project-color-{{ p.id }}" class="projects-color-input" type="color" name="color" value="{{ p.color }}">
+                                                <button type="submit" class="queue-primary-btn projects-color-save">Aplicar cor</button>
+                                            </form>
+                                        </div>
+                                    </details>
+                                    <form method="post" class="projects-menu-form" onsubmit="return confirm('Tem certeza que deseja concluir este projeto?');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_id" value="conclude_project_catalog">
+                                        <input type="hidden" name="project_id" value="{{ p.id }}">
+                                        <input type="hidden" name="return_query" value="{{ current_querystring }}">
+                                        <button type="submit" class="projects-menu-link projects-menu-button projects-menu-button--danger">
+                                            <span class="projects-menu-link-label">Concluir projeto</span>
+                                            <span class="projects-menu-link-hint">Mover para projetos conclu&iacute;dos</span>
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </details>
                     </header>
 
                     <p class="projects-desc">
                         {% if p.description %}
                             {{ p.description }}
                         {% else %}
-                            Sem descricao informada.
+                            Sem descri&ccedil;&atilde;o informada.
                         {% endif %}
                     </p>
 
                     <div class="projects-meta">
-                        <span>Inicio: {% if p.start_date %}{{ p.start_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
+                        <span>In&iacute;cio: {% if p.start_date %}{{ p.start_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
                         <span>Fim: {% if p.end_date %}{{ p.end_date|date:"d/m/Y" }}{% else %}-{% endif %}</span>
-                        <span>Responsável: {% if p.developer %}{% if p.developer.nameUser %}{{ p.developer.nameUser }}{% else %}{{ p.developer.username }}{% endif %}{% else %}-{% endif %}</span>
+                        <span>Respons&aacute;vel: {% if p.developer %}{% if p.developer.nameUser %}{{ p.developer.nameUser }}{% else %}{{ p.developer.username }}{% endif %}{% else %}-{% endif %}</span>
                         <span>Participantes:
                             {% for u in p.participants.all %}
                                 {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}{% if not forloop.last %}, {% endif %}
@@ -83,5 +171,170 @@
                 <div class="queue-empty">Nenhum projeto cadastrado.</div>
             {% endfor %}
         </div>
+
+        {% if not is_concluded_page %}
+            {% for p in projects %}
+                <div id="projectEditModal-{{ p.id }}" class="queue-modal-overlay projects-edit-modal" style="display:none;" onclick="handleProjectEditOverlay(event, {{ p.id }})">
+                    <div class="queue-modal-card projects-edit-modal-card" style="{{ p.card_style }}">
+                        <div class="queue-modal-head">
+                            <div class="projects-edit-head">
+                                <h3 class="projects-edit-title">Editar projeto</h3>
+                                <p class="projects-edit-copy">{{ p.name }}</p>
+                            </div>
+                            <button type="button" class="modal-close" onclick="closeProjectEditModal({{ p.id }})" aria-label="Fechar">&#x2715;</button>
+                        </div>
+
+                        <form method="post" id="project-edit-form-{{ p.id }}" class="modal-form projects-edit-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="form_id" value="edit_project_catalog">
+                            <input type="hidden" name="project_id" value="{{ p.id }}">
+                            <input type="hidden" name="return_query" value="{{ current_querystring }}">
+
+                            <div class="modal-grid projects-edit-grid">
+                                <div class="field span-2">
+                                    <label for="project-edit-name-{{ p.id }}">Projeto</label>
+                                    <input id="project-edit-name-{{ p.id }}" class="queue-input-sm" type="text" name="name" value="{{ p.name }}" required>
+                                </div>
+
+                                <div class="field span-2">
+                                    <label for="project-edit-description-{{ p.id }}">Descricao</label>
+                                    <textarea id="project-edit-description-{{ p.id }}" name="description" rows="4">{{ p.description|default:'' }}</textarea>
+                                </div>
+
+                                <div class="field">
+                                    <label for="project-edit-developer-{{ p.id }}">Responsavel</label>
+                                    <select id="project-edit-developer-{{ p.id }}" class="queue-select" name="developer_id">
+                                        <option value="">Sem responsavel</option>
+                                        {% for user in project_edit_users %}
+                                            <option value="{{ user.id }}"{% if p.developer_id == user.id %} selected{% endif %}>
+                                                {{ user.nameUser|default:user.username }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <div class="field">
+                                    <label for="project-edit-status-{{ p.id }}">Status</label>
+                                    <select id="project-edit-status-{{ p.id }}" class="queue-select" name="status">
+                                        {% for value, label in p.STATUS_CHOICES %}
+                                            <option value="{{ value }}"{% if p.status == value %} selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+
+                                <div class="field">
+                                    <label for="project-edit-start-{{ p.id }}">Inicio</label>
+                                    <input id="project-edit-start-{{ p.id }}" class="queue-input-sm" type="date" name="start_date" value="{% if p.start_date %}{{ p.start_date|date:'Y-m-d' }}{% endif %}">
+                                </div>
+
+                                <div class="field">
+                                    <label for="project-edit-end-{{ p.id }}">Fim</label>
+                                    <input id="project-edit-end-{{ p.id }}" class="queue-input-sm" type="date" name="end_date" value="{% if p.end_date %}{{ p.end_date|date:'Y-m-d' }}{% endif %}">
+                                </div>
+
+                                <div class="field span-2">
+                                    <label for="project-edit-color-{{ p.id }}">Cor</label>
+                                    <input id="project-edit-color-{{ p.id }}" class="queue-color projects-edit-color-input" type="color" name="color" value="{{ p.color }}">
+                                </div>
+
+                                <div class="field span-2">
+                                    <label>Participantes</label>
+                                    <div class="project-participant-picker project-participant-picker-inline projects-edit-participants" data-target-form="project-edit-form-{{ p.id }}">
+                                        {% for user in project_edit_users %}
+                                            <button type="button" class="project-participant-card {% if user in p.participants.all %}is-selected{% endif %}" data-user-id="{{ user.id }}">
+                                                {{ user.nameUser|default:user.username }}
+                                            </button>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="project-participant-hidden" data-hidden-target="project-edit-form-{{ p.id }}">
+                                        {% for user in p.participants.all %}
+                                            <input type="hidden" name="participants_ids" value="{{ user.id }}" form="project-edit-form-{{ p.id }}">
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal-actions">
+                                <button type="button" class="queue-secondary-btn" onclick="closeProjectEditModal({{ p.id }})">Cancelar</button>
+                                <button type="submit" class="queue-primary-btn">Salvar alteracoes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        {% endif %}
     </div>
+
+    <script>
+    (function() {
+        function syncFormPicker(picker, formId) {
+            const hiddenWrap = document.querySelector(`.project-participant-hidden[data-hidden-target="${formId}"]`);
+            if (!hiddenWrap) return;
+
+            function renderHidden() {
+                hiddenWrap.innerHTML = "";
+                picker.querySelectorAll(".project-participant-card.is-selected").forEach(card => {
+                    const input = document.createElement("input");
+                    input.type = "hidden";
+                    input.name = "participants_ids";
+                    input.value = card.getAttribute("data-user-id");
+                    input.setAttribute("form", formId);
+                    hiddenWrap.appendChild(input);
+                });
+            }
+
+            picker.querySelectorAll(".project-participant-card").forEach(card => {
+                card.addEventListener("click", () => {
+                    card.classList.toggle("is-selected");
+                    renderHidden();
+                });
+            });
+
+            renderHidden();
+        }
+
+        function closeAllProjectEditModals() {
+            document.querySelectorAll(".projects-edit-modal").forEach(modal => {
+                modal.style.display = "none";
+            });
+        }
+
+        document.querySelectorAll(".project-participant-picker[data-target-form]").forEach(picker => {
+            syncFormPicker(picker, picker.getAttribute("data-target-form"));
+        });
+
+        window.openProjectEditModal = function(projectId, trigger) {
+            closeAllProjectEditModals();
+            if (trigger) {
+                const menu = trigger.closest(".projects-card-menu");
+                if (menu) {
+                    menu.open = false;
+                }
+            }
+            const modal = document.getElementById(`projectEditModal-${projectId}`);
+            if (modal) {
+                modal.style.display = "flex";
+            }
+        };
+
+        window.closeProjectEditModal = function(projectId) {
+            const modal = document.getElementById(`projectEditModal-${projectId}`);
+            if (modal) {
+                modal.style.display = "none";
+            }
+        };
+
+        window.handleProjectEditOverlay = function(event, projectId) {
+            if (event.target === event.currentTarget) {
+                window.closeProjectEditModal(projectId);
+            }
+        };
+
+        document.addEventListener("keydown", event => {
+            if (event.key === "Escape") {
+                closeAllProjectEditModals();
+            }
+        });
+    })();
+    </script>
 </body>

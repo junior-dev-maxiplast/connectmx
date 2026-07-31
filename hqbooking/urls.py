@@ -6,6 +6,9 @@ from . import views
 urlpatterns = [
     path("logistica/pneus/", views.truck_tire_control_page, name="truck_tire_control"),
     path("logistica/pneus/historico/", views.truck_tire_history_page, name="truck_tire_history"),
+    path("logistica/romaneios/", views.logistics_romaneio_page, name="logistics_romaneio"),
+    path("logistica/romaneios/ranking/", views.logistics_romaneio_ranking_page, name="logistics_romaneio_ranking"),
+    path("logistica/romaneios/api/quick-submit/", views.logistics_romaneio_quick_submit, name="logistics_romaneio_quick_submit"),
     path("almoco/", views.lunch_booking_page, name="lunch_booking"),
     path("almoco/admin/", views.lunch_booking_admin_page, name="lunch_booking_admin"),
     path("sede/login/", views.login_page, name="hqbooking_login"),

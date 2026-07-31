@@ -1,0 +1,138 @@
+function loadProjectTimeline(url, pushState = true) {
+    const root = document.getElementById("project-timeline-root");
+    if (!root) {
+        window.location.href = url;
+        return;
+    }
+
+    const requestUrl = new URL(url, window.location.origin);
+    requestUrl.searchParams.set("calendar_partial", "1");
+    root.classList.add("is-loading");
+
+    fetch(requestUrl.toString(), {
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.text();
+        })
+        .then((html) => {
+            root.innerHTML = html;
+            initProjectTimelineFilters();
+            initProjectTimelineScroll();
+
+            if (pushState) {
+                requestUrl.searchParams.delete("calendar_partial");
+                const browserUrl = `${requestUrl.pathname}${requestUrl.search ? requestUrl.search : ""}`;
+                window.history.pushState({ projectTimeline: true }, "", browserUrl);
+            }
+        })
+        .catch(() => {
+            window.location.href = url;
+        })
+        .finally(() => {
+            root.classList.remove("is-loading");
+        });
+}
+
+function initProjectTimelineFilters() {
+    const root = document.getElementById("project-timeline-root");
+    if (!root) {
+        return;
+    }
+
+    root.querySelectorAll("[data-timeline-user-filter]").forEach((select) => {
+        if (select.dataset.asyncBound === "1") {
+            return;
+        }
+        select.dataset.asyncBound = "1";
+        select.addEventListener("change", () => {
+            const nextUrl = new URL(window.location.href);
+            if (select.value) {
+                nextUrl.searchParams.set("calendar_user", select.value);
+            } else {
+                nextUrl.searchParams.delete("calendar_user");
+            }
+            loadProjectTimeline(nextUrl.toString(), true);
+        });
+    });
+
+    if (!window.__projectTimelinePopstateBound) {
+        window.__projectTimelinePopstateBound = true;
+        window.addEventListener("popstate", () => {
+            if (document.getElementById("project-timeline-root")) {
+                loadProjectTimeline(window.location.href, false);
+            }
+        });
+    }
+}
+
+// The timeline spans several months in one continuous horizontal scroll —
+// no page reload between months. "Mês ←/→" jump to the previous/next month
+// marker, "Hoje" re-centers on today's column, and on first render the view
+// opens already scrolled to today instead of starting at the far left.
+function initProjectTimelineScroll() {
+    const scrollEl = document.getElementById("project-timeline-scroll");
+    const grid = scrollEl ? scrollEl.querySelector(".project-timeline-grid") : null;
+    if (!scrollEl || !grid) {
+        return;
+    }
+
+    function monthMarkers() {
+        return Array.from(grid.querySelectorAll(".project-timeline-month-label"))
+            .map((el) => el.offsetLeft)
+            .sort((a, b) => a - b);
+    }
+
+    function scrollToOffset(left, smooth = true) {
+        scrollEl.scrollTo({ left: Math.max(0, left), behavior: smooth ? "smooth" : "auto" });
+    }
+
+    function goToMonth(direction) {
+        const markers = monthMarkers();
+        if (!markers.length) {
+            return;
+        }
+        const current = scrollEl.scrollLeft;
+        let target;
+        if (direction > 0) {
+            target = markers.find((left) => left > current + 4);
+            if (target === undefined) target = markers[markers.length - 1];
+        } else {
+            const past = markers.filter((left) => left < current - 4);
+            target = past.length ? past[past.length - 1] : markers[0];
+        }
+        scrollToOffset(target - 8);
+    }
+
+    function goToToday(smooth = true) {
+        const todayCell = grid.querySelector(".project-timeline-daycell.is-today");
+        if (!todayCell) {
+            return;
+        }
+        scrollToOffset(todayCell.offsetLeft - scrollEl.clientWidth / 2 + todayCell.offsetWidth / 2, smooth);
+    }
+
+    const root = document.getElementById("project-timeline-root") || document;
+    root.querySelectorAll("[data-timeline-scroll]").forEach((button) => {
+        if (button.dataset.bound === "1") {
+            return;
+        }
+        button.dataset.bound = "1";
+        button.addEventListener("click", () => {
+            const action = button.dataset.timelineScroll;
+            if (action === "prev") goToMonth(-1);
+            else if (action === "next") goToMonth(1);
+            else if (action === "today") goToToday();
+        });
+    });
+
+    if (!scrollEl.dataset.landed) {
+        scrollEl.dataset.landed = "1";
+        requestAnimationFrame(() => goToToday(false));
+    }
+}

@@ -1,5 +1,100 @@
 {% load static %}
 
+<svg class="sidebar_icon_sprite" aria-hidden="true" focusable="false">
+    <defs>
+        <symbol id="icon-home" viewBox="0 0 24 24">
+            <path d="M4 11 12 4l8 7"/>
+            <path d="M6 10v8a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-8"/>
+            <path d="M10 19v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/>
+        </symbol>
+        <symbol id="icon-grid" viewBox="0 0 24 24">
+            <rect x="4" y="4" width="7" height="7" rx="1.5"/>
+            <rect x="13" y="4" width="7" height="7" rx="1.5"/>
+            <rect x="4" y="13" width="7" height="7" rx="1.5"/>
+            <rect x="13" y="13" width="7" height="7" rx="1.5"/>
+        </symbol>
+        <symbol id="icon-user-check" viewBox="0 0 24 24">
+            <circle cx="10" cy="9" r="3.3"/>
+            <path d="M4 20c0-3.8 2.7-6.5 6-6.5s6 2.7 6 6.5"/>
+            <path d="M16 8.5l1.5 1.5 3-3"/>
+        </symbol>
+        <symbol id="icon-layers" viewBox="0 0 24 24">
+            <path d="M12 4 20 8.2 12 12.4 4 8.2Z"/>
+            <path d="M4 12.5l8 4.1 8-4.1"/>
+            <path d="M4 16.7l8 4.1 8-4.1"/>
+        </symbol>
+        <symbol id="icon-calendar" viewBox="0 0 24 24">
+            <rect x="4" y="5" width="16" height="15" rx="2"/>
+            <path d="M4 10h16"/>
+            <path d="M8 3v4"/>
+            <path d="M16 3v4"/>
+        </symbol>
+        <symbol id="icon-clock" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8"/>
+            <path d="M12 7.5v4.7l3.2 2"/>
+        </symbol>
+        <symbol id="icon-apps" viewBox="0 0 24 24">
+            <circle cx="6" cy="6" r="1.5"/><circle cx="12" cy="6" r="1.5"/><circle cx="18" cy="6" r="1.5"/>
+            <circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/>
+            <circle cx="6" cy="18" r="1.5"/><circle cx="12" cy="18" r="1.5"/><circle cx="18" cy="18" r="1.5"/>
+        </symbol>
+        <symbol id="icon-inbox" viewBox="0 0 24 24">
+            <path d="M4 13h4.3l1.2 2.2h4.9l1.2-2.2H20"/>
+            <path d="M4 13 6 6.3a1 1 0 0 1 1-.7h10a1 1 0 0 1 1 .7L20 13"/>
+            <path d="M4 13v5a1.3 1.3 0 0 0 1.3 1.3h13.4A1.3 1.3 0 0 0 20 18v-5"/>
+        </symbol>
+        <symbol id="icon-user" viewBox="0 0 24 24">
+            <circle cx="12" cy="8.3" r="3.5"/>
+            <path d="M5 20c0-4 3.1-6.7 7-6.7s7 2.7 7 6.7"/>
+        </symbol>
+        <symbol id="icon-clipboard-plus" viewBox="0 0 24 24">
+            <rect x="6" y="4" width="12" height="16" rx="2"/>
+            <path d="M9 4V3.6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1V4"/>
+            <path d="M12 10v6"/>
+            <path d="M9 13h6"/>
+        </symbol>
+        <symbol id="icon-book" viewBox="0 0 24 24">
+            <path d="M4 6 L4 18 L11 19 L11 7 Z"/>
+            <path d="M20 6 L20 18 L13 19 L13 7 Z"/>
+            <path d="M12 6.5 L12 19.5"/>
+        </symbol>
+        <symbol id="icon-kanban" viewBox="0 0 24 24">
+            <rect x="4" y="4" width="4.5" height="16" rx="1"/>
+            <rect x="9.8" y="4" width="4.5" height="10" rx="1"/>
+            <rect x="15.5" y="4" width="4.5" height="13" rx="1"/>
+        </symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24">
+            <path d="M4.5 12a7.5 7.5 0 0 1 7.5-7.5c2.3 0 4.4 1 5.8 2.6"/>
+            <path d="M19 3.5v4.5h-4.5"/>
+            <path d="M19.5 12a7.5 7.5 0 0 1-7.5 7.5c-2.3 0-4.4-1-5.8-2.6"/>
+            <path d="M5 20.5V16h4.5"/>
+        </symbol>
+        <symbol id="icon-hex-bolt" viewBox="0 0 24 24">
+            <path d="M12 3 19 7 19 17 12 21 5 17 5 7 Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </symbol>
+        <symbol id="icon-wifi" viewBox="0 0 24 24">
+            <path d="M4 8.5a12 12 0 0 1 16 0"/>
+            <path d="M7 12a8 8 0 0 1 10 0"/>
+            <path d="M10 15.5a4 4 0 0 1 4 0"/>
+            <circle cx="12" cy="19" r="1"/>
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24">
+            <path d="M10 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/>
+            <path d="M14 4h6v6"/>
+            <path d="M20 4 11 13"/>
+        </symbol>
+        <symbol id="icon-chat" viewBox="0 0 24 24">
+            <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 4v-4H6a2 2 0 0 1-2-2Z"/>
+            <circle cx="9" cy="10" r="1"/><circle cx="12" cy="10" r="1"/><circle cx="15" cy="10" r="1"/>
+        </symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="12" cy="12" r="7.5" stroke-dasharray="2.2 3.4"/>
+        </symbol>
+    </defs>
+</svg>
+
 <div class="sidebar">
     <div class="sidebar_brand" aria-label="ConnectMX">
         <img src="{% static 'assets/cmx.png' %}" class="brand_mark" alt="ConnectMX">
@@ -26,17 +121,26 @@
         <li class="dropdown">
             <div class="dropdown_button">
                 <a href="{% url 'index' %}">
-                    <div class="dropdownHeader sidebar_primary_header">
-                        <img src="{% static 'assets/home.png' %}" class="sidebar_icon" alt="">
-                        <span class="sidebar_text sidebar_primary_text">Página Inicial</span>
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="dashboard">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-home"></use></svg>
+                        <span class="sidebar_text sidebar_primary_text">Dashboard</span>
+                    </div>
+                </a>
+            </div>
+
+            <div class="dropdown_button">
+                <a href="{% url 'hubPage' %}">
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="hub">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"></use></svg>
+                        <span class="sidebar_text sidebar_primary_text">HUB</span>
                     </div>
                 </a>
             </div>
 
             <div class="dropdown_button">
                 <a href="{% url 'queueUserPage' %}">
-                    <div class="dropdownHeader sidebar_primary_header">
-                        <img src="{% static 'assets/minha_fila_main.png' %}" class="sidebar_icon" alt="">
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="queue">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user-check"></use></svg>
                         <span class="sidebar_text sidebar_primary_text">Minha Fila</span>
                     </div>
                 </a>
@@ -44,44 +148,67 @@
 
             <div class="dropdown_button">
                 <a href="{% url 'queueMainPage' %}">
-                    <div class="dropdownHeader sidebar_primary_header">
-                        <img src="{% static 'assets/fila_geral.png' %}" class="sidebar_icon" alt="">
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="general-queue">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layers"></use></svg>
                         <span class="sidebar_text sidebar_primary_text">Fila Geral</span>
                     </div>
                 </a>
             </div>
 
+            <div class="dropdown_button">
+                <a href="{% url 'projectCalendarPage' %}">
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="calendar">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg>
+                        <span class="sidebar_text sidebar_primary_text">Calendário Geral</span>
+                    </div>
+                </a>
+            </div>
+
+            {% if request.user.is_system_admin or request.user.is_superuser %}
+            <div class="dropdown_button">
+                <a href="{% url 'portalPendingDemandsPage' %}">
+                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="portal">
+                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock"></use></svg>
+                        <span class="sidebar_text sidebar_primary_text">Demandas Pendentes</span>
+                    </div>
+                </a>
+            </div>
+            {% endif %}
+
             <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader sidebar_primary_header">
-                    <img src="{% static 'assets/funcionalidades.png' %}" class="sidebar_icon" alt="">
+                <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="features">
+                    <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-apps"></use></svg>
                     <span class="sidebar_text sidebar_primary_text">Funcionalidades</span>
                     <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
                 </div>
                 <div class="dropdownItens">
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_fila.png' %}" class="sidebar_sub_icon" alt=""><span>Fila</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="queue" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-inbox"></use></svg><span>Fila</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
+                            <a href="{% url 'portalDemandPage' %}"><div class="dropdownIndividualItem"><span>Portal de chamados</span></div></a>
+                            <a href="{% url 'portalPendingDemandsPage' %}"><div class="dropdownIndividualItem"><span>Demandas pendentes</span></div></a>
                             <a href="{% url 'queueConcludedPage' %}"><div class="dropdownIndividualItem"><span>Tarefas concluídas</span></div></a>
                             <a href="{% url 'myAgendaPage' %}"><div class="dropdownIndividualItem"><span>Minha agenda</span></div></a>
                         </div>
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_user.png' %}" class="sidebar_sub_icon" alt=""><span>Usuário</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="user" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg><span>Usuário</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
-                            <a href="{% url 'createUser' %}"><div class="dropdownIndividualItem"><span>Cadastro</span></div></a>
+                            <a href="{% url 'createUser' %}"><div class="dropdownIndividualItem"><span>Cadastro interno</span></div></a>
+                            <a href="{% url 'portalRequesterAdminPage' %}"><div class="dropdownIndividualItem"><span>Solicitantes TI</span></div></a>
                         </div>
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/i_cadastro.png' %}" class="sidebar_sub_icon" alt=""><span>Cadastro</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="cadastro" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clipboard-plus"></use></svg><span>Cadastro</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -93,8 +220,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/base_conhecimento.png' %}" class="sidebar_sub_icon" alt=""><span>Base de conhecimento</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="knowledge" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-book"></use></svg><span>Base de conhecimento</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -105,8 +232,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/hub.png' %}" class="sidebar_sub_icon" alt=""><span>HUB</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="hub" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"></use></svg><span>HUB</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -116,11 +243,13 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/projetos.png' %}" class="sidebar_sub_icon" alt=""><span>Projetos</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="projects" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-kanban"></use></svg><span>Projetos</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
+                            <a href="{% url 'projectCalendarPage' %}"><div class="dropdownIndividualItem"><span>Calendário geral</span></div></a>
+                            <a href="{% url 'projectTimelinePage' %}"><div class="dropdownIndividualItem"><span>Timeline geral</span></div></a>
                             <a href="{% url 'projectCatalogPage' %}"><div class="dropdownIndividualItem"><span>Em aberto</span></div></a>
                             <a href="{% url 'projectCatalogConcludedPage' %}"><div class="dropdownIndividualItem"><span>Concluídos</span></div></a>
                             <a href="{% url 'manageProjects' %}"><div class="dropdownIndividualItem"><span>Cadastro</span></div></a>
@@ -128,8 +257,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/atualizacoes.png' %}" class="sidebar_sub_icon" alt=""><span>Atualizações</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="updates" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Atualizações</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -138,8 +267,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/manutencao.png' %}" class="sidebar_sub_icon" alt=""><span>Manutenções</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="maintenance" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-hex-bolt"></use></svg><span>Manutenções</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -151,8 +280,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/wifi.png' %}" class="sidebar_sub_icon" alt=""><span>Wifi</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="wifi" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-wifi"></use></svg><span>Wifi</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -161,20 +290,21 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/sistemas.png' %}" class="sidebar_sub_icon" alt=""><span>Sistemas externos</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="external" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-external"></use></svg><span>Sistemas externos</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
                             <a href="{% url 'hqbooking_login' %}"><div class="dropdownIndividualItem"><span>Reserva da sede</span></div></a>
                             <a href="{% url 'lunch_booking' %}"><div class="dropdownIndividualItem"><span>Reserva de almoço</span></div></a>
                             <a href="{% url 'truck_tire_control' %}"><div class="dropdownIndividualItem"><span>Logística - Pneus</span></div></a>
+                            <a href="{% url 'logistics_romaneio' %}"><div class="dropdownIndividualItem"><span>Logística - Romaneios</span></div></a>
                         </div>
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/maxibot.png' %}" class="sidebar_sub_icon" alt=""><span>Assistente</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="assistant" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chat"></use></svg><span>Assistente</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -183,8 +313,8 @@
                     </div>
 
                     <div class="sidebar_subcategory">
-                        <div class="sidebar_subcategory_head" onclick="toggleSubcategory(event, this)">
-                            <div class="sidebar_subcategory_head_left"><img src="{% static 'assets/configuracao.png' %}" class="sidebar_sub_icon" alt=""><span>Sistema</span></div>
+                        <div class="sidebar_subcategory_head" data-sidebar-tone="system" onclick="toggleSubcategory(event, this)">
+                            <div class="sidebar_subcategory_head_left"><svg class="sidebar_sub_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-settings"></use></svg><span>Sistema</span></div>
                             <span class="sidebar_sub_pointer" aria-hidden="true">&#x276F;</span>
                         </div>
                         <div class="sidebar_subcategory_items">
@@ -244,6 +374,54 @@
         normalizeSidebarText(el.querySelector(".sidebar_primary_text")?.textContent || "") === "funcionalidades"
     );
 
+    function normalizeSidebarPath(value) {
+        const rawValue = String(value || "").trim();
+        if (!rawValue) return "/";
+        try {
+            const parsed = new URL(rawValue, window.location.origin);
+            return (parsed.pathname || "/").replace(/\/+$/, "") || "/";
+        } catch (error) {
+            return rawValue.replace(/\/+$/, "") || "/";
+        }
+    }
+
+    function applySidebarCurrentState() {
+        const currentPath = normalizeSidebarPath(window.location.pathname);
+        const links = Array.from(sidebar.querySelectorAll("a[href]"));
+        let bestMatch = null;
+
+        links.forEach((link) => {
+            const linkPath = normalizeSidebarPath(link.getAttribute("href"));
+            if (!linkPath || linkPath === "#") return;
+            const isExactMatch = currentPath === linkPath;
+            const isNestedMatch = linkPath !== "/" && currentPath.startsWith(`${linkPath}/`);
+            if (!isExactMatch && !isNestedMatch) return;
+            if (!bestMatch || linkPath.length > bestMatch.path.length) {
+                bestMatch = { link, path: linkPath };
+            }
+        });
+
+        if (!bestMatch) return;
+
+        const currentItem = bestMatch.link.querySelector(".dropdownIndividualItem");
+        if (currentItem) currentItem.classList.add("is-current");
+
+        const currentSubcategory = bestMatch.link.closest(".sidebar_subcategory");
+        if (currentSubcategory) {
+            currentSubcategory.classList.add("is-current", "is-open");
+            const currentHead = currentSubcategory.querySelector(".sidebar_subcategory_head");
+            if (currentHead) currentHead.classList.add("is-current");
+        }
+
+        const currentButton = bestMatch.link.closest(".dropdown_button");
+        if (currentButton) {
+            currentButton.classList.add("is-current");
+            if (currentButton.querySelector(".dropdownItens")) {
+                currentButton.classList.add("active");
+            }
+        }
+    }
+
     function applySidebarSearchFilter() {
         const query = normalizeSidebarText(sidebarSearchInput ? sidebarSearchInput.value : "");
         const isSearching = !!query;
@@ -288,9 +466,13 @@
                     el.classList.add("active");
                 } else {
                     // Ao limpar busca, mantém menu recolhido por padrão e restaura itens.
-                    el.classList.remove("active");
+                    if (!el.classList.contains("is-current")) {
+                        el.classList.remove("active");
+                    }
                     subcategories.forEach((cat) => {
-                        cat.classList.remove("is-open");
+                        if (!cat.classList.contains("is-current")) {
+                            cat.classList.remove("is-open");
+                        }
                         Array.from(cat.querySelectorAll(".dropdownIndividualItem")).forEach((item) => item.style.display = "");
                         cat.style.display = "";
                     });
@@ -302,7 +484,11 @@
     sidebar.addEventListener("mouseleave", () => {
         const dropdowns = sidebar.querySelectorAll(".dropdown_button");
         if (sidebarSearchInput && sidebarSearchInput.value) return;
-        dropdowns.forEach(el => el.classList.remove("active"));
+        dropdowns.forEach((el) => {
+            if (!el.classList.contains("is-current")) {
+                el.classList.remove("active");
+            }
+        });
     });
 
     function toggleDrop(element) {
@@ -321,6 +507,8 @@
         if (!root) return;
         root.classList.toggle("is-open");
     }
+
+    applySidebarCurrentState();
 
     if (sidebarSearchInput) {
         sidebarSearchInput.addEventListener("input", applySidebarSearchFilter);

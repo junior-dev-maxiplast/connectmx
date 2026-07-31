@@ -1,0 +1,34 @@
+{% load static %}
+<header class="support-topbar">
+    <div class="support-brand">
+        <img src="{% static 'assets/cmx.png' %}" alt="ConnectMX" class="support-brand-mark">
+        <div>
+            <strong>ConnectMX</strong>
+            <span>{{ portal_page_label|default:"Portal de Chamados" }}</span>
+        </div>
+    </div>
+
+    <div class="support-top-actions">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+        <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'home' %} is-active{% endif %}">Início</a>
+        {% if can_request_portal %}
+            <a href="{% url 'portalDemandCreatePage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'create' %} is-active{% endif %}">Abrir demanda</a>
+        {% endif %}
+        <a href="{% url 'portalMyDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'my-demands' %} is-active{% endif %}">Minhas demandas</a>
+        {% if can_manage_portal %}
+            <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'pending' %} is-active{% endif %}">Demandas pendentes</a>
+        {% endif %}
+        <a href="{% url 'index' %}" class="support-btn support-btn-secondary">Painel interno</a>
+        <form method="POST" action="{% url 'logoutPage' %}">
+            {% csrf_token %}
+            <button type="submit" class="support-btn">Sair</button>
+        </form>
+    </div>
+</header>
