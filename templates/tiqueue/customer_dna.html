@@ -1,0 +1,597 @@
+{% load static dna_extras %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | DNA de Cliente</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=5">
+    {% if dashes_mode %}<link rel="stylesheet" href="{% static '/style/dashes.css' %}">{% endif %}
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    {% if dashes_mode %}
+        {% include 'partials/dashes_sidebar.html' %}
+    {% else %}
+        {% include 'partials/sidebar.html' %}
+    {% endif %}
+
+    <main class="dna-page{% if dashes_mode %} dna-page-dashes{% endif %}" data-search-url="{{ dna_search_url }}" data-prepare-url="{{ dna_prepare_url }}" data-ai-url="{{ dna_ai_url }}" data-page-url="{{ dna_page_url }}">
+        <header class="dna-topbar">
+            <div class="dna-title-block">
+                <span class="dna-kicker">Visão 360º do relacionamento</span>
+                <h1>DNA do Cliente</h1>
+            </div>
+            <div class="dna-search" id="dnaSearch">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
+                <input id="dnaSearchInput" type="search" placeholder="Pesquise por nome, código, CNPJ ou cidade" autocomplete="off">
+                <kbd>Ctrl + K</kbd>
+                <div class="dna-search-results" id="dnaSearchResults" hidden></div>
+            </div>
+            <div class="dna-topbar-actions">
+                {% if dashboard %}
+                    <form id="dnaIndicatorForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="customer_id" value="{{ customer_id }}">
+                        <button type="submit" class="dna-indicator-btn" id="generateIndicatorButton">
+                            <span>▦</span>
+                            {% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
+                        </button>
+                    </form>
+                    <form id="dnaAiForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="customer_id" value="{{ customer_id }}">
+                        <button type="submit" class="dna-insight-btn{% if insight_snapshot %} is-ready{% endif %}" id="requestAiButton" {% if not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                            <span class="dna-insight-spark">✦</span>
+                            {% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
+                        </button>
+                    </form>
+                    {% if insight_snapshot %}
+                        <a class="dna-json-btn" href="{{ dna_payload_url }}" target="_blank" rel="noopener">JSON IA</a>
+                    {% endif %}
+                    {% if insight_snapshot and insight_snapshot.ai_response %}
+                        <a class="dna-pdf-btn is-ready" href="{{ dna_pdf_url }}" title="Baixar relatório completo em PDF">PDF completo</a>
+                    {% else %}
+                        <button type="button" class="dna-pdf-btn" disabled title="Gere os indicadores e conclua a análise de IA">PDF completo</button>
+                    {% endif %}
+                    <div class="dna-topbar-status"><span></span> ERP Senior</div>
+                {% endif %}
+            </div>
+        </header>
+
+        {% if data_error %}
+            <section class="dna-empty-state">
+                <div class="dna-empty-icon">!</div>
+                <h2>Não foi possível carregar este DNA</h2>
+                <p>{{ data_error }}</p>
+                <p>Use a busca acima para selecionar outro cliente ou tente novamente.</p>
+            </section>
+        {% endif %}
+
+        {% if dashboard %}
+            <section class="dna-customer-hero dna-panel">
+                <div class="dna-avatar">{{ dashboard.customer.name|slice:':1' }}</div>
+                <div class="dna-customer-main">
+                    <div class="dna-name-row">
+                        <h2>{{ dashboard.customer.name }}</h2>
+                        <span class="dna-active-badge">Ativo</span>
+                    </div>
+                    <div class="dna-customer-id">Código: {{ dashboard.customer.code }} <span>•</span> CNPJ: {{ dashboard.customer.cnpj }}</div>
+                    <div class="dna-customer-location">{{ dashboard.customer.market }} <span>•</span> {{ dashboard.customer.city }} / {{ dashboard.customer.state }} <span>•</span> {{ dashboard.customer.region }}</div>
+                </div>
+                <div class="dna-hero-fact">
+                    <span>Vendedor responsável</span>
+                    <strong>{{ dashboard.customer.representative }}</strong>
+                </div>
+                <div class="dna-hero-fact">
+                    <span>Última compra</span>
+                    <strong>{{ dashboard.relationship.last_purchase }}</strong>
+                    {% if dashboard.relationship.last_purchase_days != None %}<small>há {{ dashboard.relationship.last_purchase_days }} dias</small>{% endif %}
+                </div>
+                <div class="dna-hero-fact">
+                    <span>Tempo de relacionamento</span>
+                    <strong>{{ dashboard.relationship.duration }}</strong>
+                    <small>Desde {{ dashboard.relationship.since }}</small>
+                </div>
+            </section>
+
+            <section class="dna-metrics">
+                <article class="dna-metric dna-panel tone-green">
+                    <div class="dna-metric-icon">R$</div>
+                    <div><span>Faturamento total</span><strong>{{ dashboard.metrics.revenue }}</strong><small>{{ dashboard.metrics.invoices }} notas fiscais</small></div>
+                </article>
+                <article class="dna-metric dna-panel tone-blue">
+                    <div class="dna-metric-icon">KG</div>
+                    <div><span>Volume faturado</span><strong>{{ dashboard.metrics.weight }}</strong><small>{{ dashboard.metrics.quantity }} unidades</small></div>
+                </article>
+                <article class="dna-metric dna-panel tone-purple">
+                    <div class="dna-metric-icon">↗</div>
+                    <div><span>Valor médio / kg</span><strong>{{ dashboard.metrics.average_value_kg }}</strong><small>Média histórica</small></div>
+                </article>
+                <article class="dna-metric dna-panel tone-amber">
+                    <div class="dna-metric-icon">#</div>
+                    <div><span>Pedidos</span><strong>{{ dashboard.metrics.orders }}</strong><small>Ticket médio {{ dashboard.metrics.average_ticket }}</small></div>
+                </article>
+            </section>
+
+            <section class="dna-operational-overview">
+                <article class="dna-panel dna-operational-kpi is-complaint">
+                    <div class="dna-operational-icon">!</div>
+                    <div><span>Reclamações</span><strong>{{ dashboard.operational.complaints.count }}</strong><small>{{ dashboard.operational.complaints.severe_count }} graves · incidência média {{ dashboard.operational.complaints.incidence_pct }}%</small></div>
+                </article>
+                <article class="dna-panel dna-operational-kpi is-return">
+                    <div class="dna-operational-icon">↩</div>
+                    <div><span>Devoluções</span><strong>{{ dashboard.operational.returns.total_value_display }}</strong><small>{{ dashboard.operational.returns.count }} registros · {{ dashboard.operational.returns.revenue_share_pct }}% do faturamento</small></div>
+                </article>
+                <article class="dna-panel dna-operational-kpi is-cliche">
+                    <div class="dna-operational-icon">C</div>
+                    <div><span>Clichês</span><strong>{{ dashboard.operational.cliches.total_value_display }}</strong><small>{{ dashboard.operational.cliches.count }} lançamentos · área {{ dashboard.operational.cliches.total_area_display }}</small></div>
+                </article>
+            </section>
+
+            {% if insight_snapshot %}
+                <section class="dna-intelligence-head dna-panel">
+                    <div>
+                        <span class="dna-intelligence-kicker">Inteligência comercial calculada</span>
+                        <h2>Leitura executiva do cliente</h2>
+                        {% if insight_snapshot.status == 'completed' %}
+                            <p>Indicadores determinísticos combinados com análise estruturada da OpenAI.</p>
+                        {% elif insight_snapshot.status == 'error' %}
+                            <p>Os indicadores foram calculados, mas a geração dos insights OpenAI encontrou um erro.</p>
+                        {% else %}
+                            <p>Indicadores determinísticos preparados; o envio à IA ocorrerá somente sob comando.</p>
+                        {% endif %}
+                    </div>
+                    <div class="dna-snapshot-meta">
+                        <span>Gerado em {{ insight_snapshot.created_at|date:"d/m/Y H:i" }}</span>
+                        <strong>Dados de {{ insight_snapshot.source_period_start|date:"d/m/Y" }} a {{ insight_snapshot.source_period_end|date:"d/m/Y" }}</strong>
+                        <small>{{ insight_snapshot.source_row_count }} registros • Snapshot {{ insight_snapshot.source_fingerprint|slice:":8" }}</small>
+                    </div>
+                </section>
+
+                {% if insight_snapshot.status == 'error' %}
+                    <section class="dna-ai-alert dna-panel">
+                        <strong>Não foi possível concluir a análise OpenAI</strong>
+                        <p>{{ insight_snapshot.ai_error }}</p>
+                        <small>Revise a configuração em Sistema → Configurações e tente novamente.</small>
+                    </section>
+                {% elif insight_snapshot.ai_response %}
+                    <section class="dna-ai-summary dna-panel">
+                        <div class="dna-ai-summary-head">
+                            <div><span>ANÁLISE OPENAI</span><h2>{{ insight_snapshot.ai_response.classification }}</h2></div>
+                            <small>{{ insight_snapshot.ai_model }} · {{ insight_snapshot.ai_total_tokens }} tokens</small>
+                        </div>
+                        <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                        <div class="dna-ai-priorities">
+                            <article><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></article>
+                            <article><span>Principal atenção</span><strong>{{ insight_snapshot.ai_response.principal_attention }}</strong></article>
+                        </div>
+                    </section>
+
+                    <section class="dna-ai-insights-grid">
+                        {% for insight in insight_snapshot.ai_response.insights %}
+                            <article class="dna-ai-insight dna-panel is-{{ insight.type }}">
+                                <div class="dna-ai-insight-meta"><span>{{ insight.type }}</span><small>Confiança {{ insight.confidence }}</small></div>
+                                <h3>{{ insight.title }}</h3>
+                                <p>{{ insight.summary }}</p>
+                                <div class="dna-ai-evidence">{% for evidence in insight.evidence %}<span>{{ evidence }}</span>{% endfor %}</div>
+                                <div class="dna-ai-action"><span>Ação recomendada</span><strong>{{ insight.recommended_action }}</strong></div>
+                            </article>
+                        {% endfor %}
+                    </section>
+
+                    <section class="dna-ai-actions dna-panel">
+                        <div class="dna-panel-title"><h3>Plano de ação sugerido pela IA</h3><span>Revisão comercial recomendada</span></div>
+                        <div>{% for action in insight_snapshot.ai_response.recommended_actions %}<article><span>{{ forloop.counter }}</span><p>{{ action }}</p></article>{% endfor %}</div>
+                    </section>
+                {% endif %}
+
+                <section class="dna-insight-card-grid">
+                    {% for card in insight_snapshot.insight_cards %}
+                        <article class="dna-insight-card dna-panel insight-tone-{{ card.tone }}">
+                            <span class="dna-insight-eyebrow">{{ card.eyebrow }}</span>
+                            <h3>{{ card.title }}</h3>
+                            <p>{{ card.summary }}</p>
+                            <div class="dna-evidence-list">
+                                {% for evidence in card.evidence %}<span>{{ evidence }}</span>{% endfor %}
+                            </div>
+                        </article>
+                    {% endfor %}
+                </section>
+
+                <section class="dna-comparison-grid">
+                    <article class="dna-panel dna-comparison-card">
+                        <div class="dna-panel-title"><h3>Comparativo YTD</h3><span>{{ insight_snapshot.metrics.analysis_year }} x {{ insight_snapshot.metrics.analysis_year|add:"-1" }}</span></div>
+                        <div class="dna-comparison-items">
+                            <div><span>Faturamento</span><strong>{{ insight_snapshot.metrics.ytd.revenue.change_pct|percentage }}</strong><small>Mesmo período</small></div>
+                            <div><span>Quantidade</span><strong>{{ insight_snapshot.metrics.ytd.quantity.change_pct|percentage }}</strong><small>Consumo físico</small></div>
+                            <div><span>Pedidos faturados</span><strong>{{ insight_snapshot.metrics.ytd.orders.change_pct|percentage }}</strong><small>Pedidos associados</small></div>
+                            <div><span>Notas fiscais</span><strong>{{ insight_snapshot.metrics.ytd.invoices.change_pct|percentage }}</strong><small>Documentos emitidos</small></div>
+                        </div>
+                    </article>
+                    <article class="dna-panel dna-comparison-card">
+                        <div class="dna-panel-title"><h3>Janela móvel de 12 meses</h3><span>Momento recente</span></div>
+                        <div class="dna-comparison-items">
+                            <div><span>Faturamento</span><strong>{{ insight_snapshot.metrics.rolling_12_months.revenue.change_pct|percentage }}</strong><small>Contra 12 meses anteriores</small></div>
+                            <div><span>Quantidade</span><strong>{{ insight_snapshot.metrics.rolling_12_months.quantity.change_pct|percentage }}</strong><small>Evolução física</small></div>
+                            <div><span>Pedidos</span><strong>{{ insight_snapshot.metrics.rolling_12_months.orders.change_pct|percentage }}</strong><small>Frequência recente</small></div>
+                            <div><span>Recorrência</span><strong>{{ insight_snapshot.metrics.recurrence.longest_consecutive_months }} meses</strong><small>Maior sequência</small></div>
+                        </div>
+                    </article>
+                    <article class="dna-panel dna-comparison-card">
+                        <div class="dna-panel-title"><h3>Entrada de pedidos YTD</h3><span>Demanda futura</span></div>
+                        <div class="dna-comparison-items">
+                            <div><span>Pedidos emitidos</span><strong>{{ insight_snapshot.metrics.order_entry_ytd.orders.change_pct|percentage }}</strong><small>Variação anual</small></div>
+                            <div><span>Valor pedido</span><strong>{{ insight_snapshot.metrics.order_entry_ytd.value.change_pct|percentage }}</strong><small>Carteira emitida</small></div>
+                            <div><span>Quantidade pedida</span><strong>{{ insight_snapshot.metrics.order_entry_ytd.quantity.change_pct|percentage }}</strong><small>Demanda física</small></div>
+                            <div><span>Ticket médio</span><strong>{{ insight_snapshot.metrics.order_entry_ytd.average_ticket.change_pct|percentage }}</strong><small>Por pedido</small></div>
+                        </div>
+                    </article>
+                    <article class="dna-panel dna-comparison-card dna-quality-comparison">
+                        <div class="dna-panel-title"><h3>Qualidade e custos YTD</h3><span>Contra o mesmo período anterior</span></div>
+                        <div class="dna-comparison-items">
+                            <div><span>Reclamações</span><strong>{{ insight_snapshot.metrics.operational.ytd_comparison.complaints.count.change_pct|percentage }}</strong><small>Quantidade de ocorrências</small></div>
+                            <div><span>Incidência média</span><strong>{{ insight_snapshot.metrics.operational.ytd_comparison.complaints.average_incidence_pct.change_pct|percentage }}</strong><small>Por registro de reclamação</small></div>
+                            <div><span>Valor devolvido</span><strong>{{ insight_snapshot.metrics.operational.ytd_comparison.returns.value.change_pct|percentage }}</strong><small>Impacto financeiro</small></div>
+                            <div><span>Custo de clichês</span><strong>{{ insight_snapshot.metrics.operational.ytd_comparison.cliches.value.change_pct|percentage }}</strong><small>Lançamentos no período</small></div>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="dna-intelligence-detail-grid">
+                    <article class="dna-panel dna-open-orders-card">
+                        <div class="dna-panel-title"><h3>Carteira aberta</h3><span>{{ insight_snapshot.metrics.open_orders.count }} pedido(s) · maior valor primeiro</span></div>
+                        {% if insight_snapshot.metrics.open_orders.items %}
+                            <div class="dna-open-order-list">
+                                {% for order in insight_snapshot.metrics.open_orders.items %}
+                                    <div class="dna-open-order">
+                                        <div><span>Pedido</span><strong>{{ order.number }}</strong></div>
+                                        <div><span>Valor</span><strong>{{ order.value_display }}</strong></div>
+                                        <div><span>Previsão</span><strong>{{ order.forecast_date_display }}</strong></div>
+                                        <div><span>Saldo físico</span><strong>{{ order.balance_display }}</strong></div>
+                                        <div class="dna-service-progress">
+                                            <span>Atendimento {{ order.service_pct|percentage_plain }}</span>
+                                            <div><i style="width: {{ order.service_pct }}%"></i></div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="dna-no-data">Nenhum pedido aberto identificado.</div>
+                        {% endif %}
+                    </article>
+                    <article class="dna-panel dna-signal-card">
+                        <div class="dna-panel-title"><h3>Sinais comerciais</h3><span>Histórico de pedidos</span></div>
+                        <div class="dna-signal-columns">
+                            <div>
+                                <h4>Situações</h4>
+                                {% for item in insight_snapshot.metrics.commercial_signals.status_distribution %}
+                                    <div class="dna-signal-row"><span>{{ item.label }}</span><strong>{{ item.count }}</strong><small>{{ item.share_pct|percentage_plain }}</small></div>
+                                {% endfor %}
+                            </div>
+                            <div>
+                                <h4>Condições de pagamento</h4>
+                                {% for item in insight_snapshot.metrics.commercial_signals.payment_distribution %}
+                                    <div class="dna-signal-row"><span>{{ item.label }}</span><strong>{{ item.count }}</strong><small>{{ item.share_pct|percentage_plain }}</small></div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="dna-panel dna-action-plan">
+                    <div class="dna-panel-title"><h3>Recomendações acionáveis</h3><span>Geradas por regras comerciais</span></div>
+                    <div class="dna-action-grid">
+                        {% for action in insight_snapshot.metrics.actions %}
+                            <article>
+                                <span>{{ action.priority }}</span>
+                                <div><h4>{{ action.title }}</h4><p>{{ action.detail }}</p><small>{{ action.evidence }}</small></div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% else %}
+                <section class="dna-insight-placeholder dna-panel">
+                    <div class="dna-insight-placeholder-icon">✦</div>
+                    <div><h2>Inteligência comercial ainda não calculada</h2><p>Use “Gerar indicadores” para calcular comparativos, recorrência, carteira, mix, reclamações, devoluções, clichês e preparar o JSON estrutural para a IA.</p></div>
+                </section>
+            {% endif %}
+
+            <section class="dna-chart-grid">
+                <article class="dna-panel dna-chart-card">
+                    <div class="dna-panel-heading">
+                        <div><span>Evolução do faturamento</span><small>Receita anual (R$)</small></div>
+                        <strong>{{ dashboard.metrics.revenue }}</strong>
+                    </div>
+                    <div class="dna-chart" data-chart="revenue" aria-label="Gráfico de evolução do faturamento"></div>
+                </article>
+                <article class="dna-panel dna-chart-card">
+                    <div class="dna-panel-heading">
+                        <div><span>Evolução do volume</span><small>Peso bruto faturado (kg)</small></div>
+                        <strong class="blue">{{ dashboard.metrics.weight }}</strong>
+                    </div>
+                    <div class="dna-chart" data-chart="weight" aria-label="Gráfico de evolução do volume"></div>
+                </article>
+                <article class="dna-panel dna-chart-card">
+                    <div class="dna-panel-heading">
+                        <div><span>Frequência de pedidos</span><small>Pedidos únicos por ano</small></div>
+                        <strong class="purple">{{ dashboard.metrics.orders }}</strong>
+                    </div>
+                    <div class="dna-chart" data-chart="orders" aria-label="Gráfico de frequência de pedidos"></div>
+                </article>
+            </section>
+
+            <section class="dna-detail-grid">
+                <article class="dna-panel dna-products-card">
+                    <div class="dna-panel-title"><h3>Mix de produtos</h3><span>Top {{ dashboard.products|length }}</span></div>
+                    <div class="dna-product-list">
+                        {% for product in dashboard.products %}
+                            <div class="dna-product-row">
+                                <div class="dna-product-name"><strong title="{{ product.name }}">{{ product.name }}</strong><small>{{ product.weight }}</small></div>
+                                <span>{{ product.revenue }}</span>
+                                <div class="dna-share"><div style="width: {{ product.share }}%"></div></div>
+                                <b>{{ product.share }}%</b>
+                            </div>
+                        {% empty %}
+                            <div class="dna-no-data">Nenhum produto encontrado.</div>
+                        {% endfor %}
+                    </div>
+                </article>
+
+                <article class="dna-panel dna-orders-card">
+                    <div class="dna-panel-title"><h3>Últimos pedidos</h3><span>{{ dashboard.metrics.orders }} no histórico</span></div>
+                    <div class="dna-table-wrap">
+                        <table class="dna-table">
+                            <thead><tr><th>Pedido</th><th>Data</th><th>Valor</th><th>Volume</th><th>Status</th></tr></thead>
+                            <tbody>
+                                {% for order in dashboard.orders %}
+                                    <tr>
+                                        <td><strong>{{ order.number }}</strong></td>
+                                        <td>{{ order.date_display }}</td>
+                                        <td>{{ order.value_display }}</td>
+                                        <td>{{ order.weight_display }}</td>
+                                        <td><span class="dna-status status-{{ order.status_summary|lower }}">{{ order.status }}</span></td>
+                                    </tr>
+                                {% empty %}
+                                    <tr><td colspan="5">Nenhum pedido encontrado.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="dna-operational-grid">
+                <article class="dna-panel dna-operational-card is-complaint">
+                    <div class="dna-panel-title"><h3>Reclamações e não conformidades</h3><span>{{ dashboard.operational.complaints.count }} registros</span></div>
+                    <div class="dna-operational-stats">
+                        <div><span>Unidades de medida</span><strong>{{ dashboard.operational.complaints.measurement_units_count }}</strong></div>
+                        <div><span>Incidência média</span><strong>{{ dashboard.operational.complaints.incidence_pct }}%</strong></div>
+                        <div><span>Graves</span><strong>{{ dashboard.operational.complaints.severe_count }}</strong></div>
+                    </div>
+                    <div class="dna-distribution-list">
+                        {% for item in dashboard.operational.complaints.classification_distribution %}
+                            <div><span>{{ item.label }}</span><i><b style="width: {{ item.share_pct }}%"></b></i><strong>{{ item.count }}</strong></div>
+                        {% endfor %}
+                    </div>
+                    <div class="dna-operational-list">
+                        {% for item in dashboard.operational.complaints.recent_items %}
+                            <div class="dna-operational-row"><span>{{ item.date_display }}</span><strong title="{{ item.problem }}">{{ item.problem }}</strong><small>{{ item.classification }} · {{ item.nonconforming_volume }} {{ item.measurement_unit }}</small></div>
+                        {% empty %}<div class="dna-no-data">Nenhuma reclamação encontrada.</div>{% endfor %}
+                    </div>
+                </article>
+
+                <article class="dna-panel dna-operational-card is-return">
+                    <div class="dna-panel-title"><h3>Devoluções</h3><span>{{ dashboard.operational.returns.total_value_display }}</span></div>
+                    <div class="dna-operational-stats">
+                        <div><span>Ocorrências</span><strong>{{ dashboard.operational.returns.count }}</strong></div>
+                        <div><span>% faturamento</span><strong>{{ dashboard.operational.returns.revenue_share_pct }}%</strong></div>
+                        <div><span>Setor principal</span><strong>{{ dashboard.operational.returns.sector_distribution.0.label|default:"-" }}</strong></div>
+                    </div>
+                    <div class="dna-distribution-list">
+                        {% for item in dashboard.operational.returns.sector_distribution|slice:":4" %}
+                            <div><span>{{ item.label }}</span><i><b style="width: {{ item.share_pct }}%"></b></i><strong>{{ item.count }}</strong></div>
+                        {% endfor %}
+                    </div>
+                    <div class="dna-operational-list">
+                        {% for item in dashboard.operational.returns.recent_items %}
+                            <div class="dna-operational-row"><span>{{ item.date_display }} · NF {{ item.invoice }}</span><strong title="{{ item.problem }}">{{ item.problem }}</strong><small>{{ item.value_display }} · {{ item.sector }}</small></div>
+                        {% empty %}<div class="dna-no-data">Nenhuma devolução encontrada.</div>{% endfor %}
+                    </div>
+                </article>
+
+                <article class="dna-panel dna-operational-card is-cliche">
+                    <div class="dna-panel-title"><h3>Clichês e trocas</h3><span>{{ dashboard.operational.cliches.count }} lançamentos</span></div>
+                    <div class="dna-operational-stats">
+                        <div><span>Valor total</span><strong>{{ dashboard.operational.cliches.total_value_display }}</strong></div>
+                        <div><span>Custo Maxiplast</span><strong>{{ dashboard.operational.cliches.maxiplast_cost_value_display }}</strong></div>
+                        <div><span>Custo cliente</span><strong>{{ dashboard.operational.cliches.customer_cost_value_display }}</strong></div>
+                    </div>
+                    <div class="dna-distribution-list">
+                        {% for item in dashboard.operational.cliches.cost_distribution %}
+                            <div><span>{{ item.label }}</span><i><b style="width: {{ item.share_pct }}%"></b></i><strong>{{ item.count }}</strong></div>
+                        {% endfor %}
+                    </div>
+                    <div class="dna-operational-list">
+                        {% for item in dashboard.operational.cliches.recent_items %}
+                            <div class="dna-operational-row"><span>{{ item.date_display }} · Pedido {{ item.order }}</span><strong>{{ item.value_display }}</strong><small>{{ item.exchange_cost }} · área {{ item.area_display }}</small></div>
+                        {% empty %}<div class="dna-no-data">Nenhum clichê encontrado.</div>{% endfor %}
+                    </div>
+                </article>
+            </section>
+
+            <section class="dna-bottom-grid">
+                <article class="dna-panel dna-profile-card">
+                    <div class="dna-panel-title"><h3>Como este cliente compra</h3></div>
+                    <ul>
+                        <li><span>✓</span><div>Produto principal<strong>{{ dashboard.profile.main_product }}</strong></div></li>
+                        <li><span>✓</span><div>Frequência média<strong>{{ dashboard.profile.frequency }} pedidos/mês</strong></div></li>
+                        <li><span>✓</span><div>Ticket médio<strong>{{ dashboard.profile.average_ticket }}</strong></div></li>
+                        <li><span>✓</span><div>Condição comercial mais usada<strong>{{ dashboard.profile.payment_condition }}</strong></div></li>
+                    </ul>
+                </article>
+                <article class="dna-panel dna-address-card">
+                    <div class="dna-panel-title"><h3>Dados comerciais</h3></div>
+                    <div class="dna-commercial-grid">
+                        <div><span>Endereço</span><strong>{{ dashboard.customer.address }}</strong></div>
+                        <div><span>Mercado</span><strong>{{ dashboard.customer.market }}</strong></div>
+                        <div><span>Região</span><strong>{{ dashboard.customer.region }}</strong></div>
+                        <div><span>Produtos no histórico</span><strong>{{ dashboard.profile.products_count }}</strong></div>
+                    </div>
+                </article>
+            </section>
+
+            {{ dashboard.yearly|json_script:"dna-yearly-data" }}
+        {% endif %}
+    </main>
+
+    <script>
+        (() => {
+            const page = document.querySelector('.dna-page');
+            const search = document.getElementById('dnaSearch');
+            const input = document.getElementById('dnaSearchInput');
+            const results = document.getElementById('dnaSearchResults');
+            const indicatorForm = document.getElementById('dnaIndicatorForm');
+            const indicatorButton = document.getElementById('generateIndicatorButton');
+            const aiForm = document.getElementById('dnaAiForm');
+            const aiButton = document.getElementById('requestAiButton');
+            let timer;
+
+            const submitDashboardAction = (form, button, url, loadingLabel) => {
+                if (!form || !button) return;
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    const originalLabel = button.innerHTML;
+                    button.disabled = true;
+                    button.innerHTML = `<span class="dna-button-spinner"></span> ${loadingLabel}`;
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                        });
+                        const payload = await response.json();
+                        if (!response.ok || payload.status !== 'ok') throw new Error(payload.message || 'Falha ao executar a solicitação.');
+                        window.location.href = `${page.dataset.pageUrl}?cliente=${encodeURIComponent({{ customer_id }})}`;
+                    } catch (error) {
+                        button.disabled = false;
+                        button.innerHTML = originalLabel;
+                        window.alert(error.message);
+                        window.location.href = `${page.dataset.pageUrl}?cliente=${encodeURIComponent({{ customer_id }})}`;
+                    }
+                });
+            };
+
+            submitDashboardAction(indicatorForm, indicatorButton, page.dataset.prepareUrl, 'Calculando indicadores...');
+            submitDashboardAction(aiForm, aiButton, page.dataset.aiUrl, 'Solicitando análise...');
+
+            const escapeText = (value) => String(value ?? '');
+            const showMessage = (message) => {
+                results.replaceChildren();
+                const item = document.createElement('div');
+                item.className = 'dna-search-message';
+                item.textContent = message;
+                results.appendChild(item);
+                results.hidden = false;
+            };
+
+            const searchCustomers = async () => {
+                showMessage('Buscando clientes...');
+                try {
+                    const response = await fetch(`${page.dataset.searchUrl}?q=${encodeURIComponent(input.value.trim())}`);
+                    const payload = await response.json();
+                    if (!response.ok || payload.status !== 'ok') throw new Error(payload.message || 'Falha na busca');
+                    results.replaceChildren();
+                    if (!payload.items.length) return showMessage('Nenhum cliente encontrado.');
+                    payload.items.forEach((customer) => {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'dna-search-result';
+                        const avatar = document.createElement('span');
+                        avatar.className = 'dna-result-avatar';
+                        avatar.textContent = escapeText(customer.name).slice(0, 1);
+                        const info = document.createElement('span');
+                        info.className = 'dna-result-info';
+                        const name = document.createElement('strong');
+                        name.textContent = customer.name;
+                        const detail = document.createElement('small');
+                        detail.textContent = `${customer.code} · ${customer.cnpj || 'CNPJ não informado'} · ${customer.city}/${customer.state}`;
+                        info.append(name, detail);
+                        button.append(avatar, info);
+                        button.addEventListener('click', () => {
+                            window.location.href = `${page.dataset.pageUrl}?cliente=${encodeURIComponent(customer.code)}`;
+                        });
+                        results.appendChild(button);
+                    });
+                    results.hidden = false;
+                } catch (error) {
+                    showMessage(error.message);
+                }
+            };
+
+            input.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(searchCustomers, 280);
+            });
+            input.addEventListener('focus', searchCustomers);
+            document.addEventListener('click', (event) => {
+                if (!search.contains(event.target)) results.hidden = true;
+            });
+            document.addEventListener('keydown', (event) => {
+                if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+                    event.preventDefault();
+                    input.focus();
+                }
+                if (event.key === 'Escape') results.hidden = true;
+            });
+
+            const dataNode = document.getElementById('dna-yearly-data');
+            if (!dataNode) return;
+            const yearly = JSON.parse(dataNode.textContent);
+            const formats = {
+                revenue: (value) => `R$ ${Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`,
+                weight: (value) => `${Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)} kg`,
+                orders: (value) => `${Math.round(value)} pedidos`,
+            };
+            const colors = { revenue: '#65d55d', weight: '#65a8ff', orders: '#d65cff' };
+
+            document.querySelectorAll('[data-chart]').forEach((container) => {
+                const key = container.dataset.chart;
+                const values = yearly.map((row) => Number(row[key] || 0));
+                const width = 680;
+                const height = 220;
+                const padding = { top: 22, right: 22, bottom: 34, left: 22 };
+                const max = Math.max(...values, 1);
+                const x = (index) => padding.left + (yearly.length === 1 ? (width - padding.left - padding.right) / 2 : index * (width - padding.left - padding.right) / (yearly.length - 1));
+                const y = (value) => height - padding.bottom - (value / max) * (height - padding.top - padding.bottom);
+                const points = values.map((value, index) => `${x(index)},${y(value)}`).join(' ');
+                const areaPoints = `${padding.left},${height - padding.bottom} ${points} ${x(values.length - 1)},${height - padding.bottom}`;
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                svg.setAttribute('role', 'img');
+                [0.25, 0.5, 0.75, 1].forEach((ratio) => {
+                    const line = document.createElementNS(svg.namespaceURI, 'line');
+                    line.setAttribute('x1', padding.left); line.setAttribute('x2', width - padding.right);
+                    line.setAttribute('y1', y(max * ratio)); line.setAttribute('y2', y(max * ratio));
+                    line.setAttribute('class', 'dna-grid-line'); svg.appendChild(line);
+                });
+                const area = document.createElementNS(svg.namespaceURI, 'polygon');
+                area.setAttribute('points', areaPoints); area.setAttribute('fill', colors[key]); area.setAttribute('class', 'dna-chart-area'); svg.appendChild(area);
+                const polyline = document.createElementNS(svg.namespaceURI, 'polyline');
+                polyline.setAttribute('points', points); polyline.setAttribute('fill', 'none'); polyline.setAttribute('stroke', colors[key]); polyline.setAttribute('class', 'dna-chart-line'); svg.appendChild(polyline);
+                yearly.forEach((row, index) => {
+                    const dot = document.createElementNS(svg.namespaceURI, 'circle');
+                    dot.setAttribute('cx', x(index)); dot.setAttribute('cy', y(values[index])); dot.setAttribute('r', 5); dot.setAttribute('fill', colors[key]); dot.setAttribute('class', 'dna-chart-dot');
+                    const title = document.createElementNS(svg.namespaceURI, 'title'); title.textContent = `${row.label}: ${formats[key](values[index])}`; dot.appendChild(title); svg.appendChild(dot);
+                    const label = document.createElementNS(svg.namespaceURI, 'text');
+                    label.setAttribute('x', x(index)); label.setAttribute('y', height - 9); label.setAttribute('text-anchor', 'middle'); label.setAttribute('class', 'dna-chart-label'); label.textContent = row.label; svg.appendChild(label);
+                });
+                container.appendChild(svg);
+            });
+        })();
+    </script>
+</body>
+</html>

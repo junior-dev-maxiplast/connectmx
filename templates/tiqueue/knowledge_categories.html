@@ -51,7 +51,7 @@
                             <td><div class="table-actions"><form method="POST" id="kb-cat-form-{{ c.id }}">{% csrf_token %}<input type="hidden" name="form_id" value="edit_category"><input type="hidden" name="category_id" value="{{ c.id }}"><button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button></form></div></td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="5" class="queue-empty">Nenhuma categoria cadastrada.</td></tr>
+                            <tr><td colspan="5" class="queue-empty">Nenhuma categoria cadastrada.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

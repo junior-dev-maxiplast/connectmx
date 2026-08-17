@@ -1,0 +1,57 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Logística de Pneus{% endblock %} | ConnectMX</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/tireLogistics.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans:400,600,700,800" rel="stylesheet">
+</head>
+<body class="tirelog">
+    <header class="tl-topbar">
+        <a class="tl-brand" href="{% url 'tires_dashboard' %}">
+            <span class="tl-brand-mark">MX</span>
+            <span><strong>Logística</strong><small>Pneus</small></span>
+        </a>
+
+        <nav class="tl-nav" aria-label="Seções do módulo">
+            <a href="{% url 'tires_dashboard' %}" class="{% if active_page == 'dashboard' %}is-active{% endif %}">Painel</a>
+            <a href="{% url 'tires_fleet' %}" class="{% if active_page == 'fleet' %}is-active{% endif %}">Frota</a>
+            <a href="{% url 'tires_inventory' %}" class="{% if active_page == 'inventory' %}is-active{% endif %}">Estoque</a>
+            <a href="{% url 'tires_models' %}" class="{% if active_page == 'models' %}is-active{% endif %}">Modelos</a>
+            <a href="{% url 'tires_movements' %}" class="{% if active_page == 'movements' %}is-active{% endif %}">Movimentações</a>
+        </nav>
+
+        <div class="tl-topbar-end">
+            <span class="tl-date-pill">{{ today|date:"d/m/Y" }}</span>
+            <div class="theme-toggle" aria-label="Tema">
+                <span class="theme-icon" aria-hidden="true">&#9728;</span>
+                <label class="theme-switch" title="Alternar tema">
+                    <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                    <span class="theme-slider"></span>
+                </label>
+                <span class="theme-icon" aria-hidden="true">&#9790;</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="tl-shell">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% if messages %}
+    <div class="tl-toasts" aria-live="polite">
+        {% for message in messages %}
+        <div class="tl-toast is-{{ message.tags|default:'info' }}"><i></i><span>{{ message }}</span></div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block modals %}{% endblock %}
+
+    <script src="{% static '/js/tireLogistics.js' %}"></script>
+</body>
+</html>

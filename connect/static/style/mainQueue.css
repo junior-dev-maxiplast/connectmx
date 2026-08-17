@@ -13539,3 +13539,351 @@ html[data-theme="dark"] .project-registry-table td {
         justify-content: flex-start;
     }
 }
+
+
+/* ==========================================================================
+   Navegação: gatilho de busca, acesso rápido e command palette (Ctrl+K)
+   ========================================================================== */
+
+.sidebar_palette_trigger {
+    width: 100%;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 10px;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.68);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.sidebar_palette_trigger:hover {
+    border-color: rgba(0, 191, 99, 0.42);
+    background: rgba(255, 255, 255, 0.09);
+    color: #fff;
+}
+
+.sidebar_palette_trigger svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+}
+
+.sidebar_palette_trigger > span {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.sidebar_palette_trigger kbd {
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(0, 0, 0, 0.22);
+    font-family: inherit;
+    font-size: 9.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* --------------------------------------------------------- acesso rápido -- */
+
+.sidebar_quick {
+    display: grid;
+    gap: 2px;
+    margin: 6px 0 4px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.sidebar_quick_label {
+    padding: 4px 12px 2px;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.sidebar_quick_item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 26px;
+    padding: 0 12px;
+    border-radius: 7px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 11.5px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.sidebar_quick_item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.sidebar_quick_item.is-current {
+    background: rgba(0, 191, 99, 0.16);
+    color: #fff;
+}
+
+.sidebar_quick_dot {
+    width: 5px;
+    height: 5px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #00bf63;
+}
+
+.sidebar_quick_item.is-recent .sidebar_quick_dot {
+    background: rgba(255, 255, 255, 0.34);
+}
+
+/* -------------------------------------------------------------- palette -- */
+
+.cmx-palette-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    background: rgba(8, 11, 26, 0.62);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.cmx-palette-overlay.is-open { opacity: 1; }
+
+.cmx-palette {
+    position: fixed;
+    z-index: 1401;
+    top: 14vh;
+    left: 50%;
+    width: min(620px, calc(100vw - 32px));
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.12));
+    background: var(--page-bg, #eef0fc);
+    box-shadow: 0 30px 70px rgba(8, 11, 26, 0.35);
+    transform: translate(-50%, -10px);
+    opacity: 0;
+    transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+.cmx-palette.is-open {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
+.cmx-palette-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--surface-border, rgba(28, 34, 66, 0.12));
+}
+
+.cmx-palette-search svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: var(--muted-text, rgba(28, 34, 66, 0.6));
+    stroke-width: 1.9;
+    stroke-linecap: round;
+}
+
+.cmx-palette-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--page-text, #1c2242);
+    font: inherit;
+    font-size: 14px;
+}
+
+.cmx-palette-search input::placeholder {
+    color: var(--muted-text, rgba(28, 34, 66, 0.55));
+}
+
+.cmx-palette kbd {
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.14));
+    background: var(--surface-2, rgba(255, 255, 255, 0.7));
+    color: var(--muted-text, rgba(28, 34, 66, 0.6));
+    font-family: inherit;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+.cmx-palette-results {
+    max-height: min(420px, 52vh);
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.cmx-palette-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    border-radius: 9px;
+    color: var(--page-text, #1c2242);
+    text-decoration: none;
+}
+
+.cmx-palette-item.is-active {
+    background: rgba(0, 191, 99, 0.13);
+}
+
+.cmx-palette-item-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--title-text, #1c2242);
+}
+
+.cmx-palette-item-group {
+    flex: 0 0 auto;
+    font-size: 10px;
+    color: var(--muted-text, rgba(28, 34, 66, 0.6));
+}
+
+.cmx-palette-empty {
+    padding: 26px;
+    color: var(--muted-text, rgba(28, 34, 66, 0.6));
+    text-align: center;
+    font-size: 11.5px;
+}
+
+.cmx-palette-foot {
+    display: flex;
+    gap: 16px;
+    padding: 9px 16px;
+    border-top: 1px solid var(--surface-border, rgba(28, 34, 66, 0.12));
+    background: var(--surface-2, rgba(255, 255, 255, 0.55));
+    color: var(--muted-text, rgba(28, 34, 66, 0.6));
+    font-size: 10px;
+}
+
+.cmx-palette-foot span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.cmx-palette .is-hidden,
+.cmx-palette-overlay.is-hidden,
+.cmx-palette.is-hidden {
+    display: none !important;
+}
+
+@media (max-width: 720px) {
+    .cmx-palette { top: 8vh; }
+}
+
+
+/* ----------------------------------------- estrela de favoritos na sidebar -- */
+
+/* O item passa a ser uma linha: estrela fixa à esquerda + link ocupando o resto.
+   O padding-left do .dropdownItens encolhe para abrir espaço da estrela sem
+   deslocar o texto do menu. */
+.dropdownItens {
+    padding-left: 26px;
+}
+
+.sidebar_item_row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.sidebar_item_row > a {
+    flex: 1;
+    min-width: 0;
+}
+
+.sidebar_star_btn {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.16s ease, background-color 0.16s ease;
+}
+
+/* A estrela apagada só aparece no hover, para não poluir o menu.
+   Já favoritada, fica sempre visível. */
+.sidebar_item_row:hover .sidebar_star_btn,
+.sidebar_star_btn:focus-visible,
+.sidebar_star_btn[aria-pressed="true"] {
+    opacity: 1;
+}
+
+.sidebar_star_btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar_star {
+    width: 13px;
+    height: 13px;
+    display: block;
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.5);
+    stroke-width: 1.7;
+    stroke-linejoin: round;
+    transition: fill 0.16s ease, stroke 0.16s ease, transform 0.16s ease;
+}
+
+.sidebar_star_btn:hover .sidebar_star {
+    stroke: rgba(255, 255, 255, 0.85);
+}
+
+/* Amarelo somente quando favoritada. */
+.sidebar_star.is-on {
+    fill: #f5c518;
+    stroke: #f5c518;
+}
+
+.sidebar_star_btn:hover .sidebar_star.is-on {
+    transform: scale(1.12);
+}
+
+/* A mesma estrela, cheia, identifica as entradas da seção Favoritos. */
+.sidebar_quick_item .sidebar_star {
+    width: 11px;
+    height: 11px;
+    flex: 0 0 auto;
+}
+
+.sidebar_quick_section {
+    display: grid;
+    gap: 2px;
+}
+
+.sidebar_quick_section[hidden],
+.sidebar_quick[hidden] {
+    display: none;
+}

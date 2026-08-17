@@ -4,296 +4,251 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ConnectMX | Abrir Demanda</title>
+    <title>ConnectMX | Abrir Chamado</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
     <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
 </head>
-<body class="support-portal-body">
+<body class="support-portal-body newticket-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
-    <main class="support-shell support-create-page-shell">
+    <main class="newticket-shell">
         {% if form.non_field_errors %}
             <div class="support-banner is-danger">{{ form.non_field_errors }}</div>
         {% endif %}
 
-        <section class="support-card support-create-header">
-            <div class="support-create-header-copy">
-                <span class="support-kicker">Nova solicita&ccedil;&atilde;o</span>
-                <h1>Abrir demanda</h1>
-                <p>Preencha apenas o essencial, acompanhe o SLA previsto e envie a solicita&ccedil;&atilde;o com mais clareza para acelerar o atendimento.</p>
-
-                <div class="support-create-guide-row">
-                    <article class="support-create-guide-card">
-                        <strong>1. Classifique</strong>
-                        <span>Escolha grupo, tipo e prioridade para direcionar corretamente.</span>
-                    </article>
-                    <article class="support-create-guide-card">
-                        <strong>2. Descreva</strong>
-                        <span>Explique o contexto, o impacto e o resultado esperado.</span>
-                    </article>
-                    <article class="support-create-guide-card">
-                        <strong>3. Anexe</strong>
-                        <span>Inclua evid&ecirc;ncias se precisar acelerar a an&aacute;lise.</span>
-                    </article>
-                </div>
+        <header class="newticket-head">
+            <div class="newticket-head-copy">
+                <span class="newticket-kicker">Abrir chamado</span>
+                <h1>Como podemos ajudar?</h1>
+                <p>Quanto mais claro o contexto, mais r&aacute;pido conseguimos resolver. Leva menos de dois minutos.</p>
             </div>
-
-            <div class="support-create-header-metrics">
-                <article class="support-create-header-metric">
-                    <span>Ativas</span>
-                    <strong>{{ counts.active }}</strong>
-                </article>
-                <article class="support-create-header-metric">
-                    <span>Conclu&iacute;das</span>
-                    <strong>{{ counts.completed }}</strong>
-                </article>
-                <article class="support-create-header-metric">
-                    <span>Feedback m&eacute;dio</span>
-                    <strong>{{ counts.feedback_avg_display }}</strong>
-                </article>
-            </div>
-        </section>
-
-        <section class="support-create-layout">
-            <article class="support-card support-create-primary">
-                <div class="support-create-form-head">
-                    <div class="support-create-form-copy">
-                        <span class="support-kicker">Abertura simplificada</span>
-                        <h2>Preencha sua demanda</h2>
-                        <p>O sistema salva seu rascunho automaticamente neste navegador enquanto voc&ecirc; preenche.</p>
+            <div class="newticket-head-meta">
+                <div class="newticket-requester">
+                    <span class="newticket-avatar" aria-hidden="true">{{ request.user.nameUser|default:request.user.username|slice:":2"|upper }}</span>
+                    <div>
+                        <small>Abrindo como</small>
+                        <strong>{{ request.user.nameUser|default:request.user.username }}</strong>
                     </div>
-                    <div id="portalDraftStatus" class="support-create-draft-pill">Pronto para preencher</div>
                 </div>
+                <div id="portalDraftStatus" class="newticket-draft-pill">Pronto para preencher</div>
+            </div>
+        </header>
 
-                <form method="POST" enctype="multipart/form-data" class="support-form" id="portalDemandCreateForm">
-                    {% csrf_token %}
+        <div class="newticket-progress" aria-hidden="true">
+            <div class="newticket-progress-track"><div class="newticket-progress-fill" id="newticketProgressFill"></div></div>
+            <span class="newticket-progress-label" id="newticketProgressLabel">0% preenchido</span>
+        </div>
 
-                    <section class="support-create-section">
-                        <div class="support-create-section-head">
+        <form method="POST" enctype="multipart/form-data" class="newticket-form" id="portalDemandCreateForm" novalidate>
+            {% csrf_token %}
+
+            <div class="newticket-layout">
+                <div class="newticket-main">
+
+                    <section class="newticket-step" id="newticketStepCategory">
+                        <div class="newticket-step-head">
+                            <span class="newticket-step-num">1</span>
                             <div>
-                                <h3>Essencial</h3>
-                                <p>Os dados abaixo ajudam a classificar e direcionar a solicita&ccedil;&atilde;o.</p>
+                                <h2>Sobre o que &eacute; o chamado?</h2>
+                                <p>Escolher a categoria certa direciona seu chamado para a equipe correta.</p>
                             </div>
                         </div>
 
-                        <div class="support-form-grid support-create-core-grid">
-                            <div class="support-field support-create-title-field">
-                                <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
-                                {{ form.title }}
-                                {% if form.title.errors %}<div class="support-field-error">{{ form.title.errors|join:", " }}</div>{% endif %}
-                            </div>
-
-                            <div class="support-field">
-                                <label for="{{ form.task_group.id_for_label }}">{{ form.task_group.label }}</label>
+                        <div class="newticket-field">
+                            <label for="{{ form.task_group.id_for_label }}">&Aacute;rea respons&aacute;vel</label>
+                            <div class="newticket-choice-host" data-choice-host="group">
                                 {{ form.task_group }}
-                                {% if form.task_group.errors %}<div class="support-field-error">{{ form.task_group.errors|join:", " }}</div>{% endif %}
+                                <div class="newticket-choice-grid" id="newticketGroupCards"></div>
                             </div>
+                            {% if form.task_group.errors %}<div class="newticket-error">{{ form.task_group.errors|join:", " }}</div>{% endif %}
+                        </div>
 
-                            <div class="support-field">
-                                <label for="{{ form.task_type.id_for_label }}">{{ form.task_type.label }}</label>
+                        <div class="newticket-field" id="newticketTypeField">
+                            <label for="{{ form.task_type.id_for_label }}">Tipo de solicita&ccedil;&atilde;o</label>
+                            <div class="newticket-choice-host" data-choice-host="type">
                                 {{ form.task_type }}
-                                {% if form.task_type.errors %}<div class="support-field-error">{{ form.task_type.errors|join:", " }}</div>{% endif %}
+                                <div class="newticket-choice-grid is-compact" id="newticketTypeCards"></div>
                             </div>
-
-                            <div class="support-field">
-                                <label for="{{ form.priority_level.id_for_label }}">{{ form.priority_level.label }}</label>
-                                {{ form.priority_level }}
-                                {% if form.priority_level.errors %}<div class="support-field-error">{{ form.priority_level.errors|join:", " }}</div>{% endif %}
-                            </div>
+                            <small class="newticket-help" id="newticketTypeHelp">Selecione uma &aacute;rea para ver os tipos dispon&iacute;veis.</small>
+                            {% if form.task_type.errors %}<div class="newticket-error">{{ form.task_type.errors|join:", " }}</div>{% endif %}
                         </div>
                     </section>
 
-                    <section class="support-create-section">
-                        <div class="support-create-section-head">
+                    <section class="newticket-step">
+                        <div class="newticket-step-head">
+                            <span class="newticket-step-num">2</span>
                             <div>
-                                <h3>Detalhamento</h3>
-                                <p>Descreva o cen&aacute;rio, o problema e o resultado esperado.</p>
+                                <h2>Descreva o que est&aacute; acontecendo</h2>
+                                <p>Um bom t&iacute;tulo e um contexto claro evitam idas e vindas.</p>
                             </div>
                         </div>
 
-                        <div class="support-form-grid">
-                            <div class="support-field support-field-span-2 support-create-description-field">
-                                <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
-                                {{ form.description }}
-                                {% if form.description.errors %}<div class="support-field-error">{{ form.description.errors|join:", " }}</div>{% endif %}
+                        <div class="newticket-field">
+                            <label for="{{ form.title.id_for_label }}">T&iacute;tulo <span class="newticket-required">obrigat&oacute;rio</span></label>
+                            {{ form.title }}
+                            <div class="newticket-field-foot">
+                                <small class="newticket-help">Resuma em uma frase. Ex.: &ldquo;Impressora do RH n&atilde;o imprime desde ontem&rdquo;.</small>
+                                <small class="newticket-counter" id="newticketTitleCounter">0/180</small>
                             </div>
+                            {% if form.title.errors %}<div class="newticket-error">{{ form.title.errors|join:", " }}</div>{% endif %}
+                        </div>
+
+                        <div class="newticket-field">
+                            <label for="{{ form.description.id_for_label }}">Detalhes <span class="newticket-required">obrigat&oacute;rio</span></label>
+                            {{ form.description }}
+                            <div class="newticket-field-foot">
+                                <small class="newticket-help">O que voc&ecirc; esperava, o que aconteceu, desde quando, e o que j&aacute; tentou.</small>
+                                <small class="newticket-counter" id="newticketDescCounter">0 caracteres</small>
+                            </div>
+                            {% if form.description.errors %}<div class="newticket-error">{{ form.description.errors|join:", " }}</div>{% endif %}
+                        </div>
+                    </section>
+
+                    <section class="newticket-step">
+                        <div class="newticket-step-head">
+                            <span class="newticket-step-num">3</span>
+                            <div>
+                                <h2>Qual o impacto no seu trabalho?</h2>
+                                <p>Isso nos ajuda a priorizar corretamente entre os chamados abertos.</p>
+                            </div>
+                        </div>
+
+                        <div class="newticket-field">
+                            <div class="newticket-choice-host" data-choice-host="priority">
+                                {{ form.priority_level }}
+                                <div class="newticket-impact-grid" id="newticketPriorityCards">
+                                    {% for option in priority_options %}
+                                        <button type="button" class="newticket-impact-card" data-priority-value="{{ option.value }}">
+                                            <span class="newticket-impact-dot" style="background: {{ option.color }};"></span>
+                                            <strong>{{ option.label }}</strong>
+                                            <small>{{ option.hint }}</small>
+                                        </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% if form.priority_level.errors %}<div class="newticket-error">{{ form.priority_level.errors|join:", " }}</div>{% endif %}
                         </div>
                     </section>
 
                     {% if dynamic_fields %}
-                        <section class="support-create-section">
-                            <div class="support-create-section-head">
+                        <section class="newticket-step" id="newticketDynamicStep">
+                            <div class="newticket-step-head">
+                                <span class="newticket-step-num">4</span>
                                 <div>
-                                    <h3>Complementos</h3>
-                                    <p>Campos adicionais aparecem de acordo com o grupo e o tipo selecionados.</p>
+                                    <h2>Informa&ccedil;&otilde;es adicionais</h2>
+                                    <p>Campos espec&iacute;ficos da categoria escolhida.</p>
                                 </div>
                             </div>
-
-                            <div class="support-form-grid">
+                            <div class="newticket-dynamic-grid">
                                 {% for item in dynamic_fields %}
                                     <div
-                                        class="support-field portal-dynamic-field{% if item.is_full_width %} support-field-span-2{% endif %}"
-                                        data-portal-group-ids="{% if item.group_ids %}{{ item.group_ids|join:',' }}{% endif %}"
-                                        data-portal-type-ids="{% if item.type_ids %}{{ item.type_ids|join:',' }}{% endif %}"
+                                        class="newticket-field portal-dynamic-field{% if item.is_full_width %} is-full{% endif %}"
+                                        data-portal-group-ids="{{ item.group_ids|join:"," }}"
+                                        data-portal-type-ids="{{ item.type_ids|join:"," }}"
                                     >
-                                        {% if item.definition.field_type == "checkbox" %}
-                                            <label class="support-inline-checkbox support-create-checkbox-field">
+                                        {% if item.definition.field_type == 'checkbox' %}
+                                            <label class="newticket-checkbox">
                                                 {{ item.field }}
-                                                <span>{{ item.field.label }}</span>
+                                                <span>{{ item.definition.label }}</span>
                                             </label>
                                         {% else %}
-                                            <label for="{{ item.field.id_for_label }}">{{ item.field.label }}</label>
+                                            <label for="{{ item.field.id_for_label }}">{{ item.definition.label }}</label>
                                             {{ item.field }}
                                         {% endif %}
                                         {% if item.definition.help_text %}
-                                            <small class="support-helper-text">{{ item.definition.help_text }}</small>
+                                            <small class="newticket-help">{{ item.definition.help_text }}</small>
                                         {% endif %}
-                                        {% if item.field.errors %}<div class="support-field-error">{{ item.field.errors|join:", " }}</div>{% endif %}
+                                        {% if item.field.errors %}<div class="newticket-error">{{ item.field.errors|join:", " }}</div>{% endif %}
                                     </div>
                                 {% endfor %}
                             </div>
                         </section>
                     {% endif %}
 
-                    <section class="support-create-section">
-                        <div class="support-create-section-head">
+                    <section class="newticket-step">
+                        <div class="newticket-step-head">
+                            <span class="newticket-step-num">{% if dynamic_fields %}5{% else %}4{% endif %}</span>
                             <div>
-                                <h3>Arquivos</h3>
-                                <p>Anexe evid&ecirc;ncias, prints ou documentos para facilitar a triagem.</p>
+                                <h2>Anexos</h2>
+                                <p>Prints, mensagens de erro ou documentos aceleram muito o diagn&oacute;stico.</p>
                             </div>
                         </div>
 
-                        <div class="support-form-grid">
-                            <div class="support-field support-field-span-2 support-create-upload-field">
-                                <label for="{{ form.attachments.id_for_label }}">{{ form.attachments.label }}</label>
-                                <div id="portalUploadBox" class="support-create-upload-box" role="button" tabindex="0" aria-label="Abrir seletor de arquivos">
-                                    <div class="support-create-upload-picker">
-                                        {{ form.attachments }}
-                                        <label for="{{ form.attachments.id_for_label }}" class="support-create-upload-trigger">Abrir seletor</label>
-                                        <span id="portalAttachmentsDisplay" class="support-create-upload-display">Nenhum arquivo selecionado</span>
-                                    </div>
-                                    <div class="support-create-upload-meta">
-                                        <strong>Arquivos opcionais</strong>
-                                        <span>Clique na &aacute;rea para abrir o seletor de arquivos do navegador ou arraste e solte aqui.</span>
-                                    </div>
-                                </div>
-                                <div id="portalAttachmentsList" class="support-create-upload-list"></div>
-                                {% if form.attachments.errors %}<div class="support-field-error">{{ form.attachments.errors|join:", " }}</div>{% endif %}
+                        <div class="newticket-field">
+                            <div class="newticket-dropzone" id="portalUploadBox" role="button" tabindex="0" aria-label="Selecionar arquivos para anexar">
+                                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                                <strong>Arraste arquivos aqui ou <span class="newticket-dropzone-link">clique para selecionar</span></strong>
+                                <small>Imagens, PDF, planilhas e documentos</small>
+                                <div class="newticket-hidden-input">{{ form.attachments }}</div>
                             </div>
+                            <div id="portalAttachmentsList" class="newticket-file-list"></div>
+                            <span id="portalAttachmentsDisplay" class="newticket-sr-only">Nenhum arquivo selecionado</span>
+                            {% if form.attachments.errors %}<div class="newticket-error">{{ form.attachments.errors|join:", " }}</div>{% endif %}
                         </div>
                     </section>
 
-                    <div class="support-form-actions support-create-actions">
+                    <div class="newticket-actions">
                         <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary">Cancelar</a>
-                        <button type="submit" class="support-btn">Enviar demanda</button>
+                        <button type="submit" class="support-btn newticket-submit" id="newticketSubmit">Enviar chamado</button>
                     </div>
-                </form>
-            </article>
+                </div>
 
-            <aside class="support-create-side">
-                <article class="support-card support-create-summary-card">
-                    <div class="support-card-head">
-                        <div>
-                            <span class="support-kicker">Resumo r&aacute;pido</span>
-                            <h2>Antes de enviar</h2>
+                <aside class="newticket-side">
+                    <article class="newticket-side-card is-sla">
+                        <div class="newticket-side-head">
+                            <h3>Previs&atilde;o de atendimento</h3>
                         </div>
-                    </div>
+                        <div id="portalSlaPreview" class="newticket-side-body">
+                            <div class="newticket-side-empty">
+                                <strong>Selecione a categoria</strong>
+                                <span>A previs&atilde;o de resposta aparece conforme o preenchimento.</span>
+                            </div>
+                        </div>
+                    </article>
 
-                    <div class="support-create-summary-list">
-                        <div class="support-create-summary-item">
-                            <span>T&iacute;tulo</span>
-                            <strong id="portalCreateSummaryTitle" class="support-create-summary-value">Ainda n&atilde;o informado</strong>
+                    <article class="newticket-side-card">
+                        <div class="newticket-side-head">
+                            <h3>Talvez isso resolva</h3>
+                            <small>Base de conhecimento</small>
                         </div>
-                        <div class="support-create-summary-item">
-                            <span>Grupo</span>
-                            <strong id="portalCreateSummaryGroup" class="support-create-summary-value">N&atilde;o selecionado</strong>
+                        <div id="portalKnowledgeSuggestions" class="newticket-side-body">
+                            <div class="newticket-side-empty">
+                                <strong>Nada por aqui ainda</strong>
+                                <span>Comece a descrever o problema para ver artigos relacionados.</span>
+                            </div>
                         </div>
-                        <div class="support-create-summary-item">
-                            <span>Tipo</span>
-                            <strong id="portalCreateSummaryType" class="support-create-summary-value">N&atilde;o selecionado</strong>
-                        </div>
-                        <div class="support-create-summary-item">
-                            <span>Prioridade</span>
-                            <strong id="portalCreateSummaryPriority" class="support-create-summary-value">N&atilde;o selecionada</strong>
-                        </div>
-                        <div class="support-create-summary-item">
-                            <span>Anexos</span>
-                            <strong id="portalCreateSummaryAttachments" class="support-create-summary-value">Nenhum arquivo</strong>
-                        </div>
-                    </div>
-                </article>
+                    </article>
 
-                <article class="support-card support-page-aside-card">
-                    <div class="support-card-head">
-                        <div>
-                            <span class="support-kicker">SLA</span>
-                            <h2>Meta aplicada</h2>
+                    <article class="newticket-side-card">
+                        <div class="newticket-side-head">
+                            <h3>Chamados parecidos</h3>
+                            <small>Evita duplicidade</small>
                         </div>
-                    </div>
-                    <div id="portalSlaPreview" class="support-insight-stack">
-                        <article class="support-insight-card is-empty">
-                            <strong>{{ initial_sla_preview.title }}</strong>
-                            <span>{{ initial_sla_preview.subtitle }}</span>
-                        </article>
-                    </div>
-                </article>
+                        <div id="portalDuplicateSuggestions" class="newticket-side-body">
+                            <div class="newticket-side-empty">
+                                <strong>Nenhum parecido</strong>
+                                <span>N&atilde;o encontramos chamados seus semelhantes em aberto.</span>
+                            </div>
+                        </div>
+                    </article>
 
-                <article class="support-card support-page-aside-card">
-                    <div class="support-card-head">
-                        <div>
-                            <span class="support-kicker">Sugest&otilde;es</span>
-                            <h2>Base de conhecimento</h2>
+                    <article class="newticket-side-card is-summary">
+                        <div class="newticket-side-head">
+                            <h3>Resumo</h3>
                         </div>
-                    </div>
-                    <div id="portalKnowledgeSuggestions" class="support-insight-stack">
-                        <article class="support-insight-card is-empty">
-                            <strong>Nenhuma sugest&atilde;o ainda</strong>
-                            <span>Comece a preencher o t&iacute;tulo e a descri&ccedil;&atilde;o para receber refer&ecirc;ncias &uacute;teis.</span>
-                        </article>
-                    </div>
-                </article>
-
-                <article class="support-card support-page-aside-card">
-                    <div class="support-card-head">
-                        <div>
-                            <span class="support-kicker">Parecidas</span>
-                            <h2>Demandas suas em andamento</h2>
+                        <div class="newticket-summary">
+                            <div class="newticket-summary-row"><span>T&iacute;tulo</span><strong id="portalCreateSummaryTitle">&mdash;</strong></div>
+                            <div class="newticket-summary-row"><span>&Aacute;rea</span><strong id="portalCreateSummaryGroup">&mdash;</strong></div>
+                            <div class="newticket-summary-row"><span>Tipo</span><strong id="portalCreateSummaryType">&mdash;</strong></div>
+                            <div class="newticket-summary-row"><span>Impacto</span><strong id="portalCreateSummaryPriority">&mdash;</strong></div>
+                            <div class="newticket-summary-row"><span>Anexos</span><strong id="portalCreateSummaryAttachments">Nenhum</strong></div>
                         </div>
-                    </div>
-                    <div id="portalDuplicateSuggestions" class="support-insight-stack">
-                        <article class="support-insight-card is-empty">
-                            <strong>Sem duplicidades detectadas</strong>
-                            <span>Se voc&ecirc; j&aacute; abriu algo parecido e ainda estiver ativo, ele aparecer&aacute; aqui.</span>
-                        </article>
-                    </div>
-                </article>
-
-                <article class="support-card support-page-aside-card">
-                    <div class="support-card-head">
-                        <div>
-                            <span class="support-kicker">Boas pr&aacute;ticas</span>
-                            <h2>Checklist final</h2>
-                        </div>
-                    </div>
-                    <div class="support-create-tips-list">
-                        <article class="support-create-tip">
-                            <strong>Seja objetivo</strong>
-                            <span>Explique o que ocorreu, onde ocorreu e o que voc&ecirc; espera como resultado.</span>
-                        </article>
-                        <article class="support-create-tip">
-                            <strong>Escolha corretamente o tipo</strong>
-                            <span>Isso melhora o SLA, as sugest&otilde;es e o direcionamento do atendimento.</span>
-                        </article>
-                        <article class="support-create-tip">
-                            <strong>Envie evid&ecirc;ncias se existirem</strong>
-                            <span>Arquivos reduzem retrabalho e aceleram o primeiro retorno.</span>
-                        </article>
-                    </div>
-                </article>
-            </aside>
-        </section>
+                    </article>
+                </aside>
+            </div>
+        </form>
     </main>
 
     <script>
@@ -305,54 +260,155 @@
             const titleField = document.getElementById("{{ form.title.id_for_label }}");
             const descriptionField = document.getElementById("{{ form.description.id_for_label }}");
             const attachmentsField = document.getElementById("{{ form.attachments.id_for_label }}");
+
+            if (!form || !groupField || !typeField || !priorityField || !titleField || !descriptionField) return;
+
             const dynamicFields = Array.from(document.querySelectorAll(".portal-dynamic-field"));
+            const dynamicStep = document.getElementById("newticketDynamicStep");
             const knowledgeTarget = document.getElementById("portalKnowledgeSuggestions");
             const duplicateTarget = document.getElementById("portalDuplicateSuggestions");
             const slaTarget = document.getElementById("portalSlaPreview");
             const draftStatus = document.getElementById("portalDraftStatus");
-            const summaryTitle = document.getElementById("portalCreateSummaryTitle");
-            const summaryGroup = document.getElementById("portalCreateSummaryGroup");
-            const summaryType = document.getElementById("portalCreateSummaryType");
-            const summaryPriority = document.getElementById("portalCreateSummaryPriority");
-            const summaryAttachments = document.getElementById("portalCreateSummaryAttachments");
-            const attachmentsDisplay = document.getElementById("portalAttachmentsDisplay");
+            const groupCards = document.getElementById("newticketGroupCards");
+            const typeCards = document.getElementById("newticketTypeCards");
+            const typeHelp = document.getElementById("newticketTypeHelp");
+            const priorityCards = document.getElementById("newticketPriorityCards");
+            const titleCounter = document.getElementById("newticketTitleCounter");
+            const descCounter = document.getElementById("newticketDescCounter");
+            const progressFill = document.getElementById("newticketProgressFill");
+            const progressLabel = document.getElementById("newticketProgressLabel");
             const attachmentsList = document.getElementById("portalAttachmentsList");
+            const attachmentsDisplay = document.getElementById("portalAttachmentsDisplay");
             const uploadBox = document.getElementById("portalUploadBox");
+            const summary = {
+                title: document.getElementById("portalCreateSummaryTitle"),
+                group: document.getElementById("portalCreateSummaryGroup"),
+                type: document.getElementById("portalCreateSummaryType"),
+                priority: document.getElementById("portalCreateSummaryPriority"),
+                attachments: document.getElementById("portalCreateSummaryAttachments"),
+            };
+
             const storageKey = "connectmx.portal.create.draft";
             let selectedAttachments = [];
 
-            if (!form || !groupField || !typeField || !priorityField || !titleField || !descriptionField) return;
-
-            function parseIds(value) {
-                return String(value || "")
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter(Boolean);
+            function escapeHtml(value) {
+                return String(value == null ? "" : value).replace(/[&<>"']/g, (char) => ({
+                    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+                }[char]));
             }
 
-            function renderEmptyCard(title, subtitle) {
-                return `<article class="support-insight-card is-empty"><strong>${title}</strong><span>${subtitle}</span></article>`;
-            }
-
-            function truncateText(value, maxLength) {
+            function truncate(value, maxLength) {
                 const text = String(value || "").trim();
                 if (!text) return "";
-                if (text.length <= maxLength) return text;
-                return `${text.slice(0, maxLength - 1)}…`;
+                return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
             }
 
-            function selectedOptionLabel(field, emptyLabel) {
-                const option = field && field.selectedOptions && field.selectedOptions.length ? field.selectedOptions[0] : null;
-                if (!option || !option.value) return emptyLabel;
-                return option.textContent.trim();
+            function parseIds(value) {
+                return String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
             }
 
-            function updateDraftStatus(message, stateClass) {
-                if (!draftStatus) return;
-                draftStatus.textContent = message;
-                draftStatus.classList.remove("is-saved", "is-loaded", "is-loading");
-                if (stateClass) draftStatus.classList.add(stateClass);
+            function selectedLabel(field) {
+                const option = field.selectedOptions && field.selectedOptions.length ? field.selectedOptions[0] : null;
+                return option && option.value ? option.textContent.trim() : "";
             }
+
+            /* Type options are labelled "Área - Tipo"; the area is already picked
+               right above, so show only the type part in the cards/summary. */
+            function shortTypeLabel(text) {
+                const label = String(text || "").trim();
+                const separator = label.indexOf(" - ");
+                return separator > -1 ? label.slice(separator + 3).trim() : label;
+            }
+
+            /* ---------- Choice cards (progressive enhancement over native selects) ---------- */
+
+            document.querySelectorAll("[data-choice-host]").forEach((host) => host.classList.add("is-enhanced"));
+
+            function renderGroupCards() {
+                if (!groupCards) return;
+                const options = Array.from(groupField.options).filter((option) => option.value);
+                groupCards.innerHTML = options.map((option) => `
+                    <button type="button" class="newticket-choice${option.value === groupField.value ? " is-selected" : ""}" data-group-value="${escapeHtml(option.value)}">
+                        <span>${escapeHtml(option.textContent.trim())}</span>
+                    </button>
+                `).join("");
+            }
+
+            function renderTypeCards() {
+                if (!typeCards) return;
+                const selectedGroup = String(groupField.value || "");
+                const options = Array.from(typeField.options).filter((option) => {
+                    if (!option.value) return false;
+                    const optionGroup = option.getAttribute("data-group-id") || "";
+                    return !selectedGroup || optionGroup === selectedGroup;
+                });
+
+                if (!options.length) {
+                    typeCards.innerHTML = "";
+                    if (typeHelp) {
+                        typeHelp.textContent = selectedGroup
+                            ? "Nenhum tipo cadastrado para esta área. Pode seguir sem selecionar."
+                            : "Selecione uma área para ver os tipos disponíveis.";
+                    }
+                    return;
+                }
+
+                if (typeHelp) typeHelp.textContent = "Opcional, mas ajuda a direcionar mais rápido.";
+                typeCards.innerHTML = options.map((option) => `
+                    <button type="button" class="newticket-choice${option.value === typeField.value ? " is-selected" : ""}" data-type-value="${escapeHtml(option.value)}">
+                        <span>${escapeHtml(shortTypeLabel(option.textContent))}</span>
+                    </button>
+                `).join("");
+            }
+
+            function syncPriorityCards() {
+                if (!priorityCards) return;
+                priorityCards.querySelectorAll("[data-priority-value]").forEach((card) => {
+                    card.classList.toggle("is-selected", card.dataset.priorityValue === priorityField.value);
+                });
+            }
+
+            function filterTypeOptions() {
+                const selectedGroup = String(groupField.value || "");
+                Array.from(typeField.options).forEach((option) => {
+                    if (!option.value) {
+                        option.hidden = false;
+                        return;
+                    }
+                    const optionGroup = option.getAttribute("data-group-id") || "";
+                    option.hidden = !!selectedGroup && optionGroup !== selectedGroup;
+                });
+                const current = typeField.selectedOptions[0];
+                if (current && current.hidden) typeField.value = "";
+            }
+
+            /* ---------- Dynamic (category-scoped) fields ---------- */
+
+            function applyDynamicFieldScope() {
+                const selectedGroup = String(groupField.value || "");
+                const selectedType = String(typeField.value || "");
+                let visibleCount = 0;
+
+                dynamicFields.forEach((wrapper) => {
+                    const groupIds = parseIds(wrapper.dataset.portalGroupIds);
+                    const typeIds = parseIds(wrapper.dataset.portalTypeIds);
+                    const matchesType = !typeIds.length || (selectedType && typeIds.includes(selectedType));
+                    const matchesGroup = !groupIds.length || (selectedGroup && groupIds.includes(selectedGroup));
+                    const shouldShow = typeIds.length ? matchesType : matchesGroup;
+                    const shouldHide = !(shouldShow || (!selectedGroup && !selectedType && !groupIds.length && !typeIds.length));
+
+                    wrapper.classList.toggle("is-hidden", shouldHide);
+                    if (!shouldHide) visibleCount += 1;
+                    wrapper.querySelectorAll("input, textarea, select").forEach((field) => {
+                        if (field.type === "hidden" || field.name === "csrfmiddlewaretoken") return;
+                        field.disabled = shouldHide;
+                    });
+                });
+
+                if (dynamicStep) dynamicStep.classList.toggle("is-hidden", visibleCount === 0);
+            }
+
+            /* ---------- Attachments ---------- */
 
             function fileSignature(file) {
                 return `${file.name}::${file.size}::${file.lastModified}`;
@@ -373,24 +429,20 @@
                 attachmentsField.files = dataTransfer.files;
             }
 
-            function renderAttachmentList() {
+            function renderAttachments() {
                 if (!attachmentsList) return;
                 if (!selectedAttachments.length) {
                     attachmentsList.innerHTML = "";
-                    attachmentsList.classList.remove("has-files");
                     return;
                 }
-                attachmentsList.classList.add("has-files");
                 attachmentsList.innerHTML = selectedAttachments.map((file, index) => `
-                    <article class="support-create-upload-item">
-                        <div class="support-create-upload-item-copy">
-                            <strong title="${file.name}">${truncateText(file.name, 58)}</strong>
+                    <div class="newticket-file">
+                        <div class="newticket-file-copy">
+                            <strong title="${escapeHtml(file.name)}">${escapeHtml(truncate(file.name, 46))}</strong>
                             <span>${formatFileSize(file.size)}</span>
                         </div>
-                        <button type="button" class="support-create-upload-remove" data-attachment-index="${index}" aria-label="Remover arquivo">
-                            Remover
-                        </button>
-                    </article>
+                        <button type="button" class="newticket-file-remove" data-attachment-index="${index}" aria-label="Remover ${escapeHtml(file.name)}">&times;</button>
+                    </div>
                 `).join("");
             }
 
@@ -405,99 +457,85 @@
                     selectedAttachments.push(file);
                 });
                 syncAttachmentsToInput();
-                renderAttachmentList();
+                renderAttachments();
                 updateSummary();
             }
 
             function removeAttachment(index) {
                 const numericIndex = Number(index);
                 if (Number.isNaN(numericIndex)) return;
-                selectedAttachments = selectedAttachments.filter((_file, currentIndex) => currentIndex !== numericIndex);
+                selectedAttachments = selectedAttachments.filter((_file, current) => current !== numericIndex);
                 syncAttachmentsToInput();
-                renderAttachmentList();
+                renderAttachments();
                 updateSummary();
             }
 
+            /* ---------- Summary, counters, progress ---------- */
+
             function updateSummary() {
-                if (summaryTitle) {
-                    summaryTitle.textContent = truncateText(titleField.value, 72) || "Ainda não informado";
-                }
-                if (summaryGroup) {
-                    summaryGroup.textContent = selectedOptionLabel(groupField, "Não selecionado");
-                }
-                if (summaryType) {
-                    summaryType.textContent = selectedOptionLabel(typeField, "Não selecionado");
-                }
-                if (summaryPriority) {
-                    summaryPriority.textContent = selectedOptionLabel(priorityField, "Não selecionada");
-                }
-                if (summaryAttachments) {
-                    const total = selectedAttachments.length;
-                    summaryAttachments.textContent = total ? `${total} arquivo(s)` : "Nenhum arquivo";
+                if (summary.title) summary.title.textContent = truncate(titleField.value, 60) || "—";
+                if (summary.group) summary.group.textContent = selectedLabel(groupField) || "—";
+                if (summary.type) summary.type.textContent = shortTypeLabel(selectedLabel(typeField)) || "—";
+                if (summary.priority) summary.priority.textContent = selectedLabel(priorityField) || "—";
+                if (summary.attachments) {
+                    summary.attachments.textContent = selectedAttachments.length
+                        ? `${selectedAttachments.length} arquivo(s)`
+                        : "Nenhum";
                 }
                 if (attachmentsDisplay) {
-                    const files = selectedAttachments;
-                    if (!files.length) {
-                        attachmentsDisplay.textContent = "Nenhum arquivo selecionado";
-                    } else if (files.length === 1) {
-                        attachmentsDisplay.textContent = truncateText(files[0].name, 52);
-                    } else {
-                        attachmentsDisplay.textContent = `${files.length} arquivos selecionados`;
-                    }
+                    attachmentsDisplay.textContent = selectedAttachments.length
+                        ? `${selectedAttachments.length} arquivo(s) selecionado(s)`
+                        : "Nenhum arquivo selecionado";
                 }
+
+                if (titleCounter) {
+                    const length = titleField.value.length;
+                    titleCounter.textContent = `${length}/180`;
+                    titleCounter.classList.toggle("is-warn", length > 160);
+                }
+                if (descCounter) {
+                    const length = descriptionField.value.trim().length;
+                    descCounter.textContent = `${length} caracteres`;
+                    descCounter.classList.toggle("is-warn", length > 0 && length < 30);
+                }
+
+                updateProgress();
             }
 
-            function filterTypes() {
-                const selectedGroup = String(groupField.value || "");
-                Array.from(typeField.options).forEach((option) => {
-                    const optionGroup = option.getAttribute("data-group-id") || "";
-                    if (!option.value) {
-                        option.hidden = false;
-                        return;
-                    }
-                    option.hidden = !!selectedGroup && optionGroup !== selectedGroup;
-                });
-
-                const current = typeField.selectedOptions[0];
-                if (current && current.hidden) {
-                    typeField.value = "";
-                }
+            function updateProgress() {
+                const checks = [
+                    !!groupField.value,
+                    titleField.value.trim().length >= 5,
+                    descriptionField.value.trim().length >= 30,
+                    !!priorityField.value,
+                ];
+                const done = checks.filter(Boolean).length;
+                const percent = Math.round((done / checks.length) * 100);
+                if (progressFill) progressFill.style.width = `${percent}%`;
+                if (progressLabel) progressLabel.textContent = `${percent}% preenchido`;
             }
 
-            function applyDynamicFieldScope() {
-                const selectedGroup = String(groupField.value || "");
-                const selectedType = String(typeField.value || "");
+            /* ---------- Draft ---------- */
 
-                dynamicFields.forEach((wrapper) => {
-                    const groupIds = parseIds(wrapper.dataset.portalGroupIds);
-                    const typeIds = parseIds(wrapper.dataset.portalTypeIds);
-                    const matchesType = !typeIds.length || (selectedType && typeIds.includes(selectedType));
-                    const matchesGroup = !groupIds.length || (selectedGroup && groupIds.includes(selectedGroup));
-                    const shouldShow = typeIds.length ? matchesType : matchesGroup;
-                    const shouldHide = !(shouldShow || (!selectedGroup && !selectedType && !groupIds.length && !typeIds.length));
-
-                    wrapper.classList.toggle("is-hidden", shouldHide);
-                    wrapper.querySelectorAll("input, textarea, select").forEach((field) => {
-                        if (field.type === "hidden" || field.name === "csrfmiddlewaretoken") return;
-                        field.disabled = shouldHide;
-                    });
-                });
+            function updateDraftStatus(message, stateClass) {
+                if (!draftStatus) return;
+                draftStatus.textContent = message;
+                draftStatus.classList.remove("is-saved", "is-loaded", "is-loading");
+                if (stateClass) draftStatus.classList.add(stateClass);
             }
 
             function saveDraft() {
                 const payload = {};
                 form.querySelectorAll("input, textarea, select").forEach((field) => {
-                    if (!field.name || field.type === "file" || field.type === "password" || field.name === "csrfmiddlewaretoken") {
-                        return;
-                    }
-                    if (field.type === "checkbox") {
-                        payload[field.name] = field.checked;
-                        return;
-                    }
-                    payload[field.name] = field.value;
+                    if (!field.name || field.type === "file" || field.type === "password" || field.name === "csrfmiddlewaretoken") return;
+                    payload[field.name] = field.type === "checkbox" ? field.checked : field.value;
                 });
-                localStorage.setItem(storageKey, JSON.stringify(payload));
-                updateDraftStatus("Rascunho salvo automaticamente", "is-saved");
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(payload));
+                    updateDraftStatus("Rascunho salvo", "is-saved");
+                } catch (error) {
+                    /* Storage unavailable (private mode/quota) — drafting is best-effort. */
+                }
             }
 
             function loadDraft() {
@@ -505,11 +543,10 @@
                 try {
                     const raw = localStorage.getItem(storageKey);
                     if (!raw) {
-                        updateDraftStatus("Preenchimento novo", "");
+                        updateDraftStatus("Pronto para preencher", "");
                         return;
                     }
-                    const payload = JSON.parse(raw);
-                    Object.entries(payload).forEach(([name, value]) => {
+                    Object.entries(JSON.parse(raw)).forEach(([name, value]) => {
                         const field = form.querySelector(`[name="${name}"]`);
                         if (!field || field.value) return;
                         if (field.type === "checkbox") {
@@ -520,76 +557,66 @@
                             restored = true;
                         }
                     });
-                    updateDraftStatus(
-                        restored ? "Rascunho recuperado neste navegador" : "Preenchimento novo",
-                        restored ? "is-loaded" : ""
-                    );
+                    updateDraftStatus(restored ? "Rascunho recuperado" : "Pronto para preencher", restored ? "is-loaded" : "");
                 } catch (error) {
-                    updateDraftStatus("Não foi possível recuperar o rascunho", "");
-                    console.warn("Não foi possível recuperar o rascunho do portal.", error);
+                    updateDraftStatus("Pronto para preencher", "");
                 }
+            }
+
+            /* ---------- Insights (knowledge base, duplicates, SLA) ---------- */
+
+            function emptyCard(title, subtitle) {
+                return `<div class="newticket-side-empty"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`;
             }
 
             function renderKnowledge(rows) {
                 if (!rows.length) {
-                    knowledgeTarget.innerHTML = renderEmptyCard("Nenhuma sugestão encontrada", "Continue preenchendo com mais contexto para ampliar a busca.");
+                    knowledgeTarget.innerHTML = emptyCard("Nada encontrado", "Continue descrevendo para ampliar a busca.");
                     return;
                 }
                 knowledgeTarget.innerHTML = rows.map((row) => `
-                    <a href="${row.url}" class="support-insight-card support-insight-link" target="_blank" rel="noreferrer">
-                        <strong>${row.title}</strong>
-                        <span>${row.category}</span>
-                        <small>${row.excerpt}</small>
+                    <a href="${escapeHtml(row.url)}" class="newticket-side-item" target="_blank" rel="noreferrer">
+                        <strong>${escapeHtml(row.title)}</strong>
+                        <span>${escapeHtml(row.category)}</span>
+                        <small>${escapeHtml(row.excerpt)}</small>
                     </a>
                 `).join("");
             }
 
             function renderDuplicates(rows) {
                 if (!rows.length) {
-                    duplicateTarget.innerHTML = renderEmptyCard("Sem duplicidades detectadas", "Nenhuma demanda ativa sua parece semelhante neste momento.");
+                    duplicateTarget.innerHTML = emptyCard("Nenhum parecido", "Não encontramos chamados seus semelhantes em aberto.");
                     return;
                 }
                 duplicateTarget.innerHTML = rows.map((row) => `
-                    <a href="${row.url}" class="support-insight-card support-insight-link">
-                        <strong>${row.protocol}</strong>
-                        <span>${row.title}</span>
-                        <small>${row.status} • ${row.created_at}</small>
+                    <a href="${escapeHtml(row.url)}" class="newticket-side-item">
+                        <strong>${escapeHtml(row.protocol)}</strong>
+                        <span>${escapeHtml(row.title)}</span>
+                        <small>${escapeHtml(row.status)} • ${escapeHtml(row.created_at)}</small>
                     </a>
                 `).join("");
             }
 
             function renderSla(data) {
                 if (!data || !data.has_policy) {
-                    slaTarget.innerHTML = renderEmptyCard(
-                        data?.title || "Sem SLA configurado",
-                        data?.subtitle || "Nenhuma política ativa corresponde ao preenchimento atual."
+                    slaTarget.innerHTML = emptyCard(
+                        (data && data.title) || "Sem previsão ainda",
+                        (data && data.subtitle) || "Selecione a categoria para ver o prazo de atendimento."
                     );
                     return;
                 }
-
                 slaTarget.innerHTML = `
-                    <article class="support-insight-card support-sla-card">
-                        <strong>${data.title}</strong>
-                        <span>${data.subtitle}</span>
-                        <div class="support-sla-grid">
-                            <div>
-                                <small>Primeira resposta</small>
-                                <strong>${data.first_response_display}</strong>
-                            </div>
-                            <div>
-                                <small>Resolução</small>
-                                <strong>${data.resolution_display}</strong>
-                            </div>
-                            <div>
-                                <small>Atendente padrão</small>
-                                <strong>${data.default_attendant}</strong>
-                            </div>
-                            <div>
-                                <small>Ação automática</small>
-                                <strong>${data.auto_assign ? "Assumir ao abrir" : "Somente meta"}</strong>
-                            </div>
+                    <div class="newticket-sla">
+                        <div class="newticket-sla-row">
+                            <span>Primeira resposta</span>
+                            <strong>${escapeHtml(data.first_response_display)}</strong>
                         </div>
-                    </article>
+                        <div class="newticket-sla-row">
+                            <span>Resolução prevista</span>
+                            <strong>${escapeHtml(data.resolution_display)}</strong>
+                        </div>
+                        <small class="newticket-sla-policy">${escapeHtml(data.title)}</small>
+                    </div>
                 `;
             }
 
@@ -606,68 +633,97 @@
                 fetch(`{% url 'portalDemandInsightsApi' %}?${params.toString()}`, {
                     headers: { "X-Requested-With": "XMLHttpRequest" },
                 })
-                    .then((response) => response.ok ? response.json() : Promise.reject(response))
+                    .then((response) => (response.ok ? response.json() : Promise.reject(response)))
                     .then((data) => {
                         renderKnowledge(data.knowledge || []);
                         renderDuplicates(data.duplicates || []);
                         renderSla(data.sla || null);
                     })
                     .catch(() => {
-                        knowledgeTarget.innerHTML = renderEmptyCard("Busca indisponível", "Não foi possível consultar a base de conhecimento agora.");
-                        duplicateTarget.innerHTML = renderEmptyCard("Consulta indisponível", "As demandas parecidas não puderam ser carregadas agora.");
-                        slaTarget.innerHTML = renderEmptyCard("SLA indisponível", "Não foi possível calcular a política neste momento.");
+                        knowledgeTarget.innerHTML = emptyCard("Busca indisponível", "Não foi possível consultar a base agora.");
+                        duplicateTarget.innerHTML = emptyCard("Consulta indisponível", "Não foi possível verificar duplicidades agora.");
+                        slaTarget.innerHTML = emptyCard("Previsão indisponível", "Não foi possível calcular o prazo agora.");
                     });
             }
 
             function queueInsightsFetch() {
                 window.clearTimeout(requestTimer);
-                requestTimer = window.setTimeout(fetchInsights, 260);
+                requestTimer = window.setTimeout(fetchInsights, 280);
             }
 
-            loadDraft();
-            filterTypes();
-            applyDynamicFieldScope();
-            updateSummary();
-            fetchInsights();
+            function onSelectionChanged() {
+                filterTypeOptions();
+                renderTypeCards();
+                syncPriorityCards();
+                applyDynamicFieldScope();
+                updateSummary();
+                saveDraft();
+                queueInsightsFetch();
+            }
 
-            [titleField, descriptionField, groupField, typeField, priorityField].forEach((field) => {
-                field.addEventListener("input", function() {
-                    if (field === groupField) filterTypes();
-                    applyDynamicFieldScope();
-                    updateSummary();
-                    saveDraft();
-                    queueInsightsFetch();
+            /* ---------- Wiring ---------- */
+
+            if (groupCards) {
+                groupCards.addEventListener("click", (event) => {
+                    const card = event.target.closest("[data-group-value]");
+                    if (!card) return;
+                    const value = card.dataset.groupValue;
+                    groupField.value = groupField.value === value ? "" : value;
+                    renderGroupCards();
+                    onSelectionChanged();
                 });
-                field.addEventListener("change", function() {
-                    if (field === groupField) filterTypes();
-                    applyDynamicFieldScope();
-                    updateSummary();
-                    saveDraft();
-                    queueInsightsFetch();
+            }
+
+            if (typeCards) {
+                typeCards.addEventListener("click", (event) => {
+                    const card = event.target.closest("[data-type-value]");
+                    if (!card) return;
+                    const value = card.dataset.typeValue;
+                    typeField.value = typeField.value === value ? "" : value;
+                    renderTypeCards();
+                    onSelectionChanged();
+                });
+            }
+
+            if (priorityCards) {
+                priorityCards.addEventListener("click", (event) => {
+                    const card = event.target.closest("[data-priority-value]");
+                    if (!card) return;
+                    priorityField.value = card.dataset.priorityValue;
+                    syncPriorityCards();
+                    onSelectionChanged();
+                });
+            }
+
+            [groupField, typeField, priorityField].forEach((field) => {
+                field.addEventListener("change", () => {
+                    renderGroupCards();
+                    onSelectionChanged();
                 });
             });
 
-            form.querySelectorAll("input, textarea, select").forEach((field) => {
-                if (field.type === "file") return;
-                field.addEventListener("change", function() {
+            [titleField, descriptionField].forEach((field) => {
+                field.addEventListener("input", () => {
                     updateSummary();
-                    saveDraft();
+                    queueInsightsFetch();
                 });
-                field.addEventListener("blur", function() {
-                    updateSummary();
-                    saveDraft();
-                });
+                field.addEventListener("blur", saveDraft);
+            });
+
+            form.querySelectorAll(".portal-dynamic-field input, .portal-dynamic-field textarea, .portal-dynamic-field select").forEach((field) => {
+                field.addEventListener("change", saveDraft);
+                field.addEventListener("blur", saveDraft);
             });
 
             if (attachmentsField) {
-                attachmentsField.addEventListener("change", function() {
+                attachmentsField.addEventListener("change", () => {
                     addAttachments(attachmentsField.files);
                     attachmentsField.value = "";
                 });
             }
 
             if (attachmentsList) {
-                attachmentsList.addEventListener("click", function(event) {
+                attachmentsList.addEventListener("click", (event) => {
                     const target = event.target.closest("[data-attachment-index]");
                     if (!target) return;
                     removeAttachment(target.dataset.attachmentIndex);
@@ -675,12 +731,11 @@
             }
 
             if (uploadBox) {
-                uploadBox.addEventListener("click", function(event) {
-                    const ignoredTarget = event.target.closest(".support-create-upload-remove");
-                    if (ignoredTarget || !attachmentsField) return;
+                uploadBox.addEventListener("click", (event) => {
+                    if (event.target.closest(".newticket-file-remove") || !attachmentsField) return;
                     attachmentsField.click();
                 });
-                uploadBox.addEventListener("keydown", function(event) {
+                uploadBox.addEventListener("keydown", (event) => {
                     if (!attachmentsField) return;
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
@@ -688,31 +743,59 @@
                     }
                 });
                 ["dragenter", "dragover"].forEach((eventName) => {
-                    uploadBox.addEventListener(eventName, function(event) {
+                    uploadBox.addEventListener(eventName, (event) => {
                         event.preventDefault();
                         uploadBox.classList.add("is-dragover");
                     });
                 });
-                ["dragleave", "dragend", "drop"].forEach((eventName) => {
-                    uploadBox.addEventListener(eventName, function(event) {
+                ["dragleave", "dragend"].forEach((eventName) => {
+                    uploadBox.addEventListener(eventName, (event) => {
                         event.preventDefault();
-                        if (eventName !== "drop") {
-                            uploadBox.classList.remove("is-dragover");
-                        }
+                        uploadBox.classList.remove("is-dragover");
                     });
                 });
-                uploadBox.addEventListener("drop", function(event) {
+                uploadBox.addEventListener("drop", (event) => {
+                    event.preventDefault();
                     uploadBox.classList.remove("is-dragover");
-                    const droppedFiles = event.dataTransfer ? event.dataTransfer.files : null;
-                    addAttachments(droppedFiles);
+                    addAttachments(event.dataTransfer ? event.dataTransfer.files : null);
                 });
             }
 
-            form.addEventListener("submit", function() {
+            form.addEventListener("submit", (event) => {
+                const missing = [];
+                if (!titleField.value.trim()) missing.push(titleField);
+                if (!descriptionField.value.trim()) missing.push(descriptionField);
+                if (missing.length) {
+                    event.preventDefault();
+                    missing.forEach((field) => field.classList.add("is-invalid"));
+                    missing[0].focus();
+                    missing[0].scrollIntoView({ behavior: "smooth", block: "center" });
+                    return;
+                }
                 syncAttachmentsToInput();
-                localStorage.removeItem(storageKey);
-                updateDraftStatus("Enviando demanda...", "is-loading");
+                try { localStorage.removeItem(storageKey); } catch (error) { /* best-effort */ }
+                updateDraftStatus("Enviando…", "is-loading");
+                const submitBtn = document.getElementById("newticketSubmit");
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "Enviando…";
+                }
             });
+
+            [titleField, descriptionField].forEach((field) => {
+                field.addEventListener("input", () => field.classList.remove("is-invalid"));
+            });
+
+            /* ---------- Boot ---------- */
+
+            loadDraft();
+            filterTypeOptions();
+            renderGroupCards();
+            renderTypeCards();
+            syncPriorityCards();
+            applyDynamicFieldScope();
+            updateSummary();
+            fetchInsights();
         })();
     </script>
 </body>

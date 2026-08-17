@@ -1,0 +1,29 @@
+{% comment %}
+Bloco de acesso compartilhado pelos modais de cadastro e de edição.
+Espera `prefix` ("create" ou "edit") para gerar ids únicos e `internal_checked`
+para o estado inicial do acesso interno (o modal de edição preenche via JS).
+{% endcomment %}
+<div class="cx-fieldset">
+    <div class="cx-fieldset-title">Acesso ao sistema</div>
+
+    <label class="cx-check" for="{{ prefix }}_is_system_admin">
+        <input id="{{ prefix }}_is_system_admin" type="checkbox" name="is_system_admin">
+        <span>Administrador do sistema</span>
+    </label>
+    <label class="cx-check" for="{{ prefix }}_can_access_internal">
+        <input id="{{ prefix }}_can_access_internal" type="checkbox" name="can_access_internal" {% if internal_checked %}checked{% endif %}>
+        <span>ConnectMX interno</span>
+    </label>
+    <p class="cx-hint">Desmarque o acesso interno para criar uma conta que só usa o Dashes.</p>
+
+    <div class="cx-fieldset-title">Painéis do Dashes</div>
+    {% for dash in dashboards %}
+    <label class="cx-check" for="{{ prefix }}_dash_{{ dash.slug }}">
+        <input id="{{ prefix }}_dash_{{ dash.slug }}" type="checkbox" name="dashboards" value="{{ dash.slug }}" data-dash-slug="{{ dash.slug }}">
+        <span>{{ dash.name }}</span>
+    </label>
+    {% empty %}
+    <p class="cx-hint">Nenhum painel cadastrado no catálogo.</p>
+    {% endfor %}
+    <p class="cx-hint">Administradores do sistema enxergam todos os painéis, independente do que estiver marcado.</p>
+</div>

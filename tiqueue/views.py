@@ -110,6 +110,8 @@ from accounts.models import User
 from .models import TaskType, TaskGroup
 from . import services as service
 from django.http import JsonResponse, HttpResponse
+from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -138,6 +140,18 @@ import os
 from urllib import request as urllib_request, parse as urllib_parse, error as urllib_error
 from xml.sax.saxutils import escape as xml_escape
 import calendar as month_calendar
+from functools import wraps
+from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
+from .models import CustomerInsightSnapshot
+from .models import Dashboard, DashboardAccess
+from .ai_config import (
+    ALLOWED_REASONING_EFFORTS,
+    encrypt_secret,
+    get_openai_runtime_config,
+    public_openai_runtime_config,
+)
+from .openai_insights import OpenAIInsightError, generate_customer_insights, test_openai_connection
+from .customer_dna_pdf import build_customer_dna_pdf
 
 def _project_dashboard_deadline_meta(target_date, today):
     if not target_date:
@@ -1133,6 +1147,384 @@ def index(request):
     )
 
 
+def allowed_dashboards(user):
+    """Painéis ativos que este usuário pode abrir.
+
+    A permissão é sempre explícita: sem registro em DashboardAccess não há
+    acesso. A única exceção é o administrador do sistema, que enxerga o
+    catálogo inteiro — é quem concede acesso aos demais.
+    """
+    if not user or not user.is_authenticated:
+        return Dashboard.objects.none()
+
+    catalog = Dashboard.objects.filter(is_active=True)
+    if getattr(user, "is_system_admin", False) or getattr(user, "is_superuser", False):
+        return catalog
+    return catalog.filter(accesses__user=user).distinct()
+
+
+def _dashes_access_required(slug):
+    """Exige sessão do Dashes e permissão no painel indicado."""
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            if not (request.user.is_authenticated and request.session.get("dashes_authenticated")):
+                query = urllib_parse.urlencode({"next": request.get_full_path()})
+                return redirect(f"{reverse('dashesLoginPage')}?{query}")
+
+            dashboards = allowed_dashboards(request.user)
+            if not dashboards.filter(slug=slug).exists():
+                return render(
+                    request,
+                    "tiqueue/dashes_denied.html",
+                    {"dashboards": dashboards, "requested_slug": slug},
+                    status=403,
+                )
+
+            request.dashes_menu = dashboards
+            return view_func(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def dashesHomePage(request):
+    """Manda para o primeiro painel liberado, em vez de um painel fixo."""
+    if not (request.user.is_authenticated and request.session.get("dashes_authenticated")):
+        return redirect("dashesLoginPage")
+
+    first = allowed_dashboards(request.user).first()
+    if not first:
+        return render(request, "tiqueue/dashes_denied.html", {"dashboards": []}, status=403)
+    return redirect(first.url_name)
+
+
+def dashesLoginPage(request):
+    next_url = (request.POST.get(REDIRECT_FIELD_NAME) or request.GET.get(REDIRECT_FIELD_NAME) or "").strip()
+    if request.user.is_authenticated and request.session.get("dashes_authenticated"):
+        return redirect(next_url or "dashesHome")
+
+    # Quem já entrou pela plataforma principal e tem painel liberado não precisa
+    # digitar a senha de novo: a permissão é que decide o acesso, não a porta.
+    if request.user.is_authenticated and allowed_dashboards(request.user).exists():
+        request.session["dashes_authenticated"] = True
+        request.session["dashes_authenticated_at"] = timezone.now().isoformat()
+        return redirect(next_url or "dashesHome")
+
+    error_message = None
+    login_value = ""
+    if request.method == "POST":
+        login_value = (request.POST.get("username") or "").strip()
+        password = request.POST.get("password") or ""
+        user = authenticate(request, username=login_value, password=password)
+
+        if user is None or not user.is_active:
+            error_message = "Usuário ou senha inválidos."
+        elif not allowed_dashboards(user).exists():
+            # Credencial válida, mas sem painel liberado: dizer isso é melhor do
+            # que "usuário ou senha inválidos", que manda a pessoa tentar de novo.
+            error_message = "Seu usuário não tem nenhum painel liberado. Fale com o administrador do sistema."
+        else:
+            login(request, user)
+            request.session["dashes_authenticated"] = True
+            request.session["dashes_authenticated_at"] = timezone.now().isoformat()
+            if next_url and url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                return redirect(next_url)
+            return redirect("dashesHome")
+
+    return render(
+        request,
+        "tiqueue/dashes_login.html",
+        {"error_message": error_message, "login_value": login_value, "next_url": next_url},
+    )
+
+
+@require_POST
+def dashesLogoutPage(request):
+    request.session.pop("dashes_authenticated", None)
+    request.session.pop("dashes_authenticated_at", None)
+    return redirect("dashesLoginPage")
+
+
+@_dashes_access_required("customer-dna")
+def dashesCustomerDnaPage(request):
+    raw_customer_id = (request.GET.get("cliente") or "10832").strip()
+    try:
+        customer_id = int(raw_customer_id)
+    except (TypeError, ValueError):
+        customer_id = 10832
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_customer_dna(customer_id)
+        if dashboard is None:
+            data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
+
+    insight_snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    return render(
+        request,
+        "tiqueue/customer_dna.html",
+        {
+            "dashboard": dashboard,
+            "customer_id": customer_id,
+            "data_error": data_error,
+            "insight_snapshot": insight_snapshot,
+            "dashes_mode": True,
+            "active_dash": "customer-dna",
+            "dashes_menu": allowed_dashboards(request.user),
+            "dna_search_url": reverse("customerDnaSearchApi"),
+            "dna_prepare_url": reverse("customerDnaPrepareInsights"),
+            "dna_ai_url": reverse("customerDnaRequestAiInsights"),
+            "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
+            "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
+            "dna_page_url": reverse("dashesCustomerDnaPage"),
+        },
+    )
+
+
+@login_required
+def customerDnaPage(request):
+    raw_customer_id = (request.GET.get("cliente") or "10832").strip()
+    try:
+        customer_id = int(raw_customer_id)
+    except (TypeError, ValueError):
+        customer_id = 10832
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_customer_dna(customer_id)
+        if dashboard is None:
+            data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
+
+    insight_snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+
+    return render(
+        request,
+        "tiqueue/customer_dna.html",
+        {
+            "dashboard": dashboard,
+            "customer_id": customer_id,
+            "data_error": data_error,
+            "insight_snapshot": insight_snapshot,
+            "dna_search_url": reverse("customerDnaSearchApi"),
+            "dna_prepare_url": reverse("customerDnaPrepareInsights"),
+            "dna_ai_url": reverse("customerDnaRequestAiInsights"),
+            "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
+            "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
+            "dna_page_url": reverse("customerDnaPage"),
+        },
+    )
+
+
+@login_required
+@require_GET
+def customerDnaSearchApi(request):
+    term = (request.GET.get("q") or "").strip()
+    try:
+        items = search_customers(term)
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Falha ao consultar clientes no ERP Senior: {exc}"},
+            status=503,
+        )
+    return JsonResponse({"status": "ok", "items": items})
+
+
+@login_required
+@require_POST
+def customerDnaPrepareInsights(request):
+    raw_customer_id = (request.POST.get("customer_id") or "").strip()
+    try:
+        customer_id = int(raw_customer_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Cliente inválido."}, status=400)
+
+    try:
+        prepared = prepare_customer_insights(customer_id)
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Não foi possível preparar os insights: {exc}"},
+            status=503,
+        )
+    if prepared is None:
+        return JsonResponse(
+            {"status": "error", "message": "Nenhum dado elegível foi encontrado para este cliente."},
+            status=404,
+        )
+
+    snapshot, created = CustomerInsightSnapshot.objects.update_or_create(
+        customer_code=customer_id,
+        source_fingerprint=prepared["source_fingerprint"],
+        defaults={
+            "customer_name": prepared["dashboard"]["customer"]["name"],
+            "source_period_start": prepared["period_start"],
+            "source_period_end": prepared["period_end"],
+            "source_row_count": prepared["source_row_count"],
+            "metrics": prepared["metrics"],
+            "insight_cards": prepared["cards"],
+            "ai_payload": prepared["ai_payload"],
+            "created_by": request.user,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "message": "Indicadores calculados e payload estrutural armazenado.",
+            "created": created,
+            "snapshot_id": snapshot.id,
+            "redirect_url": f"{reverse('customerDnaPage')}?cliente={customer_id}",
+        }
+    )
+
+
+@login_required
+@require_POST
+def customerDnaRequestAiInsights(request):
+    raw_customer_id = (request.POST.get("customer_id") or "").strip()
+    try:
+        customer_id = int(raw_customer_id)
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Cliente inválido."}, status=400)
+
+    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores e o payload deste cliente."},
+            status=409,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema → Configurações."},
+            status=409,
+        )
+
+    snapshot.status = CustomerInsightSnapshot.STATUS_PROCESSING
+    snapshot.ai_provider = "openai"
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_provider", "ai_model", "ai_requested_at", "updated_at"])
+
+    try:
+        ai_result = generate_customer_insights(snapshot.ai_payload, runtime_config=runtime_config)
+    except Exception as exc:
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = CustomerInsightSnapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": str(exc),
+                "snapshot_id": snapshot.id,
+                "redirect_url": f"{reverse('customerDnaPage')}?cliente={customer_id}",
+            },
+            status=502,
+        )
+
+    usage = ai_result["usage"]
+    snapshot.status = CustomerInsightSnapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save(
+        update_fields=[
+            "status",
+            "ai_response",
+            "ai_response_id",
+            "ai_model",
+            "ai_input_tokens",
+            "ai_output_tokens",
+            "ai_total_tokens",
+            "ai_error",
+            "ai_completed_at",
+            "updated_at",
+        ]
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "message": "Análise OpenAI gerada e armazenada com sucesso.",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "redirect_url": f"{reverse('customerDnaPage')}?cliente={customer_id}",
+        }
+    )
+
+
+@login_required
+@require_GET
+def customerDnaInsightPayloadApi(request, customer_id):
+    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "provider": snapshot.ai_provider,
+                "model": snapshot.ai_model,
+                "response_id": snapshot.ai_response_id,
+                "input_tokens": snapshot.ai_input_tokens,
+                "output_tokens": snapshot.ai_output_tokens,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+@login_required
+@require_GET
+def customerDnaExportPdf(request, customer_id):
+    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    if snapshot is None or not snapshot.ai_payload or not snapshot.ai_response:
+        return HttpResponse(
+            "Gere os indicadores e conclua a análise de IA antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        dashboard = load_customer_dna(customer_id)
+    except Exception as exc:
+        return HttpResponse(f"Não foi possível consultar o ERP Senior: {exc}", status=503)
+    if dashboard is None:
+        return HttpResponse("Nenhum dado elegível foi encontrado para este cliente.", status=404)
+
+    pdf_bytes = build_customer_dna_pdf(dashboard, snapshot)
+    filename = f"connectmx-dna-cliente-{customer_id}-{slugify(snapshot.customer_name) or customer_id}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 def projectCalendarPage(request):
     _sync_service_notifications()
     _sync_portal_critical_notifications()
@@ -1236,6 +1628,26 @@ def _portal_can_open_new_demands(user):
             and getattr(sector, "is_active", False)
         )
     return not _portal_requester_access_feature_enabled()
+
+
+def _portal_pending_feedback_demands(user):
+    """Concluded tickets of this requester that are still waiting for a rating.
+
+    Business rule: a requester cannot open a new ticket while any of their own
+    concluded tickets is still unrated. Portal managers are exempt, otherwise
+    support staff would lock themselves out of the intake flow.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return []
+    if _portal_can_manage(user):
+        return []
+    return list(
+        PortalDemand.objects.filter(
+            requester=user,
+            status=PortalDemand.STATUS_COMPLETED,
+            feedback_rating__isnull=True,
+        ).order_by("completed_at", "id")
+    )
 
 
 def _portal_requester_access_denied_message():
@@ -2494,6 +2906,44 @@ def _create_queue_item_from_portal_demand(demand, owner_user):
     return queue_item
 
 
+def portalLoginPage(request):
+    """Dedicated sign-in page for portal requesters.
+
+    Separate from the internal ConnectMX login: same credentials, but its own
+    entry point and always lands the person on the requester portal.
+    """
+    if request.user.is_authenticated:
+        return redirect("portalDemandPage")
+
+    error_message = None
+    redirect_to = request.POST.get(REDIRECT_FIELD_NAME) or request.GET.get(REDIRECT_FIELD_NAME) or ""
+
+    if request.method == "POST":
+        identifier = (request.POST.get("login") or "").strip()
+        password = request.POST.get("password") or ""
+        user = authenticate(request, username=identifier, password=password)
+        if user:
+            login(request, user)
+            if redirect_to and url_has_allowed_host_and_scheme(
+                url=redirect_to,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                return redirect(redirect_to)
+            return redirect("portalDemandPage")
+        error_message = "Usuário ou senha inválidos."
+
+    return render(
+        request,
+        "tiqueue/portal_login.html",
+        {
+            "error_message": error_message,
+            "next_url": redirect_to,
+            "session_expired": request.GET.get("expired") == "1",
+        },
+    )
+
+
 @login_required
 def portalDemandPage(request):
     access_denied_message = None
@@ -2504,12 +2954,14 @@ def portalDemandPage(request):
         access_denied_message = _portal_requester_access_denied_message()
 
     dashboard_context = _portal_dashboard_context(request.user)
+    pending_feedback = _portal_pending_feedback_demands(request.user)
 
     return render(
         request,
         "tiqueue/portal_demands.html",
         {
             "access_denied_message": access_denied_message,
+            "pending_feedback": pending_feedback,
             "can_manage_portal": _portal_can_manage(request.user),
             "can_request_portal": can_request_portal,
             "portal_page_label": "Portal de Chamados",
@@ -2519,10 +2971,33 @@ def portalDemandPage(request):
     )
 
 
+_PORTAL_PRIORITY_HINTS = {
+    userQueue.PRIORITY_LOW: "Consigo trabalhar normalmente. Pode ser tratado na ordem da fila.",
+    userQueue.PRIORITY_MEDIUM: "Atrapalha meu trabalho, mas consigo contornar por enquanto.",
+    userQueue.PRIORITY_HIGH: "Estou parado ou afeta várias pessoas. Preciso de ajuda imediata.",
+}
+
+
+def _portal_priority_options():
+    return [
+        {
+            "value": value,
+            "label": label,
+            "color": color,
+            "hint": _PORTAL_PRIORITY_HINTS.get(value, ""),
+        }
+        for value, label, color in userQueue.default_field_options(userQueue.FIELD_PRIORITY)
+    ]
+
+
 @login_required
 def portalDemandCreatePage(request):
     if not _portal_can_open_new_demands(request.user):
         return redirect(f"{reverse('portalDemandPage')}?requester_denied=1")
+
+    # Blocks both GET and POST, so the rule cannot be bypassed by posting directly.
+    if _portal_pending_feedback_demands(request.user):
+        return redirect(f"{reverse('portalMyDemandsPage')}?feedback_required=1")
 
     form = PortalDemandForm(request.POST or None, request.FILES or None)
     dashboard_context = _portal_dashboard_context(request.user)
@@ -2558,6 +3033,8 @@ def portalDemandCreatePage(request):
         {
             "form": form,
             "dynamic_fields": form.get_dynamic_fields(),
+            "priority_options": _portal_priority_options(),
+            "task_groups": list(TaskGroup.objects.order_by("name")),
             "initial_sla_preview": _portal_build_sla_preview(None),
             "can_manage_portal": _portal_can_manage(request.user),
             "can_request_portal": True,
@@ -2766,6 +3243,8 @@ def portalMyDemandsPage(request):
 
     my_demands = _portal_requester_demands(request.user)
     counts = _portal_counts_from_demands(my_demands)
+    pending_feedback = _portal_pending_feedback_demands(request.user)
+    feedback_required = request.GET.get("feedback_required") == "1"
 
     return render(
         request,
@@ -2773,6 +3252,8 @@ def portalMyDemandsPage(request):
         {
             "my_demands": my_demands,
             "counts": counts,
+            "pending_feedback": pending_feedback,
+            "feedback_required": feedback_required,
             "success_message": success_message,
             "access_denied_message": access_denied_message,
             "can_manage_portal": _portal_can_manage(request.user),
@@ -3377,22 +3858,156 @@ def portalRequesterAdminPage(request):
     )
 
 
-def _portal_pending_demands_data():
-    pending_demands = list(
-        PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING)
-        .select_related("requester", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
-        .prefetch_related(
-            Prefetch(
-                "custom_values",
-                queryset=PortalDemandCustomValue.objects.select_related("field").order_by("field__sort_order", "field__id", "id"),
-                to_attr="prefetched_custom_values",
-            )
-        )
-        .order_by("created_at", "id")
+def _portal_ticket_list_context(request):
+    valid_views = {"abertos", "meus", "nao_atribuidos", "resolvidos", "todos"}
+    view = (request.GET.get("view") or "abertos").strip()
+    if view not in valid_views:
+        view = "abertos"
+
+    base_qs = PortalDemand.objects.select_related(
+        "requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant"
     )
-    _decorate_portal_demands(pending_demands)
-    pending_demands.sort(key=lambda demand: (-getattr(demand, "triage_score", 0), demand.created_at, demand.id))
-    return pending_demands
+
+    if view == "meus":
+        qs = base_qs.filter(assigned_to=request.user)
+    elif view == "nao_atribuidos":
+        qs = base_qs.filter(status=PortalDemand.STATUS_PENDING)
+    elif view == "resolvidos":
+        qs = base_qs.filter(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED])
+    elif view == "todos":
+        qs = base_qs.all()
+    else:
+        qs = base_qs.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+
+    priority = (request.GET.get("priority") or "").strip()
+    if priority:
+        qs = qs.filter(priority_level=priority)
+
+    group_id = (request.GET.get("group") or "").strip()
+    if group_id.isdigit():
+        qs = qs.filter(task_group_id=int(group_id))
+
+    search = (request.GET.get("q") or "").strip()
+    if search:
+        qs = qs.filter(Q(title__icontains=search) | Q(access_code__icontains=search) | Q(requester__nameUser__icontains=search))
+
+    sla_filter = (request.GET.get("sla") or "").strip()
+    if sla_filter in {"vencido", "hoje"}:
+        now = timezone.now()
+        if sla_filter == "vencido":
+            qs = qs.filter(
+                Q(first_response_at__isnull=True, first_response_due_at__lt=now)
+                | Q(completed_at__isnull=True, resolution_due_at__lt=now)
+            )
+        else:
+            today = timezone.localdate()
+            qs = qs.filter(
+                Q(first_response_at__isnull=True, first_response_due_at__date=today)
+                | Q(completed_at__isnull=True, resolution_due_at__date=today)
+            )
+    else:
+        sla_filter = ""
+
+    qs = qs.order_by("-created_at", "-id")
+
+    paginator = Paginator(qs, 30)
+    page_obj = paginator.get_page(request.GET.get("page") or "1")
+    tickets = list(page_obj.object_list)
+    _decorate_portal_demands(tickets)
+
+    view_counts = {
+        "abertos": base_qs.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED]).count(),
+        "meus": base_qs.filter(assigned_to=request.user).count(),
+        "nao_atribuidos": base_qs.filter(status=PortalDemand.STATUS_PENDING).count(),
+        "resolvidos": base_qs.filter(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED]).count(),
+        "todos": base_qs.count(),
+    }
+
+    querystring_params = request.GET.copy()
+    querystring_params.pop("page", None)
+    base_querystring = querystring_params.urlencode()
+
+    view_labels = {
+        "abertos": "abertos",
+        "meus": "atribuídos a você",
+        "nao_atribuidos": "não atribuídos",
+        "resolvidos": "resolvidos",
+        "todos": "no total",
+    }
+
+    return {
+        "tickets": tickets,
+        "page_obj": page_obj,
+        "current_view": view,
+        "current_view_label": view_labels.get(view, ""),
+        "view_counts": view_counts,
+        "priority_filter": priority,
+        "group_filter": group_id,
+        "search_query": search,
+        "sla_filter": sla_filter,
+        "groups": list(TaskGroup.objects.order_by("name")),
+        "base_querystring": base_querystring,
+    }
+
+
+def _portal_format_minutes(total_minutes):
+    minutes = int(round(total_minutes or 0))
+    if minutes < 60:
+        return f"{minutes}min"
+    hours = minutes // 60
+    remaining = minutes % 60
+    if hours < 24:
+        return f"{hours}h {remaining:02d}min" if remaining else f"{hours}h"
+    days = hours // 24
+    leftover_hours = hours % 24
+    return f"{days}d {leftover_hours}h" if leftover_hours else f"{days}d"
+
+
+def _portal_ticket_header_stats():
+    now = timezone.now()
+    today = timezone.localdate()
+    open_qs = PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+
+    breached = open_qs.filter(
+        Q(first_response_at__isnull=True, first_response_due_at__lt=now)
+        | Q(completed_at__isnull=True, resolution_due_at__lt=now)
+    ).count()
+
+    due_today = open_qs.filter(
+        Q(first_response_at__isnull=True, first_response_due_at__date=today)
+        | Q(completed_at__isnull=True, resolution_due_at__date=today)
+    ).count()
+
+    # Average first response over the last 30 days. Computed in Python over a
+    # bounded slice so it stays portable across database backends (duration
+    # aggregates behave inconsistently on SQLite).
+    since = now - timedelta(days=30)
+    response_pairs = list(
+        PortalDemand.objects.filter(first_response_at__isnull=False, created_at__gte=since)
+        .order_by("-first_response_at")
+        .values_list("created_at", "first_response_at")[:500]
+    )
+    deltas = [
+        (responded_at - created_at).total_seconds() / 60
+        for created_at, responded_at in response_pairs
+        if created_at and responded_at and responded_at >= created_at
+    ]
+    avg_first_response = _portal_format_minutes(sum(deltas) / len(deltas)) if deltas else "—"
+
+    csat = PortalDemand.objects.filter(feedback_rating__isnull=False).aggregate(
+        average=Avg("feedback_rating"), total=Count("id")
+    )
+    csat_total = csat.get("total") or 0
+    csat_average = csat.get("average")
+
+    return {
+        "breached": breached,
+        "due_today": due_today,
+        "unassigned": open_qs.filter(status=PortalDemand.STATUS_PENDING).count(),
+        "avg_first_response": avg_first_response,
+        "csat_average": round(csat_average, 1) if csat_average else None,
+        "csat_total": csat_total,
+    }
 
 
 def _portal_custom_field_rows(custom_option_forms=None):
@@ -3507,19 +4122,28 @@ def _sync_portal_critical_notifications(open_demands=None):
 
 @login_required
 def portalPendingDemandsPage(request):
-    context = _portal_admin_base_context(request, "pending", "Demandas Pendentes do Portal")
+    context = _portal_admin_base_context(request, "pending", "Entrada de Chamados")
     if context["can_manage"]:
-        context["pending_demands"] = _portal_pending_demands_data()
-        _sync_portal_critical_notifications(context["pending_demands"])
-        context["pending_insights"] = _portal_pending_summary_data(context["pending_demands"])
+        _sync_portal_critical_notifications()
+        context.update(_portal_ticket_list_context(request))
+        context["header_stats"] = _portal_ticket_header_stats()
     else:
-        context["pending_demands"] = []
-        context["pending_insights"] = {
-            "critical": 0,
-            "high_attention": 0,
-            "due_today": 0,
-            "auto_assignable": 0,
-        }
+        context.update(
+            {
+                "tickets": [],
+                "page_obj": None,
+                "current_view": "abertos",
+                "current_view_label": "",
+                "view_counts": {"abertos": 0, "meus": 0, "nao_atribuidos": 0, "resolvidos": 0, "todos": 0},
+                "priority_filter": "",
+                "group_filter": "",
+                "search_query": "",
+                "sla_filter": "",
+                "groups": [],
+                "base_querystring": "",
+                "header_stats": {},
+            }
+        )
     context["assumed_flag"] = request.GET.get("assumed") == "1"
     context["bulk_assumed_flag"] = request.GET.get("bulk_assumed") == "1"
     return render(request, "tiqueue/portal_pending_demands.html", context)
@@ -8861,6 +9485,56 @@ def systemSettingsPage(request):
                         "updated_at",
                     ]
                 )
+            messages.success(request, "Configurações gerais salvas.")
+        elif form_id == "save_openai_settings":
+            if config is None:
+                config = SystemConfig.objects.create()
+
+            base_url = (request.POST.get("openai_base_url") or "https://api.openai.com/v1").strip().rstrip("/")
+            model = (request.POST.get("openai_model") or "gpt-5.6-sol").strip()
+            reasoning_effort = (request.POST.get("openai_reasoning_effort") or "medium").strip().lower()
+            if reasoning_effort not in ALLOWED_REASONING_EFFORTS:
+                reasoning_effort = "medium"
+            try:
+                timeout = min(max(int(request.POST.get("openai_timeout_sec") or 120), 10), 600)
+            except (TypeError, ValueError):
+                timeout = 120
+            try:
+                max_output_tokens = min(max(int(request.POST.get("openai_max_output_tokens") or 5000), 500), 50000)
+            except (TypeError, ValueError):
+                max_output_tokens = 5000
+
+            api_key = (request.POST.get("openai_api_key") or "").strip()
+            if request.POST.get("clear_openai_api_key") == "1":
+                config.openai_api_key_encrypted = None
+            elif api_key:
+                config.openai_api_key_encrypted = encrypt_secret(api_key)
+
+            config.openai_enabled = request.POST.get("openai_enabled") == "on"
+            config.openai_base_url = base_url
+            config.openai_model = model
+            config.openai_reasoning_effort = reasoning_effort
+            config.openai_timeout_sec = timeout
+            config.openai_max_output_tokens = max_output_tokens
+            config.save(
+                update_fields=[
+                    "openai_enabled",
+                    "openai_api_key_encrypted",
+                    "openai_base_url",
+                    "openai_model",
+                    "openai_reasoning_effort",
+                    "openai_timeout_sec",
+                    "openai_max_output_tokens",
+                    "updated_at",
+                ]
+            )
+            messages.success(request, "Configuração OpenAI salva com segurança.")
+        elif form_id == "test_openai_connection":
+            try:
+                resolved_model = test_openai_connection()
+                messages.success(request, f"Conexão com a OpenAI validada para o modelo {resolved_model}.")
+            except OpenAIInsightError as exc:
+                messages.error(request, str(exc))
         return redirect("systemSettingsPage")
 
     return render(
@@ -8870,6 +9544,8 @@ def systemSettingsPage(request):
             "config": config,
             "can_manage": can_manage,
             "access_denied_message": access_denied_message,
+            "openai_runtime": public_openai_runtime_config(),
+            "openai_reasoning_efforts": sorted(ALLOWED_REASONING_EFFORTS),
         },
     )
 

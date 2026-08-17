@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ConnectMX | Demandas Pendentes</title>
+    <title>ConnectMX | Entrada de Chamados</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
@@ -15,8 +15,6 @@
     {% include 'partials/sidebar.html' %}
 
     <div class="queue_main support-admin-page support-admin-queue-page">
-        {% include 'tiqueue/partials/portal_admin_nav.html' %}
-
         {% if access_denied_message %}
             <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
         {% endif %}
@@ -30,260 +28,198 @@
         {% endif %}
 
         {% if can_manage %}
-            <section class="queue-dashboard support-pending-dashboard">
-                <article class="queue-dashboard-card support-pending-metric is-highlight">
-                    <span class="queue-dashboard-label">Pendentes</span>
-                    <strong class="queue-dashboard-value">{{ summary.pending }}</strong>
-                </article>
-                <article class="queue-dashboard-card support-pending-metric">
-                    <span class="queue-dashboard-label">Campos extras</span>
-                    <strong class="queue-dashboard-value">{{ summary.custom_fields }}</strong>
-                </article>
-                <article class="queue-dashboard-card support-pending-metric">
-                    <span class="queue-dashboard-label">Pol&iacute;ticas SLA</span>
-                    <strong class="queue-dashboard-value">{{ summary.sla_policies }}</strong>
-                </article>
-                <article class="queue-dashboard-card support-pending-metric">
-                    <span class="queue-dashboard-label">Respostas prontas</span>
-                    <strong class="queue-dashboard-value">{{ summary.canned_responses }}</strong>
-                </article>
-            </section>
-
-            <section class="support-card support-admin-section support-pending-shell">
-                <div class="support-card-head support-pending-head">
-                    <div class="support-pending-head-copy">
-                        <span class="support-kicker">Triagem</span>
-                        <h2>Demandas aguardando atendimento</h2>
-                        <p>Agora a fila de triagem permite busca, ordena&ccedil;&atilde;o e leitura mais r&aacute;pida do que precisa ser assumido primeiro.</p>
-                    </div>
-                    <form id="bulkAssumeForm" method="POST" action="{% url 'portalDemandBulkAssume' %}" class="support-admin-bulk-form">
-                        {% csrf_token %}
-                        <input type="hidden" id="bulkSelectedIds" name="selected_ids" value="">
-                        <button type="button" id="selectAllDemandsBtn" class="queue-secondary-btn">Marcar todas</button>
-                        <button type="submit" id="bulkAssumeBtn" class="queue-primary-btn" disabled>Assumir selecionadas</button>
-                    </form>
-                </div>
-
-                <div class="support-pending-insights-grid">
-                    <article class="support-pending-insight-card is-critical">
-                        <span>Cr&iacute;ticas</span>
-                        <strong>{{ pending_insights.critical }}</strong>
-                        <small>J&aacute; em atraso no SLA de primeira resposta</small>
-                    </article>
-                    <article class="support-pending-insight-card is-warning">
-                        <span>Alta aten&ccedil;&atilde;o</span>
-                        <strong>{{ pending_insights.high_attention }}</strong>
-                        <small>Cr&iacute;ticas ou vencendo em at&eacute; 1 hora</small>
-                    </article>
-                    <article class="support-pending-insight-card">
-                        <span>Vencem hoje</span>
-                        <strong>{{ pending_insights.due_today }}</strong>
-                        <small>Demandas com resposta prevista para hoje</small>
-                    </article>
-                    <article class="support-pending-insight-card">
-                        <span>Autoatribui&ccedil;&atilde;o</span>
-                        <strong>{{ pending_insights.auto_assignable }}</strong>
-                        <small>Com pol&iacute;tica pronta para direcionamento</small>
-                    </article>
-                </div>
-
-                {% if pending_demands %}
-                    <div class="support-demand-toolbar">
-                        <div class="support-demand-toolbar-group is-search">
-                            <input id="portalPendingSearch" type="search" class="queue-search support-portal-search" placeholder="Buscar por t&iacute;tulo, protocolo, solicitante ou grupo...">
+            <section class="ticket-console">
+                <header class="ticket-header">
+                    <div class="ticket-header-top">
+                        <div class="ticket-header-titles">
+                            <h1>Chamados</h1>
+                            <span class="ticket-header-sub">
+                                <span class="support-live-dot" aria-hidden="true"></span>
+                                <strong>{{ page_obj.paginator.count }}</strong> {{ current_view_label }}
+                                <span class="ticket-header-updated" id="ticketUpdatedAt"></span>
+                            </span>
                         </div>
-                        <div class="support-demand-toolbar-group">
-                            <select id="portalPendingPriorityFilter" class="queue-select support-portal-filter">
-                                <option value="">Todas as prioridades</option>
-                                <option value="high">Alta</option>
-                                <option value="medium">M&eacute;dia</option>
-                                <option value="low">Baixa</option>
-                            </select>
-                        </div>
-                        <div class="support-demand-toolbar-group">
-                            <select id="portalPendingUrgencyFilter" class="queue-select support-portal-filter">
-                                <option value="">Toda a urg&ecirc;ncia</option>
-                                <option value="critica">Cr&iacute;tica</option>
-                                <option value="alta">Alta</option>
-                                <option value="media">M&eacute;dia</option>
-                                <option value="normal">Normal</option>
-                            </select>
-                        </div>
-                        <div class="support-demand-toolbar-group">
-                            <select id="portalPendingGroupFilter" class="queue-select support-portal-filter">
-                                <option value="">Todos os grupos</option>
-                                {% for demand in pending_demands %}
-                                    {% if demand.task_group %}
-                                        <option value="{{ demand.task_group.name|lower }}">{{ demand.task_group.name }}</option>
-                                    {% endif %}
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="support-demand-toolbar-group">
-                            <select id="portalPendingSlaFilter" class="queue-select support-portal-filter">
-                                <option value="">Todo o SLA</option>
-                                <option value="is-danger">Em atraso</option>
-                                <option value="is-info">No prazo</option>
-                                <option value="is-neutral">Sem meta</option>
-                            </select>
-                        </div>
-                        <div class="support-demand-toolbar-group">
-                            <select id="portalPendingSort" class="queue-select support-portal-filter">
-                                <option value="urgency">Maior urg&ecirc;ncia</option>
-                                <option value="oldest">Mais antigas</option>
-                                <option value="recent">Mais recentes</option>
-                                <option value="priority">Maior prioridade</option>
-                                <option value="sla">Maior risco de SLA</option>
-                            </select>
+                        <div class="ticket-header-actions">
+                            <button type="button" id="ticketRefreshBtn" class="queue-secondary-btn ticket-btn-sm support-refresh-btn" title="Atualizar">
+                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                Atualizar
+                            </button>
+                            <a href="{% url 'portalDemandCreatePage' %}" class="queue-primary-btn ticket-btn-sm">+ Novo chamado</a>
                         </div>
                     </div>
 
-                    <div class="support-toolbar-meta">
-                        <span id="portalPendingVisibleCount">{{ pending_demands|length }}</span>
-                        <span>demanda(s) vis&iacute;vel(is) para triagem</span>
-                    </div>
-
-                    <div id="portalPendingList" class="support-demand-list support-demand-list-compact">
-                        {% for demand in pending_demands %}
-                            <article
-                                class="support-demand-item support-demand-item-admin support-demand-item-selectable support-demand-item-queue"
-                                data-demand-card
-                                data-priority="{{ demand.priority_level|default:'medium' }}"
-                                data-title="{{ demand.title|lower }}"
-                                data-protocol="{{ demand.protocol|lower }}"
-                                data-requester="{{ demand.requester_display|lower }}"
-                                data-group="{% if demand.task_group %}{{ demand.task_group.name|lower }}{% endif %}"
-                                data-sla="{{ demand.sla_first_response.css }}"
-                                data-urgency="{{ demand.triage_label|lower }}"
-                                data-urgency-score="{{ demand.triage_score }}"
-                                data-created="{{ demand.created_at|date:'U' }}"
-                            >
-                                <div class="support-demand-head">
-                                    <div class="support-demand-head-main">
-                                        <label class="support-demand-check" onclick="event.stopPropagation()">
-                                            <input type="checkbox" class="support-demand-checkbox" value="{{ demand.id }}">
-                                            <span class="support-demand-check-ui"></span>
-                                        </label>
-                                        <div class="support-demand-title-block">
-                                            <strong>{{ demand.title }}</strong>
-                                            <div class="support-demand-subline">
-                                                <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
-                                                <span class="support-demand-opened-at">
-                                                    <small>Abertura</small>
-                                                    <strong>{{ demand.created_at|date:"d/m/Y H:i" }}</strong>
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="support-demand-head-side">
-                                        <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
-                                        <span class="queue-priority-chip support-priority-chip" style="background: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</span>
-                                    </div>
-                                </div>
-
-                                <div class="support-demand-meta support-demand-meta-pills">
-                                    <span class="support-meta-pill">Solicitante: {{ demand.requester_display }}</span>
-                                    <span class="support-meta-pill">Matr&iacute;cula: {{ demand.requester.userId }}</span>
-                                    <span class="support-meta-pill">{% if demand.task_group %}{{ demand.task_group.name }}{% else %}Sem grupo{% endif %}</span>
-                                    <span class="support-meta-pill">{% if demand.task_type %}{{ demand.task_type.name }}{% else %}Sem tipo{% endif %}</span>
-                                    <span class="support-meta-pill">Aberta {{ demand.opened_since_display }}</span>
-                                </div>
-
-                                <div class="support-inline-pills support-inline-pills-gap">
-                                    <span class="support-chip {{ demand.triage_css }}">Urg&ecirc;ncia: {{ demand.triage_label }}</span>
-                                    <span class="support-chip {{ demand.sla_first_response_chip_css }}">SLA resposta: {{ demand.sla_first_response.status }}</span>
-                                    <span class="support-chip {{ demand.sla_resolution_chip_css }}">SLA resolu&ccedil;&atilde;o: {{ demand.sla_resolution.status }}</span>
-                                    <span class="support-meta-pill">{{ demand.sla_next_label }} at&eacute; {{ demand.sla_next_display }}</span>
-                                    <span class="support-meta-pill">
-                                        {% if demand.sla_preview.has_policy %}
-                                            {{ demand.sla_preview.title }}
-                                        {% else %}
-                                            Sem pol&iacute;tica
-                                        {% endif %}
-                                    </span>
-                                    {% if demand.sla_preview.default_attendant != "-" %}
-                                        <span class="support-meta-pill">Sugerido: {{ demand.sla_preview.default_attendant }}</span>
-                                    {% endif %}
-                                </div>
-
-                                {% if demand.description %}
-                                    <p class="support-demand-description">{{ demand.description }}</p>
+                    <div class="ticket-kpis">
+                        <a href="?view=abertos&amp;sla=vencido" class="ticket-kpi is-danger{% if sla_filter == 'vencido' %} is-active{% endif %}">
+                            <span class="ticket-kpi-value">{{ header_stats.breached }}</span>
+                            <span class="ticket-kpi-label">SLA vencido</span>
+                        </a>
+                        <a href="?view=abertos&amp;sla=hoje" class="ticket-kpi is-warning{% if sla_filter == 'hoje' %} is-active{% endif %}">
+                            <span class="ticket-kpi-value">{{ header_stats.due_today }}</span>
+                            <span class="ticket-kpi-label">Vence hoje</span>
+                        </a>
+                        <a href="?view=nao_atribuidos" class="ticket-kpi{% if current_view == 'nao_atribuidos' %} is-active{% endif %}">
+                            <span class="ticket-kpi-value">{{ header_stats.unassigned }}</span>
+                            <span class="ticket-kpi-label">N&atilde;o atribu&iacute;dos</span>
+                        </a>
+                        <div class="ticket-kpi is-static">
+                            <span class="ticket-kpi-value">{{ header_stats.avg_first_response }}</span>
+                            <span class="ticket-kpi-label">1&ordf; resposta &middot; 30d</span>
+                        </div>
+                        <div class="ticket-kpi is-static">
+                            <span class="ticket-kpi-value">
+                                {% if header_stats.csat_average %}
+                                    {{ header_stats.csat_average }}<small>/5</small>
+                                {% else %}
+                                    &mdash;
                                 {% endif %}
-
-                                <div class="support-demand-row-actions">
-                                    <span class="support-demand-select-hint">{{ demand.sla_first_response.hint }}</span>
-                                    <div class="support-demand-row-actions-right">
-                                        <a href="{{ demand.detail_url }}" class="queue-secondary-btn support-open-thread-btn">Abrir conversa</a>
-                                        <button type="button" class="queue-action-toggle-btn support-detail-toggle" onclick="togglePortalDemandDetail(event, this)">
-                                            Ver detalhes
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div class="support-demand-detail-panel">
-                                    <div class="support-demand-detail-grid">
-                                        <div class="support-demand-detail-card">
-                                            <span>Solicitante</span>
-                                            <strong>{{ demand.requester_display }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card">
-                                            <span>Matr&iacute;cula</span>
-                                            <strong>{{ demand.requester.userId }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card support-demand-detail-card-opening">
-                                            <span>Abertura</span>
-                                            <strong>{{ demand.created_at|date:"d/m/Y H:i" }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card">
-                                            <span>Prioridade</span>
-                                            <strong style="color: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card">
-                                            <span>SLA resposta</span>
-                                            <strong>{{ demand.sla_first_response.hint }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card">
-                                            <span>Urg&ecirc;ncia atual</span>
-                                            <strong>{{ demand.triage_label }} · {{ demand.triage_hint }}</strong>
-                                        </div>
-                                        <div class="support-demand-detail-card">
-                                            <span>SLA resolu&ccedil;&atilde;o</span>
-                                            <strong>{{ demand.sla_resolution.hint }}</strong>
-                                        </div>
-                                    </div>
-
-                                    <div class="support-demand-detail-description">
-                                        <span>Descri&ccedil;&atilde;o completa</span>
-                                        <p>{% if demand.description %}{{ demand.description }}{% else %}Sem descri&ccedil;&atilde;o complementar informada.{% endif %}</p>
-                                    </div>
-
-                                    {% if demand.extra_details %}
-                                        <div class="support-demand-detail-grid support-demand-detail-grid-extra">
-                                            {% for item in demand.extra_details %}
-                                                <div class="support-demand-detail-card">
-                                                    <span>{{ item.label }}</span>
-                                                    <strong>{{ item.value }}</strong>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    {% endif %}
-
-                                    <div class="support-demand-footer">
-                                        <form method="POST" action="{% url 'portalDemandAssume' demand.id %}" onclick="event.stopPropagation()">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="next" value="{{ demand.detail_url }}">
-                                            <button type="submit" class="queue-primary-btn">Assumir como atendente</button>
-                                        </form>
-                                        <a href="{{ demand.detail_url }}" class="support-inline-link">Abrir conversa completa</a>
-                                    </div>
-                                </div>
-                            </article>
-                        {% endfor %}
+                            </span>
+                            <span class="ticket-kpi-label">Satisfa&ccedil;&atilde;o &middot; {{ header_stats.csat_total }} avalia&ccedil;&otilde;es</span>
+                        </div>
                     </div>
+                </header>
+
+                <nav class="ticket-tabs">
+                    <a href="?view=abertos" class="ticket-tab{% if current_view == 'abertos' %} is-active{% endif %}">Abertos<span>{{ view_counts.abertos }}</span></a>
+                    <a href="?view=meus" class="ticket-tab{% if current_view == 'meus' %} is-active{% endif %}">Meus chamados<span>{{ view_counts.meus }}</span></a>
+                    <a href="?view=nao_atribuidos" class="ticket-tab{% if current_view == 'nao_atribuidos' %} is-active{% endif %}">N&atilde;o atribu&iacute;dos<span>{{ view_counts.nao_atribuidos }}</span></a>
+                    <a href="?view=resolvidos" class="ticket-tab{% if current_view == 'resolvidos' %} is-active{% endif %}">Resolvidos<span>{{ view_counts.resolvidos }}</span></a>
+                    <a href="?view=todos" class="ticket-tab{% if current_view == 'todos' %} is-active{% endif %}">Todos<span>{{ view_counts.todos }}</span></a>
+                </nav>
+
+                <div class="ticket-toolbar">
+                    <form method="GET" id="ticketFilterForm" class="ticket-filter-form">
+                        <input type="hidden" name="view" value="{{ current_view }}">
+                        {% if sla_filter %}<input type="hidden" name="sla" value="{{ sla_filter }}">{% endif %}
+                        <div class="ticket-search-wrap">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            <input type="search" name="q" value="{{ search_query }}" class="ticket-search" placeholder="Buscar por assunto, protocolo ou solicitante...">
+                        </div>
+                        <select name="priority" class="queue-select ticket-select" onchange="document.getElementById('ticketFilterForm').submit()">
+                            <option value="">Prioridade</option>
+                            <option value="high" {% if priority_filter == "high" %}selected{% endif %}>Alta</option>
+                            <option value="medium" {% if priority_filter == "medium" %}selected{% endif %}>M&eacute;dia</option>
+                            <option value="low" {% if priority_filter == "low" %}selected{% endif %}>Baixa</option>
+                        </select>
+                        <select name="group" class="queue-select ticket-select" onchange="document.getElementById('ticketFilterForm').submit()">
+                            <option value="">Grupo</option>
+                            {% for g in groups %}
+                                <option value="{{ g.id }}" {% if group_filter == g.id|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <noscript><button type="submit" class="queue-secondary-btn">Filtrar</button></noscript>
+                    </form>
+
+                    <div class="ticket-toolbar-actions">
+                        <button type="button" id="selectAllTicketsBtn" class="queue-secondary-btn ticket-btn-sm">Marcar pendentes</button>
+                        <form id="bulkAssumeForm" method="POST" action="{% url 'portalDemandBulkAssume' %}" class="ticket-bulk-form">
+                            {% csrf_token %}
+                            <input type="hidden" id="bulkSelectedIds" name="selected_ids" value="">
+                            <button type="submit" id="bulkAssumeBtn" class="queue-primary-btn ticket-btn-sm" disabled>Assumir selecionadas</button>
+                        </form>
+                        {% if sla_filter %}
+                            <a href="?view={{ current_view }}" class="queue-secondary-btn ticket-btn-sm ticket-clear-filter">Limpar filtro de SLA</a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if tickets %}
+                    <div class="ticket-table-wrap">
+                        <table class="ticket-table">
+                            <thead>
+                                <tr>
+                                    <th class="ticket-col-check"></th>
+                                    <th class="ticket-col-status">Status</th>
+                                    <th class="ticket-col-priority">Prior.</th>
+                                    <th class="ticket-col-subject">Chamado</th>
+                                    <th class="ticket-col-person">Solicitante</th>
+                                    <th class="ticket-col-person">Atendente</th>
+                                    <th class="ticket-col-group">Grupo</th>
+                                    <th class="ticket-col-date">Criado</th>
+                                    <th class="ticket-col-date">Atualizado</th>
+                                    <th class="ticket-col-sla">SLA</th>
+                                    <th class="ticket-col-csat">Satisfa&ccedil;&atilde;o</th>
+                                    <th class="ticket-col-actions">A&ccedil;&otilde;es</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ticketList">
+                                {% for ticket in tickets %}
+                                    <tr class="ticket-row" data-href="{{ ticket.detail_url }}">
+                                        <td class="ticket-col-check" onclick="event.stopPropagation()">
+                                            {% if ticket.status == "pending" %}
+                                                <input type="checkbox" class="ticket-checkbox" value="{{ ticket.id }}">
+                                            {% endif %}
+                                        </td>
+                                        <td class="ticket-col-status">
+                                            <span class="support-chip support-chip-sm {{ ticket.status_render.css }}">{{ ticket.status_render.label }}</span>
+                                        </td>
+                                        <td class="ticket-col-priority">
+                                            <span class="ticket-priority-dot" style="background: {{ ticket.priority_render.color }};" title="{{ ticket.priority_render.label }}"></span>
+                                        </td>
+                                        <td class="ticket-col-subject">
+                                            <a href="{{ ticket.detail_url }}" class="ticket-protocol" onclick="event.stopPropagation()">{{ ticket.protocol }}</a>
+                                            <span class="ticket-subject">{{ ticket.title }}</span>
+                                        </td>
+                                        <td class="ticket-col-person" title="{{ ticket.requester_display }}">{{ ticket.requester_display }}</td>
+                                        <td class="ticket-col-person">
+                                            {% if ticket.assigned_to %}
+                                                <span title="{{ ticket.assigned_display }}">{{ ticket.assigned_display }}</span>
+                                            {% else %}
+                                                <span class="ticket-unassigned">N&atilde;o atribu&iacute;do</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="ticket-col-group">{% if ticket.task_group %}{{ ticket.task_group.name }}{% else %}<span class="ticket-muted">&mdash;</span>{% endif %}</td>
+                                        <td class="ticket-col-date">{{ ticket.opened_since_display }}</td>
+                                        <td class="ticket-col-date">{{ ticket.updated_since_display }}</td>
+                                        <td class="ticket-col-sla">
+                                            {% if ticket.status == "pending" or ticket.status == "assumed" %}
+                                                <span class="support-chip support-chip-sm {% if ticket.sla_next_label == "Primeira resposta" %}{{ ticket.sla_first_response_chip_css }}{% else %}{{ ticket.sla_resolution_chip_css }}{% endif %}">{{ ticket.sla_next_display }}</span>
+                                            {% else %}
+                                                <span class="ticket-muted">&mdash;</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="ticket-col-csat">
+                                            {% if ticket.feedback_rating %}
+                                                <span class="ticket-csat-stars" title="{{ ticket.feedback_rating_label }}">{% for n in "12345" %}<span class="ticket-star{% if forloop.counter <= ticket.feedback_rating %} is-filled{% endif %}">&#9733;</span>{% endfor %}</span>
+                                            {% elif ticket.status == "completed" %}
+                                                <span class="ticket-csat-pending">Aguardando</span>
+                                            {% else %}
+                                                <span class="ticket-muted">&mdash;</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="ticket-col-actions" onclick="event.stopPropagation()">
+                                            {% if ticket.status == "pending" %}
+                                                <form method="POST" action="{% url 'portalDemandAssume' ticket.id %}" class="ticket-assume-form">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="next" value="{{ ticket.detail_url }}">
+                                                    <button type="submit" class="queue-primary-btn ticket-assume-btn">Assumir</button>
+                                                </form>
+                                            {% else %}
+                                                <a href="{{ ticket.detail_url }}" class="queue-secondary-btn ticket-assume-btn">Abrir</a>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if page_obj.paginator.num_pages > 1 %}
+                        <div class="ticket-pagination">
+                            <span class="ticket-pagination-info">P&aacute;gina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} &middot; {{ page_obj.paginator.count }} chamado(s)</span>
+                            <div class="ticket-pagination-nav">
+                                {% if page_obj.has_previous %}
+                                    <a class="queue-secondary-btn ticket-btn-sm" href="?{% if base_querystring %}{{ base_querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+                                {% endif %}
+                                {% if page_obj.has_next %}
+                                    <a class="queue-secondary-btn ticket-btn-sm" href="?{% if base_querystring %}{{ base_querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Pr&oacute;xima</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
                 {% else %}
                     <div class="support-empty">
-                        <strong>Nenhuma demanda pendente neste momento</strong>
-                        <span>Assim que algu&eacute;m abrir uma nova solicita&ccedil;&atilde;o no portal, ela aparecer&aacute; aqui.</span>
+                        <strong>Nenhum chamado nesta vis&atilde;o</strong>
+                        <span>Troque de vis&atilde;o ou ajuste os filtros para ver outros chamados.</span>
                     </div>
                 {% endif %}
             </section>
@@ -292,10 +228,29 @@
 
     <script>
         (function() {
-            const checkboxes = Array.from(document.querySelectorAll(".support-demand-checkbox"));
+            const updatedAt = document.getElementById("ticketUpdatedAt");
+            if (updatedAt) {
+                const now = new Date();
+                const hh = String(now.getHours()).padStart(2, "0");
+                const mm = String(now.getMinutes()).padStart(2, "0");
+                updatedAt.textContent = `atualizado às ${hh}:${mm}`;
+            }
+
+            const refreshBtn = document.getElementById("ticketRefreshBtn");
+            if (refreshBtn) {
+                refreshBtn.addEventListener("click", () => {
+                    refreshBtn.classList.add("is-spinning");
+                    refreshBtn.disabled = true;
+                    window.location.reload();
+                });
+            }
+        })();
+
+        (function() {
+            const checkboxes = Array.from(document.querySelectorAll(".ticket-checkbox"));
             const bulkButton = document.getElementById("bulkAssumeBtn");
             const hiddenIds = document.getElementById("bulkSelectedIds");
-            const selectAllBtn = document.getElementById("selectAllDemandsBtn");
+            const selectAllBtn = document.getElementById("selectAllTicketsBtn");
 
             function updateSelectionState() {
                 const selected = checkboxes.filter((node) => node.checked).map((node) => node.value);
@@ -303,7 +258,7 @@
                 if (bulkButton) bulkButton.disabled = selected.length === 0;
                 if (selectAllBtn && checkboxes.length) {
                     const allSelected = selected.length === checkboxes.length;
-                    selectAllBtn.textContent = allSelected ? "Limpar seleção" : "Marcar todas";
+                    selectAllBtn.textContent = allSelected ? "Limpar seleção" : "Marcar pendentes";
                 }
             }
 
@@ -323,152 +278,16 @@
             updateSelectionState();
         })();
 
-        function togglePortalDemandDetail(event, button) {
-            if (event) event.stopPropagation();
-            const card = button ? button.closest("[data-demand-card]") : null;
-            if (!card) return;
-            const isOpen = card.classList.toggle("is-open");
-            button.textContent = isOpen ? "Ocultar detalhes" : "Ver detalhes";
-        }
-
         (function() {
-            const list = document.getElementById("portalPendingList");
+            const list = document.getElementById("ticketList");
             if (!list) return;
-
-            const rows = Array.from(list.querySelectorAll("[data-demand-card]"));
-            const searchInput = document.getElementById("portalPendingSearch");
-            const priorityFilter = document.getElementById("portalPendingPriorityFilter");
-            const urgencyFilter = document.getElementById("portalPendingUrgencyFilter");
-            const groupFilter = document.getElementById("portalPendingGroupFilter");
-            const slaFilter = document.getElementById("portalPendingSlaFilter");
-            const sortSelect = document.getElementById("portalPendingSort");
-            const visibleCount = document.getElementById("portalPendingVisibleCount");
-            const urlParams = new URLSearchParams(window.location.search);
-
-            const priorityRank = { high: 3, medium: 2, low: 1 };
-            const slaRank = { "is-danger": 4, "is-pending": 3, "is-info": 2, "is-neutral": 1 };
-
-            const uniqueOptions = new Set();
-            const groupSelect = document.getElementById("portalPendingGroupFilter");
-            if (groupSelect) {
-                Array.from(groupSelect.options).forEach((option) => {
-                    if (!option.value) return;
-                    if (uniqueOptions.has(option.value)) {
-                        option.remove();
-                    } else {
-                        uniqueOptions.add(option.value);
-                    }
-                });
-            }
-
-            const initialSearch = (urlParams.get("search") || "").trim();
-            const initialPriority = (urlParams.get("priority") || "").trim().toLowerCase();
-            const initialUrgency = (urlParams.get("urgency") || "").trim().toLowerCase();
-            const initialGroup = (urlParams.get("group") || "").trim().toLowerCase();
-            const initialSla = (urlParams.get("sla") || "").trim().toLowerCase();
-            const initialSort = (urlParams.get("sort") || "").trim().toLowerCase();
-
-            if (searchInput && initialSearch) {
-                searchInput.value = initialSearch;
-            }
-            if (priorityFilter && initialPriority) {
-                priorityFilter.value = initialPriority;
-            }
-            if (urgencyFilter && initialUrgency) {
-                urgencyFilter.value = initialUrgency;
-            }
-            if (groupFilter && initialGroup) {
-                groupFilter.value = initialGroup;
-            }
-            if (slaFilter && initialSla) {
-                slaFilter.value = initialSla;
-            }
-            if (sortSelect && initialSort) {
-                sortSelect.value = initialSort;
-            }
-
-            function matchesFilters(row) {
-                const search = (searchInput?.value || "").trim().toLowerCase();
-                const priority = (priorityFilter?.value || "").trim().toLowerCase();
-                const urgency = (urgencyFilter?.value || "").trim().toLowerCase();
-                const group = (groupFilter?.value || "").trim().toLowerCase();
-                const sla = (slaFilter?.value || "").trim().toLowerCase();
-
-                const haystack = [
-                    row.dataset.title || "",
-                    row.dataset.protocol || "",
-                    row.dataset.requester || "",
-                    row.dataset.group || "",
-                ].join(" ");
-
-                if (search && !haystack.includes(search)) return false;
-                if (priority && (row.dataset.priority || "") !== priority) return false;
-                if (urgency && (row.dataset.urgency || "") !== urgency) return false;
-                if (group && (row.dataset.group || "") !== group) return false;
-                if (sla && (row.dataset.sla || "") !== sla) return false;
-                return true;
-            }
-
-            function sortRows() {
-                const mode = (sortSelect?.value || "urgency").trim();
-                const sorted = [...rows].sort((a, b) => {
-                    if (mode === "urgency") {
-                        const byUrgency = Number(b.dataset.urgencyScore || 0) - Number(a.dataset.urgencyScore || 0);
-                        if (byUrgency !== 0) return byUrgency;
-                    }
-                    if (mode === "recent") {
-                        return Number(b.dataset.created || 0) - Number(a.dataset.created || 0);
-                    }
-                    if (mode === "priority") {
-                        return (priorityRank[b.dataset.priority || ""] || 0) - (priorityRank[a.dataset.priority || ""] || 0);
-                    }
-                    if (mode === "sla") {
-                        const bySla = (slaRank[b.dataset.sla || ""] || 0) - (slaRank[a.dataset.sla || ""] || 0);
-                        if (bySla !== 0) return bySla;
-                    }
-                    return Number(a.dataset.created || 0) - Number(b.dataset.created || 0);
-                });
-
-                sorted.forEach((row) => list.appendChild(row));
-            }
-
-            function render() {
-                sortRows();
-                let total = 0;
-                rows.forEach((row) => {
-                    const show = matchesFilters(row);
-                    row.style.display = show ? "" : "none";
-                    if (show) total += 1;
-                });
-                if (visibleCount) visibleCount.textContent = String(total);
-
-                const nextParams = new URLSearchParams();
-                const search = (searchInput?.value || "").trim();
-                const priority = (priorityFilter?.value || "").trim().toLowerCase();
-                const urgency = (urgencyFilter?.value || "").trim().toLowerCase();
-                const group = (groupFilter?.value || "").trim().toLowerCase();
-                const sla = (slaFilter?.value || "").trim().toLowerCase();
-                const sort = (sortSelect?.value || "").trim().toLowerCase();
-
-                if (search) nextParams.set("search", search);
-                if (priority) nextParams.set("priority", priority);
-                if (urgency) nextParams.set("urgency", urgency);
-                if (group) nextParams.set("group", group);
-                if (sla) nextParams.set("sla", sla);
-                if (sort && sort !== "urgency") nextParams.set("sort", sort);
-
-                const nextQuery = nextParams.toString();
-                const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
-                window.history.replaceState({}, "", nextUrl);
-            }
-
-            [searchInput, priorityFilter, urgencyFilter, groupFilter, slaFilter, sortSelect].forEach((node) => {
-                if (!node) return;
-                node.addEventListener("input", render);
-                node.addEventListener("change", render);
+            list.addEventListener("click", (event) => {
+                const row = event.target.closest(".ticket-row");
+                if (!row) return;
+                if (event.target.closest("a, button, input, form")) return;
+                const href = row.dataset.href;
+                if (href) window.location.href = href;
             });
-
-            render();
         })();
     </script>
 </body>

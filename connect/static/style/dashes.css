@@ -1,0 +1,102 @@
+:root {
+    --dashes-green: #65d55d;
+    --dashes-bg: #06131b;
+    --dashes-surface: #0a1b24;
+    --dashes-border: rgba(126, 169, 183, .18);
+    --dashes-muted: #87a2ad;
+}
+
+.dna-page-dashes { margin-left: 236px; }
+.dashes-sidebar { position: fixed; z-index: 500; inset: 0 auto 0 0; width: 236px; display: flex; flex-direction: column; box-sizing: border-box; padding: 22px 16px 16px; color: #eef8f9; background: linear-gradient(180deg, #071821, #051118); border-right: 1px solid var(--dashes-border); font-family: "Open Sans", sans-serif; }
+.dashes-brand { display: flex; align-items: center; gap: 11px; color: inherit; text-decoration: none; }
+.dashes-brand-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: #06131b; background: linear-gradient(135deg, #8af27a, #36ad70); font-size: 13px; font-weight: 800; box-shadow: 0 8px 24px rgba(63, 200, 107, .2); }
+.dashes-brand > span:last-child { display: grid; line-height: 1.05; }
+.dashes-brand strong { font-size: 16px; }
+.dashes-brand small { margin-top: 4px; color: var(--dashes-green); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+.dashes-sidebar-copy { margin: 30px 2px 24px; padding-bottom: 22px; border-bottom: 1px solid var(--dashes-border); }
+.dashes-sidebar-copy span, .dashes-nav-label { color: #66818c; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.dashes-sidebar-copy p { margin: 8px 0 0; color: var(--dashes-muted); font-size: 10px; line-height: 1.55; }
+.dashes-nav { display: grid; gap: 10px; }
+.dashes-nav-label { margin: 0 8px 2px; }
+.dashes-nav-item { display: flex; align-items: center; gap: 11px; padding: 12px 11px; color: #a8bdc5; border: 1px solid transparent; border-radius: 10px; text-decoration: none; }
+.dashes-nav-item svg { width: 21px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.dashes-nav-item > span { min-width: 0; display: grid; gap: 3px; }
+.dashes-nav-item strong { color: inherit; font-size: 11px; }
+.dashes-nav-item small { color: #6f8993; font-size: 9px; }
+.dashes-nav-item:hover, .dashes-nav-item.is-active { color: #eaffeb; background: rgba(101, 213, 93, .11); border-color: rgba(101, 213, 93, .22); }
+.dashes-nav-item.is-active { box-shadow: inset 3px 0 var(--dashes-green); }
+.dashes-sidebar-footer { margin-top: auto; display: grid; gap: 12px; }
+.dashes-main-link { color: var(--dashes-muted); font-size: 10px; text-decoration: none; }
+.dashes-main-link:hover { color: #fff; }
+.dashes-user { display: flex; align-items: center; gap: 9px; padding-top: 13px; border-top: 1px solid var(--dashes-border); }
+.dashes-user-avatar { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 50%; color: #06131b; background: var(--dashes-green); font-size: 11px; font-weight: 800; }
+.dashes-user > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.dashes-user strong { overflow: hidden; color: #eaf4f5; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.dashes-user small { color: var(--dashes-muted); font-size: 9px; }
+.dashes-sidebar-footer form { margin: 0; }
+.dashes-sidebar-footer button { width: 100%; padding: 9px; color: #91a8b1; background: transparent; border: 1px solid var(--dashes-border); border-radius: 8px; font: inherit; font-size: 9px; cursor: pointer; }
+.dashes-sidebar-footer button:hover { color: #fff; border-color: rgba(101, 213, 93, .35); }
+
+.dashes-denied-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 40px 20px; background: radial-gradient(circle at 50% 0, rgba(101, 213, 93, .1), transparent 42%), linear-gradient(160deg, #081b24, #06131b); }
+.dashes-denied-card { width: min(560px, 100%); padding: 30px 32px; background: rgba(9, 29, 38, .78); border: 1px solid var(--dashes-border); border-radius: 14px; backdrop-filter: blur(12px); }
+.dashes-denied-card h1 { margin: 10px 0 12px; font-size: 24px; line-height: 1.2; letter-spacing: -.02em; }
+.dashes-denied-card > p { margin: 0; color: var(--dashes-muted); font-size: 12px; line-height: 1.65; }
+.dashes-denied-list { display: grid; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--dashes-border); }
+.dashes-denied-list > span { color: #66818c; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.dashes-denied-list a { display: grid; gap: 3px; padding: 11px 13px; color: #eaffeb; background: rgba(101, 213, 93, .08); border: 1px solid rgba(101, 213, 93, .2); border-radius: 9px; text-decoration: none; }
+.dashes-denied-list a:hover { background: rgba(101, 213, 93, .14); border-color: rgba(101, 213, 93, .38); }
+.dashes-denied-list strong { font-size: 12px; }
+.dashes-denied-list small { color: var(--dashes-muted); font-size: 10px; }
+.dashes-denied-empty { margin-top: 22px; padding: 16px; color: var(--dashes-muted); background: rgba(126, 169, 183, .05); border: 1px dashed var(--dashes-border); border-radius: 9px; text-align: center; font-size: 11px; }
+.dashes-denied-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--dashes-border); }
+.dashes-denied-actions form { margin: 0; }
+.dashes-denied-actions button { padding: 9px 14px; color: #91a8b1; background: transparent; border: 1px solid var(--dashes-border); border-radius: 8px; font: inherit; font-size: 10px; cursor: pointer; }
+.dashes-denied-actions button:hover { color: #fff; border-color: rgba(101, 213, 93, .35); }
+
+.dashes-login-body { margin: 0; min-height: 100vh; color: #eef8f9; background: #051119; font-family: "Open Sans", sans-serif; }
+.dashes-login-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(390px, .75fr); }
+.dashes-login-showcase { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 42px 7vw 52px; background: radial-gradient(circle at 22% 66%, rgba(101, 213, 93, .18), transparent 31%), radial-gradient(circle at 90% 10%, rgba(51, 143, 183, .2), transparent 30%), linear-gradient(145deg, #081b24, #06131b); }
+.dashes-login-showcase::after { content: ""; position: absolute; width: 450px; height: 450px; right: -220px; bottom: -230px; border: 1px solid rgba(101, 213, 93, .2); border-radius: 50%; box-shadow: 0 0 0 70px rgba(101, 213, 93, .025), 0 0 0 140px rgba(101, 213, 93, .018); }
+.dashes-login-brand { display: flex; align-items: center; gap: 12px; }
+.dashes-login-brand > span { width: 43px; height: 43px; display: grid; place-items: center; color: #06131b; background: linear-gradient(135deg, #8af27a, #36ad70); border-radius: 13px; font-weight: 800; }
+.dashes-login-brand strong { font-size: 18px; }
+.dashes-login-brand em { color: var(--dashes-green); font-style: normal; }
+.dashes-login-message { position: relative; z-index: 1; max-width: 690px; margin: auto 0; }
+.dashes-login-kicker { color: var(--dashes-green); font-size: 10px; font-weight: 700; letter-spacing: .2em; }
+.dashes-login-message h1 { max-width: 650px; margin: 16px 0; font-size: clamp(36px, 5vw, 67px); line-height: 1.04; letter-spacing: -.045em; }
+.dashes-login-message p { max-width: 580px; color: #9bb0b8; font-size: 14px; line-height: 1.7; }
+.dashes-login-preview { position: relative; z-index: 1; width: min(480px, 80%); padding: 17px 19px; background: rgba(9, 29, 38, .72); border: 1px solid rgba(101, 213, 93, .22); border-radius: 13px; backdrop-filter: blur(12px); }
+.dashes-login-preview > span { color: #7d979f; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.dashes-login-preview div { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+.dashes-login-preview strong { color: var(--dashes-green); font-size: 25px; }
+.dashes-login-preview small { color: #adc0c6; font-size: 10px; }
+.dashes-login-panel { display: grid; place-items: center; padding: 40px; background: #07151e; border-left: 1px solid var(--dashes-border); }
+.dashes-login-form { width: min(360px, 100%); display: grid; gap: 18px; }
+.dashes-login-heading { margin-bottom: 9px; }
+.dashes-login-heading > span { color: var(--dashes-green); font-size: 9px; font-weight: 700; letter-spacing: .16em; }
+.dashes-login-heading h2 { margin: 9px 0 6px; font-size: 26px; }
+.dashes-login-heading p { margin: 0; color: var(--dashes-muted); font-size: 11px; }
+.dashes-login-form label { display: grid; gap: 8px; color: #b8cbd0; font-size: 10px; font-weight: 600; }
+.dashes-login-form input { box-sizing: border-box; width: 100%; height: 47px; padding: 0 14px; color: #f0f8f9; background: #0a1c25; border: 1px solid var(--dashes-border); border-radius: 9px; outline: 0; font: inherit; font-size: 12px; }
+.dashes-login-form input:focus { border-color: rgba(101, 213, 93, .65); box-shadow: 0 0 0 3px rgba(101, 213, 93, .08); }
+.dashes-login-form > button { height: 48px; display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 4px; color: #06131b; background: linear-gradient(135deg, #7ae96f, #47c37a); border: 0; border-radius: 9px; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 12px 26px rgba(70, 193, 117, .16); }
+.dashes-login-error { padding: 10px 12px; color: #ffb6b6; background: rgba(220, 69, 69, .1); border: 1px solid rgba(238, 85, 85, .24); border-radius: 8px; font-size: 10px; }
+.dashes-login-back { justify-self: center; color: var(--dashes-muted); font-size: 10px; text-decoration: none; }
+.dashes-login-back:hover { color: #fff; }
+
+@media (max-width: 900px) {
+    .dashes-login-shell { grid-template-columns: 1fr; }
+    .dashes-login-showcase { min-height: 38vh; padding: 28px; }
+    .dashes-login-message { margin: 50px 0; }
+    .dashes-login-preview { display: none; }
+    .dashes-login-panel { padding: 44px 24px; border-left: 0; border-top: 1px solid var(--dashes-border); }
+}
+
+@media (max-width: 760px) {
+    .dashes-sidebar { position: relative; width: 100%; height: auto; padding: 14px 16px; }
+    .dashes-sidebar-copy, .dashes-sidebar-footer { display: none; }
+    .dashes-nav { margin-top: 14px; }
+    .dashes-nav-label { display: none; }
+    .dashes-nav-item { padding: 9px 11px; }
+    .dna-page-dashes { margin-left: 0; }
+}

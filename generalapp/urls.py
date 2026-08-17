@@ -10,5 +10,6 @@ urlpatterns = [
     path('accounts/login/', views.loginPage, name='loginPage'),
     path('main/logout/', views.logoutPage, name='logoutPage'),
     path('main/create/user', views.createUser, name='createUser'),
+    path('main/favoritos/alternar/', views.toggleFavoriteScreen, name='toggleFavoriteScreen'),
 
 ]

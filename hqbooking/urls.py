@@ -1,11 +1,16 @@
-from django.urls import path
+from django.urls import include, path
+from django.views.generic import RedirectView
 
 from . import views
 
 
 urlpatterns = [
-    path("logistica/pneus/", views.truck_tire_control_page, name="truck_tire_control"),
-    path("logistica/pneus/historico/", views.truck_tire_history_page, name="truck_tire_history"),
+    path("logistica/pneus/", include("hqbooking.tires.urls")),
+    # Rota antiga do histórico, mantida para links já salvos.
+    path(
+        "logistica/pneus/historico/",
+        RedirectView.as_view(pattern_name="tires_movements", permanent=False),
+    ),
     path("logistica/romaneios/", views.logistics_romaneio_page, name="logistics_romaneio"),
     path("logistica/romaneios/ranking/", views.logistics_romaneio_ranking_page, name="logistics_romaneio_ranking"),
     path("logistica/romaneios/api/quick-submit/", views.logistics_romaneio_quick_submit, name="logistics_romaneio_quick_submit"),

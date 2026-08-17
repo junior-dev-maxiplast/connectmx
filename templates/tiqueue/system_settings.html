@@ -7,6 +7,7 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link rel="stylesheet" href="{% static '/style/systemSettings.css'%}">
     <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
 </head>
 
@@ -25,7 +26,15 @@
             <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
         {% endif %}
 
-        <div class="checklist-card checklist-form-card" style="max-width: 760px;">
+        {% if messages %}
+            <div class="settings-messages">
+                {% for message in messages %}<div class="settings-message settings-message-{{ message.tags }}">{{ message }}</div>{% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="settings-page-grid">
+        <div class="checklist-card checklist-form-card settings-card">
+            <div class="settings-card-heading"><span>SISTEMA</span><h2>Configurações gerais</h2><p>Versão e integração com os serviços internos do ConnectMX.</p></div>
             <form method="POST" class="modal-form">
                 {% csrf_token %}
                 <input type="hidden" name="form_id" value="save_system_settings">
@@ -53,6 +62,82 @@
                     {% endif %}
                 </div>
             </form>
+        </div>
+
+        <div class="checklist-card checklist-form-card settings-card settings-ai-card">
+            <div class="settings-card-heading">
+                <span>INTELIGÊNCIA ARTIFICIAL</span>
+                <h2>OpenAI · DNA do Cliente</h2>
+                <p>Configura a Responses API usada para transformar os indicadores calculados em insights comerciais estruturados.</p>
+            </div>
+
+            <div class="settings-ai-status{% if openai_runtime.enabled and openai_runtime.api_key_configured %} is-ready{% endif %}">
+                <div><i></i><strong>{% if openai_runtime.enabled and openai_runtime.api_key_configured %}Integração pronta{% elif openai_runtime.api_key_configured %}Chave configurada, integração desativada{% else %}Aguardando chave de API{% endif %}</strong></div>
+                <small>Fonte da chave: {% if openai_runtime.api_key_source == 'environment' %}variável OPENAI_API_KEY{% elif openai_runtime.api_key_source == 'encrypted_database' %}cofre criptografado do ConnectMX{% else %}não configurada{% endif %}</small>
+            </div>
+
+            <form method="POST" class="modal-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="save_openai_settings">
+                <div class="modal-grid">
+                    <label class="settings-switch span-2">
+                        <input type="checkbox" name="openai_enabled" {% if openai_runtime.enabled %}checked{% endif %} {% if not can_manage %}disabled{% endif %}>
+                        <span></span><div><strong>Ativar geração de insights por IA</strong><small>As chamadas acontecem somente quando o gestor usa o botão de gerar análise.</small></div>
+                    </label>
+                    <div class="field span-2">
+                        <label for="openai_api_key">Chave da API</label>
+                        <input id="openai_api_key" name="openai_api_key" type="password" autocomplete="new-password" placeholder="{% if openai_runtime.api_key_configured %}Chave já configurada · deixe vazio para preservar{% else %}sk-proj-...{% endif %}" {% if not can_manage %}disabled{% endif %}>
+                        <small>Prioridade: <code>OPENAI_API_KEY</code>. Quando preenchida aqui, a chave é criptografada antes de ser salva.</small>
+                    </div>
+                    {% if config and config.openai_api_key_encrypted %}
+                        <label class="settings-clear-key span-2"><input type="checkbox" name="clear_openai_api_key" value="1" {% if not can_manage %}disabled{% endif %}> Remover a chave armazenada no ConnectMX</label>
+                    {% endif %}
+                    <div class="field span-2">
+                        <label for="openai_base_url">Endpoint base</label>
+                        <input id="openai_base_url" name="openai_base_url" value="{{ openai_runtime.base_url }}" placeholder="https://api.openai.com/v1" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field">
+                        <label for="openai_model">Modelo</label>
+                        <input id="openai_model" name="openai_model" value="{{ openai_runtime.model }}" placeholder="gpt-5.6-sol" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field">
+                        <label for="openai_reasoning_effort">Esforço de raciocínio</label>
+                        <select id="openai_reasoning_effort" name="openai_reasoning_effort" {% if not can_manage %}disabled{% endif %}>
+                            {% for effort in openai_reasoning_efforts %}<option value="{{ effort }}" {% if openai_runtime.reasoning_effort == effort %}selected{% endif %}>{{ effort }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="openai_timeout_sec">Timeout (segundos)</label>
+                        <input id="openai_timeout_sec" name="openai_timeout_sec" type="number" min="10" max="600" value="{{ openai_runtime.timeout }}" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                    <div class="field">
+                        <label for="openai_max_output_tokens">Limite de tokens de saída</label>
+                        <input id="openai_max_output_tokens" name="openai_max_output_tokens" type="number" min="500" max="50000" value="{{ openai_runtime.max_output_tokens }}" {% if not can_manage %}disabled{% endif %}>
+                    </div>
+                </div>
+                {% if can_manage %}<div class="modal-actions"><button type="submit" class="queue-primary-btn">Salvar OpenAI</button></div>{% endif %}
+            </form>
+
+            {% if can_manage %}
+                <form method="POST" class="settings-test-form">
+                    {% csrf_token %}<input type="hidden" name="form_id" value="test_openai_connection">
+                    <button type="submit">Testar chave e acesso ao modelo</button>
+                </form>
+            {% endif %}
+
+            <details class="settings-env-help">
+                <summary>Variáveis de ambiente suportadas</summary>
+                <div>
+                    <code>CONNECTMX_OPENAI_ENABLED=true</code>
+                    <code>OPENAI_API_KEY=sk-proj-...</code>
+                    <code>OPENAI_MODEL=gpt-5.6-sol</code>
+                    <code>OPENAI_BASE_URL=https://api.openai.com/v1</code>
+                    <code>OPENAI_REASONING_EFFORT=medium</code>
+                    <code>OPENAI_TIMEOUT_SECONDS=120</code>
+                    <code>OPENAI_MAX_OUTPUT_TOKENS=5000</code>
+                </div>
+            </details>
+        </div>
         </div>
     </div>
 </body>

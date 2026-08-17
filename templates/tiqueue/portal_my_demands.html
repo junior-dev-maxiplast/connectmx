@@ -22,6 +22,35 @@
             <div class="support-banner is-danger">{{ access_denied_message }}</div>
         {% endif %}
 
+        {% if pending_feedback %}
+            <section class="feedbackgate">
+                <div class="feedbackgate-head">
+                    <span class="feedbackgate-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    </span>
+                    <div>
+                        <strong>
+                            {% if feedback_required %}
+                                Avalie seu atendimento para abrir um novo chamado
+                            {% else %}
+                                Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} aguardando avalia&ccedil;&atilde;o
+                            {% endif %}
+                        </strong>
+                        <p>Sua avalia&ccedil;&atilde;o leva alguns segundos e &eacute; o que nos permite melhorar o atendimento. Enquanto houver avalia&ccedil;&atilde;o pendente, a abertura de novos chamados fica bloqueada.</p>
+                    </div>
+                </div>
+                <div class="feedbackgate-list">
+                    {% for demand in pending_feedback %}
+                        <a href="{{ demand.get_absolute_url }}#feedback" class="feedbackgate-item">
+                            <span class="feedbackgate-protocol">{{ demand.protocol }}</span>
+                            <span class="feedbackgate-title">{{ demand.title }}</span>
+                            <span class="feedbackgate-cta">Avaliar</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
+
         <section class="support-page-hero">
             <article class="support-page-hero-copy">
                 <span class="support-kicker">Acompanhamento</span>

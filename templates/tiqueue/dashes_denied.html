@@ -1,0 +1,47 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX Dashes | Sem acesso</title>
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="dashes-login-body">
+    <main class="dashes-denied-shell">
+        <div class="dashes-login-brand"><span>MX</span><strong>ConnectMX <em>Dashes</em></strong></div>
+
+        <div class="dashes-denied-card">
+            <span class="dashes-login-kicker">ACESSO RESTRITO</span>
+            <h1>Este painel não está liberado para você</h1>
+            <p>
+                O acesso aos painéis do Dashes é concedido individualmente pelo administrador do
+                sistema, na tela de Cadastro interno do ConnectMX.
+            </p>
+
+            {% if dashboards %}
+            <div class="dashes-denied-list">
+                <span>Painéis liberados para você</span>
+                {% for dash in dashboards %}
+                <a href="{% url dash.url_name %}">
+                    <strong>{{ dash.name }}</strong>
+                    <small>{{ dash.description|default:"" }}</small>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="dashes-denied-empty">Você ainda não tem nenhum painel liberado.</div>
+            {% endif %}
+
+            <div class="dashes-denied-actions">
+                <form method="post" action="{% url 'dashesLogoutPage' %}">
+                    {% csrf_token %}
+                    <button type="submit">Encerrar sessão</button>
+                </form>
+                <a href="{% url 'index' %}" class="dashes-login-back">Voltar ao ConnectMX</a>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,167 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}Painel{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <span class="tl-kicker">Painel operacional</span>
+        <h1>Logística de pneus</h1>
+        <p>Parque monitorado, ocupação da frota e o ritmo das movimentações em blocos de leitura rápida.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_movements' %}">Movimentações</a>
+        <a class="tl-btn is-primary" href="{% url 'tires_inventory' %}">Abrir estoque</a>
+    </div>
+</header>
+
+<section class="tl-kpis">
+    {% for metric in metrics %}
+    <article class="tl-kpi">
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <small>{{ metric.hint }}</small>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="tl-grid is-3">
+    <article class="tl-block tl-span-2">
+        <div class="tl-block-head">
+            <h2>Movimentações · 14 dias</h2>
+            <span>Registros por dia</span>
+        </div>
+        <div class="tl-spark">
+            {% for day in activity_days %}
+            <div class="{% if day.is_today %}is-today{% endif %}" title="{{ day.date_label }}: {{ day.count }}">
+                <b>{{ day.count }}</b>
+                <i style="height: {% if day.height_pct %}{{ day.height_pct }}%{% else %}4%{% endif %};"></i>
+                <small>{{ day.date_label }}</small>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Composição do parque</h2>
+            <strong>{{ summary.total }} pneus</strong>
+        </div>
+        <div class="tl-stack">
+            {% for block in status_blocks %}{% if block.percentage %}<i class="is-{{ block.key }}" style="width: {{ block.percentage }}%;"></i>{% endif %}{% endfor %}
+        </div>
+        <div class="tl-legend">
+            {% for block in status_blocks %}
+            <div>
+                <em class="is-{{ block.key }}"></em>
+                <div>
+                    <strong>{{ block.count }}</strong>
+                    <small>{{ block.label }} · {{ block.percentage }}%</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="tl-grid is-3">
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Ciclo de vida</h2>
+            <span>Média por ciclo fechado</span>
+        </div>
+        <div class="tl-stat-pair">
+            <div><span>Quilometragem</span><strong>{{ avg_run_km }} km</strong></div>
+            <div><span>Permanência</span><strong>{{ avg_run_days }} dias</strong></div>
+        </div>
+        <div class="tl-bars">
+            {% for row in recap_rows %}
+            <div class="tl-bar-row">
+                <div class="tl-bar-head"><strong>{{ row.label }}</strong><span>{{ row.count }}</span></div>
+                <div class="tl-bar-track"><i class="{{ row.tone }}" style="width: {{ row.bar_pct }}%;"></i></div>
+            </div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Ocupação da frota</h2>
+            <a class="tl-btn is-sm is-ghost" href="{% url 'tires_fleet' %}">Ver frota</a>
+        </div>
+        <div class="tl-bars">
+            {% for item in fleet %}
+            <div class="tl-bar-row">
+                <div class="tl-bar-head">
+                    <strong>{{ item.truck.identifier }}</strong>
+                    <span>{{ item.installed }}/{{ item.capacity }}</span>
+                </div>
+                <div class="tl-bar-track"><i style="width: {{ item.occupancy_pct }}%;"></i></div>
+            </div>
+            {% empty %}
+            <div class="tl-empty-inline">Nenhum caminhão cadastrado.</div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Marcas no parque</h2>
+            <span>Top 5</span>
+        </div>
+        <div class="tl-bars">
+            {% for row in brand_rows %}
+            <div class="tl-bar-row">
+                <div class="tl-bar-head"><strong>{{ row.label }}</strong><span>{{ row.count }}</span></div>
+                <div class="tl-bar-track"><i class="is-info" style="width: {{ row.bar_pct }}%;"></i></div>
+            </div>
+            {% empty %}
+            <div class="tl-empty-inline">Nenhum pneu cadastrado ainda.</div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+
+<section class="tl-grid is-2">
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Alertas</h2>
+            <span>{{ alerts|length }} aberto(s)</span>
+        </div>
+        <div class="tl-list">
+            {% for alert in alerts %}
+            <a href="{{ alert.href }}">
+                <span class="tl-list-dot {{ alert.tone }}"></span>
+                <span class="tl-list-body">
+                    <strong>{{ alert.title }}</strong>
+                    <small>{{ alert.detail }}</small>
+                </span>
+            </a>
+            {% empty %}
+            <div class="tl-empty-inline">Nenhum alerta operacional no momento.</div>
+            {% endfor %}
+        </div>
+    </article>
+
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Atividade recente</h2>
+            <a class="tl-btn is-sm is-ghost" href="{% url 'tires_movements' %}">Ver tudo</a>
+        </div>
+        <div class="tl-list">
+            {% for item in feed %}
+            <div>
+                <span class="tl-list-dot {{ item.tone }}"></span>
+                <span class="tl-list-body">
+                    <strong>{{ item.title }} · {{ item.subject }}</strong>
+                    <small>{{ item.context }}</small>
+                </span>
+                <span class="tl-list-meta">{{ item.date_label }}</span>
+            </div>
+            {% empty %}
+            <div class="tl-empty-inline">Sem movimentações registradas.</div>
+            {% endfor %}
+        </div>
+    </article>
+</section>
+{% endblock %}
