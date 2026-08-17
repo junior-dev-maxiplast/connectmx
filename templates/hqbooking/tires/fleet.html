@@ -1,0 +1,134 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}Frota{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <span class="tl-kicker">Frota</span>
+        <h1>Caminhões cadastrados</h1>
+        <p>Cada caminhão herda as posições do modelo escolhido. Abra um card para instalar, remover ou reposicionar pneus.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_models' %}">Modelos</a>
+        <button type="button" class="tl-btn is-primary" data-tl-open="tlTruckModal">+ Novo caminhão</button>
+    </div>
+</header>
+
+{% if has_trucks %}
+<section class="tl-block">
+    <form method="GET" class="tl-grid" style="grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px;">
+        <div class="tl-field">
+            <label for="tlFleetSearch">Placa / identificação</label>
+            <input class="tl-input" id="tlFleetSearch" name="q" type="search" value="{{ search }}" placeholder="Ex.: CAM-014, KAZ-5467...">
+        </div>
+        <div class="tl-btn-row">
+            {% if active_model %}<input type="hidden" name="model" value="{{ active_model }}">{% endif %}
+            <button type="submit" class="tl-btn is-primary">Filtrar</button>
+            {% if has_filters %}<a class="tl-btn is-ghost" href="{% url 'tires_fleet' %}">Limpar</a>{% endif %}
+            <span style="font-size: 10.5px; color: var(--muted-text);">{{ fleet|length }} caminhão(ões)</span>
+        </div>
+    </form>
+
+    <div class="tl-filters" style="margin-top: 12px;">
+        {% for filter in model_filters %}
+        <a class="tl-filter {% if filter.key == active_model or not filter.key and not active_model %}is-active{% endif %}"
+           href="?{% if filter.key %}model={{ filter.key }}&{% endif %}{% if search %}q={{ search }}{% endif %}">
+            {{ filter.label }} <b>{{ filter.count }}</b>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% if fleet %}
+<section class="tl-fleet-grid">
+    {% for item in fleet %}
+    <a class="tl-truck-card" href="{% url 'tires_truck' item.truck.id %}">
+        <div class="tl-truck-card-head">
+            <div>
+                <strong>{{ item.truck.identifier }}</strong>
+                <small>{{ item.model_name }}</small>
+            </div>
+            <span class="tl-badge {% if item.occupancy_pct == 100 %}is-success{% elif item.occupancy_pct >= 50 %}is-info{% else %}is-warning{% endif %}">{{ item.occupancy_pct }}%</span>
+        </div>
+
+        <div class="tl-bar-track"><i style="width: {{ item.occupancy_pct }}%;"></i></div>
+
+        <div class="tl-truck-stats">
+            <div><span>Instalados</span><strong>{{ item.installed }}</strong></div>
+            <div><span>Livres</span><strong>{{ item.open_slots }}</strong></div>
+            <div><span>Posições</span><strong>{{ item.capacity }}</strong></div>
+        </div>
+
+        <div class="tl-list">
+            <div>
+                <span class="tl-list-body">
+                    <small>{% if item.last_movement %}Último registro: {{ item.last_movement.get_movement_type_display }}{% else %}Sem movimentações{% endif %}</small>
+                </span>
+                {% if item.last_movement %}<span class="tl-list-meta">{{ item.last_movement.movement_date|default:item.last_movement.created_at|date:"d/m/Y" }}</span>{% endif %}
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</section>
+{% elif has_filters %}
+<div class="tl-empty">
+    <strong>Nenhum caminhão encontrado</strong>
+    <span>Nenhum caminhão combina com a placa e o modelo selecionados.</span>
+    <a class="tl-btn" style="margin-top: 8px;" href="{% url 'tires_fleet' %}">Limpar filtros</a>
+</div>
+{% else %}
+<div class="tl-empty">
+    <strong>Nenhum caminhão cadastrado</strong>
+    <span>Crie primeiro um modelo com os eixos e posições, depois cadastre o caminhão apontando para ele.</span>
+    <div class="tl-btn-row" style="margin-top: 8px;">
+        <a class="tl-btn" href="{% url 'tires_models' %}?novo=1">Criar modelo</a>
+        <button type="button" class="tl-btn is-primary" data-tl-open="tlTruckModal">Cadastrar caminhão</button>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block modals %}
+<div class="tl-overlay is-hidden" id="tlTruckModalOverlay" data-tl-close="tlTruckModal"></div>
+<div class="tl-modal is-hidden" id="tlTruckModal" role="dialog" aria-modal="true" aria-labelledby="tlTruckModalTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlTruckModalTitle">Novo caminhão</h3>
+            <p>A quantidade de posições vem do modelo selecionado.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlTruckModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    {% if models %}
+    <form method="POST" action="{% url 'tires_truck_save' %}" data-tl-guard data-tl-busy="Salvando...">
+        {% csrf_token %}
+        <div class="tl-form-grid">
+            <div class="tl-field is-full">
+                <label for="tlTruckIdentifier">Identificação</label>
+                <input class="tl-input" id="tlTruckIdentifier" name="identifier" type="text" maxlength="80" placeholder="Ex.: CAM-014" required>
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlTruckModel">Modelo base</label>
+                <select class="tl-input" id="tlTruckModel" name="model_id" required>
+                    {% for model in models %}
+                    <option value="{{ model.id }}">{{ model.name }} · {{ model.wheel_count }} posições</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlTruckModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary">Cadastrar caminhão</button>
+        </div>
+    </form>
+    {% else %}
+    <div class="tl-empty">
+        <strong>Nenhum modelo disponível</strong>
+        <span>Um caminhão precisa de um modelo com eixos e posições definidos.</span>
+        <a class="tl-btn is-primary" style="margin-top: 8px;" href="{% url 'tires_models' %}?novo=1">Criar modelo</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

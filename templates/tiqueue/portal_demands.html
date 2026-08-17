@@ -34,7 +34,12 @@
                 </div>
 
                 <div class="support-home-actions">
-                    {% if can_request_portal %}
+                    {% if can_request_portal and pending_feedback %}
+                        <a href="{% url 'portalMyDemandsPage' %}?feedback_required=1" class="support-home-action-card is-blocked">
+                            <strong>Avalie para liberar a abertura</strong>
+                            <span>Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} conclu&iacute;do{{ pending_feedback|length|pluralize }} sem avalia&ccedil;&atilde;o. Avalie para abrir um novo chamado.</span>
+                        </a>
+                    {% elif can_request_portal %}
                         <a href="{% url 'portalDemandCreatePage' %}" class="support-home-action-card is-primary">
                             <strong>Abrir demanda</strong>
                             <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>

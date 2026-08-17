@@ -1,0 +1,171 @@
+{% comment %}
+Command palette global (Ctrl+K). Lê o catálogo de navegação já resolvido para
+o usuário, então mostra exatamente as telas que ele pode abrir.
+{% endcomment %}
+
+<div id="cmxPaletteOverlay" class="cmx-palette-overlay is-hidden"></div>
+<div id="cmxPalette" class="cmx-palette is-hidden" role="dialog" aria-modal="true" aria-label="Buscar tela">
+    <div class="cmx-palette-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+        <input id="cmxPaletteInput" type="text" placeholder="Buscar tela, módulo ou função..." autocomplete="off" spellcheck="false">
+        <kbd>Esc</kbd>
+    </div>
+    <div id="cmxPaletteResults" class="cmx-palette-results" role="listbox"></div>
+    <div class="cmx-palette-foot">
+        <span><kbd>&#8593;</kbd><kbd>&#8595;</kbd> navegar</span>
+        <span><kbd>Enter</kbd> abrir</span>
+        <span><kbd>Esc</kbd> fechar</span>
+    </div>
+</div>
+
+<script id="cmxPaletteData" type="application/json">{{ nav_palette_json|default:"[]"|safe }}</script>
+
+<script>
+(function () {
+    "use strict";
+
+    var overlay = document.getElementById("cmxPaletteOverlay");
+    var palette = document.getElementById("cmxPalette");
+    var input = document.getElementById("cmxPaletteInput");
+    var results = document.getElementById("cmxPaletteResults");
+    var trigger = document.getElementById("sidebarPaletteTrigger");
+    if (!palette || !input || !results) return;
+
+    function normalize(value) {
+        return String(value || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .trim();
+    }
+
+    var destinations = [];
+    try {
+        destinations = JSON.parse(document.getElementById("cmxPaletteData").textContent || "[]") || [];
+    } catch (error) {
+        destinations = [];
+    }
+    destinations.forEach(function (item) {
+        item._label = normalize(item.label);
+        item._search = normalize(item.label + " " + item.group + " " + (item.keywords || ""));
+    });
+
+    var visible = [];
+    var cursor = 0;
+    var isOpen = false;
+
+    /* Quanto menor o rank, mais relevante: começo do nome ganha de meio do
+       nome, que ganha de palavra-chave. */
+    function rank(item, query) {
+        if (item._label === query) return 0;
+        if (item._label.indexOf(query) === 0) return 1;
+        if (item._label.indexOf(query) > -1) return 2;
+        if (item._search.indexOf(query) > -1) return 3;
+        return -1;
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? "" : value).replace(/[&<>"']/g, function (char) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+        });
+    }
+
+    function render() {
+        var query = normalize(input.value);
+
+        if (!query) {
+            visible = destinations.slice(0, 12);
+        } else {
+            visible = destinations
+                .map(function (item) { return { item: item, rank: rank(item, query) }; })
+                .filter(function (row) { return row.rank >= 0; })
+                .sort(function (a, b) {
+                    return a.rank - b.rank || a.item.label.localeCompare(b.item.label);
+                })
+                .slice(0, 12)
+                .map(function (row) { return row.item; });
+        }
+
+        cursor = 0;
+        if (!visible.length) {
+            results.innerHTML = '<div class="cmx-palette-empty">Nenhuma tela encontrada.</div>';
+            return;
+        }
+
+        results.innerHTML = visible
+            .map(function (item, index) {
+                return (
+                    '<a class="cmx-palette-item' + (index === 0 ? " is-active" : "") +
+                    '" role="option" href="' + escapeHtml(item.url) + '">' +
+                    '<span class="cmx-palette-item-label">' + escapeHtml(item.label) + "</span>" +
+                    '<span class="cmx-palette-item-group">' + escapeHtml(item.group) + "</span></a>"
+                );
+            })
+            .join("");
+    }
+
+    function highlight() {
+        var nodes = results.querySelectorAll(".cmx-palette-item");
+        Array.prototype.forEach.call(nodes, function (node, index) {
+            node.classList.toggle("is-active", index === cursor);
+            if (index === cursor && node.scrollIntoView) {
+                node.scrollIntoView({ block: "nearest" });
+            }
+        });
+    }
+
+    function open() {
+        isOpen = true;
+        overlay.classList.remove("is-hidden");
+        palette.classList.remove("is-hidden");
+        requestAnimationFrame(function () {
+            overlay.classList.add("is-open");
+            palette.classList.add("is-open");
+            input.focus();
+        });
+        render();
+    }
+
+    function close() {
+        isOpen = false;
+        overlay.classList.remove("is-open");
+        palette.classList.remove("is-open");
+        window.setTimeout(function () {
+            overlay.classList.add("is-hidden");
+            palette.classList.add("is-hidden");
+        }, 160);
+        input.value = "";
+    }
+
+    if (trigger) trigger.addEventListener("click", open);
+    overlay.addEventListener("click", close);
+    input.addEventListener("input", render);
+
+    document.addEventListener("keydown", function (event) {
+        if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === "k") {
+            event.preventDefault();
+            if (isOpen) { close(); } else { open(); }
+            return;
+        }
+        if (!isOpen) return;
+
+        if (event.key === "Escape") {
+            event.preventDefault();
+            close();
+        } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            cursor = visible.length ? (cursor + 1) % visible.length : 0;
+            highlight();
+        } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            cursor = visible.length ? (cursor - 1 + visible.length) % visible.length : 0;
+            highlight();
+        } else if (event.key === "Enter" && visible.length) {
+            event.preventDefault();
+            window.location.href = visible[cursor].url;
+        }
+    });
+
+    window.CMXPalette = { open: open, close: close };
+})();
+</script>

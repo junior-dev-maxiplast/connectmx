@@ -1,0 +1,104 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}Movimentações{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <span class="tl-kicker">Movimentações</span>
+        <h1>Histórico operacional</h1>
+        <p>Cadastros, instalações, reposicionamentos, recapagens e descartes — agrupados por dia.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_inventory' %}">Estoque</a>
+        <a class="tl-btn" href="{% url 'tires_fleet' %}">Frota</a>
+    </div>
+</header>
+
+<section class="tl-block">
+    <form method="GET" class="tl-form-grid is-5">
+        <div class="tl-field">
+            <label for="tlMovementSearch">Buscar</label>
+            <input class="tl-input" id="tlMovementSearch" name="q" type="search" value="{{ search }}" placeholder="Pneu, marca, posição...">
+        </div>
+        <div class="tl-field">
+            <label for="tlMovementTruck">Caminhão</label>
+            <select class="tl-input" id="tlMovementTruck" name="truck">
+                <option value="">Todos</option>
+                {% for item in trucks %}
+                <option value="{{ item.id }}" {% if selected_truck and selected_truck.id == item.id %}selected{% endif %}>{{ item.identifier }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="tl-field">
+            <label for="tlMovementType">Tipo</label>
+            <select class="tl-input" id="tlMovementType" name="type">
+                <option value="">Todos</option>
+                {% for value, label in movement_type_choices %}
+                <option value="{{ value }}" {% if movement_type == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="tl-field">
+            <label for="tlMovementFrom">De</label>
+            <input class="tl-input" id="tlMovementFrom" name="de" type="date" value="{{ date_from }}">
+        </div>
+        <div class="tl-field">
+            <label for="tlMovementTo">Até</label>
+            <input class="tl-input" id="tlMovementTo" name="ate" type="date" value="{{ date_to }}">
+        </div>
+        <div class="tl-btn-row is-full">
+            <button type="submit" class="tl-btn is-primary">Filtrar</button>
+            <a class="tl-btn is-ghost" href="{% url 'tires_movements' %}">Limpar</a>
+            <span style="font-size: 10.5px; color: var(--muted-text);">{{ total }} registro(s)</span>
+        </div>
+    </form>
+</section>
+
+{% for group in grouped %}
+<section class="tl-block is-flush">
+    <div class="tl-block-head">
+        <h2>{{ group.day|date:"d/m/Y" }}</h2>
+        <span>{{ group.items|length }} registro(s)</span>
+    </div>
+    <div class="tl-table-wrap">
+        <table class="tl-table">
+            <thead>
+                <tr>
+                    <th>Movimento</th>
+                    <th>Pneu</th>
+                    <th>Caminhão / posição</th>
+                    <th class="is-num">KM</th>
+                    <th class="is-num">Custo</th>
+                    <th>Observação</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for movement in group.items %}
+                <tr>
+                    <td><span class="tl-badge {% for key, tone in movement_tones.items %}{% if key == movement.movement_type %}{{ tone }}{% endif %}{% endfor %}">{{ movement.get_movement_type_display }}</span></td>
+                    <td>
+                        {% if movement.tire_id %}
+                        <a class="tl-cell-title" href="{% url 'tires_tire' movement.tire_id %}">
+                            <strong>{{ movement.tire.serial_number }}</strong>
+                            <small>{{ movement.tire.brand }}</small>
+                        </a>
+                        {% else %}<span class="tl-cell-title"><strong>Pneu removido</strong></span>{% endif %}
+                    </td>
+                    <td>{% if movement.truck_id %}<a href="{% url 'tires_truck' movement.truck_id %}">{{ movement.truck.identifier }}</a> · {{ movement.position_label|default:"—" }}{% else %}{{ movement.position_label|default:"Estoque" }}{% endif %}</td>
+                    <td class="is-num">{{ movement.odometer_km|default_if_none:"—" }}</td>
+                    <td class="is-num">{% if movement.movement_cost %}R$ {{ movement.movement_cost|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{{ movement.note|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% empty %}
+<div class="tl-empty">
+    <strong>Nenhuma movimentação encontrada</strong>
+    <span>Ajuste os filtros ou registre uma movimentação a partir do mapa de um caminhão.</span>
+</div>
+{% endfor %}
+{% endblock %}

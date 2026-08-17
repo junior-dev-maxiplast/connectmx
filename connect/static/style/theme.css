@@ -1,4 +1,9 @@
 :root {
+    /* Informa ao navegador em que tema desenhar os controles nativos (lista do
+       select, seletor de data, spinners). Sem isso ele assume claro e o popup
+       do select sai branco por baixo do texto claro. */
+    color-scheme: light;
+
     --page-bg: #eef0fc;
     --page-text: #1c2242;
     --title-text: #1c2242;
@@ -9,11 +14,17 @@
     --surface-border: rgba(28, 34, 66, 0.10);
     --surface-shadow: 0 10px 24px rgba(28, 34, 66, 0.08);
 
+    /* Superfície opaca, para o que é pintado pelo navegador e não pode herdar
+       transparência (lista do select, optgroup). */
+    --surface-solid: #ffffff;
+
     --accent: #00bf63;
     --accent-2: #5cd6a3;
 }
 
 html[data-theme="dark"] {
+    color-scheme: dark;
+
     --page-bg: #0d1022;
     --page-text: rgba(255, 255, 255, 0.92);
     --title-text: rgba(255, 255, 255, 0.95);
@@ -23,6 +34,19 @@ html[data-theme="dark"] {
     --surface-2: rgba(255, 255, 255, 0.05);
     --surface-border: rgba(255, 255, 255, 0.14);
     --surface-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+
+    --surface-solid: #151a33;
+}
+
+/* Lista de opções dos selects nativos.
+   As variáveis --surface-* são translúcidas de propósito, mas o popup do select
+   é desenhado fora da página e não tem o que compor por baixo: com fundo
+   translúcido ele cai para branco e o texto claro some. Por isso aqui, e só
+   aqui, usamos uma cor opaca. Vale para qualquer página que carregue theme.css. */
+select option,
+select optgroup {
+    background-color: var(--surface-solid);
+    color: var(--page-text);
 }
 
 /* Theme toggle */

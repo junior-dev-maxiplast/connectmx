@@ -1,0 +1,158 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Chamados | Entrar</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="portallogin-body">
+    <div class="theme-fab">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <main class="portallogin">
+        <section class="portallogin-brand" aria-hidden="true">
+            <div class="portallogin-glow"></div>
+            <div class="portallogin-brand-inner">
+                <span class="portallogin-logo">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                </span>
+                <h1>Portal de Chamados</h1>
+                <p>O canal direto com o time de TI. Abra sua solicita&ccedil;&atilde;o, acompanhe cada etapa e avalie o atendimento.</p>
+
+                <ul class="portallogin-points">
+                    <li>
+                        <span class="portallogin-point-icon">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </span>
+                        <div>
+                            <strong>Abra em menos de 2 minutos</strong>
+                            <small>Formul&aacute;rio guiado, com anexos e sugest&otilde;es autom&aacute;ticas.</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="portallogin-point-icon">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 15"></polyline></svg>
+                        </span>
+                        <div>
+                            <strong>Acompanhe em tempo real</strong>
+                            <small>Veja o andamento e o prazo previsto de cada chamado.</small>
+                        </div>
+                    </li>
+                    <li>
+                        <span class="portallogin-point-icon">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        </span>
+                        <div>
+                            <strong>Avalie o atendimento</strong>
+                            <small>Sua nota orienta a melhoria do suporte.</small>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="portallogin-panel">
+            <div class="portallogin-card">
+                <div class="portallogin-card-head">
+                    <span class="portallogin-kicker">Acesso do solicitante</span>
+                    <h2>Entrar no portal</h2>
+                    <p>Use as credenciais fornecidas pela equipe de TI.</p>
+                </div>
+
+                {% if session_expired %}
+                    <div class="portallogin-alert is-warning" role="status">
+                        Sua sess&atilde;o expirou. Entre novamente para continuar.
+                    </div>
+                {% endif %}
+
+                {% if error_message %}
+                    <div class="portallogin-alert is-danger" role="alert">
+                        {{ error_message }}
+                    </div>
+                {% endif %}
+
+                <form method="POST" class="portallogin-form" novalidate>
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next_url }}">
+
+                    <label class="portallogin-field">
+                        <span>Usu&aacute;rio</span>
+                        <input
+                            type="text"
+                            name="login"
+                            autocomplete="username"
+                            placeholder="Usu&aacute;rio, e-mail ou matr&iacute;cula"
+                            autofocus
+                            required
+                        >
+                    </label>
+
+                    <label class="portallogin-field">
+                        <span>Senha</span>
+                        <div class="portallogin-password">
+                            <input
+                                type="password"
+                                name="password"
+                                id="portalLoginPassword"
+                                autocomplete="current-password"
+                                placeholder="Sua senha"
+                                required
+                            >
+                            <button type="button" class="portallogin-reveal" id="portalLoginReveal" aria-label="Mostrar senha" aria-pressed="false">
+                                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                        </div>
+                    </label>
+
+                    <button type="submit" class="portallogin-submit" id="portalLoginSubmit">Entrar</button>
+
+                    <a href="{% url 'forgotPasswordPage' %}" class="portallogin-link">Esqueci minha senha</a>
+                </form>
+            </div>
+
+            <p class="portallogin-foot">
+                &Eacute; do time interno? <a href="{% url 'loginPage' %}">Acessar o ConnectMX</a>
+            </p>
+        </section>
+    </main>
+
+    <script>
+        (function() {
+            const reveal = document.getElementById("portalLoginReveal");
+            const password = document.getElementById("portalLoginPassword");
+            if (reveal && password) {
+                reveal.addEventListener("click", function() {
+                    const show = password.type === "password";
+                    password.type = show ? "text" : "password";
+                    reveal.setAttribute("aria-pressed", show ? "true" : "false");
+                    reveal.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
+                    reveal.classList.toggle("is-on", show);
+                    password.focus();
+                });
+            }
+
+            const form = document.querySelector(".portallogin-form");
+            const submit = document.getElementById("portalLoginSubmit");
+            if (form && submit) {
+                form.addEventListener("submit", function() {
+                    submit.disabled = true;
+                    submit.textContent = "Entrando…";
+                });
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -1,9 +1,25 @@
 from django.urls import path
+from django.views.generic import RedirectView
+
 from . import views
 
 urlpatterns = [
 
     path('', views.index, name='index'),
+    path('dashes/', views.dashesHomePage, name='dashesHome'),
+    path('dashes/entrar/', views.dashesLoginPage, name='dashesLoginPage'),
+    path('dashes/sair/', views.dashesLogoutPage, name='dashesLogoutPage'),
+    path('dashes/dna-cliente/', views.dashesCustomerDnaPage, name='dashesCustomerDnaPage'),
+    path('clientes/dna/', views.customerDnaPage, name='customerDnaPage'),
+    path('clientes/dna/api/busca/', views.customerDnaSearchApi, name='customerDnaSearchApi'),
+    path('clientes/dna/insights/preparar/', views.customerDnaPrepareInsights, name='customerDnaPrepareInsights'),
+    path('clientes/dna/insights/solicitar-ia/', views.customerDnaRequestAiInsights, name='customerDnaRequestAiInsights'),
+    path('clientes/dna/<int:customer_id>/insights/payload/', views.customerDnaInsightPayloadApi, name='customerDnaInsightPayloadApi'),
+    path('clientes/dna/<int:customer_id>/exportar/pdf/', views.customerDnaExportPdf, name='customerDnaExportPdf'),
+    # Short, shareable entry point for requesters ("/portal/"). Keeps the real
+    # portal URLs stable while giving end users a single link to bookmark.
+    path('portal/', RedirectView.as_view(pattern_name='portalDemandPage', permanent=False), name='portalEntry'),
+    path('portal/entrar/', views.portalLoginPage, name='portalLoginPage'),
     path('hub/', views.hubPage, name='hubPage'),
     path('portal/chamados/', views.portalDemandPage, name='portalDemandPage'),
     path('portal/chamados/abrir/', views.portalDemandCreatePage, name='portalDemandCreatePage'),

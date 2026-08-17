@@ -1,0 +1,34 @@
+<aside class="dashes-sidebar">
+    <a class="dashes-brand" href="{% url 'dashesHome' %}" aria-label="Página inicial do ConnectMX Dashes">
+        <span class="dashes-brand-mark">MX</span>
+        <span><strong>ConnectMX</strong><small>Dashes</small></span>
+    </a>
+    <div class="dashes-sidebar-copy">
+        <span>INTELIGÊNCIA DE GESTÃO</span>
+        <p>Indicadores estratégicos em uma experiência dedicada.</p>
+    </div>
+    <nav class="dashes-nav" aria-label="Painéis disponíveis">
+        <span class="dashes-nav-label">DASHES</span>
+        {% for dash in dashes_menu %}
+        <a class="dashes-nav-item{% if active_dash == dash.slug %} is-active{% endif %}" href="{% url dash.url_name %}">
+            <svg viewBox="0 0 24 24" aria-hidden="true">{{ dash.icon_path|safe }}</svg>
+            <span><strong>{{ dash.name }}</strong><small>{{ dash.description|default:"" }}</small></span>
+        </a>
+        {% empty %}
+        <span class="dashes-nav-item">
+            <span><strong>Nenhum painel liberado</strong><small>Fale com o administrador</small></span>
+        </span>
+        {% endfor %}
+    </nav>
+    <div class="dashes-sidebar-footer">
+        <a class="dashes-main-link" href="{% url 'index' %}">← Voltar ao ConnectMX</a>
+        <div class="dashes-user">
+            <span class="dashes-user-avatar">{{ request.user.first_name|default:request.user.username|slice:":1"|upper }}</span>
+            <span><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><small>Gestão</small></span>
+        </div>
+        <form method="post" action="{% url 'dashesLogoutPage' %}">
+            {% csrf_token %}
+            <button type="submit">Encerrar sessão Dashes</button>
+        </form>
+    </div>
+</aside>

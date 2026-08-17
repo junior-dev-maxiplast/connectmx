@@ -1,0 +1,197 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}{{ tire.serial_number }}{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <div class="tl-breadcrumb">
+            <a href="{% url 'tires_inventory' %}">Estoque</a><span>/</span><span>{{ tire.serial_number }}</span>
+        </div>
+        <h1>{{ tire.serial_number }}</h1>
+        <p>{{ tire.brand }}{% if tire.registered_on %} · cadastrado em {{ tire.registered_on|date:"d/m/Y" }}{% endif %}</p>
+    </div>
+    <div class="tl-head-actions">
+        <span class="tl-badge {% for key, tone in status_tones.items %}{% if key == tire.status %}{{ tone }}{% endif %}{% endfor %}">{{ tire.get_status_display }}</span>
+        {% if tire.current_truck %}<a class="tl-btn" href="{% url 'tires_truck' tire.current_truck_id %}">{{ tire.current_truck.identifier }}</a>{% endif %}
+        <button type="button" class="tl-btn is-primary" data-tl-open="tlTireEditModal">Editar dados</button>
+    </div>
+</header>
+
+<section class="tl-kpis">
+    <article class="tl-kpi">
+        <span>Recapes</span>
+        <strong>{{ tire.recap_count }}/3</strong>
+        <small>
+            <span class="tl-dots">
+                <i class="{% if tire.recap_count >= 1 %}is-on{% endif %}"></i>
+                <i class="{% if tire.recap_count >= 2 %}is-on{% endif %}"></i>
+                <i class="{% if tire.recap_count >= 3 %}is-on{% endif %}"></i>
+            </span>
+        </small>
+    </article>
+    <article class="tl-kpi"><span>Custo acumulado</span><strong>R$ {{ total_cost|floatformat:2 }}</strong><small>compra + recapes</small></article>
+    <article class="tl-kpi"><span>Rodagem registrada</span><strong>{{ total_run_km }} km</strong><small>{{ total_run_days }} dias em operação</small></article>
+    <article class="tl-kpi">
+        <span>Custo por km</span>
+        <strong>{% if cost_per_km %}R$ {{ cost_per_km|floatformat:3 }}{% else %}—{% endif %}</strong>
+        <small>{% if cost_per_km %}Base nos ciclos fechados{% else %}Ainda sem rodagem fechada{% endif %}</small>
+    </article>
+</section>
+
+<section class="tl-grid is-aside">
+    <article class="tl-block is-flush">
+        <div class="tl-block-head">
+            <h2>Linha do tempo</h2>
+            <span>{{ movements|length }} registro(s)</span>
+        </div>
+        {% if movements %}
+        <div class="tl-table-wrap">
+            <table class="tl-table">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Movimento</th>
+                        <th>Local</th>
+                        <th class="is-num">KM</th>
+                        <th class="is-num">Custo</th>
+                        <th>Observação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for movement in movements %}
+                    <tr>
+                        <td>{{ movement.movement_date|default:movement.created_at|date:"d/m/Y" }}</td>
+                        <td><span class="tl-badge {% for key, tone in movement_tones.items %}{% if key == movement.movement_type %}{{ tone }}{% endif %}{% endfor %}">{{ movement.get_movement_type_display }}</span></td>
+                        <td>{% if movement.truck %}{{ movement.truck.identifier }} · {{ movement.position_label|default:"—" }}{% else %}{{ movement.position_label|default:"Estoque" }}{% endif %}</td>
+                        <td class="is-num">{{ movement.odometer_km|default_if_none:"—" }}</td>
+                        <td class="is-num">{% if movement.movement_cost %}R$ {{ movement.movement_cost|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{{ movement.note|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="padding: 0 15px 15px;"><div class="tl-empty-inline">Sem movimentações registradas.</div></div>
+        {% endif %}
+    </article>
+
+    <aside class="tl-grid">
+        <article class="tl-block">
+            <div class="tl-block-head"><h2>Ciclos por posição</h2></div>
+            <div class="tl-list">
+                {% for row in history %}
+                <div>
+                    <span class="tl-list-body">
+                        <strong>{{ row.truck.identifier }} · posição {{ row.tire_number }}</strong>
+                        <small>{% if row.run_km %}{{ row.run_km }} km{% else %}sem km{% endif %} · {% if row.run_days %}{{ row.run_days }} dias{% else %}sem período{% endif %}</small>
+                    </span>
+                    <span class="tl-list-meta">{% if row.previous_changed_on %}{{ row.previous_changed_on|date:"d/m/y" }} → {% endif %}{{ row.changed_on|default:row.created_at|date:"d/m/y" }}</span>
+                </div>
+                {% empty %}
+                <div class="tl-empty-inline">Este pneu ainda não fechou um ciclo.</div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="tl-block">
+            <div class="tl-block-head"><h2>Ações</h2></div>
+            <div class="tl-btn-row">
+                {% if tire.status == "stock" and tire.recap_count < 3 %}
+                <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard>
+                    {% csrf_token %}
+                    <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                    <input type="hidden" name="action" value="send_to_retread">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="tl-btn" data-tl-busy="Enviando...">Enviar para recapagem</button>
+                </form>
+                {% endif %}
+                {% if tire.status == "retreading" %}
+                <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard>
+                    {% csrf_token %}
+                    <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                    <input type="hidden" name="action" value="return_from_retread">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="tl-btn is-primary" data-tl-busy="Registrando...">Retornar ao estoque</button>
+                </form>
+                {% endif %}
+                {% if tire.status != "installed" and tire.status != "discarded" %}
+                <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard data-tl-confirm="Descartar este pneu?">
+                    {% csrf_token %}
+                    <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                    <input type="hidden" name="action" value="discard">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <button type="submit" class="tl-btn is-danger" data-tl-busy="Descartando...">Descartar</button>
+                </form>
+                {% endif %}
+                {% if tire.status != "installed" %}
+                <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard data-tl-confirm="Excluir permanentemente {{ tire.serial_number }}? O histórico será perdido.">
+                    {% csrf_token %}
+                    <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                    <input type="hidden" name="action" value="delete_permanently">
+                    <button type="submit" class="tl-btn is-ghost" data-tl-busy="Excluindo...">Excluir cadastro</button>
+                </form>
+                {% endif %}
+            </div>
+            {% if tire.notes %}<p style="margin: 12px 0 0; font-size: 10.5px; color: var(--muted-text);">{{ tire.notes }}</p>{% endif %}
+        </article>
+    </aside>
+</section>
+{% endblock %}
+
+{% block modals %}
+<datalist id="tlBrandOptions">
+    {% for brand in brands %}<option value="{{ brand }}"></option>{% endfor %}
+</datalist>
+
+<div class="tl-overlay is-hidden" id="tlTireEditModalOverlay" data-tl-close="tlTireEditModal"></div>
+<div class="tl-modal is-hidden" id="tlTireEditModal" role="dialog" aria-modal="true" aria-labelledby="tlTireEditTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlTireEditTitle">Editar dados do pneu</h3>
+            <p>Corrige o cadastro sem apagar movimentações. O histórico já registrado mantém os valores da época.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlTireEditModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <form method="POST" action="{% url 'tires_tire_edit' tire.id %}" data-tl-guard data-tl-busy="Salvando...">
+        {% csrf_token %}
+        <div class="tl-form-grid">
+            <div class="tl-field">
+                <label for="tlEditSerial">Número do pneu</label>
+                <input class="tl-input" id="tlEditSerial" name="serial_number" type="text" maxlength="40" value="{{ tire.serial_number }}" required>
+            </div>
+            <div class="tl-field">
+                <label for="tlEditBrand">Marca</label>
+                <input class="tl-input" id="tlEditBrand" name="brand" type="text" maxlength="80" value="{{ tire.brand }}" list="tlBrandOptions" autocomplete="off" required>
+            </div>
+            <div class="tl-field">
+                <label for="tlEditValue">Valor unitário</label>
+                <input class="tl-input" id="tlEditValue" name="purchase_value" type="text" inputmode="decimal"
+                       value="{% if tire.purchase_value %}{{ tire.purchase_value|floatformat:2 }}{% endif %}" placeholder="Ex.: 1250,00">
+            </div>
+            <div class="tl-field">
+                <label for="tlEditDate">Data de entrada</label>
+                <input class="tl-input" id="tlEditDate" name="registered_on" type="date" value="{{ tire.registered_on|date:'Y-m-d' }}">
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlEditNote">Observação</label>
+                <input class="tl-input" id="tlEditNote" name="note" type="text" maxlength="220" value="{{ tire.notes|default:'' }}">
+            </div>
+        </div>
+
+        {% if tire.current_truck %}
+        <p style="margin: 12px 0 0; font-size: 10.5px; color: var(--muted-text);">
+            Este pneu está instalado em {{ tire.current_truck.identifier }} ({{ tire.current_slot_label|default:"—" }}).
+            Mudar o número atualiza também o mapa do caminhão.
+        </p>
+        {% endif %}
+
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlTireEditModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary">Salvar alterações</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% comment %}Botão de uma posição do caminhão. Espera a variável `slot` no contexto.{% endcomment %}
+<button
+    type="button"
+    class="tl-wheel {% if slot.is_filled %}is-filled{% endif %}"
+    data-tl-slot
+    data-tire-number="{{ slot.tire_number }}"
+    data-has-tire="{% if slot.is_filled %}1{% else %}0{% endif %}"
+    data-is-spare="0"
+    data-position-label="{{ slot.position_label }}"
+    data-tire-code="{{ slot.display_code }}"
+    data-tire-brand="{{ slot.display_brand }}"
+    data-tire-status="{{ slot.display_status }}"
+    data-tire-recap="{{ slot.display_recap_count }}"
+    data-date="{% if slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
+    data-km="{{ slot.change.odometer_km|default_if_none:'' }}"
+    data-tire-age-days="{{ slot.tire_age_days|default_if_none:'' }}"
+    data-last-run-days="{{ slot.last_metrics.run_days|default_if_none:'' }}"
+    data-last-run-km="{{ slot.last_metrics.run_km|default_if_none:'' }}"
+    {% if slot.tire_heat_css %}style="--tl-heat: {{ slot.tire_heat_css }};"{% endif %}
+    title="{{ slot.position_label }} · {{ slot.display_code }}"
+>
+    <span>{{ slot.display_code }}</span>
+</button>

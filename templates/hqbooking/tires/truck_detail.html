@@ -1,0 +1,298 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}{{ truck.identifier }}{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <div class="tl-breadcrumb">
+            <a href="{% url 'tires_fleet' %}">Frota</a><span>/</span><span>{{ truck.identifier }}</span>
+        </div>
+        <h1>{{ truck.identifier }}</h1>
+        <p>{{ truck.model_template.name|default:"Sem modelo" }} · clique numa posição para movimentar, ou arraste um pneu sobre outro para trocar de lugar.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_movements' %}?truck={{ truck.id }}">Histórico do caminhão</a>
+        <a class="tl-btn" href="{% url 'tires_inventory' %}?status=stock">Estoque disponível</a>
+    </div>
+</header>
+
+<section class="tl-kpis">
+    <article class="tl-kpi"><span>Ocupação</span><strong>{{ occupancy_pct }}%</strong><small>{{ filled }} de {{ capacity }} posições</small></article>
+    <article class="tl-kpi"><span>Posições livres</span><strong>{{ open_slots }}</strong><small>Prontas para receber pneu</small></article>
+    <article class="tl-kpi"><span>Estepes</span><strong>{{ spare_slots|length }}</strong><small>Reserva configurada no modelo</small></article>
+    <article class="tl-kpi"><span>Pneus em estoque</span><strong>{{ stock_tires|length }}</strong><small>Disponíveis para instalação</small></article>
+</section>
+
+<section class="tl-grid is-aside">
+    <article class="tl-block">
+        <div class="tl-block-head">
+            <h2>Mapa de posições</h2>
+            <span class="tl-heat-legend"><i></i>recente → antigo</span>
+        </div>
+
+        <div class="tl-map" data-tl-map data-today="{{ today_iso }}">
+            <span class="tl-map-hint">Frente</span>
+            <span class="tl-map-spine" aria-hidden="true"></span>
+
+            {% for row in rows %}
+            <div class="tl-axle">
+                <div class="tl-axle-side is-left">
+                    {% for slot in row.left_slots %}{% include "hqbooking/tires/_slot_button.html" %}{% endfor %}
+                </div>
+                <div class="tl-axle-beam" aria-hidden="true"></div>
+                <div class="tl-axle-side is-right">
+                    {% for slot in row.right_slots %}{% include "hqbooking/tires/_slot_button.html" %}{% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <span class="tl-map-hint is-rear">Traseira</span>
+        </div>
+
+        {% if spare_slots %}
+        <div class="tl-block-head" style="margin-top: 14px;">
+            <h2>Estepes</h2>
+            <span>Podem ser instalados direto numa posição</span>
+        </div>
+        <div class="tl-spares" data-tl-map data-today="{{ today_iso }}">
+            {% for slot in spare_slots %}
+            <button
+                type="button"
+                class="tl-spare {% if slot.is_filled %}is-filled{% endif %}"
+                data-tl-slot
+                data-tire-number="{{ slot.tire_number }}"
+                data-has-tire="{% if slot.is_filled %}1{% else %}0{% endif %}"
+                data-is-spare="1"
+                data-position-label="{{ slot.position_label }}"
+                data-tire-code="{{ slot.display_code }}"
+                data-tire-brand="{{ slot.display_brand }}"
+                data-tire-status="{{ slot.display_status }}"
+                data-tire-recap="{{ slot.display_recap_count }}"
+                data-date="{% if slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
+                data-km="{{ slot.change.odometer_km|default_if_none:'' }}"
+                data-tire-age-days="{{ slot.tire_age_days|default_if_none:'' }}"
+                data-last-run-days="{{ slot.last_metrics.run_days|default_if_none:'' }}"
+                data-last-run-km="{{ slot.last_metrics.run_km|default_if_none:'' }}"
+            >
+                <span>{{ slot.position_label }}</span>
+                <strong>{{ slot.display_code }}</strong>
+                <small>{{ slot.display_brand }}</small>
+            </button>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </article>
+
+    <aside class="tl-grid">
+        <article class="tl-block">
+            <div class="tl-block-head">
+                <h2>Últimas movimentações</h2>
+                <a class="tl-btn is-sm is-ghost" href="{% url 'tires_movements' %}?truck={{ truck.id }}">Tudo</a>
+            </div>
+            <div class="tl-list">
+                {% for row in movements %}
+                <div>
+                    <span class="tl-list-dot {{ row.tone }}"></span>
+                    <span class="tl-list-body">
+                        <strong>{{ row.movement.get_movement_type_display }}</strong>
+                        <small>{{ row.movement.tire.serial_number|default:"Pneu removido" }} · {{ row.movement.position_label|default:"—" }}</small>
+                    </span>
+                    <span class="tl-list-meta">{{ row.movement.movement_date|default:row.movement.created_at|date:"d/m" }}</span>
+                </div>
+                {% empty %}
+                <div class="tl-empty-inline">Sem movimentações neste caminhão.</div>
+                {% endfor %}
+            </div>
+        </article>
+
+        <article class="tl-block">
+            <div class="tl-block-head"><h2>Dados do caminhão</h2></div>
+            <form method="POST" action="{% url 'tires_truck_save' %}" class="tl-grid" data-tl-guard data-tl-busy="Salvando...">
+                {% csrf_token %}
+                <input type="hidden" name="truck_id" value="{{ truck.id }}">
+                <div class="tl-field">
+                    <label for="tlTruckIdentifier">Identificação</label>
+                    <input class="tl-input" id="tlTruckIdentifier" name="identifier" type="text" value="{{ truck.identifier }}" maxlength="80" required>
+                </div>
+                <div class="tl-field">
+                    <label for="tlTruckModel">Modelo base</label>
+                    <select class="tl-input" id="tlTruckModel" name="model_id" required>
+                        {% for model in models %}
+                        <option value="{{ model.id }}" {% if truck.model_template_id == model.id %}selected{% endif %}>{{ model.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Trocar o modelo altera as posições disponíveis.</small>
+                </div>
+                <button type="submit" class="tl-btn is-primary">Salvar caminhão</button>
+            </form>
+        </article>
+    </aside>
+</section>
+{% endblock %}
+
+{% block modals %}
+{{ transfer_targets|json_script:"tlTransferTargets" }}
+
+<datalist id="tlBrandOptions">
+    {% for brand in brands %}<option value="{{ brand }}"></option>{% endfor %}
+</datalist>
+
+<div class="tl-overlay is-hidden" id="tlSlotModalOverlay" data-tl-close="tlSlotModal"></div>
+<div class="tl-modal is-hidden" id="tlSlotModal" role="dialog" aria-modal="true" aria-labelledby="tlSlotModalTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlSlotModalTitle">Movimentar posição <span id="tlSlotPosition"></span></h3>
+            <p>Escolha a ação e confirme os dados do registro.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlSlotModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <div class="tl-modal-facts">
+        <div><span>Pneu atual</span><strong id="tlSlotTire">Vazia</strong></div>
+        <div><span>Marca</span><strong id="tlSlotBrand">—</strong></div>
+        <div><span>Status</span><strong id="tlSlotStatus">Vazia</strong></div>
+        <div><span>Recapes</span><strong id="tlSlotRecap">—</strong></div>
+    </div>
+    <div class="tl-modal-facts">
+        <div style="grid-column: span 2;"><span>Rodagem do último ciclo</span><strong id="tlSlotRun">Sem registro</strong></div>
+        <div style="grid-column: span 2;"><span>Tempo na posição</span><strong id="tlSlotAge">Sem registro</strong></div>
+    </div>
+
+    <form method="POST" action="{% url 'tires_slot_action' truck.id %}" data-tl-guard data-tl-busy="Registrando...">
+        {% csrf_token %}
+        <input type="hidden" id="tlSlotNumber" name="tire_number">
+
+        <div class="tl-form-grid">
+            <div class="tl-field is-full">
+                <label for="tlSlotAction">Ação</label>
+                <select class="tl-input" id="tlSlotAction" name="action_mode">
+                    <option value="install_stock">Instalar pneu do estoque</option>
+                    <option value="create_and_install">Cadastrar novo pneu e instalar</option>
+                    <option value="initial_load" id="tlSlotActionInitial">Carga inicial — pneu já estava no veículo</option>
+                    <option value="install_spare_to_position" id="tlSlotActionSpare">Instalar este estepe em outra posição</option>
+                    <option value="move_to_stock">Enviar pneu atual para o estoque</option>
+                    <option value="send_current_to_retread">Enviar pneu atual para recapagem</option>
+                    <option value="discard_current">Descartar pneu atual</option>
+                </select>
+            </div>
+
+            <div class="tl-field is-full" data-tl-when="install_stock">
+                <label for="tlStockSelect">Pneu do estoque</label>
+                <input class="tl-input" id="tlStockSearch" type="search" placeholder="Buscar por número ou marca...">
+                <select class="tl-input" id="tlStockSelect" name="stock_tire_id" style="margin-top: 6px;">
+                    <option value="">Selecione um pneu</option>
+                    {% for tire in stock_tires %}
+                    <option value="{{ tire.id }}">{{ tire.serial_number }} · {{ tire.brand }} · recapes {{ tire.recap_count }}/3</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="tl-field is-full" data-tl-when="install_spare_to_position">
+                <label for="tlSlotTarget">Instalar na posição</label>
+                <select class="tl-input" id="tlSlotTarget" name="target_tire_number">
+                    <option value="">Selecione a posição</option>
+                </select>
+            </div>
+
+            <div class="tl-field is-full" data-tl-when="initial_load">
+                <p class="tl-hint">
+                    Use para os pneus que <strong>já estavam rodando</strong> no veículo antes do sistema.
+                    Nada é inventado: informe o estado real do pneu e desde quando ele está nesta posição —
+                    é esse ponto de partida que faz a primeira troca calcular a rodagem correta.
+                </p>
+            </div>
+
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewBrand">Marca</label>
+                <input class="tl-input" id="tlNewBrand" name="new_tire_brand" type="text" maxlength="80" list="tlBrandOptions" autocomplete="off">
+            </div>
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewSerial">Número do pneu</label>
+                <input class="tl-input" id="tlNewSerial" name="new_tire_serial" type="text" maxlength="40">
+            </div>
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewValue">Valor de compra</label>
+                <input class="tl-input" id="tlNewValue" name="new_tire_purchase_value" type="text" inputmode="decimal" placeholder="Ex.: 1250,00">
+                <small data-tl-when="initial_load">Se não souber, pode deixar em branco.</small>
+            </div>
+
+            <div class="tl-field" data-tl-when="initial_load">
+                <label for="tlInitialRecaps">Recapes já realizados</label>
+                <select class="tl-input" id="tlInitialRecaps" name="initial_recap_count">
+                    <option value="0">Nenhum — pneu novo</option>
+                    <option value="1">1 recape</option>
+                    <option value="2">2 recapes</option>
+                    <option value="3">3 recapes — no limite</option>
+                </select>
+            </div>
+            <div class="tl-field is-full" data-tl-when="initial_load">
+                <label for="tlInitialRetreadTotal">Gasto acumulado em recapes</label>
+                <input class="tl-input" id="tlInitialRetreadTotal" name="initial_retread_total" type="text" inputmode="decimal" placeholder="Ex.: 640,00">
+                <small>Soma do que já foi gasto recapando este pneu. Entra no custo por km da ficha.</small>
+            </div>
+
+            <div class="tl-field">
+                <label for="tlSlotDate">Data</label>
+                <input class="tl-input" id="tlSlotDate" name="changed_on" type="date">
+                <small id="tlSlotDateHelp" class="is-hidden">Desde quando este pneu está nesta posição.</small>
+            </div>
+            <div class="tl-field">
+                <label for="tlSlotKm">Quilometragem</label>
+                <input class="tl-input" id="tlSlotKm" name="odometer_km" type="number" min="0">
+                <small id="tlSlotKmHelp" class="is-hidden">Hodômetro do veículo naquela data. Em branco se não souber.</small>
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlSlotNote">Observação</label>
+                <input class="tl-input" id="tlSlotNote" name="note" type="text" maxlength="180" placeholder="Ex.: desgaste irregular, reserva do veículo">
+            </div>
+        </div>
+
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlSlotModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary" id="tlSlotSubmit">Registrar movimentação</button>
+        </div>
+    </form>
+</div>
+
+<div class="tl-overlay is-hidden" id="tlSwapModalOverlay" data-tl-close="tlSwapModal"></div>
+<div class="tl-modal is-hidden" id="tlSwapModal" role="dialog" aria-modal="true" aria-labelledby="tlSwapModalTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlSwapModalTitle">Trocar posição</h3>
+            <p>Os dois pneus mudam de lugar e o histórico registra a rodagem de cada um.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlSwapModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <div class="tl-modal-route">
+        <div><span>Origem</span><strong id="tlSwapSourcePosition">—</strong><small id="tlSwapSourceTire">—</small></div>
+        <em>&rarr;</em>
+        <div><span>Destino</span><strong id="tlSwapTargetPosition">—</strong><small id="tlSwapTargetTire">—</small></div>
+    </div>
+
+    <form method="POST" action="{% url 'tires_slot_swap' truck.id %}" data-tl-guard data-tl-busy="Aplicando...">
+        {% csrf_token %}
+        <input type="hidden" id="tlSwapSource" name="source_tire_number">
+        <input type="hidden" id="tlSwapTarget" name="target_tire_number">
+        <div class="tl-form-grid">
+            <div class="tl-field">
+                <label for="tlSwapDate">Data da troca</label>
+                <input class="tl-input" id="tlSwapDate" name="changed_on" type="date" required>
+            </div>
+            <div class="tl-field">
+                <label for="tlSwapKm">Quilometragem</label>
+                <input class="tl-input" id="tlSwapKm" name="odometer_km" type="number" min="0" required>
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlSwapNote">Motivo</label>
+                <input class="tl-input" id="tlSwapNote" name="note" type="text" maxlength="180" placeholder="Ex.: remanejamento entre eixos" required>
+            </div>
+        </div>
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlSwapModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary">Salvar troca</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

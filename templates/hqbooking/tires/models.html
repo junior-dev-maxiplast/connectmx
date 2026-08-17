@@ -1,0 +1,116 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}Modelos{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <span class="tl-kicker">Modelos</span>
+        <h1>Layouts de caminhão</h1>
+        <p>Cada modelo define os eixos, as rodas de cada lado e os estepes. Os caminhões herdam essas posições.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_fleet' %}">Frota</a>
+        <button type="button" class="tl-btn is-primary" data-tl-model-new>+ Novo modelo</button>
+    </div>
+</header>
+
+{% if cards %}
+<section class="tl-fleet-grid">
+    {% for card in cards %}
+    <article class="tl-truck-card">
+        <div class="tl-truck-card-head">
+            <div>
+                <strong>{{ card.model.name }}</strong>
+                <small>Atualizado em {{ card.model.updated_at|date:"d/m/Y" }}</small>
+            </div>
+            <span class="tl-badge {% if card.truck_count %}is-success{% endif %}">
+                {{ card.truck_count }} caminh{{ card.truck_count|pluralize:"ão,ões" }}
+            </span>
+        </div>
+
+        <div class="tl-truck-stats">
+            <div><span>Eixos</span><strong>{{ card.summary.axle_count }}</strong></div>
+            <div><span>Posições</span><strong>{{ card.summary.wheel_count }}</strong></div>
+            <div><span>Estepes</span><strong>{{ card.summary.spare_count }}</strong></div>
+        </div>
+
+        <div class="tl-btn-row">
+            <button type="button" class="tl-btn is-sm is-primary" data-tl-model-edit="{{ card.model.id }}">Editar</button>
+            {% if card.truck_count %}
+            <button type="button" class="tl-btn is-sm" disabled title="Troque o modelo dos caminhões antes de excluir.">Excluir</button>
+            {% else %}
+            <form method="POST" action="{% url 'tires_model_delete' %}" data-tl-guard data-tl-confirm="Excluir o modelo “{{ card.model.name }}”?">
+                {% csrf_token %}
+                <input type="hidden" name="model_id" value="{{ card.model.id }}">
+                <button type="submit" class="tl-btn is-sm is-danger" data-tl-busy="Removendo...">Excluir</button>
+            </form>
+            {% endif %}
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<div class="tl-empty">
+    <strong>Nenhum modelo cadastrado</strong>
+    <span>O modelo é o primeiro passo: desenhe os eixos e as posições uma vez e reaproveite em todos os caminhões.</span>
+    <button type="button" class="tl-btn is-primary" style="margin-top: 8px;" data-tl-model-new>Criar primeiro modelo</button>
+</div>
+{% endif %}
+
+<section class="tl-block">
+    <div class="tl-block-head"><h2>Como funciona</h2></div>
+    <div class="tl-grid is-3">
+        <div class="tl-list"><div><span class="tl-list-dot is-info"></span><span class="tl-list-body"><strong>1. Desenhe o modelo</strong><small>Eixos, rodas por lado e estepes.</small></span></div></div>
+        <div class="tl-list"><div><span class="tl-list-dot is-info"></span><span class="tl-list-body"><strong>2. Cadastre o caminhão</strong><small>Ele herda as posições do modelo.</small></span></div></div>
+        <div class="tl-list"><div><span class="tl-list-dot is-info"></span><span class="tl-list-body"><strong>3. Instale os pneus</strong><small>Direto no mapa de posições.</small></span></div></div>
+    </div>
+</section>
+{% endblock %}
+
+{% block modals %}
+{{ structures|json_script:"tlModelStructures" }}
+{{ default_structure|json_script:"tlDefaultStructure" }}
+
+<div class="tl-overlay is-hidden" id="tlModelModalOverlay" data-tl-close="tlModelModal"></div>
+<div class="tl-modal is-wide is-hidden" id="tlModelModal" role="dialog" aria-modal="true" aria-labelledby="tlModelModalTitle"
+     {% if open_model %}data-tl-autoload="{{ open_model }}"{% elif open_new %}data-tl-autoload="new"{% endif %}>
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlModelModalTitle">Novo modelo</h3>
+            <p>Clique no lápis para renomear uma posição e no × para removê-la. A numeração segue de cima para baixo, esquerda antes da direita.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlModelModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <div class="tl-modal-facts">
+        <div><span>Eixos</span><strong id="tlSummaryAxles">1</strong></div>
+        <div><span>Rodas</span><strong id="tlSummaryWheels">2</strong></div>
+        <div><span>Estepes</span><strong id="tlSummarySpares">0</strong></div>
+        <div><span>Posições</span><strong id="tlSummaryTotal">2</strong></div>
+    </div>
+
+    <form method="POST" action="{% url 'tires_model_save' %}" data-tl-guard data-tl-busy="Salvando...">
+        {% csrf_token %}
+        <input type="hidden" id="tlModelId" name="model_id" value="">
+        <input type="hidden" id="tlStructureJson" name="structure_json">
+
+        <div class="tl-grid" style="grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px;">
+            <div class="tl-field">
+                <label for="tlModelName">Nome do modelo</label>
+                <input class="tl-input" id="tlModelName" name="name" type="text" maxlength="120" placeholder="Ex.: Basculante 3 eixos" required>
+            </div>
+            <div class="tl-btn-row">
+                <button type="button" class="tl-btn" id="tlAddAxle">+ Eixo</button>
+            </div>
+        </div>
+
+        <div class="tl-editor" id="tlModelEditor" style="margin-top: 12px;"></div>
+
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlModelModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary" id="tlModelSubmit">Criar modelo</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

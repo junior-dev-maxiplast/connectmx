@@ -1,0 +1,43 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX Dashes | Entrar</title>
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="dashes-login-body">
+    <main class="dashes-login-shell">
+        <section class="dashes-login-showcase">
+            <div class="dashes-login-brand"><span>MX</span><strong>ConnectMX <em>Dashes</em></strong></div>
+            <div class="dashes-login-message">
+                <span class="dashes-login-kicker">INTELIGÊNCIA PARA GESTÃO</span>
+                <h1>Decisões melhores começam com uma visão completa.</h1>
+                <p>Acesse seus painéis estratégicos em um ambiente exclusivo, conectado aos dados do ConnectMX e do ERP Senior.</p>
+            </div>
+            <div class="dashes-login-preview">
+                <span>DNA DO CLIENTE</span>
+                <div><strong>360º</strong><small>Comportamento, resultados e oportunidades</small></div>
+            </div>
+        </section>
+        <section class="dashes-login-panel">
+            <form method="post" class="dashes-login-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <div class="dashes-login-heading">
+                    <span>ÁREA DO GESTOR</span>
+                    <h2>Bem-vindo ao Dashes</h2>
+                    <p>Use suas credenciais ConnectMX para continuar.</p>
+                </div>
+                {% if error_message %}<div class="dashes-login-error" role="alert">{{ error_message }}</div>{% endif %}
+                <label>Usuário<input name="username" value="{{ login_value }}" autocomplete="username" autofocus required placeholder="Digite seu usuário"></label>
+                <label>Senha<input type="password" name="password" autocomplete="current-password" required placeholder="Digite sua senha"></label>
+                <button type="submit">Entrar no ConnectMX Dashes <span>→</span></button>
+                <a href="{% url 'loginPage' %}" class="dashes-login-back">Voltar para a plataforma principal</a>
+            </form>
+        </section>
+    </main>
+</body>
+</html>

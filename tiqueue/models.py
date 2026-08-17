@@ -20,6 +20,13 @@ class SystemConfig(models.Model):
     service_agent_url = models.CharField(max_length=255, blank=True, null=True)
     service_agent_token = models.CharField(max_length=255, blank=True, null=True)
     service_agent_timeout_sec = models.PositiveIntegerField(default=8)
+    openai_enabled = models.BooleanField(default=False)
+    openai_api_key_encrypted = models.TextField(blank=True, null=True)
+    openai_base_url = models.CharField(max_length=255, default="https://api.openai.com/v1")
+    openai_model = models.CharField(max_length=80, default="gpt-5.6-sol")
+    openai_reasoning_effort = models.CharField(max_length=20, default="medium")
+    openai_timeout_sec = models.PositiveIntegerField(default=120)
+    openai_max_output_tokens = models.PositiveIntegerField(default=5000)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -1624,3 +1631,124 @@ class SystemNotification(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class CustomerInsightSnapshot(models.Model):
+    STATUS_PREPARED = "prepared"
+    STATUS_PROCESSING = "processing"
+    STATUS_SENT = "sent"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PREPARED, "Preparado"),
+        (STATUS_PROCESSING, "Processando na IA"),
+        (STATUS_SENT, "Enviado para IA"),
+        (STATUS_COMPLETED, "Concluído"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    customer_code = models.BigIntegerField(db_index=True)
+    customer_name = models.CharField(max_length=240)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
+    source_period_start = models.DateField(blank=True, null=True)
+    source_period_end = models.DateField(blank=True, null=True)
+    source_fingerprint = models.CharField(max_length=64, db_index=True)
+    source_row_count = models.PositiveIntegerField(default=0)
+    metrics = models.JSONField(default=dict)
+    insight_cards = models.JSONField(default=list)
+    ai_payload = models.JSONField(default=dict)
+    ai_response = models.JSONField(default=dict, blank=True)
+    ai_provider = models.CharField(max_length=40, blank=True, null=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_response_id = models.CharField(max_length=120, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    ai_requested_at = models.DateTimeField(blank=True, null=True)
+    ai_completed_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="customer_insight_snapshots",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["customer_code", "source_fingerprint"],
+                name="unique_customer_insight_source",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.customer_code} - {self.customer_name} - {self.source_period_end or '-'}"
+
+
+class Dashboard(models.Model):
+    """Catálogo dos painéis do ConnectMX Dashes.
+
+    Um painel novo é um registro aqui: a sidebar do Dashes e a tela de
+    permissões do Cadastro interno se montam a partir desta tabela, sem
+    precisar de migration nem de alteração de template.
+    """
+
+    slug = models.SlugField(max_length=60, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=200, blank=True, null=True)
+    url_name = models.CharField(
+        max_length=120,
+        help_text="Nome da rota Django que abre o painel (ex.: dashesCustomerDnaPage).",
+    )
+    icon_path = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Conteúdo do <svg> exibido na sidebar do Dashes.",
+    )
+    display_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["display_order", "name", "id"]
+
+    def __str__(self):
+        return self.name
+
+
+class DashboardAccess(models.Model):
+    """Quem pode abrir qual painel. Sem registro aqui, não há acesso."""
+
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="dashboard_accesses",
+    )
+    dashboard = models.ForeignKey(
+        Dashboard,
+        on_delete=models.CASCADE,
+        related_name="accesses",
+    )
+    granted_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="granted_dashboard_accesses",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["dashboard__display_order", "dashboard__name", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "dashboard"], name="unique_user_dashboard_access"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.dashboard.slug}"

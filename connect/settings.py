@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 # Environment-driven settings to keep secrets out of source control.
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -22,6 +23,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -82,6 +84,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'tiqueue.context_processors.system_config',
+                'generalapp.context_processors.navigation',
             ],
         },
     },

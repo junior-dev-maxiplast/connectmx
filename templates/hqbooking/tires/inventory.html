@@ -1,0 +1,277 @@
+{% extends "hqbooking/tires/_base.html" %}
+
+{% block title %}Estoque{% endblock %}
+
+{% block content %}
+<header class="tl-head">
+    <div>
+        <span class="tl-kicker">Estoque</span>
+        <h1>Pneus cadastrados</h1>
+        <p>Cadastro unitário ou em lote, ciclo de recapagem e descarte — tudo rastreado por número de série.</p>
+    </div>
+    <div class="tl-head-actions">
+        <a class="tl-btn" href="{% url 'tires_movements' %}">Movimentações</a>
+        <button type="button" class="tl-btn is-primary" data-tl-open="tlTireCreateModal">+ Cadastrar pneus</button>
+    </div>
+</header>
+
+<section class="tl-kpis">
+    <article class="tl-kpi"><span>Monitorados</span><strong>{{ summary.total }}</strong><small>{{ summary.operational }} em operação</small></article>
+    <article class="tl-kpi"><span>Disponíveis</span><strong>{{ summary.stock }}</strong><small>Prontos para instalar</small></article>
+    <article class="tl-kpi"><span>Recapáveis</span><strong>{{ summary.recappable }}</strong><small>{{ summary.at_limit }} já no limite</small></article>
+    <article class="tl-kpi"><span>Valor rastreado</span><strong>R$ {{ summary.tracked_total|floatformat:2 }}</strong><small>R$ {{ summary.retread_total|floatformat:2 }} em recapes</small></article>
+</section>
+
+<section class="tl-block">
+    <form method="GET" class="tl-grid" style="grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px;">
+        <div class="tl-field">
+            <label for="tlInventorySearch">Buscar</label>
+            <input class="tl-input" id="tlInventorySearch" name="q" type="search" value="{{ search }}" placeholder="Número de série ou marca...">
+        </div>
+        <div class="tl-btn-row">
+            {% if active_status %}<input type="hidden" name="status" value="{{ active_status }}">{% endif %}
+            <button type="submit" class="tl-btn is-primary">Filtrar</button>
+            {% if search or active_status %}<a class="tl-btn is-ghost" href="{% url 'tires_inventory' %}">Limpar</a>{% endif %}
+        </div>
+    </form>
+
+    <div class="tl-filters" style="margin-top: 12px;">
+        {% for filter in filters %}
+        <a class="tl-filter {% if filter.key == active_status %}is-active{% endif %}"
+           href="?{% if filter.key %}status={{ filter.key }}&{% endif %}{% if search %}q={{ search }}{% endif %}">
+            {{ filter.label }} <b>{{ filter.count }}</b>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="tl-block is-flush">
+    <div class="tl-block-head">
+        <h2>Pneus</h2>
+        <span>{{ tires|length }} resultado(s)</span>
+    </div>
+    {% if tires %}
+    <div class="tl-table-wrap">
+        <table class="tl-table">
+            <thead>
+                <tr>
+                    <th>Pneu</th>
+                    <th>Status</th>
+                    <th>Recapes</th>
+                    <th>Localização</th>
+                    <th class="is-num">Valor</th>
+                    <th class="is-actions">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tire in tires %}
+                <tr>
+                    <td>
+                        <a class="tl-cell-title" href="{% url 'tires_tire' tire.id %}">
+                            <strong>{{ tire.serial_number }}</strong>
+                            <small>{{ tire.brand }}{% if tire.registered_on %} · desde {{ tire.registered_on|date:"d/m/Y" }}{% endif %}</small>
+                        </a>
+                    </td>
+                    <td><span class="tl-badge {% for key, tone in status_tones.items %}{% if key == tire.status %}{{ tone }}{% endif %}{% endfor %}">{{ tire.get_status_display }}</span></td>
+                    <td>
+                        <span class="tl-dots">
+                            <i class="{% if tire.recap_count >= 1 %}is-on{% endif %}"></i>
+                            <i class="{% if tire.recap_count >= 2 %}is-on{% endif %}"></i>
+                            <i class="{% if tire.recap_count >= 3 %}is-on{% endif %}"></i>
+                        </span>
+                    </td>
+                    <td>{% if tire.current_truck %}<a href="{% url 'tires_truck' tire.current_truck_id %}">{{ tire.current_truck.identifier }} · {{ tire.current_slot_label|default:"—" }}</a>{% else %}—{% endif %}</td>
+                    <td class="is-num">{% if tire.purchase_value %}R$ {{ tire.purchase_value|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td class="is-actions">
+                        {% if tire.status == "stock" and tire.recap_count < 3 %}
+                        <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard>
+                            {% csrf_token %}
+                            <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                            <input type="hidden" name="action" value="send_to_retread">
+                            <button type="submit" class="tl-btn is-sm" data-tl-busy="...">Recapar</button>
+                        </form>
+                        {% endif %}
+                        {% if tire.status == "retreading" %}
+                        <button type="button" class="tl-btn is-sm is-primary" data-tl-open="tlReturnModal{{ tire.id }}">Retornar</button>
+                        {% endif %}
+                        {% if tire.status != "installed" and tire.status != "discarded" %}
+                        <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard data-tl-confirm="Descartar o pneu {{ tire.serial_number }}?">
+                            {% csrf_token %}
+                            <input type="hidden" name="tire_id" value="{{ tire.id }}">
+                            <input type="hidden" name="action" value="discard">
+                            <button type="submit" class="tl-btn is-sm is-danger" data-tl-busy="...">Descartar</button>
+                        </form>
+                        {% endif %}
+                        <a class="tl-btn is-sm is-ghost" href="{% url 'tires_tire' tire.id %}">Ficha</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="padding: 0 15px 15px;">
+        <div class="tl-empty">
+            <strong>Nenhum pneu encontrado</strong>
+            <span>Ajuste os filtros ou cadastre pneus para começar a rastrear o parque.</span>
+            <button type="button" class="tl-btn is-primary" style="margin-top: 8px;" data-tl-open="tlTireCreateModal">Cadastrar pneus</button>
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block modals %}
+<datalist id="tlBrandOptions">
+    {% for brand in brands %}<option value="{{ brand }}"></option>{% endfor %}
+</datalist>
+
+<div class="tl-overlay is-hidden" id="tlTireCreateModalOverlay" data-tl-close="tlTireCreateModal"></div>
+<div class="tl-modal is-hidden" id="tlTireCreateModal" role="dialog" aria-modal="true" aria-labelledby="tlTireCreateTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlTireCreateTitle">Cadastrar pneus</h3>
+            <p>Todos entram no estoque prontos para instalação.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlTireCreateModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <form method="POST" action="{% url 'tires_tire_create' %}" id="tlTireCreateForm" data-tl-guard data-tl-busy="Cadastrando...">
+        {% csrf_token %}
+
+        <div class="tl-filters" style="margin-bottom: 12px;">
+            <label class="tl-filter is-active" data-tl-batch-card>
+                <input type="radio" name="batch_mode" value="single" checked hidden> Unitário
+            </label>
+            <label class="tl-filter" data-tl-batch-card>
+                <input type="radio" name="batch_mode" value="paste" hidden> Colar lista
+            </label>
+            <label class="tl-filter" data-tl-batch-card>
+                <input type="radio" name="batch_mode" value="generate" hidden> Sequência
+            </label>
+        </div>
+
+        <div class="tl-field" data-tl-batch-panel="single">
+            <label for="tlSerialNumber">Número do pneu</label>
+            <input class="tl-input" id="tlSerialNumber" name="serial_number" type="text" maxlength="40" placeholder="Ex.: P-0042">
+        </div>
+
+        <div class="tl-field is-hidden" data-tl-batch-panel="paste">
+            <label for="tlBatchList">Um número por linha</label>
+            <textarea class="tl-input" id="tlBatchList" name="serial_batch" rows="5" placeholder="P-001&#10;P-002&#10;P-003"></textarea>
+            <small>Também aceita separação por vírgula ou ponto e vírgula.</small>
+        </div>
+
+        <div class="is-hidden" data-tl-batch-panel="generate">
+            <div class="tl-form-grid">
+                <div class="tl-field">
+                    <label for="tlBatchPrefix">Prefixo</label>
+                    <input class="tl-input" id="tlBatchPrefix" name="batch_prefix" type="text" placeholder="P-">
+                </div>
+                <div class="tl-field">
+                    <label for="tlBatchStart">Número inicial</label>
+                    <input class="tl-input" id="tlBatchStart" name="batch_start_number" type="number" min="0" value="1">
+                </div>
+                <div class="tl-field">
+                    <label for="tlBatchQuantity">Quantidade</label>
+                    <input class="tl-input" id="tlBatchQuantity" name="batch_quantity" type="number" min="1" max="500" value="10">
+                </div>
+                <div class="tl-field">
+                    <label for="tlBatchPad">Dígitos (zeros à esquerda)</label>
+                    <input class="tl-input" id="tlBatchPad" name="batch_pad_length" type="number" min="0" max="8" value="3">
+                </div>
+            </div>
+        </div>
+
+        <div class="tl-form-grid" style="margin-top: 12px;">
+            <div class="tl-field">
+                <label for="tlTireBrand">Marca</label>
+                <input class="tl-input" id="tlTireBrand" name="brand" type="text" maxlength="80" list="tlBrandOptions" autocomplete="off" required>
+                <small>Escolha uma marca já usada para não duplicar a grafia.</small>
+            </div>
+            <div class="tl-field">
+                <label for="tlTireValue">Valor unitário</label>
+                <input class="tl-input" id="tlTireValue" name="purchase_value" type="text" inputmode="decimal" placeholder="Ex.: 1250,00">
+                <small>Por pneu, não o total da nota.</small>
+            </div>
+            <div class="tl-field">
+                <label for="tlTireDate">Data de entrada</label>
+                <input class="tl-input" id="tlTireDate" name="registered_on" type="date" value="{{ today_iso }}">
+            </div>
+            <div class="tl-field">
+                <label for="tlTireRecaps">Recapes já realizados</label>
+                <select class="tl-input" id="tlTireRecaps" name="recap_count">
+                    <option value="0">Nenhum — pneu novo</option>
+                    <option value="1">1 recape</option>
+                    <option value="2">2 recapes</option>
+                    <option value="3">3 recapes — no limite</option>
+                </select>
+                <small>Para pneus usados que já entram com histórico.</small>
+            </div>
+            <div class="tl-field">
+                <label for="tlTireRetreadTotal">Gasto acumulado em recapes</label>
+                <input class="tl-input" id="tlTireRetreadTotal" name="retread_total" type="text" inputmode="decimal" placeholder="Ex.: 640,00">
+            </div>
+            <div class="tl-field">
+                <label for="tlTireNote">Observação</label>
+                <input class="tl-input" id="tlTireNote" name="note" type="text" maxlength="220">
+            </div>
+        </div>
+
+        <div class="tl-block" style="margin-top: 12px; background: transparent;"
+             data-tl-check-url="{% url 'tires_tire_check_serials' %}">
+            <div class="tl-block-head">
+                <h2>Prévia do cadastro</h2>
+                <strong id="tlBatchCount">0 pneus</strong>
+            </div>
+            <div class="tl-stat-pair" id="tlBatchTotals" hidden>
+                <div><span>A cadastrar</span><strong id="tlBatchNewCount">0</strong></div>
+                <div><span>Total do lote</span><strong id="tlBatchTotalValue">—</strong></div>
+            </div>
+            <div class="tl-filters" id="tlBatchPreview"></div>
+            <div id="tlBatchWarning" class="tl-empty-inline" hidden></div>
+        </div>
+
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlTireCreateModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary">Cadastrar</button>
+        </div>
+    </form>
+</div>
+
+{% for tire in tires %}{% if tire.status == "retreading" %}
+<div class="tl-overlay is-hidden" id="tlReturnModal{{ tire.id }}Overlay" data-tl-close="tlReturnModal{{ tire.id }}"></div>
+<div class="tl-modal is-hidden" id="tlReturnModal{{ tire.id }}" role="dialog" aria-modal="true">
+    <div class="tl-modal-head">
+        <div>
+            <h3>Retorno da recapagem</h3>
+            <p>{{ tire.serial_number }} · {{ tire.brand }} · recape {{ tire.recap_count }} → {{ tire.recap_count|add:1 }}</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlReturnModal{{ tire.id }}" aria-label="Fechar">&times;</button>
+    </div>
+    <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard data-tl-busy="Registrando...">
+        {% csrf_token %}
+        <input type="hidden" name="tire_id" value="{{ tire.id }}">
+        <input type="hidden" name="action" value="return_from_retread">
+        <div class="tl-form-grid">
+            <div class="tl-field">
+                <label for="tlReturnCost{{ tire.id }}">Custo do recape</label>
+                <input class="tl-input" id="tlReturnCost{{ tire.id }}" name="cost" type="text" inputmode="decimal" placeholder="Ex.: 320,75">
+            </div>
+            <div class="tl-field">
+                <label for="tlReturnDate{{ tire.id }}">Data do retorno</label>
+                <input class="tl-input" id="tlReturnDate{{ tire.id }}" name="movement_date" type="date" value="{{ today_iso }}">
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlReturnNote{{ tire.id }}">Observação</label>
+                <input class="tl-input" id="tlReturnNote{{ tire.id }}" name="note" type="text" maxlength="220">
+            </div>
+        </div>
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlReturnModal{{ tire.id }}">Cancelar</button>
+            <button type="submit" class="tl-btn is-primary">Retornar ao estoque</button>
+        </div>
+    </form>
+</div>
+{% endif %}{% endfor %}
+{% endblock %}

@@ -1,255 +1,487 @@
 {% load static %}
-
 <!DOCTYPE html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ConnectMX | Cadastro de Usuario</title>
-    <script src="{% static '/js/theme.js'%}"></script>
-    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
-    <link rel="stylesheet" href="{% static '/style/createUser.css'%}">
-    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+    <title>ConnectMX | Usuários</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    {% comment %}connectUI.css por último: precisa vencer as regras de elemento do mainQueue.{% endcomment %}
+    <link rel="stylesheet" href="{% static '/style/connectUI.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans:400,600,700,800" rel="stylesheet">
 </head>
-
 <body>
     {% include 'partials/sidebar.html' %}
 
-    <div id="overlay" onclick="closeEditUserModal()" style="display:none;"></div>
-    {% if access_denied_message %}
-        <div id="accessDeniedPopup" class="user-access-popup">
-            <div class="user-access-popup-title">Acesso negado</div>
-            <div class="user-access-popup-text">{{ access_denied_message }}</div>
-            <button type="button" class="user-access-popup-btn" onclick="closeAccessDeniedPopup()">OK</button>
-        </div>
-    {% endif %}
-
-    <div class="queue_main user-page">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Usuarios</h1>
-                <div class="subtitle">Cadastro e edicao de usuarios</div>
-            </div>
-        </div>
-
-        {% if error_message %}
-            <div class="user-alert user-alert-error">{{ error_message }}</div>
-        {% endif %}
-        {% if success_message %}
-            <div class="user-alert user-alert-success">{{ success_message }}</div>
-        {% endif %}
-
-        <div class="user-layout">
-            <div class="user-card">
-                <div class="user-card-title">Novo usuario</div>
+    <main class="queue_main cx">
+        <div class="cx-shell">
+            <header class="cx-head">
+                <div>
+                    <span class="cx-kicker">Administração</span>
+                    <h1>Usuários</h1>
+                    <p>Contas de acesso ao ConnectMX e aos painéis do Dashes.</p>
+                </div>
                 {% if can_manage_users %}
-                <form method="POST" class="user-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="form_id" value="create">
-
-                    <label for="create_userId">Matricula</label>
-                    <input id="create_userId" type="text" name="userId" placeholder="Ex: 10001" required>
-
-                    <label for="create_username">Usuario</label>
-                    <input id="create_username" type="text" name="username" placeholder="Ex: joao.silva" required>
-
-                    <label for="create_email">Email</label>
-                    <input id="create_email" type="email" name="email" placeholder="Ex: joao@empresa.com.br" required>
-
-                    <label for="create_nameUser">Nome</label>
-                    <input id="create_nameUser" type="text" name="nameUser" placeholder="Joao Silva" required>
-
-                    <label for="create_id_sm">ID SM</label>
-                    <input id="create_id_sm" type="text" name="id_sm" placeholder="Ex: SM-10001">
-
-                    <label for="create_id_erp">ID ERP</label>
-                    <input id="create_id_erp" type="text" name="id_erp" placeholder="Ex: ERP-10001">
-
-                    <label class="queue-check queue-control user-inline-check">
-                        <input type="checkbox" name="is_system_admin">
-                        <span>Administrador do sistema</span>
-                    </label>
-
-                    <label for="create_password">Senha</label>
-                    <input id="create_password" type="password" name="password" placeholder="Senha" required>
-
-                    <button type="submit" class="queue-primary-btn user-submit-btn">Cadastrar</button>
-                </form>
-                {% else %}
-                <div class="user-alert user-alert-error">Sem permissao para cadastrar usuarios.</div>
+                <div class="cx-head-actions">
+                    <button type="button" class="cx-btn is-primary" data-cx-open="cxCreateUserModal">+ Novo usuário</button>
+                </div>
                 {% endif %}
-            </div>
+            </header>
 
-            <div class="user-card">
-                <div class="user-card-title">Usuarios cadastrados</div>
-                <div class="user-table-wrap">
-                    <table class="user-table">
+            <section class="cx-kpis">
+                <article class="cx-kpi">
+                    <span>Usuários</span>
+                    <strong>{{ stats.total }}</strong>
+                    <small>{{ stats.admins }} administrador{{ stats.admins|pluralize:"es" }}</small>
+                </article>
+                <article class="cx-kpi is-info">
+                    <span>Com painel liberado</span>
+                    <strong>{{ stats.with_dashboard }}</strong>
+                    <small>Acessam o ConnectMX Dashes</small>
+                </article>
+                <article class="cx-kpi is-warning">
+                    <span>Contas só Dashes</span>
+                    <strong>{{ stats.dashes_only }}</strong>
+                    <small>Sem acesso ao ConnectMX interno</small>
+                </article>
+                <article class="cx-kpi">
+                    <span>Ativos em 24h</span>
+                    <strong>{{ stats.active_24h }}</strong>
+                    <small>{{ stats.never_accessed }} nunca acessaram</small>
+                </article>
+            </section>
+
+            <section class="cx-block is-flush">
+                <div class="cx-block-head">
+                    <h2>Usuários cadastrados</h2>
+                    <span id="cxUserCount">{{ user_rows|length }} conta{{ user_rows|length|pluralize }}</span>
+                </div>
+
+                <div style="padding: 0 15px 11px;">
+                    <input class="cx-input" id="cxUserSearch" type="search" placeholder="Filtrar por nome, usuário, matrícula, e-mail ou representante...">
+                </div>
+
+                {% if user_rows %}
+                <div class="cx-table-wrap">
+                    <table class="cx-table" id="cxUserTable">
                         <thead>
                             <tr>
-                                <th style="width: 17%;">Matricula</th>
-                                <th style="width: 11%;">ID SM</th>
-                                <th style="width: 11%;">ID ERP</th>
-                                <th style="width: 16%;">Usuario</th>
-                                <th style="width: 21%;">Nome</th>
-                                <th style="width: 16%;">Email</th>
-                                <th style="width: 8%;">Admin</th>
-                                <th style="width: 7%;">Acoes</th>
+                                <th>Usuário</th>
+                                <th>Matrícula</th>
+                                <th>E-mail</th>
+                                <th>Integrações</th>
+                                <th>Acesso</th>
+                                <th>Painéis do Dashes</th>
+                                {% if can_manage_users %}<th class="is-actions">Ações</th>{% endif %}
                             </tr>
                         </thead>
                         <tbody>
-                            {% for u in users %}
-                                <tr>
-                                    <td>{{ u.userId }}</td>
-                                    <td>{{ u.id_sm|default:"-" }}</td>
-                                    <td>{{ u.id_erp|default:"-" }}</td>
-                                    <td>{{ u.username }}</td>
-                                    <td>{{ u.nameUser|default:"-" }}</td>
-                                    <td>{{ u.email }}</td>
-                                    <td>{% if u.is_system_admin %}Sim{% else %}Nao{% endif %}</td>
-                                    <td>
-                                        {% if can_manage_users %}
-                                        <button
-                                            type="button"
-                                            class="queue-action-btn action-edit"
-                                            title="Editar"
-                                            aria-label="Editar"
-                                            onclick="openEditUserModal(this)"
-                                            data-user-pk="{{ u.pk }}"
-                                            data-user-id="{{ u.userId }}"
-                                            data-username="{{ u.username }}"
-                                            data-name-user="{{ u.nameUser|default:'' }}"
-                                            data-email="{{ u.email }}"
-                                            data-id-sm="{{ u.id_sm|default:'' }}"
-                                            data-id-erp="{{ u.id_erp|default:'' }}"
-                                            data-is-admin="{% if u.is_system_admin %}1{% else %}0{% endif %}"
-                                        >&#x270F;&#xFE0F;</button>
+                            {% for row in user_rows %}
+                            <tr data-cx-search="{{ row.user.nameUser|default:'' }} {{ row.user.username }} {{ row.user.userId }} {{ row.user.email }} {{ row.user.representative_code|default:'' }} {% if row.user.is_representative %}representante{% endif %}">
+                                <td>
+                                    <div class="cx-person">
+                                        <span class="cx-avatar {% if not row.user.can_access_internal %}is-muted{% endif %}">{{ row.initials }}</span>
+                                        <div>
+                                            <strong>{{ row.user.nameUser|default:row.user.username }}</strong>
+                                            <small>{{ row.user.username }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>{{ row.user.userId }}</td>
+                                <td>{{ row.user.email }}</td>
+                                <td>
+                                    <div class="cx-badge-list">
+                                        {% if row.user.id_sm %}<span class="cx-badge">SM {{ row.user.id_sm }}</span>{% endif %}
+                                        {% if row.user.id_erp %}<span class="cx-badge">ERP {{ row.user.id_erp }}</span>{% endif %}
+                                        {% if row.user.is_representative %}<span class="cx-badge is-info">REP {{ row.user.representative_code }}</span>{% endif %}
+                                        {% if not row.user.id_sm and not row.user.id_erp and not row.user.is_representative %}—{% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="cx-badge-list">
+                                        {% if row.user.is_system_admin %}<span class="cx-badge is-success">Admin</span>{% endif %}
+                                        {% if row.user.can_access_internal %}
+                                            <span class="cx-badge">Interno</span>
                                         {% else %}
-                                        -
+                                            <span class="cx-badge is-warning">Só Dashes</span>
                                         {% endif %}
-                                    </td>
-                                </tr>
-                            {% empty %}
-                                <tr>
-                                    <td colspan="8">Nenhum usuario cadastrado.</td>
-                                </tr>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if row.sees_all_dashboards %}
+                                        <span class="cx-badge is-success">Todos (admin)</span>
+                                    {% elif row.dashboard_names %}
+                                        <div class="cx-badge-list">
+                                            {% for name in row.dashboard_names %}<span class="cx-badge is-info">{{ name }}</span>{% endfor %}
+                                        </div>
+                                    {% else %}—{% endif %}
+                                </td>
+                                {% if can_manage_users %}
+                                <td class="is-actions">
+                                    <button
+                                        type="button"
+                                        class="cx-btn is-sm is-icon"
+                                        title="Editar {{ row.user.username }}"
+                                        aria-label="Editar {{ row.user.username }}"
+                                        onclick="openEditUserModal(this)"
+                                        data-user-pk="{{ row.user.pk }}"
+                                        data-user-id="{{ row.user.userId }}"
+                                        data-username="{{ row.user.username }}"
+                                        data-name-user="{{ row.user.nameUser|default:'' }}"
+                                        data-email="{{ row.user.email }}"
+                                        data-id-sm="{{ row.user.id_sm|default:'' }}"
+                                        data-id-erp="{{ row.user.id_erp|default:'' }}"
+                                        data-is-representative="{% if row.user.is_representative %}1{% else %}0{% endif %}"
+                                        data-representative-code="{{ row.user.representative_code|default:'' }}"
+                                        data-is-admin="{% if row.user.is_system_admin %}1{% else %}0{% endif %}"
+                                        data-can-internal="{% if row.user.can_access_internal %}1{% else %}0{% endif %}"
+                                        data-dashboards="{{ row.dashboard_slugs|join:"," }}"
+                                    >&#9998;</button>
+                                </td>
+                                {% endif %}
+                            </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                <div class="cx-empty-inline is-hidden" id="cxUserEmpty">Nenhum usuário corresponde ao filtro.</div>
+                {% else %}
+                <div style="padding: 0 15px 15px;">
+                    <div class="cx-empty">
+                        <strong>Nenhum usuário cadastrado</strong>
+                        <span>Crie a primeira conta para liberar o acesso ao ConnectMX.</span>
+                        {% if can_manage_users %}
+                        <button type="button" class="cx-btn is-primary" style="margin-top: 8px;" data-cx-open="cxCreateUserModal">Cadastrar usuário</button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="cx-block is-flush">
+                <div class="cx-block-head">
+                    <h2>Log de uso</h2>
+                    <span>Ordenado pelo acesso mais recente</span>
+                </div>
+                {% if activity_rows %}
+                <div class="cx-table-wrap">
+                    <table class="cx-table">
+                        <thead>
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Perfil</th>
+                                <th>Último acesso</th>
+                                <th>Última alteração de dados</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in activity_rows %}
+                            <tr>
+                                <td>
+                                    <div class="cx-person">
+                                        <span class="cx-avatar {% if not row.user.last_access_at %}is-muted{% endif %}">{{ row.initials }}</span>
+                                        <div>
+                                            <strong>{{ row.user.nameUser|default:row.user.username }}</strong>
+                                            <small>{{ row.user.username }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if row.user.is_system_admin %}<span class="cx-badge is-success">Admin</span>
+                                    {% elif not row.user.can_access_internal %}<span class="cx-badge is-warning">Só Dashes</span>
+                                    {% else %}<span class="cx-badge">Interno</span>{% endif %}
+                                </td>
+                                <td>
+                                    {% if row.user.last_access_at %}
+                                        {{ row.user.last_access_at|date:"d/m/Y H:i" }}
+                                        <small style="color: var(--muted-text);">· há {{ row.user.last_access_at|timesince }}</small>
+                                    {% else %}
+                                        <span class="cx-badge">Nunca acessou</span>
+                                    {% endif %}
+                                </td>
+                                <td>{% if row.user.last_data_change_at %}{{ row.user.last_data_change_at|date:"d/m/Y H:i" }}{% else %}—{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="cx-empty-inline">Nenhum registro de uso ainda.</div>
+                {% endif %}
+            </section>
+        </div>
+    </main>
+
+    {% if error_message or success_message or access_denied_message %}
+    <div class="cx-toasts cx" aria-live="polite">
+        {% if access_denied_message %}<div class="cx-toast is-error"><i></i><span>{{ access_denied_message }}</span></div>{% endif %}
+        {% if error_message %}<div class="cx-toast is-error"><i></i><span>{{ error_message }}</span></div>{% endif %}
+        {% if success_message %}<div class="cx-toast is-success"><i></i><span>{{ success_message }}</span></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if can_manage_users %}
+    {# ------------------------------------------------------- novo usuário -- #}
+    <div class="cx-overlay is-hidden cx" id="cxCreateUserModalOverlay" data-cx-close="cxCreateUserModal"></div>
+    <div class="cx-modal is-hidden cx" id="cxCreateUserModal" role="dialog" aria-modal="true" aria-labelledby="cxCreateUserTitle">
+        <div class="cx-modal-head">
+            <div>
+                <h3 id="cxCreateUserTitle">Novo usuário</h3>
+                <p>A conta já nasce com o acesso que você marcar aqui.</p>
             </div>
+            <button type="button" class="cx-modal-close" data-cx-close="cxCreateUserModal" aria-label="Fechar">&times;</button>
         </div>
 
-        <div class="user-card" style="margin-top: 14px;">
-            <div class="user-card-title">Log de uso dos usuarios</div>
-            <div class="user-table-wrap">
-                <table class="user-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 20%;">Usuario</th>
-                            <th style="width: 20%;">Nome</th>
-                            <th style="width: 12%;">Admin</th>
-                            <th style="width: 24%;">Ultimo acesso</th>
-                            <th style="width: 24%;">Ultima alteracao</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for u in users %}
-                            <tr>
-                                <td>{{ u.username }}</td>
-                                <td>{{ u.nameUser|default:"-" }}</td>
-                                <td>{% if u.is_system_admin %}Sim{% else %}Nao{% endif %}</td>
-                                <td>{% if u.last_access_at %}{{ u.last_access_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
-                                <td>{% if u.last_data_change_at %}{{ u.last_data_change_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
-                            </tr>
-                        {% empty %}
-                            <tr><td colspan="5">Nenhum usuario encontrado.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="form_id" value="create">
+
+            <div class="cx-form-grid">
+                <div class="cx-field">
+                    <label for="create_nameUser">Nome</label>
+                    <input id="create_nameUser" type="text" name="nameUser" placeholder="João Silva" required>
+                </div>
+                <div class="cx-field">
+                    <label for="create_userId">Matrícula</label>
+                    <input id="create_userId" type="text" name="userId" placeholder="Ex.: 10001" required>
+                </div>
+                <div class="cx-field">
+                    <label for="create_username">Usuário</label>
+                    <input id="create_username" type="text" name="username" placeholder="joao.silva" required>
+                </div>
+                <div class="cx-field">
+                    <label for="create_email">E-mail</label>
+                    <input id="create_email" type="email" name="email" placeholder="joao@empresa.com.br" required>
+                </div>
+                <div class="cx-field">
+                    <label for="create_id_sm">ID SM</label>
+                    <input id="create_id_sm" type="text" name="id_sm" placeholder="Opcional">
+                </div>
+                <div class="cx-field">
+                    <label for="create_id_erp">ID ERP</label>
+                    <input id="create_id_erp" type="text" name="id_erp" placeholder="Opcional">
+                </div>
+                <div class="cx-field">
+                    <label class="cx-check" for="create_is_representative">
+                        <input id="create_is_representative" type="checkbox" name="is_representative">
+                        <span>Usuário representante</span>
+                    </label>
+                    <span class="cx-hint">Vincula esta conta a um representante comercial.</span>
+                </div>
+                <div class="cx-field">
+                    <label for="create_representative_code">Código do representante</label>
+                    <input id="create_representative_code" type="text" name="representative_code" placeholder="Ex.: 10050">
+                </div>
+                <div class="cx-field is-full">
+                    <label for="create_password">Senha</label>
+                    <input id="create_password" type="password" name="password" placeholder="Senha inicial" required>
+                </div>
+
+                <div class="is-full">
+                    {% include 'general/_user_access_fields.html' with prefix="create" internal_checked=True %}
+                </div>
             </div>
-        </div>
+
+            <div class="cx-modal-actions">
+                <button type="button" class="cx-btn is-ghost" data-cx-close="cxCreateUserModal">Cancelar</button>
+                <button type="submit" class="cx-btn is-primary">Cadastrar usuário</button>
+            </div>
+        </form>
     </div>
 
-    <div id="editUserModal" class="formNewItemMain user-edit-modal" style="display:none;">
-        <div class="modal-header">
-            <div class="modal-title">Editar usuario</div>
-            <button type="button" class="modal-close" onclick="closeEditUserModal()" aria-label="Fechar">&#x2715;</button>
+    {# ---------------------------------------------------- editar usuário -- #}
+    <div class="cx-overlay is-hidden cx" id="cxEditUserModalOverlay" data-cx-close="cxEditUserModal"></div>
+    <div class="cx-modal is-hidden cx" id="cxEditUserModal" role="dialog" aria-modal="true" aria-labelledby="cxEditUserTitle">
+        <div class="cx-modal-head">
+            <div>
+                <h3 id="cxEditUserTitle">Editar usuário</h3>
+                <p>Deixe a senha em branco para mantê-la.</p>
+            </div>
+            <button type="button" class="cx-modal-close" data-cx-close="cxEditUserModal" aria-label="Fechar">&times;</button>
         </div>
-        <form method="POST" class="modal-form">
+
+        <form method="POST">
             {% csrf_token %}
             <input type="hidden" name="form_id" value="edit">
             <input type="hidden" id="edit_user_pk" name="user_pk">
 
-            <div class="modal-grid">
-                <div class="field">
-                    <label for="edit_userId">Matricula</label>
-                    <input id="edit_userId" type="text" name="userId" required>
-                </div>
-                <div class="field">
-                    <label for="edit_username">Usuario</label>
-                    <input id="edit_username" type="text" name="username" required>
-                </div>
-                <div class="field span-2">
+            <div class="cx-form-grid">
+                <div class="cx-field">
                     <label for="edit_nameUser">Nome</label>
                     <input id="edit_nameUser" type="text" name="nameUser" required>
                 </div>
-                <div class="field span-2">
+                <div class="cx-field">
+                    <label for="edit_userId">Matrícula</label>
+                    <input id="edit_userId" type="text" name="userId" required>
+                </div>
+                <div class="cx-field">
+                    <label for="edit_username">Usuário</label>
+                    <input id="edit_username" type="text" name="username" required>
+                </div>
+                <div class="cx-field">
+                    <label for="edit_email">E-mail</label>
+                    <input id="edit_email" type="email" name="email" required>
+                </div>
+                <div class="cx-field">
                     <label for="edit_id_sm">ID SM</label>
                     <input id="edit_id_sm" type="text" name="id_sm">
                 </div>
-                <div class="field span-2">
+                <div class="cx-field">
                     <label for="edit_id_erp">ID ERP</label>
                     <input id="edit_id_erp" type="text" name="id_erp">
                 </div>
-                <div class="field span-2">
-                    <label class="queue-check queue-control user-inline-check">
-                        <input id="edit_is_system_admin" type="checkbox" name="is_system_admin">
-                        <span>Administrador do sistema</span>
+                <div class="cx-field">
+                    <label class="cx-check" for="edit_is_representative">
+                        <input id="edit_is_representative" type="checkbox" name="is_representative">
+                        <span>Usuário representante</span>
                     </label>
+                    <span class="cx-hint">Vincula esta conta a um representante comercial.</span>
                 </div>
-                <div class="field span-2">
-                    <label for="edit_email">Email</label>
-                    <input id="edit_email" type="email" name="email" required>
+                <div class="cx-field">
+                    <label for="edit_representative_code">Código do representante</label>
+                    <input id="edit_representative_code" type="text" name="representative_code" placeholder="Ex.: 10050">
                 </div>
-                <div class="field span-2">
-                    <label for="edit_password">Nova senha (opcional)</label>
+                <div class="cx-field is-full">
+                    <label for="edit_password">Nova senha</label>
                     <input id="edit_password" type="password" name="password" placeholder="Deixe em branco para manter">
+                </div>
+
+                <div class="is-full">
+                    {% include 'general/_user_access_fields.html' with prefix="edit" internal_checked=False %}
                 </div>
             </div>
 
-            <div class="modal-actions">
-                <button type="button" class="queue-secondary-btn" onclick="closeEditUserModal()">Cancelar</button>
-                <button type="submit" class="queue-primary-btn">Salvar</button>
+            <div class="cx-modal-actions">
+                <button type="button" class="cx-btn is-ghost" data-cx-close="cxEditUserModal">Cancelar</button>
+                <button type="submit" class="cx-btn is-primary">Salvar alterações</button>
             </div>
         </form>
     </div>
-</body>
+    {% endif %}
 
 <script>
-    function closeAccessDeniedPopup() {
-        const pop = document.getElementById('accessDeniedPopup');
-        if (pop) pop.style.display = 'none';
-    }
+    (function () {
+        "use strict";
 
-    function openEditUserModal(button) {
-        if (!button) return;
+        var openId = null;
 
-        document.getElementById('edit_user_pk').value = button.dataset.userPk || '';
-        document.getElementById('edit_userId').value = button.dataset.userId || '';
-        document.getElementById('edit_username').value = button.dataset.username || '';
-        document.getElementById('edit_nameUser').value = button.dataset.nameUser || '';
-        document.getElementById('edit_id_sm').value = button.dataset.idSm || '';
-        document.getElementById('edit_id_erp').value = button.dataset.idErp || '';
-        document.getElementById('edit_email').value = button.dataset.email || '';
-        document.getElementById('edit_is_system_admin').checked = (button.dataset.isAdmin || '') === '1';
-        document.getElementById('edit_password').value = '';
+        function openModal(id) {
+            var modal = document.getElementById(id);
+            var overlay = document.getElementById(id + "Overlay");
+            if (!modal) return;
+            modal.classList.remove("is-hidden");
+            if (overlay) overlay.classList.remove("is-hidden");
+            requestAnimationFrame(function () {
+                modal.classList.add("is-open");
+                if (overlay) overlay.classList.add("is-open");
+            });
+            openId = id;
+        }
 
-        document.getElementById('overlay').style.display = 'block';
-        document.getElementById('editUserModal').style.display = 'block';
-    }
+        function closeModal(id) {
+            var modal = document.getElementById(id || openId);
+            if (!modal) return;
+            var overlay = document.getElementById(modal.id + "Overlay");
+            modal.classList.remove("is-open");
+            if (overlay) overlay.classList.remove("is-open");
+            window.setTimeout(function () {
+                modal.classList.add("is-hidden");
+                if (overlay) overlay.classList.add("is-hidden");
+            }, 180);
+            if (openId === modal.id) openId = null;
+        }
 
-    function closeEditUserModal() {
-        document.getElementById('overlay').style.display = 'none';
-        document.getElementById('editUserModal').style.display = 'none';
-    }
+        document.addEventListener("click", function (event) {
+            var opener = event.target.closest("[data-cx-open]");
+            if (opener) {
+                event.preventDefault();
+                openModal(opener.getAttribute("data-cx-open"));
+                return;
+            }
+            var closer = event.target.closest("[data-cx-close]");
+            if (closer) {
+                event.preventDefault();
+                closeModal(closer.getAttribute("data-cx-close") || undefined);
+            }
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && openId) closeModal(openId);
+        });
+
+        window.openEditUserModal = function (button) {
+            if (!button) return;
+            var data = button.dataset;
+
+            document.getElementById("edit_user_pk").value = data.userPk || "";
+            document.getElementById("edit_userId").value = data.userId || "";
+            document.getElementById("edit_username").value = data.username || "";
+            document.getElementById("edit_nameUser").value = data.nameUser || "";
+            document.getElementById("edit_id_sm").value = data.idSm || "";
+            document.getElementById("edit_id_erp").value = data.idErp || "";
+            document.getElementById("edit_is_representative").checked = (data.isRepresentative || "") === "1";
+            document.getElementById("edit_representative_code").value = data.representativeCode || "";
+            document.getElementById("edit_email").value = data.email || "";
+            document.getElementById("edit_is_system_admin").checked = (data.isAdmin || "") === "1";
+            document.getElementById("edit_can_access_internal").checked = (data.canInternal || "") === "1";
+            document.getElementById("edit_password").value = "";
+            syncRepresentativeFields("edit");
+
+            var granted = (data.dashboards || "").split(",").filter(Boolean);
+            document.querySelectorAll("#cxEditUserModal [data-dash-slug]").forEach(function (box) {
+                box.checked = granted.indexOf(box.dataset.dashSlug) > -1;
+            });
+
+            openModal("cxEditUserModal");
+        };
+
+        function syncRepresentativeFields(prefix) {
+            var checkbox = document.getElementById(prefix + "_is_representative");
+            var code = document.getElementById(prefix + "_representative_code");
+            if (!checkbox || !code) return;
+            code.required = checkbox.checked;
+            code.setAttribute("aria-required", checkbox.checked ? "true" : "false");
+        }
+
+        ["create", "edit"].forEach(function (prefix) {
+            var checkbox = document.getElementById(prefix + "_is_representative");
+            if (checkbox) checkbox.addEventListener("change", function () { syncRepresentativeFields(prefix); });
+            syncRepresentativeFields(prefix);
+        });
+
+        /* Filtro da listagem: a tabela já está renderizada, então filtra local. */
+        var search = document.getElementById("cxUserSearch");
+        var table = document.getElementById("cxUserTable");
+        var counter = document.getElementById("cxUserCount");
+        var emptyNote = document.getElementById("cxUserEmpty");
+
+        if (search && table) {
+            search.addEventListener("input", function () {
+                var term = search.value.trim().toLowerCase();
+                var shown = 0;
+                Array.prototype.forEach.call(table.tBodies[0].rows, function (row) {
+                    var haystack = (row.getAttribute("data-cx-search") || "").toLowerCase();
+                    var match = !term || haystack.indexOf(term) > -1;
+                    row.classList.toggle("is-hidden", !match);
+                    if (match) shown += 1;
+                });
+                if (counter) counter.textContent = shown + (shown === 1 ? " conta" : " contas");
+                if (emptyNote) emptyNote.classList.toggle("is-hidden", shown > 0);
+            });
+        }
+
+        /* Toasts somem sozinhos, como no restante do sistema. */
+        Array.prototype.forEach.call(document.querySelectorAll(".cx-toast"), function (toast, index) {
+            window.setTimeout(function () {
+                toast.style.transition = "opacity .3s ease, transform .3s ease";
+                toast.style.opacity = "0";
+                toast.style.transform = "translateY(6px)";
+                window.setTimeout(function () { toast.remove(); }, 320);
+            }, 5200 + index * 400);
+        });
+    })();
 </script>
+</body>
+</html>
