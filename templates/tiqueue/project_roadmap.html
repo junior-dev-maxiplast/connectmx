@@ -34,14 +34,24 @@
                 <div class="roadmap-hero-range">{{ window_start|date:"d/m/Y" }} - {{ window_end|date:"d/m/Y" }}</div>
                 <div class="roadmap-hero-progress">
                     <div id="rmHeroProgress" class="queue-progress{% if total_count == 0 %} is-hidden{% endif %}">
-                        <div class="queue-progress-bar">
-                            <div id="rmHeroFill" class="queue-progress-fill" style="width: {{ progress_pct }}%;"></div>
+                        <div class="queue-progress-bar roadmap-hero-progress-bar">
+                            <div id="rmHeroFill" class="queue-progress-fill{% if done_count == 0 %} is-hidden{% endif %}" style="width: {{ progress_pct }}%;"></div>
+                            <div id="rmHeroOverdueFill" class="roadmap-hero-overdue-fill{% if overdue_count == 0 %} is-hidden{% endif %}" style="width: {{ overdue_pct }}%;"></div>
                         </div>
                         <div class="queue-progress-meta">
                             <span id="rmHeroPct" class="queue-progress-pct">{{ progress_pct }}%</span>
                             <span id="rmHeroFrac" class="queue-progress-frac">({{ done_count }}/{{ total_count }})</span>
+                            <span id="rmHeroOverdue" class="roadmap-hero-overdue-count{% if overdue_count == 0 %} is-hidden{% endif %}">{{ overdue_count }} atrasada(s)</span>
                         </div>
                     </div>
+                </div>
+
+                <div class="roadmap-flow-toolbar">
+                    <div class="roadmap-flow-meta">
+                        <div class="roadmap-flow-meta-title">Marcos integrados ao fluxo</div>
+                        <div id="roadmapMilestonesMeta" class="roadmap-flow-meta-copy">{{ milestone_done_count }}/{{ milestones|length }} concluido(s)</div>
+                    </div>
+                    <button type="button" class="queue-primary-btn roadmap-milestone-add-btn" onclick="openMilestoneModal()">Novo marco</button>
                 </div>
             </div>
 
@@ -49,7 +59,7 @@
         </div>
     </div>
 
-    <div id="overlay" onclick="closeRoadmapModal()" style="display:none;"></div>
+    <div id="overlay" onclick="closeRoadmapOverlay()" style="display:none;"></div>
     <div id="roadmapModal" class="formNewItemMain roadmap-modal" style="display:none;">
         <div class="modal-header">
             <div id="roadmapModalTitle" class="modal-title">Nova etapa</div>
@@ -122,7 +132,40 @@
             </div>
         </form>
     </div>
+    <div id="milestoneModal" class="formNewItemMain roadmap-modal roadmap-milestone-modal" style="display:none;">
+        <div class="modal-header">
+            <div id="milestoneModalTitle" class="modal-title">Novo marco</div>
+            <button type="button" class="modal-close" onclick="closeMilestoneModal()" aria-label="Fechar">&#x2715;</button>
+        </div>
+        <form class="modal-form" onsubmit="return submitMilestone(event)">
+            {% csrf_token %}
+            <div class="modal-grid">
+                <div class="field span-2">
+                    <label for="ms_key">Marco do desenvolvimento</label>
+                    <select id="ms_key" class="queue-select"></select>
+                </div>
+                <div class="field span-2">
+                    <label for="ms_description">Descricao</label>
+                    <textarea id="ms_description" rows="3" placeholder="Contexto do marco"></textarea>
+                </div>
+                <div class="field span-2">
+                    <label for="ms_anchor">Posicao no roadmap</label>
+                    <select id="ms_anchor" class="queue-select"></select>
+                </div>
+                <div class="field">
+                    <label for="ms_target_date">Data do marco</label>
+                    <input id="ms_target_date" type="date">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="queue-secondary-btn" onclick="closeMilestoneModal()">Cancelar</button>
+                <button id="ms_submit" type="submit" class="queue-primary-btn">Salvar marco</button>
+            </div>
+        </form>
+    </div>
     {{ items|json_script:"roadmap-data" }}
+    {{ milestones|json_script:"milestone-data" }}
+    {{ milestone_templates|json_script:"roadmap-milestone-templates" }}
 </body>
 
 <script>
@@ -156,13 +199,20 @@
         normalized.subtasks = Array.isArray(normalized.subtasks) ? normalized.subtasks : [];
         normalized.subtask_total = normalized.subtasks.length;
         normalized.subtask_done = normalized.subtasks.filter((subtask) => !!subtask.is_done).length;
+        normalized.is_overdue = !!normalized.is_overdue;
+        normalized.overdue_days = Number(normalized.overdue_days || 0);
+        normalized.overdue_label = normalized.overdue_label || "";
         return normalized;
     }
 
     // RoadmapFlow: renders cards in a horizontal "S" pattern with arrows.
     const roadmapItems = JSON.parse(document.getElementById("roadmap-data").textContent || "[]").map(normalizeRoadmapItem);
+    const roadmapMilestones = JSON.parse(document.getElementById("milestone-data").textContent || "[]");
+    const roadmapMilestoneTemplates = JSON.parse(document.getElementById("roadmap-milestone-templates").textContent || "[]");
     let roadmapModalMode = "create";
     let currentRoadmapItemId = null;
+    let milestoneModalMode = "create";
+    let currentMilestoneId = null;
 
     const STATUS_LABELS = {
         planned: "Planejado",
@@ -170,12 +220,25 @@
         blocked: "Bloqueado",
         done: "Concluido",
     };
+    const roadmapWindowStart = "{{ window_start|date:'Y-m-d' }}";
+    const roadmapWindowEnd = "{{ window_end|date:'Y-m-d' }}";
 
     function fmtDate(iso) {
         if (!iso) return "-";
         const parts = iso.split("-");
         if (parts.length !== 3) return iso;
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    function timelinePercent(isoDate) {
+        if (!isoDate) return 0;
+        if (roadmapWindowStart === roadmapWindowEnd) return 50;
+        const start = new Date(`${roadmapWindowStart}T00:00:00`);
+        const end = new Date(`${roadmapWindowEnd}T00:00:00`);
+        const current = new Date(`${isoDate}T00:00:00`);
+        const totalMs = Math.max(1, end.getTime() - start.getTime());
+        const currentMs = Math.min(end.getTime(), Math.max(start.getTime(), current.getTime())) - start.getTime();
+        return Math.max(0, Math.min(100, Math.round((currentMs / totalMs) * 100)));
     }
 
     function escapeHtml(str) {
@@ -206,8 +269,79 @@
         return Math.max(1, Math.floor(numerator / denominator));
     }
 
+    function milestoneAnchorValue(anchorItemId) {
+        return anchorItemId ? `after:${anchorItemId}` : "start";
+    }
+
+    function parseMilestoneAnchorValue(rawValue) {
+        const value = String(rawValue || "").trim();
+        if (value.startsWith("after:")) {
+            const itemId = value.slice(6);
+            return /^\d+$/.test(itemId) ? itemId : "";
+        }
+        return "";
+    }
+
+    function milestoneTemplateByValue(value) {
+        return roadmapMilestoneTemplates.find((item) => item.value === value) || roadmapMilestoneTemplates[0] || null;
+    }
+
+    function buildMilestonePositionOptions() {
+        const options = [
+            {
+                value: "start",
+                label: roadmapItems.length ? "Antes da primeira etapa" : "Inicio do roadmap",
+            }
+        ];
+        roadmapItems.forEach((item) => {
+            options.push({
+                value: `after:${item.id}`,
+                label: `Depois de: ${item.title}`,
+            });
+        });
+        return options;
+    }
+
+    function renderMilestoneAnchorOptions(selectedValue = "start") {
+        const select = document.getElementById("ms_anchor");
+        if (!select) return;
+        const options = buildMilestonePositionOptions();
+        select.innerHTML = options.map((option) => `
+            <option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>
+        `).join("");
+        if (options.some((option) => option.value === selectedValue)) {
+            select.value = selectedValue;
+            return;
+        }
+        select.value = "start";
+    }
+
+    function renderMilestoneTemplateOptions(selectedValue = "") {
+        const select = document.getElementById("ms_key");
+        if (!select) return;
+        const fallbackValue = (roadmapMilestoneTemplates[0] || {}).value || "analysis";
+        select.innerHTML = roadmapMilestoneTemplates.map((template) => `
+            <option value="${escapeHtml(template.value)}">${escapeHtml(template.label)}</option>
+        `).join("");
+        select.value = roadmapMilestoneTemplates.some((template) => template.value === selectedValue) ? selectedValue : fallbackValue;
+    }
+
+    function getMilestoneMoveState(milestone) {
+        const slots = buildMilestonePositionOptions();
+        const currentValue = milestoneAnchorValue(milestone.anchor_item_id);
+        const currentIndex = Math.max(0, slots.findIndex((slot) => slot.value === currentValue));
+        return {
+            canMoveLeft: currentIndex > 0,
+            canMoveRight: currentIndex < slots.length - 1,
+        };
+    }
+
     function findRoadmapItem(itemId) {
         return roadmapItems.find((item) => String(item.id) === String(itemId)) || null;
+    }
+
+    function findRoadmapMilestone(milestoneId) {
+        return roadmapMilestones.find((item) => String(item.id) === String(milestoneId)) || null;
     }
 
     function upsertRoadmapItem(itemData) {
@@ -221,10 +355,58 @@
         return normalized;
     }
 
+    function upsertRoadmapMilestone(itemData) {
+        const normalized = Object.assign({
+            milestone_key: "analysis",
+            template_label: "Analise",
+            anchor_item_id: "",
+            sort_order: 0,
+            title: "",
+            description: "",
+            target_date: "",
+            color: "#5CD6A3",
+            is_done: false,
+            completed_at: "",
+            status_label: "Planejado",
+            is_overdue: false,
+            overdue_days: 0,
+            left: timelinePercent((itemData || {}).target_date || ""),
+        }, itemData || {});
+        normalized.left = typeof normalized.left === "number" ? normalized.left : timelinePercent(normalized.target_date || "");
+        const idx = roadmapMilestones.findIndex((item) => String(item.id) === String(normalized.id));
+        if (idx >= 0) {
+            roadmapMilestones[idx] = normalized;
+        } else {
+            roadmapMilestones.push(normalized);
+        }
+        roadmapMilestones.sort((a, b) => {
+            const anchorA = a.anchor_item_id ? String(a.anchor_item_id) : "";
+            const anchorB = b.anchor_item_id ? String(b.anchor_item_id) : "";
+            if (anchorA !== anchorB) return anchorA.localeCompare(anchorB);
+            const sortA = Number(a.sort_order || 0);
+            const sortB = Number(b.sort_order || 0);
+            if (sortA !== sortB) return sortA - sortB;
+            const da = a.target_date || "9999-99-99";
+            const db = b.target_date || "9999-99-99";
+            if (da !== db) return da.localeCompare(db);
+            return String(a.id).localeCompare(String(b.id));
+        });
+        return normalized;
+    }
+
+    function updateMilestoneMeta() {
+        const meta = document.getElementById('roadmapMilestonesMeta');
+        if (!meta) return;
+        const total = roadmapMilestones.length;
+        const done = roadmapMilestones.filter((milestone) => !!milestone.is_done).length;
+        meta.textContent = total ? `${done}/${total} concluido(s)` : 'Nenhum marco cadastrado';
+    }
+
     function updateHeroProgressFromState() {
         const total = roadmapItems.length;
         const done = roadmapItems.filter((item) => item.status === "done").length;
-        updateHeroProgress(done, total);
+        const overdue = roadmapItems.filter((item) => !!item.is_overdue).length;
+        updateHeroProgress(done, overdue, total);
     }
 
     function resetRoadmapModalFields() {
@@ -291,6 +473,32 @@
         `).join('');
     }
 
+    function isVisibleModal(modalId) {
+        const modal = document.getElementById(modalId);
+        return !!(modal && modal.style.display !== 'none');
+    }
+
+    function showRoadmapOverlay() {
+        const overlay = document.getElementById('overlay');
+        if (!overlay) return;
+        overlay.style.display = 'block';
+        overlay.classList.add('is-show');
+    }
+
+    function syncRoadmapOverlayAfterClose() {
+        const overlay = document.getElementById('overlay');
+        if (!overlay) return;
+        const anyVisible = isVisibleModal('roadmapModal') || isVisibleModal('milestoneModal');
+        if (anyVisible) return;
+        overlay.classList.remove('is-show');
+        overlay.style.display = 'none';
+    }
+
+    function closeRoadmapOverlay() {
+        closeRoadmapModal();
+        closeMilestoneModal();
+    }
+
     function setRoadmapModalMode(mode, itemId) {
         roadmapModalMode = mode === 'edit' ? 'edit' : 'create';
         currentRoadmapItemId = roadmapModalMode === 'edit' ? String(itemId || '') : null;
@@ -315,27 +523,132 @@
 
         renderRoadmapModalSubtasks();
 
-        const overlay = document.getElementById('overlay');
         const modal = document.getElementById('roadmapModal');
-        overlay.style.display = 'block';
         modal.style.display = 'block';
-        overlay.classList.add('is-show');
         modal.classList.add('is-show');
+        showRoadmapOverlay();
         setTimeout(() => document.getElementById('rm_title').focus(), 0);
     }
 
     function closeRoadmapModal() {
-        const overlay = document.getElementById('overlay');
         const modal = document.getElementById('roadmapModal');
-        overlay.classList.remove('is-show');
+        if (!modal || modal.style.display === 'none') return;
         modal.classList.remove('is-show');
         setTimeout(() => {
-            overlay.style.display = 'none';
             modal.style.display = 'none';
             setRoadmapModalMode('create', null);
             resetRoadmapModalFields();
             renderRoadmapModalSubtasks();
+            syncRoadmapOverlayAfterClose();
         }, 180);
+    }
+
+    function resetMilestoneModalFields() {
+        renderMilestoneTemplateOptions();
+        renderMilestoneAnchorOptions("start");
+        document.getElementById('ms_description').value = '';
+        document.getElementById('ms_target_date').value = '';
+    }
+
+    function setMilestoneModalMode(mode, milestoneId) {
+        milestoneModalMode = mode === 'edit' ? 'edit' : 'create';
+        currentMilestoneId = milestoneModalMode === 'edit' ? String(milestoneId || '') : null;
+        document.getElementById('milestoneModalTitle').textContent = milestoneModalMode === 'edit' ? 'Editar marco' : 'Novo marco';
+        document.getElementById('ms_submit').textContent = milestoneModalMode === 'edit' ? 'Salvar marco' : 'Criar marco';
+    }
+
+    function openMilestoneModal(mode = 'create', milestoneId = null) {
+        setMilestoneModalMode(mode, milestoneId);
+        resetMilestoneModalFields();
+
+        if (milestoneModalMode === 'edit') {
+            const milestone = findRoadmapMilestone(milestoneId);
+            if (!milestone) return;
+            renderMilestoneTemplateOptions(milestone.milestone_key || '');
+            renderMilestoneAnchorOptions(milestoneAnchorValue(milestone.anchor_item_id));
+            document.getElementById('ms_description').value = milestone.description || '';
+            document.getElementById('ms_target_date').value = milestone.target_date || '';
+        }
+
+        const modal = document.getElementById('milestoneModal');
+        modal.style.display = 'block';
+        modal.classList.add('is-show');
+        showRoadmapOverlay();
+        setTimeout(() => document.getElementById('ms_key').focus(), 0);
+    }
+
+    function closeMilestoneModal() {
+        const modal = document.getElementById('milestoneModal');
+        if (!modal || modal.style.display === 'none') return;
+        modal.classList.remove('is-show');
+        setTimeout(() => {
+            modal.style.display = 'none';
+            setMilestoneModalMode('create', null);
+            resetMilestoneModalFields();
+            syncRoadmapOverlayAfterClose();
+        }, 180);
+    }
+
+    function submitMilestone(event) {
+        event.preventDefault();
+        const milestoneKey = document.getElementById('ms_key').value;
+        if (!milestoneKey) return false;
+
+        const btn = document.getElementById('ms_submit');
+        btn.disabled = true;
+        btn.classList.add('is-loading');
+
+        const payload = {
+            milestone_key: milestoneKey,
+            description: (document.getElementById('ms_description').value || '').trim(),
+            anchor_item_id: parseMilestoneAnchorValue(document.getElementById('ms_anchor').value),
+            target_date: document.getElementById('ms_target_date').value,
+        };
+        const url = milestoneModalMode === 'edit' && currentMilestoneId
+            ? `/projects/{{ project.id }}/roadmap/milestones/${currentMilestoneId}/update/`
+            : `/projects/{{ project.id }}/roadmap/milestones/add/`;
+
+        postJson(url, payload)
+            .then((data) => {
+                if (data && data.status === 'ok' && data.milestone) {
+                    upsertRoadmapMilestone(data.milestone);
+                    renderRoadmapFlow();
+                }
+                closeMilestoneModal();
+            })
+            .catch((err) => {
+                alert(err.message || 'Erro');
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.classList.remove('is-loading');
+            });
+        return false;
+    }
+
+    function toggleMilestone(milestoneId, desiredState) {
+        const milestone = findRoadmapMilestone(milestoneId);
+        if (!milestone) return;
+
+        postJson(`/projects/{{ project.id }}/roadmap/milestones/${milestoneId}/toggle/`, { is_done: !!desiredState })
+            .then((data) => {
+                if (data && data.status === 'ok' && data.milestone) {
+                    upsertRoadmapMilestone(data.milestone);
+                    renderRoadmapFlow();
+                }
+            })
+            .catch((err) => alert(err.message || 'Erro'));
+    }
+
+    function moveMilestone(milestoneId, direction) {
+        postJson(`/projects/{{ project.id }}/roadmap/milestones/${milestoneId}/move/`, { direction })
+            .then((data) => {
+                if (data && data.status === 'ok' && data.milestone) {
+                    upsertRoadmapMilestone(data.milestone);
+                    renderRoadmapFlow();
+                }
+            })
+            .catch((err) => alert(err.message || 'Erro'));
     }
 
     function submitRoadmapItem(e) {
@@ -535,30 +848,106 @@
             `;
         }
 
+        if (item && item.isMilestoneCard) {
+            return RoadmapMilestoneCard(item);
+        }
+
         const isDone = item.status === "done";
+        const isOverdue = !!item.is_overdue;
         const desc = (item.description || "").trim();
         const responsible = (item.responsible_name || "").trim();
         const hasStart = !!item.start;
         const hasEnd = !!item.end;
         const dates = hasStart || hasEnd ? `${fmtDate(item.start)} -> ${fmtDate(item.end)}` : "Sem prazo definido";
         return `
-            <div class="roadmap-card ${isDone ? "is-done" : ""}" data-item-id="${item.id}">
+            <div class="roadmap-card ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" data-item-id="${item.id}">
                 <div class="roadmap-card-head">
                     <div class="roadmap-card-title">${escapeHtml(item.title)}</div>
-                    <span class="roadmap-status s-${escapeHtml(item.status)}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
+                    <div class="roadmap-card-badges">
+                        <span class="roadmap-status s-${escapeHtml(item.status)}">${escapeHtml(STATUS_LABELS[item.status] || item.status)}</span>
+                        ${isOverdue ? `<span class="roadmap-overdue-chip" title="${escapeHtml(item.overdue_label)}">Atrasada</span>` : ``}
+                    </div>
                 </div>
                 ${desc ? `<div class="roadmap-card-desc">${escapeHtml(desc)}</div>` : ``}
                 ${responsible ? `<div class="roadmap-card-owner">Responsavel: <strong>${escapeHtml(responsible)}</strong></div>` : ``}
                 ${renderRoadmapSubtaskPreview(item)}
                 <div class="roadmap-card-foot">
-                    <div class="roadmap-card-dates">${escapeHtml(dates)}</div>
+                    <div class="roadmap-card-dates">
+                        <span>${escapeHtml(dates)}</span>
+                        ${isOverdue ? `<span class="roadmap-card-delay">${escapeHtml(item.overdue_label)}</span>` : ``}
+                    </div>
                     <div class="roadmap-card-actions">
                         <button class="roadmap-edit-btn" type="button" onclick="openRoadmapModal('edit', '${item.id}')">Editar</button>
-                        <button class="roadmap-done-btn ${isDone ? "is-disabled" : ""}" type="button" ${isDone ? "disabled" : ""} onclick="concludeRoadmapItem('${item.id}')">Concluir</button>
+                        ${
+                            isDone
+                                ? `<button class="roadmap-reopen-btn" type="button" onclick="reopenRoadmapItem('${item.id}')">Reabrir</button>`
+                                : `<button class="roadmap-done-btn" type="button" onclick="concludeRoadmapItem('${item.id}')">Concluir</button>`
+                        }
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    function RoadmapMilestoneCard(item) {
+        const isDone = !!item.is_done;
+        const isOverdue = !!item.is_overdue;
+        const description = (item.description || '').trim();
+        const targetDate = item.target_date ? fmtDate(item.target_date) : 'Sem data';
+        const moveState = getMilestoneMoveState(item);
+        return `
+            <div
+                class="roadmap-card roadmap-card-milestone ${isDone ? 'is-done' : ''} ${isOverdue ? 'is-overdue' : ''}"
+                data-milestone-id="${item.id}"
+                style="--milestone-accent:${escapeHtml(item.color || '#5CD6A3')};"
+            >
+                <div class="roadmap-card-milestone-topline">
+                    <span class="roadmap-card-milestone-dot"></span>
+                    <span class="roadmap-card-milestone-kicker">${escapeHtml(item.template_label || 'Marco')}</span>
+                </div>
+                <div class="roadmap-card-milestone-title">${escapeHtml(item.title || 'Marco')}</div>
+                <div class="roadmap-card-milestone-date">${escapeHtml(targetDate)}</div>
+                ${description ? `<div class="roadmap-card-milestone-desc">${escapeHtml(description)}</div>` : ''}
+                ${isOverdue ? `<div class="roadmap-card-delay">${escapeHtml(item.overdue_days)} dia(s) em atraso</div>` : ''}
+                <div class="roadmap-card-milestone-shift">
+                    <button class="roadmap-milestone-shift-btn" type="button" onclick="moveMilestone('${item.id}', 'left')" ${moveState.canMoveLeft ? '' : 'disabled'} aria-label="Mover marco para a esquerda" title="Mover marco para a esquerda">&#8592;</button>
+                    <button class="roadmap-milestone-shift-btn" type="button" onclick="moveMilestone('${item.id}', 'right')" ${moveState.canMoveRight ? '' : 'disabled'} aria-label="Mover marco para a direita" title="Mover marco para a direita">&#8594;</button>
+                </div>
+                <div class="roadmap-card-foot roadmap-card-milestone-foot">
+                    <div class="roadmap-card-actions roadmap-card-milestone-actions">
+                        <button class="roadmap-edit-btn roadmap-milestone-inline-btn" type="button" onclick="openMilestoneModal('edit', '${item.id}')">Editar</button>
+                        <button class="roadmap-${isDone ? 'reopen' : 'done'}-btn roadmap-milestone-inline-btn" type="button" onclick="toggleMilestone('${item.id}', ${isDone ? 'false' : 'true'})">
+                            ${isDone ? 'Reabrir' : 'Concluir'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function buildRoadmapSequence() {
+        const groupedMilestones = new Map();
+        const startMilestones = [];
+        roadmapMilestones.forEach((milestone) => {
+            const milestonePayload = Object.assign({}, milestone, { isMilestoneCard: true });
+            if (!milestone.anchor_item_id) {
+                startMilestones.push(milestonePayload);
+                return;
+            }
+            const key = String(milestone.anchor_item_id);
+            if (!groupedMilestones.has(key)) {
+                groupedMilestones.set(key, []);
+            }
+            groupedMilestones.get(key).push(milestonePayload);
+        });
+
+        const ordered = [...startMilestones];
+        roadmapItems.forEach((item) => {
+            ordered.push(item);
+            const anchoredMilestones = groupedMilestones.get(String(item.id)) || [];
+            anchoredMilestones.forEach((milestone) => ordered.push(milestone));
+        });
+        return [...ordered, { id: "__add__", isAddCard: true }];
     }
 
     function RoadmapRow(items, direction) {
@@ -578,10 +967,15 @@
     }
 
     function RoadmapTurn(direction) {
+        // A single SVG bezier curve instead of two CSS-border pieces glued
+        // together: a bezier is smooth and connected by construction, so it
+        // can never "break" into a disjointed corner + drop, no matter how
+        // far the anchor point ends up or how wide the row is.
         return `
             <div class="roadmap-turn t-${direction}" aria-hidden="true">
-                <span class="roadmap-turn-corner"></span>
-                <span class="roadmap-turn-drop"></span>
+                <svg class="roadmap-turn-svg" preserveAspectRatio="none">
+                    <path class="roadmap-turn-path"></path>
+                </svg>
                 <span class="roadmap-turn-dot"></span>
             </div>
         `;
@@ -609,12 +1003,14 @@
             const rawAnchorX = direction === "ltr"
                 ? anchorRect.right - hostRect.left
                 : anchorRect.left - hostRect.left;
-            const anchorX = Math.max(12, Math.min(hostRect.width - 12, rawAnchorX));
+            const width = Math.max(1, Math.round(hostRect.width));
+            const anchorX = Math.max(12, Math.min(width - 12, rawAnchorX));
 
             const availableSpace = direction === "ltr"
                 ? Math.max(24, anchorX - 12)
-                : Math.max(24, hostRect.width - anchorX - 12);
-            const cornerWidth = Math.max(28, Math.min(58, Math.round(availableSpace * 0.26)));
+                : Math.max(24, width - anchorX - 12);
+            const bow = Math.max(16, Math.min(34, Math.round(availableSpace * 0.16))) * (direction === "ltr" ? -1 : 1);
+
             const rowRect = row.getBoundingClientRect();
             const nextRowRect = nextRow ? nextRow.getBoundingClientRect() : null;
             const rowStyles = window.getComputedStyle(row);
@@ -622,12 +1018,23 @@
             const turnGap = nextRowRect
                 ? Math.max(44, Math.round(nextRowRect.top - rowRect.bottom - rowMarginBottom))
                 : 52;
-            const curveHeight = Math.max(18, Math.min(26, Math.round(turnGap * 0.42)));
 
-            turn.style.setProperty("--turn-anchor", `${Math.round(anchorX)}px`);
-            turn.style.setProperty("--turn-corner-width", `${cornerWidth}px`);
-            turn.style.setProperty("--turn-gap", `${turnGap}px`);
-            turn.style.setProperty("--turn-curve-height", `${curveHeight}px`);
+            const dotSize = 10;
+            const endY = turnGap - dotSize - 2;
+            const path = turn.querySelector(".roadmap-turn-path");
+            const svg = turn.querySelector(".roadmap-turn-svg");
+            const dot = turn.querySelector(".roadmap-turn-dot");
+            if (!path || !svg || !dot) return;
+
+            svg.setAttribute("viewBox", `0 0 ${width} ${turnGap}`);
+            path.setAttribute(
+                "d",
+                `M ${anchorX} 0 C ${anchorX + bow} ${turnGap * 0.28}, ${anchorX + bow} ${turnGap * 0.72}, ${anchorX} ${endY}`
+            );
+
+            turn.style.height = `${turnGap}px`;
+            dot.style.left = `${Math.round(anchorX - dotSize / 2)}px`;
+            dot.style.top = `${Math.round(endY - dotSize / 2)}px`;
         });
     }
 
@@ -635,7 +1042,8 @@
         const host = document.getElementById("roadmapFlow");
         if (!host) return;
 
-        const visualItems = [...roadmapItems, { id: "__add__", isAddCard: true }];
+        updateMilestoneMeta();
+        const visualItems = buildRoadmapSequence();
 
         const perRow = calcPerRow();
         const rows = [];
@@ -660,21 +1068,36 @@
         });
     }
 
-    function updateHeroProgress(done, total) {
+    function updateHeroProgress(done, overdue, total) {
         const hero = document.getElementById("rmHeroProgress");
         const fill = document.getElementById("rmHeroFill");
+        const overdueFill = document.getElementById("rmHeroOverdueFill");
         const pctEl = document.getElementById("rmHeroPct");
         const fracEl = document.getElementById("rmHeroFrac");
-        if (!hero || !fill || !pctEl || !fracEl) return;
+        const overdueEl = document.getElementById("rmHeroOverdue");
+        if (!hero || !fill || !overdueFill || !pctEl || !fracEl || !overdueEl) return;
         if (!total) {
             hero.classList.add("is-hidden");
             return;
         }
         hero.classList.remove("is-hidden");
         const pct = Math.round((done / total) * 100);
+        const overduePct = Math.round((overdue / total) * 100);
         fill.style.width = `${pct}%`;
+        overdueFill.style.width = `${overduePct}%`;
+        fill.classList.toggle("is-hidden", done <= 0);
+        overdueFill.classList.toggle("is-hidden", overdue <= 0);
         pctEl.textContent = `${pct}%`;
         fracEl.textContent = `(${done}/${total})`;
+        overdueEl.textContent = `${overdue} atrasada(s)`;
+        overdueEl.classList.toggle("is-hidden", overdue <= 0);
+    }
+
+    function pulseRoadmapCard(itemId, className = "is-pulse") {
+        const card = document.querySelector(`.roadmap-card[data-item-id="${String(itemId)}"]`);
+        if (!card) return;
+        card.classList.add(className);
+        setTimeout(() => card.classList.remove(className), 520);
     }
 
     function concludeRoadmapItem(itemId) {
@@ -685,15 +1108,35 @@
 
         postJson(`/projects/{{ project.id }}/roadmap/item/${id}/done/`)
             .then((data) => {
-                const idx = roadmapItems.findIndex(i => String(i.id) === id);
-                if (idx >= 0) roadmapItems[idx].status = "done";
-                renderRoadmapFlow();
-                updateHeroProgress(data.done, data.total);
-                const refreshedCard = document.querySelector(`.roadmap-card[data-item-id="${id}"]`);
-                if (refreshedCard) {
-                    refreshedCard.classList.add("is-pulse");
-                    setTimeout(() => refreshedCard.classList.remove("is-pulse"), 400);
+                if (data && data.item) {
+                    upsertRoadmapItem(data.item);
                 }
+                renderRoadmapFlow();
+                const overdue = roadmapItems.filter((item) => !!item.is_overdue).length;
+                updateHeroProgress(data.done, overdue, data.total);
+                pulseRoadmapCard(id, "is-pulse");
+            })
+            .catch((err) => {
+                card.classList.remove("is-busy");
+                alert(err.message || "Erro");
+            });
+    }
+
+    function reopenRoadmapItem(itemId) {
+        const id = String(itemId);
+        const card = document.querySelector(`.roadmap-card[data-item-id="${id}"]`);
+        if (!card) return;
+        card.classList.add("is-busy");
+
+        postJson(`/projects/{{ project.id }}/roadmap/item/${id}/reopen/`)
+            .then((data) => {
+                if (data && data.item) {
+                    upsertRoadmapItem(data.item);
+                }
+                renderRoadmapFlow();
+                const overdue = roadmapItems.filter((item) => !!item.is_overdue).length;
+                updateHeroProgress(data.done, overdue, data.total);
+                pulseRoadmapCard(id, "is-pulse-alt");
             })
             .catch((err) => {
                 card.classList.remove("is-busy");

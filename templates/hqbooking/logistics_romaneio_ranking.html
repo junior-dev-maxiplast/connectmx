@@ -1,0 +1,207 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log&iacute;stica | Ranking de Romaneios</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body class="hq-page logistics-page romaneio-page">
+    <div class="theme-fab" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <div class="hq-container hq-truck-page hq-truck-wide">
+        <header class="hq-header romaneio-entrance is-delay-0">
+            <div>
+                <h1 class="hq-title">Ranking de Romaneios</h1>
+                <p class="hq-subtitle">Vis&atilde;o executiva dos &uacute;ltimos 5 dias para identificar quem mais gerou romaneios, volumes e peso total na base Oracle.</p>
+            </div>
+        </header>
+
+        <section class="romaneio-nav romaneio-entrance is-delay-1" aria-label="Navegação de romaneios">
+            <a class="romaneio-nav-link" href="{% url 'logistics_romaneio' %}">
+                <span class="romaneio-nav-icon" aria-hidden="true">&#9863;</span>
+                <span>Lançamentos</span>
+            </a>
+            <a class="romaneio-nav-link is-active" href="{% url 'logistics_romaneio_ranking' %}">
+                <span class="romaneio-nav-icon" aria-hidden="true">&#128200;</span>
+                <span>Ranking 5 dias</span>
+            </a>
+        </section>
+
+        <section class="hq-card romaneio-launch-card romaneio-entrance is-delay-2">
+            <div class="romaneio-focus-shell">
+                <span class="romaneio-kicker">Janela Analítica</span>
+                <h2 class="hq-card-title romaneio-focus-title">Resumo dos &uacute;ltimos 5 dias</h2>
+                <p class="truck-section-subtitle romaneio-focus-copy">
+                    Per&iacute;odo analisado: {{ summary.start_date|date:"d/m/Y" }} at&eacute; {{ summary.end_date|date:"d/m/Y" }}.
+                    Os dados s&atilde;o lidos diretamente da base Oracle de simula&ccedil;&otilde;es.
+                </p>
+
+                <div class="romaneio-focus-meta">
+                    <div class="romaneio-status-chip {% if oracle_ready and not ranking_error %}is-ready{% else %}is-warning{% endif %}">
+                        {% if oracle_ready and not ranking_error %}
+                            Oracle pronto: {{ oracle_service_name }}
+                        {% else %}
+                            Verifique a conexão Oracle
+                        {% endif %}
+                    </div>
+                    <div class="romaneio-focus-note">
+                        {{ summary.total_users }} usuários avaliados neste período
+                    </div>
+                </div>
+
+                <div class="romaneio-ranking-summary-grid">
+                    <article class="romaneio-ranking-summary-card is-accent">
+                        <span class="romaneio-summary-label">Romaneios</span>
+                        <strong>{{ summary.total_romaneios }}</strong>
+                        <span>Total gerado no período</span>
+                    </article>
+                    <article class="romaneio-ranking-summary-card">
+                        <span class="romaneio-summary-label">Volumes</span>
+                        <strong>{{ summary.total_volumes }}</strong>
+                        <span>Soma de volumes movimentados</span>
+                    </article>
+                    <article class="romaneio-ranking-summary-card is-success">
+                        <span class="romaneio-summary-label">Peso total</span>
+                        <strong>{{ summary.total_peso|floatformat:4 }}</strong>
+                        <span>Acumulado de peso processado</span>
+                    </article>
+                    <article class="romaneio-ranking-summary-card">
+                        <span class="romaneio-summary-label">Usuários</span>
+                        <strong>{{ summary.total_users }}</strong>
+                        <span>Participantes no ranking</span>
+                    </article>
+                </div>
+
+                {% if ranking_error %}
+                <div class="truck-alert truck-alert-warning romaneio-inline-warning">
+                    {{ ranking_error }}
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="romaneio-ranking-grid romaneio-entrance is-delay-2">
+            <article class="hq-card romaneio-ranking-card">
+                <div class="romaneio-ranking-head">
+                    <span class="romaneio-kicker">Destaque</span>
+                    <h3 class="hq-card-title">Quem mais criou romaneios</h3>
+                </div>
+                {% if top_by_count %}
+                <div class="romaneio-leader-card">
+                    <div class="romaneio-leader-rank">#1</div>
+                    <div>
+                        <strong>Usu&aacute;rio {{ top_by_count.user_code }}</strong>
+                        <p>{{ top_by_count.total_romaneios }} romaneios no per&iacute;odo</p>
+                    </div>
+                </div>
+                {% else %}
+                <p class="hq-empty">Nenhum romaneio encontrado no per&iacute;odo.</p>
+                {% endif %}
+            </article>
+
+            <article class="hq-card romaneio-ranking-card">
+                <div class="romaneio-ranking-head">
+                    <span class="romaneio-kicker">Peso</span>
+                    <h3 class="hq-card-title">Quem mais movimentou peso</h3>
+                </div>
+                {% if top_by_weight %}
+                <div class="romaneio-leader-card is-success">
+                    <div class="romaneio-leader-rank">#1</div>
+                    <div>
+                        <strong>Usu&aacute;rio {{ top_by_weight.user_code }}</strong>
+                        <p>{{ top_by_weight.total_peso|floatformat:4 }} de peso total</p>
+                    </div>
+                </div>
+                {% else %}
+                <p class="hq-empty">Nenhum peso registrado no per&iacute;odo.</p>
+                {% endif %}
+            </article>
+
+            <article class="hq-card romaneio-ranking-card">
+                <div class="romaneio-ranking-head">
+                    <span class="romaneio-kicker">Volumes</span>
+                    <h3 class="hq-card-title">Quem mais gerou quantidade</h3>
+                </div>
+                {% if top_by_volume %}
+                <div class="romaneio-leader-card is-accent">
+                    <div class="romaneio-leader-rank">#1</div>
+                    <div>
+                        <strong>Usu&aacute;rio {{ top_by_volume.user_code }}</strong>
+                        <p>{{ top_by_volume.total_volumes }} volumes acumulados</p>
+                    </div>
+                </div>
+                {% else %}
+                <p class="hq-empty">Nenhum volume registrado no per&iacute;odo.</p>
+                {% endif %}
+            </article>
+        </section>
+
+        <section class="hq-card romaneio-history-card romaneio-entrance is-delay-3">
+            <div class="romaneio-ranking-head">
+                <span class="romaneio-kicker">Linha do tempo</span>
+                <h3 class="hq-card-title">Movimento por dia</h3>
+            </div>
+            <div class="romaneio-timeline-grid">
+                {% for item in timeline %}
+                <article class="romaneio-timeline-card">
+                    <strong>{{ item.date|date:"d/m" }}</strong>
+                    <span>{{ item.total_romaneios }} romaneios</span>
+                    <span>{{ item.total_volumes }} volumes</span>
+                    <span>{{ item.total_peso|floatformat:4 }} peso</span>
+                </article>
+                {% empty %}
+                <p class="hq-empty">Nenhum dado de movimento dispon&iacute;vel.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="hq-card romaneio-history-card romaneio-entrance is-delay-3">
+            <div class="romaneio-ranking-head">
+                <span class="romaneio-kicker">Ranking consolidado</span>
+                <h3 class="hq-card-title">Ranking por usu&aacute;rio</h3>
+            </div>
+            <div class="hq-history-table-wrap">
+                <table class="hq-history-table">
+                    <thead>
+                        <tr>
+                            <th>Posi&ccedil;&atilde;o</th>
+                            <th>Usu&aacute;rio</th>
+                            <th>Romaneios</th>
+                            <th>Volumes</th>
+                            <th>Peso total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in ranking_rows %}
+                        <tr>
+                            <td><span class="romaneio-rank-chip">#{{ row.rank }}</span></td>
+                            <td>{{ row.user_code }}</td>
+                            <td>{{ row.total_romaneios }}</td>
+                            <td>{{ row.total_volumes }}</td>
+                            <td>{{ row.total_peso|floatformat:4 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5">Nenhum registro encontrado nos &uacute;ltimos 5 dias.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

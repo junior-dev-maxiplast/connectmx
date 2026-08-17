@@ -1,0 +1,267 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | SLA do Portal</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body support-admin-queue-body">
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main support-admin-page support-admin-queue-page">
+        {% include 'tiqueue/partials/portal_admin_nav.html' %}
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+        {% if sla_created_flag %}
+            <div class="support-banner is-success">Pol&iacute;tica de SLA criada com sucesso.</div>
+        {% endif %}
+        {% if sla_updated_flag %}
+            <div class="support-banner is-success">Pol&iacute;tica de SLA atualizada com sucesso.</div>
+        {% endif %}
+        {% if sla_toggled_flag %}
+            <div class="support-banner is-success">Status da pol&iacute;tica atualizado com sucesso.</div>
+        {% endif %}
+
+        {% if can_manage %}
+            <section class="queue-dashboard support-pending-dashboard">
+                <article class="queue-dashboard-card support-pending-metric is-highlight">
+                    <span class="queue-dashboard-label">Pol&iacute;ticas SLA</span>
+                    <strong class="queue-dashboard-value">{{ summary.sla_policies }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Pendentes</span>
+                    <strong class="queue-dashboard-value">{{ summary.pending }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Campos</span>
+                    <strong class="queue-dashboard-value">{{ summary.custom_fields }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Respostas</span>
+                    <strong class="queue-dashboard-value">{{ summary.canned_responses }}</strong>
+                </article>
+            </section>
+
+            <section id="portal-sla-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">SLA configur&aacute;vel</span>
+                        <h2>{% if editing_sla_policy %}Editar pol&iacute;tica{% else %}Nova pol&iacute;tica e metas{% endif %}</h2>
+                    </div>
+                    {% if editing_sla_policy %}
+                        <a href="{% url 'portalDemandSlaConfigPage' %}" class="support-btn support-btn-secondary">Cancelar edi&ccedil;&atilde;o</a>
+                    {% endif %}
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_sla_policy %}update_sla{% else %}create_sla{% endif %}">
+                    {% if editing_sla_policy %}
+                        <input type="hidden" name="policy_id" value="{{ editing_sla_policy.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ sla_form.name.id_for_label }}">{{ sla_form.name.label }}</label>
+                            {{ sla_form.name }}
+                            {% if sla_form.name.errors %}<div class="support-field-error">{{ sla_form.name.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ sla_form.description.id_for_label }}">{{ sla_form.description.label }}</label>
+                            {{ sla_form.description }}
+                            {% if sla_form.description.errors %}<div class="support-field-error">{{ sla_form.description.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.task_group.id_for_label }}">{{ sla_form.task_group.label }}</label>
+                            {{ sla_form.task_group }}
+                            {% if sla_form.task_group.errors %}<div class="support-field-error">{{ sla_form.task_group.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.task_type.id_for_label }}">{{ sla_form.task_type.label }}</label>
+                            {{ sla_form.task_type }}
+                            {% if sla_form.task_type.errors %}<div class="support-field-error">{{ sla_form.task_type.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.priority_level.id_for_label }}">{{ sla_form.priority_level.label }}</label>
+                            {{ sla_form.priority_level }}
+                            {% if sla_form.priority_level.errors %}<div class="support-field-error">{{ sla_form.priority_level.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.default_attendant.id_for_label }}">{{ sla_form.default_attendant.label }}</label>
+                            {{ sla_form.default_attendant }}
+                            {% if sla_form.default_attendant.errors %}<div class="support-field-error">{{ sla_form.default_attendant.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.first_response_minutes.id_for_label }}">{{ sla_form.first_response_minutes.label }}</label>
+                            {{ sla_form.first_response_minutes }}
+                            {% if sla_form.first_response_minutes.errors %}<div class="support-field-error">{{ sla_form.first_response_minutes.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ sla_form.resolution_minutes.id_for_label }}">{{ sla_form.resolution_minutes.label }}</label>
+                            {{ sla_form.resolution_minutes }}
+                            {% if sla_form.resolution_minutes.errors %}<div class="support-field-error">{{ sla_form.resolution_minutes.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox">
+                            {{ sla_form.auto_assign_on_create }}
+                            <span>{{ sla_form.auto_assign_on_create.label }}</span>
+                        </label>
+                        <label class="support-inline-checkbox">
+                            {{ sla_form.is_active }}
+                            <span>{{ sla_form.is_active.label }}</span>
+                        </label>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">{% if editing_sla_policy %}Salvar altera&ccedil;&otilde;es{% else %}Salvar pol&iacute;tica{% endif %}</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if sla_policies %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Consulta</span>
+                            <h2>Pol&iacute;ticas cadastradas</h2>
+                        </div>
+                    </div>
+
+                    <div class="support-config-toolbar">
+                        <input id="portalSlaSearch" type="search" class="support-portal-search" placeholder="Buscar por nome, descri&ccedil;&atilde;o ou atendente...">
+                        <select id="portalSlaStatusFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os status</option>
+                            <option value="ativa">Ativas</option>
+                            <option value="inativa">Inativas</option>
+                        </select>
+                        <select id="portalSlaGroupFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os grupos</option>
+                            {% for policy in sla_policies %}
+                                {% if policy.task_group %}
+                                    <option value="{{ policy.task_group.name|lower }}">{{ policy.task_group.name }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="support-toolbar-meta">
+                        <span id="portalSlaVisibleCount">{{ sla_policies|length }}</span>
+                        <span>pol&iacute;tica(s) vis&iacute;vel(is)</span>
+                    </div>
+
+                    <section id="portalSlaList" class="support-card-list">
+                        {% for policy in sla_policies %}
+                            <article
+                                class="support-config-card{% if editing_sla_policy and editing_sla_policy.id == policy.id %} is-active-edit{% endif %}"
+                                data-sla-card
+                                data-name="{{ policy.name|lower }}"
+                                data-description="{{ policy.description|lower }}"
+                                data-status="{% if policy.is_active %}ativa{% else %}inativa{% endif %}"
+                                data-group="{% if policy.task_group %}{{ policy.task_group.name|lower }}{% endif %}"
+                                data-attendant="{{ policy.default_attendant_display|lower }}"
+                            >
+                                <div class="support-config-card-head">
+                                    <strong>{{ policy.name }}</strong>
+                                    <span class="support-chip {% if policy.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if policy.is_active %}Ativa{% else %}Inativa{% endif %}
+                                    </span>
+                                </div>
+                                <p>{{ policy.description|default:"Sem descri&ccedil;&atilde;o adicional." }}</p>
+                                <div class="support-inline-pills">
+                                    <span class="support-meta-pill">{% if policy.task_group %}{{ policy.task_group.name }}{% else %}Todos os grupos{% endif %}</span>
+                                    <span class="support-meta-pill">{% if policy.task_type %}{{ policy.task_type.name }}{% else %}Todos os tipos{% endif %}</span>
+                                    <span class="support-meta-pill">{{ policy.priority_display }}</span>
+                                    {% if policy.auto_assign_on_create and policy.default_attendant_id %}
+                                        <span class="support-chip is-assumed">Autoatribui&ccedil;&atilde;o</span>
+                                    {% endif %}
+                                </div>
+                                <div class="support-config-card-stats">
+                                    <span>Primeira resposta: {{ policy.first_response_minutes }} min</span>
+                                    <span>Resolu&ccedil;&atilde;o: {{ policy.resolution_minutes }} min</span>
+                                    <span>Atendente padr&atilde;o: {{ policy.default_attendant_display }}</span>
+                                </div>
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalDemandSlaConfigPage' %}?edit={{ policy.id }}#portal-sla-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_sla">
+                                        <input type="hidden" name="policy_id" value="{{ policy.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if policy.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% else %}
+                <div class="support-empty compact">
+                    <strong>Nenhuma pol&iacute;tica configurada</strong>
+                    <span>Defina aqui as metas de primeira resposta, resolu&ccedil;&atilde;o e direcionamento autom&aacute;tico.</span>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <script>
+        (function() {
+            const list = document.getElementById("portalSlaList");
+            if (!list) return;
+
+            const rows = Array.from(list.querySelectorAll("[data-sla-card]"));
+            const searchInput = document.getElementById("portalSlaSearch");
+            const statusFilter = document.getElementById("portalSlaStatusFilter");
+            const groupFilter = document.getElementById("portalSlaGroupFilter");
+            const visibleCount = document.getElementById("portalSlaVisibleCount");
+
+            const seenGroups = new Set();
+            if (groupFilter) {
+                Array.from(groupFilter.options).forEach((option) => {
+                    if (!option.value) return;
+                    if (seenGroups.has(option.value)) {
+                        option.remove();
+                    } else {
+                        seenGroups.add(option.value);
+                    }
+                });
+            }
+
+            function matches(row) {
+                const query = (searchInput?.value || "").trim().toLowerCase();
+                const status = (statusFilter?.value || "").trim().toLowerCase();
+                const group = (groupFilter?.value || "").trim().toLowerCase();
+                const haystack = [row.dataset.name || "", row.dataset.description || "", row.dataset.attendant || ""].join(" ");
+
+                if (query && !haystack.includes(query)) return false;
+                if (status && (row.dataset.status || "") !== status) return false;
+                if (group && (row.dataset.group || "") !== group) return false;
+                return true;
+            }
+
+            function render() {
+                let total = 0;
+                rows.forEach((row) => {
+                    const show = matches(row);
+                    row.style.display = show ? "" : "none";
+                    if (show) total += 1;
+                });
+                if (visibleCount) visibleCount.textContent = String(total);
+            }
+
+            [searchInput, statusFilter, groupFilter].forEach((node) => {
+                if (!node) return;
+                node.addEventListener("input", render);
+                node.addEventListener("change", render);
+            });
+
+            render();
+        })();
+    </script>
+</body>
+</html>

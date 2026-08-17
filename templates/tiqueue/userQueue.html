@@ -18,45 +18,52 @@
     {% include 'partials/sidebar.html' %}
 
     <div id="queuePageRoot" class="queue_main{% if kanban_lab %} queue-user-lab{% endif %}">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Minha Fila</h1>
+        <div class="queue-command-bar">
+        <div class="queue-command-row queue-command-row-main">
+            <h1 class="queue-command-title">Minha Fila</h1>
+            <input id="queueSearchUnified" class="queue-search queue-control queue-search-wide" type="search" placeholder="Buscar por chamado, titulo ou projeto..." oninput="onQueueUnifiedSearchInput(this.value)">
+            <button type="button" class="queue-icon-btn" onclick="toggleQueueFiltersPanel()" id="queueFiltersToggleBtn" title="Filtros" aria-label="Filtros" aria-expanded="false">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="10" y1="18" x2="14" y2="18"></line></svg>
+                <span class="queue-icon-btn-badge" id="queueFiltersBadge" hidden>0</span>
+            </button>
+            <button type="button" onclick="openQueuePropertiesModal()" class="queue-icon-btn" title="Propriedades" aria-label="Propriedades">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+            <button type="button" onclick="syncWithSM()" id="syncSmButton" class="queue-icon-btn" title="Sincronizar com SM" aria-label="Sincronizar com SM">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+            <div class="queue-view-tabs">
+                <button id="queueTabDemands" type="button" class="queue-view-tab is-active" onclick="setQueueWorkspaceView('demands')">Lista</button>
+                <button id="queueTabKanban" type="button" class="queue-view-tab" onclick="setQueueWorkspaceView('kanban')">Board</button>
+                <button id="queueTabGantt" type="button" class="queue-view-tab" onclick="setQueueWorkspaceView('gantt')">Gantt</button>
             </div>
-            <div class="headerButton">
-                <div class="queue-toolbar">
-                    <label class="queue-check queue-control queue-style-toggle">
-                        <input id="queueModernStyleToggle" type="checkbox" onchange="toggleQueueModernStyle(this.checked)">
-                        <span>Layout moderno</span>
-                    </label>
-                    <label class="queue-check queue-control">
-                        <input id="queueFocusModeToggle" type="checkbox" onchange="toggleQueueFocusMode(this.checked)">
-                        <span>Modo foco</span>
-                    </label>
-                    <select id="queueTypeFilter" class="queue-select" onchange="onQueueTypeChange(this.value)">
-                        <option value="">Todos os tipos</option>
-                        {% for t in task_types %}
-                            <option value="{{ t.id }}">{{ t.group.name }} - {{ t.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <label class="queue-check queue-control">
-                        <input id="queueOperationMode" type="checkbox" onchange="onQueueOperationModeToggle(this.checked)">
-                        <span>Modo operaÃ§Ã£o</span>
-                    </label>
-                    <label class="queue-check queue-control">
-                        <input id="queueTodayOnly" type="checkbox" onchange="onQueueTodayToggle(this.checked)">
-                        <span>Hoje</span>
-                    </label>
-                    <input id="queueDateFrom" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
-                    <input id="queueDateTo" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
-                    <input id="queueSearchTicket" class="queue-search" type="search" placeholder="Buscar chamado..." oninput="onQueueTicketInput(this.value)">
-                    <input id="queueSearch" class="queue-search" type="search" placeholder="Buscar descri&#231;&#227;o..." oninput="onQueueSearchInput(this.value)">
-                    <button type="button" onclick="openQueuePropertiesModal()" class="queue-secondary-btn">Propriedades</button>
-                    <button type="button" onclick="syncWithSM()" id="syncSmButton" class="queue-secondary-btn">Sincronizar com SM</button>
-                    <button onclick="fCreateNewQueueItem()" id="newItemQueueButton" class="queue-primary-btn">Nova demanda</button>
-                </div>
+            <div class="queue-command-actions">
+                <button onclick="fCreateNewQueueItem()" id="newItemQueueButton" class="queue-primary-btn">+ Nova demanda</button>
             </div>
         </div>
-        <div class="queue-filter-strip">
+        <div class="queue-command-row queue-command-row-filters" id="queueCommandFiltersPanel" hidden>
+            <div class="queue-command-filters-controls">
+                <select id="queueTypeFilter" class="queue-select" onchange="onQueueTypeChange(this.value)">
+                    <option value="">Todos os tipos</option>
+                    {% for t in task_types %}
+                        <option value="{{ t.id }}">{{ t.group.name }} - {{ t.name }}</option>
+                    {% endfor %}
+                </select>
+                <input id="queueDateFrom" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
+                <input id="queueDateTo" class="queue-date queue-control" type="date" onchange="onQueueDateChange()">
+                <label class="queue-check queue-control">
+                    <input id="queueTodayOnly" type="checkbox" onchange="onQueueTodayToggle(this.checked)">
+                    <span>Hoje</span>
+                </label>
+                <label class="queue-check queue-control">
+                    <input id="queueOperationMode" type="checkbox" onchange="onQueueOperationModeToggle(this.checked)">
+                    <span>Modo operaÃ§Ã£o</span>
+                </label>
+                <label class="queue-check queue-control">
+                    <input id="queueFocusModeToggle" type="checkbox" onchange="toggleQueueFocusMode(this.checked)">
+                    <span>Modo foco</span>
+                </label>
+            </div>
             <div class="queue-quick-filters">
                 <button type="button" class="queue-filter-chip" data-quick-filter="today" onclick="toggleQueueQuickFilter('today')">Hoje</button>
                 <button type="button" class="queue-filter-chip" data-quick-filter="delayed" onclick="toggleQueueQuickFilter('delayed')">Atrasadas</button>
@@ -105,6 +112,7 @@
                 <span class="queue-dashboard-label">Total visiveis</span>
                 <strong id="dashVisible" class="queue-dashboard-value">0</strong>
             </div>
+        </div>
         </div>
         <div style="display: none;" id="popUpFormNewItem" class="formNewItemMain">
             <div class="modal-header">
@@ -599,12 +607,6 @@
                 </div>
             </form>
         </div>
-        <div class="queue-view-tabs">
-            <button id="queueTabDemands" type="button" class="queue-view-tab is-active" onclick="setQueueWorkspaceView('demands')">Minhas Demandas</button>
-            <button id="queueTabKanban" type="button" class="queue-view-tab" onclick="setQueueWorkspaceView('kanban')">Fila</button>
-            <button id="queueTabGantt" type="button" class="queue-view-tab" onclick="setQueueWorkspaceView('gantt')">Gantt</button>
-        </div>
-
         <div id="queueDemandsView">
             <div id="container-queue">
                 {% include 'partials/queue.html' %}
@@ -843,13 +845,34 @@
     }
 
     const QUEUE_PROPERTY_PAYLOAD = JSON.parse(document.getElementById("queuePropertyPayload").textContent || "{}");
+    function normalizeMyQueueColumns(columns) {
+        return (Array.isArray(columns) ? columns : [])
+            .map((col) => {
+                const id = String((col && (col.id ?? col.value)) || "").trim();
+                if (!id) return null;
+                const name = String((col && (col.name || col.label || col.title)) || "Sem coluna").trim() || "Sem coluna";
+                return {
+                    ...col,
+                    id,
+                    value: String((col && (col.value ?? col.id)) || id),
+                    name,
+                    label: String((col && (col.label || col.name || col.title)) || name),
+                    color: (col && col.color) || "#343955",
+                    usage_count: Number((col && col.usage_count) || 0),
+                    can_delete: col && typeof col.can_delete === "boolean" ? col.can_delete : true,
+                    remove_reason: String((col && col.remove_reason) || ""),
+                };
+            })
+            .filter(Boolean);
+    }
+
     let MY_QUEUE_COLUMNS = Array.isArray(QUEUE_PROPERTY_PAYLOAD.status_options) && QUEUE_PROPERTY_PAYLOAD.status_options.length
-        ? QUEUE_PROPERTY_PAYLOAD.status_options
-        : [
+        ? normalizeMyQueueColumns(QUEUE_PROPERTY_PAYLOAD.status_options)
+        : normalizeMyQueueColumns([
             {% for c in my_kanban_columns %}
                 { id: "{{ c.id }}", name: "{{ c.name|escapejs }}", color: "{{ c.color }}" }{% if not forloop.last %},{% endif %}
             {% endfor %}
-        ];
+        ]);
     let SAVED_QUEUE_VIEWS = JSON.parse(document.getElementById("queueSavedViewsPayload").textContent || "[]");
     let QUEUE_CUSTOM_COLUMNS = Array.isArray(QUEUE_PROPERTY_PAYLOAD.custom_columns) ? QUEUE_PROPERTY_PAYLOAD.custom_columns : [];
     let QUEUE_TASK_TYPE_OPTIONS = [
@@ -953,7 +976,7 @@
                 if (!data || typeof data !== "object") return;
                 QUEUE_PRIORITY_OPTIONS = Array.isArray(data.priority_options) ? data.priority_options : [];
                 QUEUE_EFFORT_OPTIONS = Array.isArray(data.effort_options) ? data.effort_options : [];
-                MY_QUEUE_COLUMNS = Array.isArray(data.status_options) ? data.status_options : MY_QUEUE_COLUMNS;
+                MY_QUEUE_COLUMNS = Array.isArray(data.status_options) ? normalizeMyQueueColumns(data.status_options) : MY_QUEUE_COLUMNS;
                 QUEUE_CUSTOM_COLUMNS = Array.isArray(data.custom_columns) ? data.custom_columns : [];
             })
             .catch(() => null);
@@ -1307,20 +1330,22 @@
                 const el = row.querySelector(".queue-desc-text");
                 return text(el ? el.textContent : (cells[3] ? cells[3].textContent : ""));
             }
+            case "project":
+                return text(row.dataset.projectName || (cells[4] ? cells[4].textContent : ""));
             case "status":
-                return text(cells[4] ? cells[4].textContent : "");
-            case "priority":
                 return text(cells[5] ? cells[5].textContent : "");
+            case "priority":
+                return text(cells[6] ? cells[6].textContent : "");
             case "type": {
                 const badge = row.querySelector(".type-badge");
-                return text(badge ? badge.textContent : (cells[6] ? cells[6].textContent : ""));
+                return text(badge ? badge.textContent : (cells[7] ? cells[7].textContent : ""));
             }
             case "effort":
-                return text(cells[7] ? cells[7].textContent : "");
+                return text(cells[8] ? cells[8].textContent : "");
             case "deadline_start":
-                return dateToNum(cells[8] ? cells[8].dataset.isoDate : "");
-            case "deadline_end":
                 return dateToNum(cells[9] ? cells[9].dataset.isoDate : "");
+            case "deadline_end":
+                return dateToNum(cells[10] ? cells[10].dataset.isoDate : "");
             default:
                 return text(row.textContent || "");
         }
@@ -2295,8 +2320,7 @@
         operationMode = false;
         currentQuickFilter = "";
 
-        const search = document.getElementById("queueSearch");
-        const ticket = document.getElementById("queueSearchTicket");
+        const search = document.getElementById("queueSearchUnified");
         const type = document.getElementById("queueTypeFilter");
         const dateFrom = document.getElementById("queueDateFrom");
         const dateTo = document.getElementById("queueDateTo");
@@ -2305,7 +2329,6 @@
         const savedViewSelect = document.getElementById("queueSavedViewSelect");
 
         if (search) search.value = "";
-        if (ticket) ticket.value = "";
         if (type) type.value = "";
         if (dateFrom) dateFrom.value = "";
         if (dateTo) dateTo.value = "";
@@ -2314,6 +2337,7 @@
         if (savedViewSelect) savedViewSelect.value = "";
 
         syncQueueQuickFilterButtons();
+        updateQueueFiltersBadge();
         applyQueueFilter();
     }
 
@@ -2328,30 +2352,26 @@
         operationMode = !!state.operation_mode;
         currentQuickFilter = String(state.quick_filter || "");
 
-        const search = document.getElementById("queueSearch");
-        const ticket = document.getElementById("queueSearchTicket");
+        const search = document.getElementById("queueSearchUnified");
         const type = document.getElementById("queueTypeFilter");
         const dateFrom = document.getElementById("queueDateFrom");
         const dateTo = document.getElementById("queueDateTo");
         const todayBox = document.getElementById("queueTodayOnly");
         const operationBox = document.getElementById("queueOperationMode");
-        const modernToggle = document.getElementById("queueModernStyleToggle");
         const focusToggle = document.getElementById("queueFocusModeToggle");
 
-        if (search) search.value = currentQueueSearchQuery;
-        if (ticket) ticket.value = currentQueueTicketQuery;
+        if (search) search.value = currentQueueTicketQuery || currentQueueSearchQuery;
         if (type) type.value = currentQueueTypeFilter;
         if (dateFrom) dateFrom.value = currentDateFrom;
         if (dateTo) dateTo.value = currentDateTo;
         if (todayBox) todayBox.checked = todayOnly;
         if (operationBox) operationBox.checked = operationMode;
-        if (modernToggle) modernToggle.checked = !!state.layout_modern;
         if (focusToggle) focusToggle.checked = !!state.focus_mode;
 
-        toggleQueueModernStyle(!!state.layout_modern, true);
         toggleQueueFocusMode(!!state.focus_mode, true);
         setQueueWorkspaceView(String(state.workspace_view || "demands"), true);
         syncQueueQuickFilterButtons();
+        updateQueueFiltersBadge();
         applyQueueFilter();
     }
 
@@ -2432,16 +2452,37 @@
             .catch((err) => alert(err.message || "Erro ao excluir visual."));
     }
 
-    function onQueueSearchInput(value) {
-        currentQueueSearchQuery = (value || "").trim();
+    function onQueueUnifiedSearchInput(value) {
+        const term = (value || "").trim();
+        currentQueueSearchQuery = term;
+        currentQueueTicketQuery = term;
         clearSavedQueueViewSelection();
         applyQueueFilter();
     }
 
-    function onQueueTicketInput(value) {
-        currentQueueTicketQuery = (value || "").trim();
-        clearSavedQueueViewSelection();
-        applyQueueFilter();
+    function toggleQueueFiltersPanel(forceOpen) {
+        const panel = document.getElementById("queueCommandFiltersPanel");
+        const btn = document.getElementById("queueFiltersToggleBtn");
+        if (!panel || !btn) return;
+        const nextOpen = typeof forceOpen === "boolean" ? forceOpen : panel.hidden;
+        panel.hidden = !nextOpen;
+        btn.classList.toggle("is-active", nextOpen);
+        btn.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    }
+
+    function updateQueueFiltersBadge() {
+        const badge = document.getElementById("queueFiltersBadge");
+        if (!badge) return;
+        let count = 0;
+        if (currentQueueTypeFilter) count += 1;
+        if (currentDateFrom || currentDateTo) count += 1;
+        if (todayOnly) count += 1;
+        if (operationMode) count += 1;
+        if (currentQuickFilter) count += 1;
+        const focusToggle = document.getElementById("queueFocusModeToggle");
+        if (focusToggle && focusToggle.checked) count += 1;
+        badge.textContent = String(count);
+        badge.hidden = count === 0;
     }
 
     function onQueueTypeChange(value) {
@@ -2493,8 +2534,8 @@
     }
 
     function applyQueueFilter() {
-        const normalizedDesc = (currentQueueSearchQuery || "").toLowerCase();
-        const normalizedTicket = (currentQueueTicketQuery || "").toLowerCase();
+        updateQueueFiltersBadge();
+        const searchTerm = (currentQueueTicketQuery || currentQueueSearchQuery || "").toLowerCase();
         const today = new Date();
         const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
         const rows = document.querySelectorAll('#queue-items tr.queue-item-row');
@@ -2503,13 +2544,16 @@
             const descEl = row.querySelector('.queue-desc-text');
             const descText = descEl ? (descEl.textContent || "") : (cells && cells[3] ? (cells[3].textContent || "") : "");
             const ticketText = cells && cells[2] ? (cells[2].textContent || "") : "";
+            const projectText = row.dataset.projectName || "";
             const rowTypeId = row.dataset.typeId || "";
             const predStart = row.dataset.deadlineStart || "";
             const predEnd = row.dataset.deadlineEnd || "";
             const priorityLevel = String(row.dataset.priorityLevel || "");
 
-            const matchDesc = !normalizedDesc || descText.toLowerCase().includes(normalizedDesc);
-            const matchTicket = !normalizedTicket || ticketText.toLowerCase().includes(normalizedTicket);
+            const matchSearch = !searchTerm
+                || descText.toLowerCase().includes(searchTerm)
+                || ticketText.toLowerCase().includes(searchTerm)
+                || projectText.toLowerCase().includes(searchTerm);
             const matchType = !currentQueueTypeFilter || rowTypeId === currentQueueTypeFilter;
 
             const fromOk = !currentDateFrom || (predEnd ? predEnd >= currentDateFrom : true);
@@ -2534,7 +2578,7 @@
                 matchQuick = isCurrent;
             }
 
-            const match = matchDesc && matchTicket && matchType && matchDate && matchOperation && matchQuick;
+            const match = matchSearch && matchType && matchDate && matchOperation && matchQuick;
             row.style.display = match ? "" : "none";
 
             const id = row.dataset.id;
@@ -3393,7 +3437,7 @@
         }
 
         if (!Array.isArray(MY_QUEUE_COLUMNS) || !MY_QUEUE_COLUMNS.length) {
-            MY_QUEUE_COLUMNS = [{ id: MY_QUEUE_DEFAULT_COLUMN_ID || "", name: "Backlog", color: "#343955" }];
+            MY_QUEUE_COLUMNS = normalizeMyQueueColumns([{ id: MY_QUEUE_DEFAULT_COLUMN_ID || "", name: "Backlog", color: "#343955" }]);
         }
 
         const groups = {};
@@ -3421,10 +3465,10 @@
             const priorityCfg = (QUEUE_PRIORITY_OPTIONS || []).find((opt) => String(opt.value) === String(row.dataset.priorityLevel || ""));
             const effortCfg = (QUEUE_EFFORT_OPTIONS || []).find((opt) => String(opt.value) === String(row.dataset.effortLevel || ""));
             const projectName = (row.dataset.projectName || "").trim();
-            const realStart = cells && cells[8] ? (cells[8].dataset.isoDate || "") : "";
-            const realStartTime = cells && cells[8] ? (cells[8].dataset.isoTime || "") : "";
-            const realEnd = cells && cells[9] ? (cells[9].dataset.isoDate || "") : "";
-            const realEndTime = cells && cells[9] ? (cells[9].dataset.isoTime || "") : "";
+            const realStart = cells && cells[9] ? (cells[9].dataset.isoDate || "") : "";
+            const realStartTime = cells && cells[9] ? (cells[9].dataset.isoTime || "") : "";
+            const realEnd = cells && cells[10] ? (cells[10].dataset.isoDate || "") : "";
+            const realEndTime = cells && cells[10] ? (cells[10].dataset.isoTime || "") : "";
             const kanbanSort = parseInt(row.dataset.kanbanSort || "0", 10) || 0;
             const total = parseInt(row.dataset.detailTotal || "0", 10) || 0;
             const done = parseInt(row.dataset.detailDone || "0", 10) || 0;
@@ -3695,13 +3739,16 @@
             .then((data) => {
                 if (!data || data.status !== "ok") throw new Error((data && data.message) || "Erro ao salvar coluna.");
                 if (editingId) {
-                    MY_QUEUE_COLUMNS = MY_QUEUE_COLUMNS.map((c) =>
+                    MY_QUEUE_COLUMNS = normalizeMyQueueColumns(MY_QUEUE_COLUMNS.map((c) =>
                         String(c.id) === String(editingId)
-                            ? { ...c, name: data.name, color: data.color || "#343955" }
+                            ? { ...c, id: String(data.id || editingId), value: String(data.value || data.id || editingId), name: data.name || data.label || c.name, label: data.label || data.name || c.label, color: data.color || "#343955" }
                             : c
-                    );
+                    ));
                 } else {
-                    MY_QUEUE_COLUMNS.push({ id: String(data.id), name: data.name, color: data.color || "#343955" });
+                    MY_QUEUE_COLUMNS = normalizeMyQueueColumns([
+                        ...MY_QUEUE_COLUMNS,
+                        { id: String(data.id || ""), value: String(data.value || data.id || ""), name: data.name || data.label || "", label: data.label || data.name || "", color: data.color || "#343955" },
+                    ]);
                 }
                 renderQueuePropertiesPanel();
                 renderMyQueueKanban();
@@ -5509,13 +5556,16 @@
         const row = document.querySelector(`tr.queue-task-row[data-id="${id}"]`);
         if (!row) return;
         row.dataset.kanbanColumn = colId;
+        const current = (MY_QUEUE_COLUMNS || []).find((col) => String(col.id) === colId);
+        if (current) {
+            row.dataset.kanbanColor = current.color || "#61688c";
+        }
         const statusCell = row.querySelector('.queue-inline-select[data-field="kanban_column"]');
         if (!statusCell) return;
         statusCell.dataset.value = colId;
         statusCell.innerHTML = renderInlineCellContent("kanban_column", colId, statusCell);
         if (currentKanbanPanelItemId && String(currentKanbanPanelItemId) === id) {
             populateQueueSideStatusOptions(colId);
-            const current = (MY_QUEUE_COLUMNS || []).find((col) => String(col.id) === colId);
             const chip = document.getElementById("queueSidePanelStatusChip");
             if (chip && current) {
                 chip.textContent = current.name || "Sem coluna";
@@ -5833,4 +5883,3 @@
     document.getElementById("queueFieldOptionForm")?.addEventListener("submit", submitQueueFieldOption);
     document.getElementById("queueCustomColumnOptionForm")?.addEventListener("submit", submitQueueCustomColumnOption);
 </script>
-

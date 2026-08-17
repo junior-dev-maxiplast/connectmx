@@ -29,6 +29,19 @@ from .forms import (
     MaintenanceEventForm,
     MyAgendaReminderForm,
 )
+from .portal_forms import (
+    PortalDemandForm,
+    PortalDemandCustomFieldCreateForm,
+    PortalDemandCustomFieldOptionForm,
+    PortalDemandFeedbackForm,
+    PortalDemandReplyForm,
+    PortalRequesterAccountForm,
+    PortalRequesterCollaboratorForm,
+    PortalRequesterSectorForm,
+    PortalDemandTransferForm,
+    PortalDemandSlaPolicyForm,
+    PortalCannedResponseForm,
+)
 from .models import (
     userQueue,
     concludedTasks,
@@ -44,6 +57,7 @@ from .models import (
     Project,
     ProjectRoadmapItem,
     ProjectRoadmapSubtask,
+    ProjectMilestone,
     ProjectKanbanColumn,
     ProjectKanbanCard,
     WifiVoucherGroup,
@@ -64,6 +78,18 @@ from .models import (
     SystemConfig,
     DemandTemplate,
     DemandTemplateDetail,
+    PortalDemand,
+    PortalDemandCustomField,
+    PortalDemandCustomFieldOption,
+    PortalDemandCustomValue,
+    PortalDemandMessage,
+    PortalDemandLog,
+    PortalDemandAttachment,
+    PortalDemandSlaPolicy,
+    PortalCannedResponse,
+    PortalRequesterSector,
+    PortalRequesterCollaborator,
+    PortalRequesterAccount,
     MaintenanceType,
     MaintenanceSituation,
     MaintenanceIndicator,
@@ -72,6 +98,7 @@ from .models import (
     MaintenanceEvent,
     MyAgendaReminder,
     MaxiTetrisHighScore,
+    PomodoroSession,
     ContractRecord,
     SystemNotification,
     DataModelLaunch,
@@ -82,16 +109,19 @@ from .models import (
 from accounts.models import User
 from .models import TaskType, TaskGroup
 from . import services as service
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseBadRequest
 from django.utils import timezone
 import json
 import unicodedata
+import hmac
+import threading
 from django.db import transaction, models, IntegrityError
-from django.db.models import Case, When, IntegerField, Value, Count, Q, Prefetch, Sum, DecimalField
+from django.db.models import Avg, Case, When, IntegerField, Value, Count, Q, Prefetch, Sum, DecimalField, Exists, OuterRef
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_GET
 from django import forms
@@ -103,12 +133,530 @@ import io
 import re
 from django.core.paginator import Paginator
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 import os
 from urllib import request as urllib_request, parse as urllib_parse, error as urllib_error
+from xml.sax.saxutils import escape as xml_escape
+import calendar as month_calendar
 
-def index(request):
-    _sync_service_notifications()
+def _project_dashboard_deadline_meta(target_date, today):
+    if not target_date:
+        return {
+            "label": "Sem prazo definido",
+            "short_label": "Sem prazo",
+            "css": "is-neutral",
+            "sort_weight": 999999,
+        }
 
+    delta = (target_date - today).days
+    if delta < 0:
+        return {
+            "label": f"{abs(delta)} dia(s) em atraso",
+            "short_label": "Atrasado",
+            "css": "is-overdue",
+            "sort_weight": delta,
+        }
+    if delta == 0:
+        return {
+            "label": "Vence hoje",
+            "short_label": "Hoje",
+            "css": "is-today",
+            "sort_weight": 0,
+        }
+    if delta == 1:
+        return {
+            "label": "Vence amanhã",
+            "short_label": "Amanhã",
+            "css": "is-soon",
+            "sort_weight": 1,
+        }
+    if delta <= 7:
+        return {
+            "label": f"Vence em {delta} dia(s)",
+            "short_label": f"{delta} dias",
+            "css": "is-soon",
+            "sort_weight": delta,
+        }
+    return {
+        "label": target_date.strftime("%d/%m/%Y"),
+        "short_label": target_date.strftime("%d/%m"),
+        "css": "is-future",
+        "sort_weight": delta,
+    }
+
+
+def _build_project_dashboard_bars(rows, total, color_map):
+    if not rows:
+        return []
+    max_value = max((row["value"] for row in rows), default=0)
+    safe_total = max(int(total or 0), 1)
+    safe_max = max(int(max_value or 0), 1)
+    for row in rows:
+        value = int(row["value"] or 0)
+        row["share_pct"] = int(round((value / safe_total) * 100)) if value else 0
+        row["width_pct"] = int(round((value / safe_max) * 100)) if value else 0
+        row["color"] = color_map.get(row["key"], "#61688c")
+    return rows
+
+
+def _dashboard_month_start(raw_value, today):
+    raw_value = (raw_value or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}", raw_value or ""):
+        try:
+            parsed = datetime.strptime(raw_value, "%Y-%m").date()
+            return parsed.replace(day=1)
+        except ValueError:
+            pass
+    return today.replace(day=1)
+
+
+def _shift_dashboard_month(month_start, delta):
+    absolute_month = (month_start.year * 12) + (month_start.month - 1) + int(delta or 0)
+    year = absolute_month // 12
+    month = (absolute_month % 12) + 1
+    return date(year, month, 1)
+
+
+def _build_dashboard_delivery_calendar(today, open_projects, open_items, reference_month=None):
+    display_month = reference_month or today.replace(day=1)
+    month_names = [
+        "Janeiro",
+        "Fevereiro",
+        "Março",
+        "Abril",
+        "Maio",
+        "Junho",
+        "Julho",
+        "Agosto",
+        "Setembro",
+        "Outubro",
+        "Novembro",
+        "Dezembro",
+    ]
+    week_labels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]
+    is_current_month_view = display_month.year == today.year and display_month.month == today.month
+    prev_month = _shift_dashboard_month(display_month, -1)
+    next_month = _shift_dashboard_month(display_month, 1)
+    base_payload = {
+        "month_label": f"{month_names[display_month.month - 1]} {display_month.year}",
+        "month_key": display_month.strftime("%Y-%m"),
+        "prev_month_key": prev_month.strftime("%Y-%m"),
+        "next_month_key": next_month.strftime("%Y-%m"),
+        "today_month_key": today.strftime("%Y-%m"),
+        "is_current_month_view": is_current_month_view,
+        "week_labels": week_labels,
+        "weeks": [],
+        "busy_days": 0,
+        "total_items": 0,
+        "project_deliveries": 0,
+        "step_deliveries": 0,
+        "featured_day": {
+            "key": today.isoformat(),
+            "label": today.strftime("%d/%m/%Y"),
+            "headline": "Nenhuma entrega programada.",
+            "item_count": 0,
+            "items": [],
+        },
+        "day_payloads": {},
+    }
+
+    day_map = {}
+
+    def push_event(target_day, payload):
+        if not target_day:
+            return
+        if target_day.year != display_month.year or target_day.month != display_month.month:
+            return
+        day_map.setdefault(target_day, []).append(payload)
+
+    for project in open_projects:
+        target_day = getattr(project, "end_date", None)
+        if not target_day:
+            continue
+        accent = _normalize_hex_color(getattr(project, "color", ""), "#343955")
+        project_responsible = getattr(project, "developer", None)
+        project_responsible_name = (
+            getattr(project_responsible, "nameUser", "")
+            or getattr(project_responsible, "username", "")
+            or "Sem responsável"
+        )
+        push_event(
+            target_day,
+            {
+                "sort_rank": 0,
+                "kind": "Projeto",
+                "title": project.name,
+                "subtitle": "Entrega principal do projeto",
+                "meta": getattr(project, "dashboard_deadline", {}).get("label", target_day.strftime("%d/%m/%Y")),
+                "responsible_name": project_responsible_name,
+                "color": accent,
+                "url": reverse("projectRoadmapView", args=[project.id]),
+                "secondary_url": reverse("projectBoard", args=[project.id]),
+                "primary_label": "Abrir roadmap",
+                "secondary_label": "Kanban",
+            },
+        )
+        base_payload["project_deliveries"] += 1
+
+    for item in open_items:
+        target_day = getattr(item, "end_date", None)
+        if not target_day:
+            continue
+        project = getattr(item, "project", None)
+        accent = _normalize_hex_color(getattr(project, "color", ""), "#4d77d9")
+        responsible = getattr(item, "responsible", None)
+        responsible_name = (
+            getattr(responsible, "nameUser", "")
+            or getattr(responsible, "username", "")
+            or "Sem responsável"
+        )
+        push_event(
+            target_day,
+            {
+                "sort_rank": 1,
+                "kind": "Etapa",
+                "title": item.title,
+                "subtitle": getattr(project, "name", "Projeto"),
+                "meta": item.get_status_display(),
+                "responsible_name": responsible_name,
+                "color": accent,
+                "url": f"{reverse('projectRoadmapView', args=[project.id])}#roadmap-item-{item.id}",
+                "secondary_url": reverse("projectBoard", args=[project.id]),
+                "primary_label": "Ver etapa",
+                "secondary_label": "Kanban",
+            },
+        )
+        base_payload["step_deliveries"] += 1
+
+    all_busy_days = sorted(day_map.keys())
+    if all_busy_days and is_current_month_view:
+        featured_day = next((candidate for candidate in all_busy_days if candidate >= today), all_busy_days[0])
+    elif all_busy_days:
+        featured_day = all_busy_days[0]
+    else:
+        featured_day = today if is_current_month_view else display_month
+
+    calendar_weeks = []
+    calendar_rows = month_calendar.Calendar(firstweekday=0).monthdatescalendar(display_month.year, display_month.month)
+    for week in calendar_rows:
+        week_cells = []
+        for current_day in week:
+            raw_items = sorted(
+                day_map.get(current_day, []),
+                key=lambda row: (row["sort_rank"], row["title"].lower()),
+            )
+            items = [{key: value for key, value in row.items() if key != "sort_rank"} for row in raw_items]
+            item_count = len(items)
+            headline = (
+                "Nenhuma entrega programada."
+                if item_count == 0
+                else ("1 entrega programada." if item_count == 1 else f"{item_count} entregas programadas.")
+            )
+            day_payload = {
+                "key": current_day.isoformat(),
+                "label": current_day.strftime("%d/%m/%Y"),
+                "headline": headline,
+                "item_count": item_count,
+                "items": items,
+            }
+            base_payload["day_payloads"][current_day.isoformat()] = day_payload
+            week_cells.append(
+                {
+                    "key": current_day.isoformat(),
+                    "day_number": current_day.day,
+                    "is_current_month": current_day.month == display_month.month,
+                    "is_today": current_day == today,
+                    "is_past": current_day < today,
+                    "is_sunday": current_day.weekday() == 6,
+                    "is_selected": current_day == featured_day,
+                    "has_items": item_count > 0,
+                    "item_count": item_count,
+                    "items": items,
+                    "preview_limit": 2,
+                    "preview_items": items[:2],
+                    "more_count": max(0, item_count - 2),
+                    "has_overflow": item_count > 2,
+                }
+            )
+        calendar_weeks.append(week_cells)
+
+    base_payload["weeks"] = calendar_weeks
+    base_payload["busy_days"] = len(all_busy_days)
+    base_payload["total_items"] = base_payload["project_deliveries"] + base_payload["step_deliveries"]
+    base_payload["featured_day"] = base_payload["day_payloads"].get(featured_day.isoformat(), base_payload["featured_day"])
+    return base_payload
+
+
+def _build_user_project_dashboard(user, calendar_month=None):
+    today = timezone.localdate()
+    base = {
+        "user_name": "Usuário",
+        "today_label": today.strftime("%d/%m/%Y"),
+        "summary": {
+            "total_projects": 0,
+            "open_projects": 0,
+            "done_projects": 0,
+            "responsible_projects": 0,
+            "participant_projects": 0,
+            "completion_pct": 0,
+            "overdue_projects": 0,
+            "overdue_steps": 0,
+            "steps_assigned": 0,
+            "steps_done": 0,
+            "due_this_week": 0,
+            "active_share_pct": 0,
+            "risk_share_pct": 0,
+        },
+        "metric_cards": [],
+        "focus_projects": [],
+        "upcoming_steps": [],
+        "project_status_rows": [],
+        "roadmap_status_rows": [],
+        "project_progress_rows": [],
+        "progress_bucket_rows": [],
+        "delivery_calendar": {
+            "month_label": today.strftime("%m/%Y"),
+            "week_labels": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"],
+            "weeks": [],
+            "busy_days": 0,
+            "total_items": 0,
+            "project_deliveries": 0,
+            "step_deliveries": 0,
+            "featured_day": {
+                "key": today.isoformat(),
+                "label": today.strftime("%d/%m/%Y"),
+                "headline": "Nenhuma entrega programada.",
+                "item_count": 0,
+                "items": [],
+            },
+            "day_payloads": {},
+        },
+        "hero_notice": "",
+    }
+
+    if not getattr(user, "is_authenticated", False):
+        return base
+
+    user_name = getattr(user, "nameUser", "") or getattr(user, "username", "") or "Usuário"
+    base["user_name"] = user_name
+
+    project_qs = (
+        Project.objects.select_related("developer")
+        .prefetch_related("participants")
+        .filter(Q(developer=user) | Q(participants=user))
+        .distinct()
+        .annotate(
+            roadmap_total=Count("roadmap_items", distinct=True),
+            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done"), distinct=True),
+            roadmap_doing=Count("roadmap_items", filter=Q(roadmap_items__status="doing"), distinct=True),
+            roadmap_blocked=Count("roadmap_items", filter=Q(roadmap_items__status="blocked"), distinct=True),
+            roadmap_overdue=Count(
+                "roadmap_items",
+                filter=Q(roadmap_items__end_date__lt=today) & ~Q(roadmap_items__status="done"),
+                distinct=True,
+            ),
+            kanban_cards_total=Count("kanban_cards", distinct=True),
+        )
+        .order_by(
+            Case(
+                When(status="active", then=Value(0)),
+                When(status="planned", then=Value(1)),
+                When(status="paused", then=Value(2)),
+                When(status="done", then=Value(3)),
+                default=Value(4),
+                output_field=IntegerField(),
+            ),
+            "end_date",
+            "name",
+        )
+    )
+    projects = list(project_qs)
+    _decorate_project_catalog_items(projects)
+
+    project_ids = [project.id for project in projects]
+    open_projects = [project for project in projects if project.status != "done"]
+    done_projects = [project for project in projects if project.status == "done"]
+    responsible_projects = [project for project in projects if project.developer_id == user.id]
+    participant_projects = [
+        project for project in projects if project.developer_id != user.id and any(part.id == user.id for part in project.participants.all())
+    ]
+    overdue_projects = [project for project in open_projects if project.end_date and project.end_date < today]
+    due_this_week = [
+        project
+        for project in open_projects
+        if project.end_date and today <= project.end_date <= (today + timedelta(days=7))
+    ]
+
+    roadmap_items = []
+    if project_ids:
+        roadmap_items = list(
+            ProjectRoadmapItem.objects.filter(project_id__in=project_ids)
+            .select_related("project", "responsible")
+            .order_by("end_date", "sort_order", "id")
+        )
+
+    steps_assigned = [item for item in roadmap_items if item.responsible_id == user.id]
+    open_assigned_steps = [item for item in steps_assigned if item.status != "done"]
+    done_assigned_steps = [item for item in steps_assigned if item.status == "done"]
+    open_items = [item for item in roadmap_items if item.status != "done"]
+
+    total_steps = sum(int(getattr(project, "roadmap_total", 0) or 0) for project in projects)
+    done_steps = sum(int(getattr(project, "roadmap_done", 0) or 0) for project in projects)
+    doing_steps = sum(int(getattr(project, "roadmap_doing", 0) or 0) for project in projects)
+    blocked_steps = sum(int(getattr(project, "roadmap_blocked", 0) or 0) for project in projects)
+    overdue_steps = sum(int(getattr(project, "roadmap_overdue", 0) or 0) for project in projects)
+    planned_steps = max(total_steps - done_steps - doing_steps - blocked_steps, 0)
+    completion_pct = int(round((done_steps / total_steps) * 100)) if total_steps else 0
+    active_share_pct = int(round((len(open_projects) / len(projects)) * 100)) if projects else 0
+    risk_share_pct = int(round((overdue_steps / total_steps) * 100)) if total_steps else 0
+
+    for project in open_projects:
+        deadline = _project_dashboard_deadline_meta(project.end_date, today)
+        project.dashboard_deadline = deadline
+        project.dashboard_role = "Responsável" if project.developer_id == user.id else "Participante"
+        project.dashboard_role_css = "is-owner" if project.developer_id == user.id else "is-participant"
+        project.dashboard_remaining_steps = max(int(getattr(project, "roadmap_total", 0) or 0) - int(getattr(project, "roadmap_done", 0) or 0), 0)
+        project.dashboard_people = []
+        if project.developer_id:
+            project.dashboard_people.append(getattr(project.developer, "nameUser", "") or getattr(project.developer, "username", ""))
+        for participant in project.participants.all():
+            label = getattr(participant, "nameUser", "") or getattr(participant, "username", "")
+            if label and label not in project.dashboard_people:
+                project.dashboard_people.append(label)
+
+    focus_projects = sorted(
+        open_projects,
+        key=lambda project: (
+            0 if project.dashboard_deadline["css"] == "is-overdue" else 1,
+            project.dashboard_deadline["sort_weight"],
+            int(getattr(project, "roadmap_progress_pct", 0) or 0),
+            project.name.lower(),
+        ),
+    )[:6]
+
+    preferred_steps = open_assigned_steps or open_items
+    upcoming_steps = []
+    for item in sorted(
+        preferred_steps,
+        key=lambda roadmap_item: (
+            _project_dashboard_deadline_meta(roadmap_item.end_date, today)["sort_weight"],
+            getattr(roadmap_item.project, "name", "").lower(),
+            roadmap_item.sort_order,
+            roadmap_item.id,
+        ),
+    )[:7]:
+        item.dashboard_deadline = _project_dashboard_deadline_meta(item.end_date, today)
+        item.dashboard_project_style = f"--project-accent: {_normalize_hex_color(getattr(item.project, 'color', '#343955'))};"
+        upcoming_steps.append(item)
+
+    project_status_rows = _build_project_dashboard_bars(
+        [
+            {"key": "active", "label": "Em andamento", "value": sum(1 for project in projects if project.status == "active")},
+            {"key": "planned", "label": "Planejados", "value": sum(1 for project in projects if project.status == "planned")},
+            {"key": "paused", "label": "Pausados", "value": sum(1 for project in projects if project.status == "paused")},
+            {"key": "done", "label": "Concluídos", "value": len(done_projects)},
+        ],
+        len(projects),
+        {
+            "active": "#4d77d9",
+            "planned": "#6f84bb",
+            "paused": "#f0a74d",
+            "done": "#2fbf84",
+        },
+    )
+    roadmap_status_rows = _build_project_dashboard_bars(
+        [
+            {"key": "planned", "label": "Planejadas", "value": planned_steps},
+            {"key": "doing", "label": "Em execução", "value": doing_steps},
+            {"key": "blocked", "label": "Bloqueadas", "value": blocked_steps},
+            {"key": "done", "label": "Concluídas", "value": done_steps},
+        ],
+        total_steps,
+        {
+            "planned": "#6f84bb",
+            "doing": "#4d77d9",
+            "blocked": "#f0a74d",
+            "done": "#2fbf84",
+        },
+    )
+
+    project_progress_rows = []
+    for project in focus_projects[:5]:
+        project_progress_rows.append(
+            {
+                "name": project.name,
+                "progress_pct": int(getattr(project, "roadmap_progress_pct", 0) or 0),
+                "done": int(getattr(project, "roadmap_done", 0) or 0),
+                "total": int(getattr(project, "roadmap_total", 0) or 0),
+                "remaining": project.dashboard_remaining_steps,
+                "color": _normalize_hex_color(project.color, "#343955"),
+                "deadline_label": project.dashboard_deadline["short_label"],
+            }
+        )
+
+    progress_bucket_specs = [
+        ("bucket-start", "0-25%", "In\u00edcio", lambda pct: pct <= 25, "#7A8DBB"),
+        ("bucket-build", "26-50%", "Avan\u00e7o", lambda pct: 26 <= pct <= 50, "#4D77D9"),
+        ("bucket-grow", "51-75%", "Ritmo", lambda pct: 51 <= pct <= 75, "#00BF63"),
+        ("bucket-final", "76-100%", "Reta final", lambda pct: pct >= 76, "#F0A74D"),
+    ]
+    progress_bucket_rows = []
+    for key, range_label, short_label, matcher, color in progress_bucket_specs:
+        count = sum(1 for project in open_projects if matcher(int(getattr(project, "roadmap_progress_pct", 0) or 0)))
+        progress_bucket_rows.append(
+            {
+                "key": key,
+                "label": range_label,
+                "short_label": short_label,
+                "value": count,
+                "color": color,
+            }
+        )
+    progress_bucket_rows = _build_project_dashboard_bars(progress_bucket_rows, len(open_projects), {row["key"]: row["color"] for row in progress_bucket_rows})
+    delivery_calendar = _build_dashboard_delivery_calendar(today, open_projects, open_items, reference_month=calendar_month)
+
+    base["summary"] = {
+        "total_projects": len(projects),
+        "open_projects": len(open_projects),
+        "done_projects": len(done_projects),
+        "responsible_projects": len(responsible_projects),
+        "participant_projects": len(participant_projects),
+        "completion_pct": completion_pct,
+        "overdue_projects": len(overdue_projects),
+        "overdue_steps": overdue_steps,
+        "steps_assigned": len(open_assigned_steps),
+        "steps_done": len(done_assigned_steps),
+        "due_this_week": len(due_this_week),
+        "active_share_pct": active_share_pct,
+        "risk_share_pct": risk_share_pct,
+    }
+    base["metric_cards"] = [
+        {"label": "Projetos ativos", "value": len(open_projects), "detail": f"{len(projects)} no total", "tone": "primary"},
+        {"label": "Etapas concluídas", "value": done_steps, "detail": f"{completion_pct}% do roadmap", "tone": "success"},
+        {"label": "Alertas de prazo", "value": overdue_steps, "detail": f"{len(overdue_projects)} projeto(s) em risco", "tone": "warning"},
+        {"label": "Responsabilidades", "value": len(open_assigned_steps), "detail": "Etapas sob sua condução", "tone": "neutral"},
+    ]
+    base["focus_projects"] = focus_projects
+    base["upcoming_steps"] = upcoming_steps
+    base["project_status_rows"] = project_status_rows
+    base["roadmap_status_rows"] = roadmap_status_rows
+    base["project_progress_rows"] = project_progress_rows
+    base["progress_bucket_rows"] = progress_bucket_rows
+    base["delivery_calendar"] = delivery_calendar
+
+    if overdue_steps:
+        base["hero_notice"] = f"Você tem {overdue_steps} etapa(s) atrasada(s) para revisar."
+    elif due_this_week:
+        base["hero_notice"] = f"Há {len(due_this_week)} projeto(s) com entrega prevista para os próximos 7 dias."
+    elif open_projects:
+        base["hero_notice"] = "Seus projetos estão organizados e sem alertas imediatos."
+    else:
+        base["hero_notice"] = "Nenhum projeto vinculado ao seu usuário ainda."
+
+    return base
+
+
+def _build_hub_context(user):
     categories = (
         HubToolCategory.objects.filter(is_active=True)
         .prefetch_related(
@@ -121,12 +669,12 @@ def index(request):
         .order_by("sort_order", "name", "id")
     )
     my_tools_grouped = []
-    if request.user.is_authenticated:
+    if getattr(user, "is_authenticated", False):
         my_categories = list(
-            HubUserToolCategory.objects.filter(user=request.user, is_active=True).order_by("sort_order", "name", "id")
+            HubUserToolCategory.objects.filter(user=user, is_active=True).order_by("sort_order", "name", "id")
         )
         my_tools = (
-            HubUserTool.objects.filter(user=request.user, is_active=True)
+            HubUserTool.objects.filter(user=user, is_active=True)
             .select_related("category")
             .order_by("category__sort_order", "category__name", "category_name", "sort_order", "name", "id")
         )
@@ -148,17 +696,3268 @@ def index(request):
             grouped_map[key]["tools"].append(tool)
         my_tools_grouped = [grouped_map[key] for key in ordered_keys]
 
+    return {
+        "categories": categories,
+        "my_tools_grouped": my_tools_grouped,
+        "active_notifications": SystemNotification.objects.filter(is_active=True)[:8],
+        "tetris_highscores": _get_tetris_highscores(user),
+        "tetris_personal_best": _get_tetris_personal_best(user),
+    }
+
+
+def _timeline_initials(name):
+    parts = [part for part in (name or "").strip().split() if part]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _pack_timeline_lanes(entries):
+    lanes = []
+    for entry in sorted(entries, key=lambda row: (row["start_col"], -row["duration"])):
+        placed_lane = next((lane for lane in lanes if lane[-1]["end_col"] < entry["start_col"]), None)
+        if placed_lane is not None:
+            placed_lane.append(entry)
+        else:
+            lanes.append([entry])
+    return lanes
+
+
+def _build_project_timeline(today, projects, roadmap_items, months_before=2, months_after=3):
+    """Builds a flat, row-based timeline grid spanning several months in a row
+    (continuous horizontal scroll instead of page-by-page month navigation).
+    One shared CSS grid: every day column, month/weekday header, row label and
+    entry is placed on that same grid so everything lines up by construction."""
+    anchor_month = today.replace(day=1)
+    range_start = _shift_dashboard_month(anchor_month, -months_before)
+    range_end_month = _shift_dashboard_month(anchor_month, months_after)
+    days_in_last_month = month_calendar.monthrange(range_end_month.year, range_end_month.month)[1]
+    range_end = range_end_month.replace(day=days_in_last_month)
+    total_days = (range_end - range_start).days + 1
+
+    def clip_range(raw_start, raw_end):
+        if not raw_end:
+            return None
+        start = raw_start or raw_end
+        if start > raw_end:
+            start = raw_end
+        if raw_end < range_start or start > range_end:
+            return None
+        clipped_start = max(start, range_start)
+        clipped_end = min(raw_end, range_end)
+        start_col = (clipped_start - range_start).days + 1
+        end_col = (clipped_end - range_start).days + 1
+        duration = end_col - start_col + 1
+        return {
+            "start_col": start_col,
+            "end_col": end_col,
+            "duration": duration,
+            "grid_column_start": start_col + 1,
+            "overflow_start": start < range_start,
+            "overflow_end": raw_end > range_end,
+            "is_milestone": duration == 1,
+        }
+
+    items_by_project = {}
+    for item in roadmap_items:
+        items_by_project.setdefault(item.project_id, []).append(item)
+
+    by_responsible = {}
+
+    def bucket(name):
+        return by_responsible.setdefault(name, [])
+
+    # A project and its own roadmap steps share a single lane: the project's
+    # period always widens to fully cover its steps, and the steps render as
+    # smaller segments layered on top of that same bar instead of on lanes
+    # of their own — so they never get visually split apart from it.
+    for project in projects:
+        project_items = items_by_project.get(project.id, [])
+
+        candidate_starts = []
+        candidate_ends = []
+        if getattr(project, "start_date", None):
+            candidate_starts.append(project.start_date)
+        if getattr(project, "end_date", None):
+            candidate_ends.append(project.end_date)
+        for item in project_items:
+            if item.end_date:
+                candidate_starts.append(item.start_date or item.end_date)
+                candidate_ends.append(item.end_date)
+
+        if not candidate_ends:
+            continue
+        overall_end = max(candidate_ends)
+        overall_start = min(candidate_starts) if candidate_starts else overall_end
+        if overall_start > overall_end:
+            overall_start = overall_end
+
+        clipped = clip_range(overall_start, overall_end)
+        if not clipped:
+            continue
+
+        responsible = getattr(project, "developer", None)
+        name = (
+            getattr(responsible, "nameUser", "")
+            or getattr(responsible, "username", "")
+            or "Sem responsável"
+        )
+        accent = _normalize_hex_color(getattr(project, "color", ""), "#343955")
+
+        steps = []
+        for item in sorted(project_items, key=lambda row: (row.end_date or overall_end, row.sort_order, row.id)):
+            if not item.end_date:
+                continue
+            step_clip = clip_range(item.start_date or item.end_date, item.end_date)
+            if not step_clip:
+                continue
+            item_responsible = getattr(item, "responsible", None)
+            step = {
+                "title": item.title,
+                "status": item.get_status_display(),
+                "color": accent,
+                "responsible_name": (
+                    getattr(item_responsible, "nameUser", "")
+                    or getattr(item_responsible, "username", "")
+                    or "Sem responsável"
+                ),
+                "url": f"{reverse('projectRoadmapView', args=[project.id])}#roadmap-item-{item.id}",
+            }
+            step.update(step_clip)
+            steps.append(step)
+
+        # Position each step as a percentage of the parent bar's own width,
+        # so it renders nested inside the project's bar (not on the shared
+        # day grid) and can never drift out of alignment with it.
+        parent_start_col = clipped["start_col"]
+        parent_duration = clipped["duration"]
+        for step in steps:
+            local_start = step["start_col"] - parent_start_col
+            step["pct_left"] = round((local_start / parent_duration) * 100, 3)
+            step["pct_width"] = max(round((step["duration"] / parent_duration) * 100, 3), 4)
+
+        project_entry = {
+            "kind": "Projeto",
+            "title": project.name,
+            "project_name": project.name,
+            "status": project.get_status_display(),
+            "color": accent,
+            "url": reverse("projectRoadmapView", args=[project.id]),
+            "steps": steps,
+        }
+        project_entry.update(clipped)
+        bucket(name).append(project_entry)
+
+    people = []
+    for name in sorted(by_responsible.keys(), key=lambda value: value.lower()):
+        sub_lanes = _pack_timeline_lanes(by_responsible[name])
+        people.append({"name": name, "sub_lanes": sub_lanes, "item_count": len(by_responsible[name])})
+    people.sort(key=lambda person: -person["item_count"])
+
+    rows = []
+    current_row = 4  # rows 1-3 are reserved for the month / weekday / day-number header
+    for person in people:
+        label_row_start = current_row
+        for sub_index, sub_lane in enumerate(person["sub_lanes"]):
+            rows.append(
+                {
+                    "row_number": current_row,
+                    "label": person["name"] if sub_index == 0 else "",
+                    "initials": _timeline_initials(person["name"]) if sub_index == 0 else "",
+                    "person_item_count": person["item_count"] if sub_index == 0 else 0,
+                    "label_row_start": label_row_start,
+                    "label_rowspan": len(person["sub_lanes"]),
+                    "is_first_sub_lane": sub_index == 0,
+                    "is_last_sub_lane": sub_index == len(person["sub_lanes"]) - 1,
+                    "entries": sub_lane,
+                }
+            )
+            current_row += 1
+    row_count = current_row - 1
+
+    month_names = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+    ]
+    weekday_labels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    day_headers = []
+    month_headers = []
+    today_grid_column = None
+    current_month_key = None
+    month_start_col = None
+    for offset in range(total_days):
+        day_date = range_start + timedelta(days=offset)
+        grid_column = offset + 2
+        is_today = day_date == today
+        if is_today:
+            today_grid_column = grid_column
+
+        month_key = (day_date.year, day_date.month)
+        if month_key != current_month_key:
+            if current_month_key is not None:
+                month_headers.append(
+                    {
+                        "label": f"{month_names[current_month_key[1] - 1]} {current_month_key[0]}",
+                        "key": f"{current_month_key[0]}-{current_month_key[1]:02d}",
+                        "grid_column_start": month_start_col,
+                        "span": grid_column - month_start_col,
+                    }
+                )
+            current_month_key = month_key
+            month_start_col = grid_column
+
+        day_headers.append(
+            {
+                "day_number": day_date.day,
+                "weekday_label": weekday_labels[day_date.weekday()],
+                "grid_column": grid_column,
+                "is_today": is_today,
+                "is_weekend": day_date.weekday() >= 5,
+            }
+        )
+    if current_month_key is not None:
+        month_headers.append(
+            {
+                "label": f"{month_names[current_month_key[1] - 1]} {current_month_key[0]}",
+                "key": f"{current_month_key[0]}-{current_month_key[1]:02d}",
+                "grid_column_start": month_start_col,
+                "span": (total_days + 2) - month_start_col,
+            }
+        )
+
+    return {
+        "total_days": total_days,
+        "day_headers": day_headers,
+        "month_headers": month_headers,
+        "weekend_columns": [day["grid_column"] for day in day_headers if day["is_weekend"]],
+        "today_grid_column": today_grid_column,
+        "today_month_key": today.strftime("%Y-%m"),
+        "rows": rows,
+        "row_count": row_count,
+        "responsible_count": len(people),
+        "has_data": bool(rows),
+    }
+
+
+def _load_global_project_delivery_scope(calendar_user_id=None):
+    """Shared data scope (open projects + active roadmap items across the whole
+    team, optionally filtered by responsible user) used by both the global
+    calendar and the global timeline screens."""
+    today = timezone.localdate()
+    try:
+        selected_user_id = int(calendar_user_id or 0) or None
+    except (TypeError, ValueError):
+        selected_user_id = None
+
+    all_projects = list(
+        Project.objects.select_related("developer")
+        .prefetch_related("participants")
+        .exclude(status="done")
+        .annotate(
+            roadmap_total=Count("roadmap_items", distinct=True),
+            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done"), distinct=True),
+        )
+        .order_by("end_date", "name")
+    )
+    _decorate_project_catalog_items(all_projects)
+
+    for project in all_projects:
+        project.dashboard_deadline = _project_dashboard_deadline_meta(project.end_date, today)
+
+    all_project_ids = [project.id for project in all_projects]
+    all_roadmap_items = []
+    if all_project_ids:
+        all_roadmap_items = list(
+            ProjectRoadmapItem.objects.filter(project_id__in=all_project_ids)
+            .exclude(status="done")
+            .select_related("project", "responsible")
+            .order_by("end_date", "sort_order", "id")
+        )
+
+    responsible_ids = set()
+    for project in all_projects:
+        if project.developer_id:
+            responsible_ids.add(project.developer_id)
+    for item in all_roadmap_items:
+        if item.responsible_id:
+            responsible_ids.add(item.responsible_id)
+
+    calendar_user_options = []
+    if responsible_ids:
+        users_queryset = User.objects.filter(id__in=responsible_ids, is_active=True).order_by("nameUser", "username")
+        calendar_user_options = [
+            {
+                "id": user.id,
+                "label": getattr(user, "nameUser", "") or getattr(user, "username", "") or f"Usuario {user.id}",
+            }
+            for user in users_queryset
+        ]
+
+    if selected_user_id:
+        projects = [project for project in all_projects if project.developer_id == selected_user_id]
+        roadmap_items = [item for item in all_roadmap_items if item.responsible_id == selected_user_id]
+    else:
+        projects = list(all_projects)
+        roadmap_items = list(all_roadmap_items)
+
+    return {
+        "today": today,
+        "projects": projects,
+        "roadmap_items": roadmap_items,
+        "calendar_user_options": calendar_user_options,
+        "selected_user_id": selected_user_id,
+    }
+
+
+def _build_global_project_calendar_context(calendar_month=None, calendar_user_id=None):
+    scope = _load_global_project_delivery_scope(calendar_user_id)
+    today = scope["today"]
+    calendar_month = calendar_month or today.replace(day=1)
+    projects = scope["projects"]
+    roadmap_items = scope["roadmap_items"]
+
+    context = {
+        "today_label": today.strftime("%d/%m/%Y"),
+        "metric_cards": [],
+        "dashboard": {
+            "delivery_calendar": _build_dashboard_delivery_calendar(today, [], [], reference_month=calendar_month),
+        },
+        "calendar_title": "Calendário geral de projetos",
+        "calendar_subtitle": "Visual mensal dos projetos e etapas de toda a equipe",
+        "calendar_detail_title": "Detalhes do dia",
+        "calendar_detail_subtitle": "Abra o roadmap ou o Kanban de qualquer projeto a partir da agenda global",
+        "calendar_user_options": scope["calendar_user_options"],
+        "calendar_user_id": scope["selected_user_id"],
+    }
+
+    overdue_steps = sum(1 for item in roadmap_items if item.end_date and item.end_date < today)
+    due_next_week = sum(1 for item in roadmap_items if item.end_date and today <= item.end_date <= (today + timedelta(days=7)))
+    calendar_data = _build_dashboard_delivery_calendar(today, projects, roadmap_items, reference_month=calendar_month)
+
+    context["metric_cards"] = [
+        {
+            "label": "Projetos em aberto",
+            "value": len(projects),
+            "detail": f"{len(context['calendar_user_options'])} responsável(eis) mapeado(s)",
+            "tone": "primary",
+        },
+        {
+            "label": "Etapas ativas",
+            "value": len(roadmap_items),
+            "detail": f"{calendar_data['step_deliveries']} etapa(s) com prazo no mês",
+            "tone": "neutral",
+        },
+        {
+            "label": "Entregas do mês",
+            "value": calendar_data["total_items"],
+            "detail": f"{calendar_data['busy_days']} dia(s) com movimentação",
+            "tone": "success",
+        },
+        {
+            "label": "Alertas de prazo",
+            "value": overdue_steps,
+            "detail": f"{due_next_week} entrega(s) nos próximos 7 dias",
+            "tone": "warning",
+        },
+    ]
+    context["dashboard"]["delivery_calendar"] = calendar_data
+    return context
+
+
+def _build_project_timeline_context(calendar_user_id=None):
+    scope = _load_global_project_delivery_scope(calendar_user_id)
+    today = scope["today"]
+    projects = scope["projects"]
+    roadmap_items = scope["roadmap_items"]
+
+    timeline_data = _build_project_timeline(today, projects, roadmap_items)
+
+    overdue_steps = sum(1 for item in roadmap_items if item.end_date and item.end_date < today)
+    due_next_week = sum(1 for item in roadmap_items if item.end_date and today <= item.end_date <= (today + timedelta(days=7)))
+
+    return {
+        "today_label": today.strftime("%d/%m/%Y"),
+        "timeline_title": "Timeline geral de projetos",
+        "timeline_subtitle": "Uma linha por responsável, barras pela duração real de cada entrega",
+        "calendar_user_options": scope["calendar_user_options"],
+        "calendar_user_id": scope["selected_user_id"],
+        "timeline": timeline_data,
+        "metric_cards": [
+            {
+                "label": "Projetos em aberto",
+                "value": len(projects),
+                "detail": f"{len(scope['calendar_user_options'])} responsável(eis) mapeado(s)",
+                "tone": "primary",
+            },
+            {
+                "label": "Etapas ativas",
+                "value": len(roadmap_items),
+                "detail": f"{timeline_data['responsible_count']} responsável(eis) com entregas no período",
+                "tone": "neutral",
+            },
+            {
+                "label": "Alertas de prazo",
+                "value": overdue_steps,
+                "detail": f"{due_next_week} entrega(s) nos próximos 7 dias",
+                "tone": "warning",
+            },
+        ],
+    }
+
+
+def index(request):
+    _sync_service_notifications()
+    _sync_portal_critical_notifications()
+    dashboard = _build_user_project_dashboard(
+        request.user,
+        calendar_month=_dashboard_month_start(request.GET.get("calendar_month"), timezone.localdate()),
+    )
+    if request.GET.get("calendar_partial") == "1":
+        return render(
+            request,
+            "partials/dashboard_delivery_calendar.html",
+            {
+                "dashboard": dashboard,
+            },
+        )
+
     return render(
         request,
         "tiqueue/index.html",
         {
-            "categories": categories,
-            "my_tools_grouped": my_tools_grouped,
+            "dashboard": dashboard,
             "active_notifications": SystemNotification.objects.filter(is_active=True)[:8],
-            "tetris_highscores": _get_tetris_highscores(request.user),
-            "tetris_personal_best": _get_tetris_personal_best(request.user),
         },
     )
+
+
+def projectCalendarPage(request):
+    _sync_service_notifications()
+    _sync_portal_critical_notifications()
+    selected_user_id = request.GET.get("calendar_user")
+    context = _build_global_project_calendar_context(
+        calendar_month=_dashboard_month_start(request.GET.get("calendar_month"), timezone.localdate()),
+        calendar_user_id=selected_user_id,
+    )
+    if request.GET.get("calendar_partial") == "1":
+        return render(request, "partials/dashboard_delivery_calendar.html", context)
+
+    context["active_notifications"] = SystemNotification.objects.filter(is_active=True)[:8]
+    return render(request, "tiqueue/project_calendar.html", context)
+
+
+def projectTimelinePage(request):
+    _sync_service_notifications()
+    _sync_portal_critical_notifications()
+    selected_user_id = request.GET.get("calendar_user")
+    context = _build_project_timeline_context(calendar_user_id=selected_user_id)
+    if request.GET.get("calendar_partial") == "1":
+        return render(request, "partials/project_timeline_view.html", context)
+
+    context["active_notifications"] = SystemNotification.objects.filter(is_active=True)[:8]
+    return render(request, "tiqueue/project_timeline.html", context)
+
+
+def hubPage(request):
+    _sync_service_notifications()
+    _sync_portal_critical_notifications()
+    return render(request, "tiqueue/hub.html", _build_hub_context(request.user))
+
+
+def _portal_status_meta(status):
+    mapping = {
+        PortalDemand.STATUS_PENDING: {
+            "label": "Pendente",
+            "css": "is-pending",
+            "color": "#c98b35",
+        },
+        PortalDemand.STATUS_ASSUMED: {
+            "label": "Em atendimento",
+            "css": "is-assumed",
+            "color": "#4d77d9",
+        },
+        PortalDemand.STATUS_COMPLETED: {
+            "label": "Concluída",
+            "css": "is-completed",
+            "color": "#2d9566",
+        },
+        PortalDemand.STATUS_CANCELLED: {
+            "label": "Cancelada",
+            "css": "is-cancelled",
+            "color": "#9a5561",
+        },
+    }
+    return mapping.get(
+        status,
+        {
+            "label": status or "Sem status",
+            "css": "is-unknown",
+            "color": "#61688c",
+        },
+    )
+
+
+def _portal_can_manage(user):
+    return bool(getattr(user, "is_authenticated", False) and _is_system_admin(user))
+
+
+def _portal_requester_account_record(user):
+    if not getattr(user, "is_authenticated", False):
+        return None
+    cache_attr = "_portal_requester_account_cache"
+    if hasattr(user, cache_attr):
+        return getattr(user, cache_attr)
+    account = (
+        PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user")
+        .filter(user=user)
+        .first()
+    )
+    setattr(user, cache_attr, account)
+    return account
+
+
+def _portal_requester_access_feature_enabled():
+    return PortalRequesterAccount.objects.exists()
+
+
+def _portal_can_open_new_demands(user):
+    if _portal_can_manage(user):
+        return True
+    account = _portal_requester_account_record(user)
+    if account:
+        collaborator = account.collaborator
+        sector = getattr(collaborator, "sector", None)
+        return bool(
+            getattr(user, "is_active", False)
+            and account.is_active
+            and getattr(collaborator, "is_active", False)
+            and getattr(sector, "is_active", False)
+        )
+    return not _portal_requester_access_feature_enabled()
+
+
+def _portal_requester_access_denied_message():
+    return "Seu usuário ainda não foi liberado para abrir demandas no portal de TI. Solicite o cadastro do setor, colaborador e acesso do portal."
+
+
+def _sync_portal_requester_account_user(account, password=None, username=None):
+    collaborator = account.collaborator
+    user = account.user
+    should_be_active = bool(
+        account.is_active
+        and getattr(collaborator, "is_active", False)
+        and getattr(getattr(collaborator, "sector", None), "is_active", False)
+    )
+    if username:
+        user.username = username
+    user.userId = collaborator.registration_code
+    user.nameUser = collaborator.full_name
+    user.email = collaborator.email
+    user.is_active = should_be_active
+    if password:
+        user.set_password(password)
+    user.save()
+    return user
+
+
+def _sync_portal_requester_collaborator_accounts(collaborators):
+    collaborator_ids = [row.id for row in collaborators if getattr(row, "id", None)]
+    if not collaborator_ids:
+        return
+    accounts = (
+        PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user")
+        .filter(collaborator_id__in=collaborator_ids)
+    )
+    for account in accounts:
+        _sync_portal_requester_account_user(account)
+
+
+def _portal_requester_collaborator_sync_errors(collaborator, linked_user=None):
+    errors = {}
+    compare_qs = User.objects.exclude(pk=getattr(linked_user, "pk", None)) if linked_user else User.objects.all()
+    registration_code = (getattr(collaborator, "registration_code", "") or "").strip()
+    email = (getattr(collaborator, "email", "") or "").strip().lower()
+    if registration_code and compare_qs.filter(userId=registration_code).exists():
+        errors["registration_code"] = "Já existe um usuário com esta matrícula."
+    if email and compare_qs.filter(email=email).exists():
+        errors["email"] = "Já existe um usuário com este e-mail."
+    return errors
+
+
+def _portal_scope_ids(task_group=None, task_type=None):
+    group = task_group or getattr(task_type, "group", None)
+    return getattr(group, "id", None), getattr(task_type, "id", None)
+
+
+def _portal_format_minutes(total_minutes):
+    total_minutes = int(total_minutes or 0)
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes:02d}min"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}min"
+
+
+def _portal_relative_time_display(moment):
+    if not moment:
+        return "-"
+    local_moment = timezone.localtime(moment)
+    now = timezone.localtime(timezone.now())
+    delta = now - local_moment
+    total_minutes = max(int(delta.total_seconds() // 60), 0)
+    if total_minutes < 1:
+        return "agora"
+    if total_minutes < 60:
+        return f"há {total_minutes} min"
+    total_hours = total_minutes // 60
+    if total_hours < 24:
+        return f"há {total_hours}h"
+    total_days = total_hours // 24
+    if total_days < 7:
+        return f"há {total_days} dia{'s' if total_days != 1 else ''}"
+    return local_moment.strftime("%d/%m/%Y")
+
+
+def _portal_similarity_tokens(*chunks):
+    raw_text = " ".join(str(chunk or "") for chunk in chunks)
+    normalized = unicodedata.normalize("NFKD", raw_text.lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    tokens = re.findall(r"[a-z0-9]{3,}", normalized)
+    stop_words = {
+        "para",
+        "com",
+        "sem",
+        "uma",
+        "que",
+        "das",
+        "dos",
+        "por",
+        "pra",
+        "nao",
+        "mais",
+        "essa",
+        "esse",
+        "isso",
+        "tipo",
+        "grupo",
+    }
+    ordered = []
+    for token in tokens:
+        if token in stop_words or token in ordered:
+            continue
+        ordered.append(token)
+    return ordered[:8]
+
+
+def _portal_similarity_score(tokens, *chunks):
+    haystack = " ".join(str(chunk or "") for chunk in chunks)
+    normalized = unicodedata.normalize("NFKD", haystack.lower())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return sum(1 for token in tokens if token in normalized)
+
+
+def _portal_trim_excerpt(value, limit=180):
+    value = " ".join(str(value or "").split())
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+
+def _portal_match_sla_policy(task_group=None, task_type=None, priority_level=None):
+    group_id, type_id = _portal_scope_ids(task_group=task_group, task_type=task_type)
+    policies = list(
+        PortalDemandSlaPolicy.objects.filter(is_active=True)
+        .select_related("task_group", "task_type", "default_attendant")
+        .order_by("sort_order", "id")
+    )
+    candidates = []
+    for policy in policies:
+        if policy.task_type_id and policy.task_type_id != type_id:
+            continue
+        if policy.task_group_id and policy.task_group_id != group_id:
+            continue
+        if policy.priority_level and policy.priority_level != priority_level:
+            continue
+        specificity = (
+            (4 if policy.task_type_id else 0)
+            + (2 if policy.task_group_id else 0)
+            + (1 if policy.priority_level else 0)
+        )
+        candidates.append((specificity, policy.sort_order, policy.id, policy))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda row: (-row[0], row[1], row[2]))
+    return candidates[0][3]
+
+
+def _portal_apply_sla_policy(demand, policy=None, save=False):
+    matched_policy = policy or _portal_match_sla_policy(
+        task_group=demand.task_group,
+        task_type=demand.task_type,
+        priority_level=demand.priority_level,
+    )
+    demand.sla_policy = matched_policy
+    if matched_policy:
+        opened_at = demand.created_at or timezone.now()
+        demand.first_response_due_at = opened_at + timedelta(minutes=int(matched_policy.first_response_minutes or 0))
+        demand.resolution_due_at = opened_at + timedelta(minutes=int(matched_policy.resolution_minutes or 0))
+    else:
+        demand.first_response_due_at = None
+        demand.resolution_due_at = None
+    if save and demand.pk:
+        demand.save(update_fields=["sla_policy", "first_response_due_at", "resolution_due_at", "updated_at"])
+    return matched_policy
+
+
+def _portal_sla_metric(label, due_at, completed_at=None):
+    local_due = timezone.localtime(due_at) if due_at else None
+    local_completed = timezone.localtime(completed_at) if completed_at else None
+    if not local_due:
+        return {
+            "label": label,
+            "status": "Sem meta",
+            "css": "is-neutral",
+            "hint": "Nenhuma política de SLA aplicada.",
+        }
+
+    if local_completed:
+        delta_minutes = int((local_completed - local_due).total_seconds() // 60)
+        within = delta_minutes <= 0
+        return {
+            "label": label,
+            "status": "Cumprido" if within else "Fora do prazo",
+            "css": "is-success" if within else "is-danger",
+            "hint": (
+                f"Concluído em {local_completed.strftime('%d/%m/%Y %H:%M')}"
+                if within
+                else f"Concluído com atraso de {_portal_format_minutes(abs(delta_minutes))}"
+            ),
+        }
+
+    now = timezone.localtime(timezone.now())
+    delta_minutes = int((local_due - now).total_seconds() // 60)
+    if delta_minutes >= 0:
+        return {
+            "label": label,
+            "status": "No prazo",
+            "css": "is-info",
+            "hint": f"Restam {_portal_format_minutes(delta_minutes)} até {local_due.strftime('%d/%m/%Y %H:%M')}",
+        }
+    return {
+        "label": label,
+        "status": "Em atraso",
+        "css": "is-danger",
+        "hint": f"Atrasada há {_portal_format_minutes(abs(delta_minutes))}",
+    }
+
+
+def _portal_metric_chip_css(metric_css):
+    mapping = {
+        "is-success": "is-completed",
+        "is-danger": "is-cancelled",
+        "is-info": "is-assumed",
+        "is-neutral": "is-soft-neutral",
+    }
+    return mapping.get(metric_css or "", "is-pending")
+
+
+def _portal_due_display(due_at):
+    if not due_at:
+        return "-"
+    return timezone.localtime(due_at).strftime("%d/%m/%Y %H:%M")
+
+
+def _portal_triage_meta(demand):
+    due_at = getattr(demand, "first_response_due_at", None) or getattr(demand, "resolution_due_at", None)
+    priority_rank = {
+        userQueue.PRIORITY_HIGH: 30,
+        userQueue.PRIORITY_MEDIUM: 15,
+        userQueue.PRIORITY_LOW: 0,
+    }
+    if not due_at:
+        return {
+            "label": "Normal",
+            "css": "is-soft-neutral",
+            "score": priority_rank.get(getattr(demand, "priority_level", ""), 0),
+            "hint": "Demanda sem prazo definido por SLA.",
+        }
+
+    now = timezone.localtime(timezone.now())
+    local_due = timezone.localtime(due_at)
+    delta_minutes = int((local_due - now).total_seconds() // 60)
+    base_score = priority_rank.get(getattr(demand, "priority_level", ""), 0)
+
+    if delta_minutes < 0:
+        return {
+            "label": "Critica",
+            "css": "is-cancelled",
+            "score": 4000 + abs(delta_minutes) + base_score,
+            "hint": f"SLA atrasado ha {_portal_format_minutes(abs(delta_minutes))}.",
+        }
+    if delta_minutes <= 60:
+        return {
+            "label": "Alta",
+            "css": "is-pending",
+            "score": 3000 - delta_minutes + base_score,
+            "hint": f"Prazo vence em {_portal_format_minutes(delta_minutes)}.",
+        }
+    if delta_minutes <= 240:
+        return {
+            "label": "Media",
+            "css": "is-assumed",
+            "score": 2000 - delta_minutes + base_score,
+            "hint": f"Prazo vence ainda hoje ou nas proximas horas.",
+        }
+    return {
+        "label": "Normal",
+        "css": "is-soft-neutral",
+        "score": 1000 - min(delta_minutes, 999) + base_score,
+        "hint": f"Prazo previsto para {_portal_due_display(local_due)}.",
+    }
+
+
+def _portal_build_sla_preview(policy):
+    if not policy:
+        return {
+            "has_policy": False,
+            "title": "Sem SLA configurado",
+            "subtitle": "Nenhuma política ativa corresponde ao grupo, tipo e prioridade informados.",
+        }
+
+    return {
+        "has_policy": True,
+        "title": policy.name,
+        "subtitle": policy.description or "Política aplicada automaticamente na abertura.",
+        "first_response_display": _portal_format_minutes(policy.first_response_minutes),
+        "resolution_display": _portal_format_minutes(policy.resolution_minutes),
+        "default_attendant": _queue_collaborator_display_name(policy.default_attendant) if policy.default_attendant_id else "-",
+        "auto_assign": bool(policy.auto_assign_on_create and policy.default_attendant_id),
+    }
+
+
+def _portal_pending_summary_data(pending_demands):
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    critical = 0
+    high_attention = 0
+    due_today = 0
+    auto_assignable = 0
+
+    for demand in pending_demands:
+        if getattr(demand, "triage_label", "") == "Critica":
+            critical += 1
+        if getattr(demand, "triage_label", "") in {"Critica", "Alta"}:
+            high_attention += 1
+        due_at = getattr(demand, "first_response_due_at", None)
+        if due_at and timezone.localtime(due_at).date() == today:
+            due_today += 1
+        if getattr(getattr(demand, "sla_preview", {}), "get", None) and demand.sla_preview.get("auto_assign"):
+            auto_assignable += 1
+
+    return {
+        "critical": critical,
+        "high_attention": high_attention,
+        "due_today": due_today,
+        "auto_assignable": auto_assignable,
+    }
+
+
+def _portal_admin_operational_overview():
+    open_demands = list(
+        PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+        .select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
+        .order_by("created_at", "id")
+    )
+    _decorate_portal_demands(open_demands)
+    open_demands.sort(key=lambda demand: (-getattr(demand, "triage_score", 0), demand.created_at, demand.id))
+
+    critical_demands = [demand for demand in open_demands if getattr(demand, "triage_label", "") == "Critica"]
+    high_attention_demands = [
+        demand for demand in open_demands if getattr(demand, "triage_label", "") in {"Critica", "Alta"}
+    ]
+    pending_demands = [demand for demand in open_demands if demand.status == PortalDemand.STATUS_PENDING]
+    assumed_demands = [demand for demand in open_demands if demand.status == PortalDemand.STATUS_ASSUMED]
+
+    spotlight_demands = critical_demands[:3] if critical_demands else high_attention_demands[:3]
+    spotlight_title = "Demandas críticas agora" if critical_demands else "Demandas que exigem atenção"
+    spotlight_empty = (
+        "Nenhuma demanda crítica no momento. As próximas do SLA continuam monitoradas aqui."
+        if not critical_demands
+        else ""
+    )
+
+    return {
+        "critical_count": len(critical_demands),
+        "high_attention_count": len(high_attention_demands),
+        "pending_count": len(pending_demands),
+        "assumed_count": len(assumed_demands),
+        "spotlight_title": spotlight_title,
+        "spotlight_demands": spotlight_demands,
+        "spotlight_empty": spotlight_empty,
+        "critical_queue_url": f"{reverse('portalPendingDemandsPage')}?urgency=critica&sort=urgency",
+        "attention_queue_url": f"{reverse('portalPendingDemandsPage')}?urgency=alta&sort=urgency",
+    }
+
+
+def _portal_ranked_canned_suggestions(demand, canned_responses, limit=5):
+    demand_group_id = getattr(demand, "task_group_id", None)
+    demand_type_id = getattr(demand, "task_type_id", None)
+
+    def response_score(response):
+        score = 0
+        if getattr(response, "task_type_id", None):
+            score += 5 if response.task_type_id == demand_type_id else -3
+        if getattr(response, "task_group_id", None):
+            score += 3 if response.task_group_id == demand_group_id else -2
+        score -= int(getattr(response, "sort_order", 0) or 0) / 1000.0
+        return score
+
+    ranked = sorted(
+        canned_responses,
+        key=lambda response: (-response_score(response), getattr(response, "sort_order", 0), (response.title or "").lower(), response.id),
+    )
+
+    suggestions = []
+    for response in ranked[:limit]:
+        match_reasons = []
+        if getattr(response, "task_type_id", None) and response.task_type_id == demand_type_id:
+            match_reasons.append("mesmo tipo")
+        if getattr(response, "task_group_id", None) and response.task_group_id == demand_group_id:
+            match_reasons.append("mesmo grupo")
+        response.match_reason = ", ".join(match_reasons) if match_reasons else "uso geral"
+        suggestions.append(response)
+    return suggestions
+
+
+def _portal_knowledge_suggestions(title, description):
+    tokens = _portal_similarity_tokens(title, description)
+    if not tokens:
+        return []
+
+    lookup = Q()
+    for token in tokens:
+        lookup |= (
+            Q(title__icontains=token)
+            | Q(trigger__icontains=token)
+            | Q(description__icontains=token)
+            | Q(tags__icontains=token)
+            | Q(resolution__icontains=token)
+        )
+    matches = (
+        KnowledgeEntry.objects.select_related("category")
+        .filter(lookup)
+        .order_by("-updated_at", "-inserted_at", "-id")[:24]
+    )
+    ranked = []
+    for entry in matches:
+        score = _portal_similarity_score(
+            tokens,
+            entry.title,
+            entry.trigger,
+            entry.description,
+            entry.tags,
+            entry.resolution,
+        )
+        if score <= 0:
+            continue
+        ranked.append(
+            {
+                "id": entry.id,
+                "title": entry.title,
+                "category": entry.category.name,
+                "score": score,
+                "excerpt": _portal_trim_excerpt(entry.trigger or entry.description),
+                "url": reverse("knowledgeEntryDetailPage", args=[entry.id]),
+            }
+        )
+    ranked.sort(key=lambda row: (-row["score"], row["title"]))
+    return ranked[:4]
+
+
+def _portal_duplicate_suggestions(user, title, description):
+    tokens = _portal_similarity_tokens(title, description)
+    if not getattr(user, "is_authenticated", False) or not tokens:
+        return []
+
+    lookup = Q()
+    for token in tokens:
+        lookup |= Q(title__icontains=token) | Q(description__icontains=token)
+
+    matches = (
+        PortalDemand.objects.filter(requester=user)
+        .exclude(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED])
+        .filter(lookup)
+        .select_related("task_group", "task_type")
+        .order_by("-created_at", "-id")[:12]
+    )
+    ranked = []
+    for demand in matches:
+        score = _portal_similarity_score(tokens, demand.title, demand.description)
+        if score <= 0:
+            continue
+        ranked.append(
+            {
+                "id": demand.id,
+                "title": demand.title,
+                "protocol": demand.protocol,
+                "status": _portal_status_meta(demand.status)["label"],
+                "created_at": timezone.localtime(demand.created_at).strftime("%d/%m/%Y %H:%M"),
+                "url": demand.get_absolute_url(),
+                "score": score,
+            }
+        )
+    ranked.sort(key=lambda row: (-row["score"], row["protocol"]))
+    return ranked[:4]
+
+
+def _portal_can_access_demand(user, demand):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(_portal_can_manage(user) or getattr(demand, "requester_id", None) == getattr(user, "id", None))
+
+
+def _portal_can_reply_to_demand(user, demand):
+    if not _portal_can_access_demand(user, demand):
+        return False
+    return demand.status not in {PortalDemand.STATUS_CANCELLED, PortalDemand.STATUS_COMPLETED}
+
+
+def _portal_can_leave_feedback(user, demand):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(
+        getattr(demand, "requester_id", None) == getattr(user, "id", None)
+        and demand.status == PortalDemand.STATUS_COMPLETED
+        and not demand.has_feedback
+    )
+
+
+def _portal_actor_role(user, demand):
+    if getattr(demand, "requester_id", None) == getattr(user, "id", None):
+        return PortalDemandMessage.ROLE_REQUESTER
+    return PortalDemandMessage.ROLE_ATTENDANT if _portal_can_manage(user) else PortalDemandMessage.ROLE_REQUESTER
+
+
+def _portal_filter_private_activity_for_user(user, demand):
+    if _portal_can_manage(user):
+        return
+    demand.thread_messages = [message for message in getattr(demand, "thread_messages", []) if not getattr(message, "is_internal", False)]
+    demand.activity_logs = [
+        entry
+        for entry in getattr(demand, "activity_logs", [])
+        if not getattr(getattr(entry, "related_message", None), "is_internal", False)
+    ]
+
+
+def _portal_redirect_target(request, fallback_name):
+    fallback = reverse(fallback_name)
+    candidate = (request.POST.get("next") or request.GET.get("next") or "").strip()
+    if candidate and url_has_allowed_host_and_scheme(candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return candidate
+    return fallback
+
+
+def _portal_ai_routing_token():
+    return (os.getenv("CONNECTMX_AI_ROUTING_TOKEN") or "").strip()
+
+
+def _portal_ai_request_authorized(request):
+    if _portal_can_manage(getattr(request, "user", None)):
+        return True, "session"
+
+    expected_token = _portal_ai_routing_token()
+    if not expected_token:
+        return False, "Token de integração não configurado no servidor."
+
+    provided_token = (
+        request.headers.get("X-ConnectMX-AI-Token")
+        or request.headers.get("X-N8N-Token")
+        or request.headers.get("Authorization")
+        or ""
+    ).strip()
+    if provided_token.lower().startswith("bearer "):
+        provided_token = provided_token[7:].strip()
+
+    if not provided_token or not hmac.compare_digest(provided_token, expected_token):
+        return False, "Token de integração inválido."
+
+    return True, "token"
+
+
+def _portal_priority_options_payload():
+    options = []
+    for value, label, color in userQueue.default_field_options(userQueue.FIELD_PRIORITY):
+        options.append({"value": value, "label": label, "color": color})
+    return options
+
+
+def _portal_routing_policies_payload():
+    policies = []
+    for policy in _portal_sla_policies():
+        policies.append(
+            {
+                "id": policy.id,
+                "name": policy.name,
+                "task_group_id": policy.task_group_id,
+                "task_group_name": policy.task_group.name if policy.task_group_id else "",
+                "task_type_id": policy.task_type_id,
+                "task_type_name": policy.task_type.name if policy.task_type_id else "",
+                "priority_level": policy.priority_level or "",
+                "priority_label": policy.priority_display,
+                "default_attendant_id": policy.default_attendant_id,
+                "default_attendant_name": policy.default_attendant_display,
+                "auto_assign_on_create": bool(policy.auto_assign_on_create),
+                "first_response_minutes": int(policy.first_response_minutes or 0),
+                "resolution_minutes": int(policy.resolution_minutes or 0),
+            }
+        )
+    return policies
+
+
+def _portal_custom_values_payload(demand):
+    values = []
+    for entry in PortalDemandCustomValue.objects.filter(demand=demand).select_related("field").order_by("field__sort_order", "field__id", "id"):
+        field = getattr(entry, "field", None)
+        values.append(
+            {
+                "field_id": field.id if field else None,
+                "field_label": field.label if field else "",
+                "field_key": field.field_key if field else "",
+                "field_type": field.field_type if field else "",
+                "value": entry.value or "",
+            }
+        )
+    return values
+
+
+def _portal_routing_context_payload(demand):
+    task_groups = list(TaskGroup.objects.order_by("name"))
+    task_types = list(TaskType.objects.select_related("group").order_by("group__name", "name"))
+    return {
+        "status": "ok",
+        "demand": {
+            "id": demand.id,
+            "protocol": demand.protocol,
+            "title": demand.title or "",
+            "description": demand.description or "",
+            "status": demand.status,
+            "created_at": timezone.localtime(demand.created_at).isoformat() if demand.created_at else None,
+            "requester": {
+                "id": demand.requester_id,
+                "user_code": getattr(demand.requester, "userId", "") or "",
+                "name": _queue_collaborator_display_name(demand.requester),
+            },
+            "assigned_to_id": demand.assigned_to_id,
+            "assigned_to_name": _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to_id else "",
+            "task_group_id": demand.task_group_id,
+            "task_type_id": demand.task_type_id,
+            "priority_level": demand.priority_level or userQueue.PRIORITY_MEDIUM,
+            "custom_values": _portal_custom_values_payload(demand),
+        },
+        "allowed_groups": [{"id": group.id, "name": group.name} for group in task_groups],
+        "allowed_types": [
+            {
+                "id": task_type.id,
+                "name": task_type.name,
+                "group_id": task_type.group_id,
+                "group_name": task_type.group.name if task_type.group_id else "",
+                "color": task_type.color or "",
+            }
+            for task_type in task_types
+        ],
+        "priority_options": _portal_priority_options_payload(),
+        "routing_policies": _portal_routing_policies_payload(),
+        "apply_routing_url": reverse("portalDemandAiRoutingApplyApi", args=[demand.id]),
+        "detail_url": demand.get_absolute_url(),
+    }
+
+
+def _portal_ai_webhook_url():
+    return (os.getenv("CONNECTMX_AI_ROUTING_WEBHOOK_URL") or "").strip()
+
+
+def _portal_ai_webhook_token():
+    return (os.getenv("CONNECTMX_AI_ROUTING_WEBHOOK_TOKEN") or "").strip()
+
+
+def _portal_ai_webhook_timeout():
+    try:
+        return max(3, int(os.getenv("CONNECTMX_AI_ROUTING_WEBHOOK_TIMEOUT") or 8))
+    except (TypeError, ValueError):
+        return 8
+
+
+def _portal_connectmx_base_url(fallback=""):
+    return (os.getenv("CONNECTMX_PUBLIC_BASE_URL") or fallback or "").strip().rstrip("/")
+
+
+def _portal_absolute_connectmx_url(path, base_url=""):
+    normalized_path = (path or "").strip()
+    if not normalized_path:
+        return ""
+    if normalized_path.lower().startswith(("http://", "https://")):
+        return normalized_path
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    resolved_base_url = _portal_connectmx_base_url(base_url)
+    return f"{resolved_base_url}{normalized_path}" if resolved_base_url else normalized_path
+
+
+def _portal_build_ai_routing_webhook_payload(demand, base_url=""):
+    routing_context_url = _portal_absolute_connectmx_url(
+        reverse("portalDemandAiRoutingContextApi", args=[demand.id]),
+        base_url=base_url,
+    )
+    apply_routing_url = _portal_absolute_connectmx_url(
+        reverse("portalDemandAiRoutingApplyApi", args=[demand.id]),
+        base_url=base_url,
+    )
+    detail_url = _portal_absolute_connectmx_url(demand.get_absolute_url(), base_url=base_url)
+    return {
+        "event": "portal_demand_created",
+        "triggered_at": timezone.localtime(timezone.now()).isoformat(),
+        "connectmx_base_url": _portal_connectmx_base_url(base_url),
+        "demand_id": demand.id,
+        "protocol": demand.protocol,
+        "title": demand.title or "",
+        "description": demand.description or "",
+        "status": demand.status,
+        "priority_level": demand.priority_level or userQueue.PRIORITY_MEDIUM,
+        "task_group_id": demand.task_group_id,
+        "task_group_name": demand.task_group.name if demand.task_group_id else "",
+        "task_type_id": demand.task_type_id,
+        "task_type_name": demand.task_type.name if demand.task_type_id else "",
+        "created_at": timezone.localtime(demand.created_at).isoformat() if demand.created_at else None,
+        "requester": {
+            "id": demand.requester_id,
+            "user_code": getattr(demand.requester, "userId", "") or "",
+            "name": _queue_collaborator_display_name(demand.requester),
+        },
+        "routing_context_url": routing_context_url,
+        "apply_routing_url": apply_routing_url,
+        "detail_url": detail_url,
+    }
+
+
+def _portal_send_ai_routing_webhook(demand_id, base_url=""):
+    webhook_url = _portal_ai_webhook_url()
+    if not webhook_url:
+        return False
+
+    demand = (
+        PortalDemand.objects.select_related("requester", "task_group", "task_type")
+        .filter(pk=demand_id)
+        .first()
+    )
+    if not demand:
+        return False
+
+    source_key = f"portal-ai-routing-webhook-{demand.id}"
+    payload = _portal_build_ai_routing_webhook_payload(demand, base_url=base_url)
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    webhook_token = _portal_ai_webhook_token()
+    if webhook_token:
+        headers["Authorization"] = f"Bearer {webhook_token}"
+        headers["X-ConnectMX-Webhook-Token"] = webhook_token
+
+    request = urllib_request.Request(
+        webhook_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(request, timeout=_portal_ai_webhook_timeout()) as response:
+            status_code = getattr(response, "status", None) or response.getcode()
+            if int(status_code or 0) >= 400:
+                raise RuntimeError(f"Webhook retornou status {status_code}.")
+    except Exception as exc:
+        _upsert_system_notification(
+            source_key=source_key,
+            title="Falha no roteamento automático do portal",
+            message=f"Não foi possível notificar o fluxo de IA para a demanda {demand.protocol}: {exc}",
+            level=SystemNotification.LEVEL_WARNING,
+        )
+        return False
+
+    notification = SystemNotification.objects.filter(source_key=source_key, is_active=True).first()
+    if notification:
+        notification.is_active = False
+        notification.resolved_at = timezone.now()
+        notification.save(update_fields=["is_active", "resolved_at", "updated_at"])
+    return True
+
+
+def _portal_schedule_ai_routing_webhook(demand_id, base_url=""):
+    if not _portal_ai_webhook_url():
+        return False
+    worker = threading.Thread(
+        target=_portal_send_ai_routing_webhook,
+        args=(demand_id, base_url),
+        daemon=True,
+        name=f"cmx-ai-routing-{demand_id}",
+    )
+    worker.start()
+    return True
+
+
+def _create_portal_attachments(demand, files, uploaded_by, message=None):
+    valid_files = [f for f in (files or []) if getattr(f, "name", "")]
+    if not valid_files:
+        return []
+    uploaded_by_name = _queue_collaborator_display_name(uploaded_by) if uploaded_by else None
+    created_rows = []
+    for entry in valid_files:
+        created_rows.append(
+            PortalDemandAttachment.objects.create(
+                demand=demand,
+                message=message,
+                uploaded_by=uploaded_by,
+                uploaded_by_name=uploaded_by_name,
+                original_name=os.path.basename(entry.name or "")[:255] or None,
+                file=entry,
+            )
+        )
+    return created_rows
+
+
+def _format_portal_work_minutes(total_minutes):
+    total_minutes = int(total_minutes or 0)
+    hours, minutes = divmod(total_minutes, 60)
+    if hours and minutes:
+        return f"{hours}h {minutes:02d}min"
+    if hours:
+        return f"{hours}h"
+    return f"{minutes}min"
+
+
+def _portal_attendants_queryset():
+    return User.objects.filter(is_active=True).filter(Q(is_system_admin=True) | Q(is_superuser=True)).order_by(
+        "nameUser", "username", "id"
+    )
+
+
+def _portal_log_event(
+    demand,
+    event_type,
+    actor=None,
+    actor_name=None,
+    summary="",
+    details=None,
+    from_attendant=None,
+    to_attendant=None,
+    related_message=None,
+):
+    return PortalDemandLog.objects.create(
+        demand=demand,
+        actor=actor,
+        actor_name=(actor_name or (_queue_collaborator_display_name(actor) if actor else None)),
+        event_type=event_type,
+        summary=(summary or "").strip()[:255],
+        details=(details or "").strip() or None,
+        from_attendant=from_attendant,
+        to_attendant=to_attendant,
+        related_message=related_message,
+    )
+
+
+def _portal_next_queue_position(owner_user):
+    aggregates = userQueue.objects.filter(user_code=str(getattr(owner_user, "userId", "") or "")).aggregate(
+        max_position=models.Max("n_queue_position"),
+        max_sort=models.Max("kanban_sort_order"),
+    )
+    return int(aggregates.get("max_position") or 0) + 1, int(aggregates.get("max_sort") or 0) + 1
+
+
+def _move_portal_queue_item_to_attendant(queue_item, target_user):
+    next_position, next_sort = _portal_next_queue_position(target_user)
+    queue_item.user_code = target_user.userId
+    queue_item.kanban_column = None
+    queue_item.kanban_sort_order = next_sort
+    queue_item.n_queue_position = next_position
+    queue_item.is_current = False
+    queue_item.save(update_fields=["user_code", "kanban_column", "kanban_sort_order", "n_queue_position", "is_current"])
+
+
+def _decorate_portal_logs(demand):
+    logs = list(getattr(demand, "activity_logs", []))
+    for entry in logs:
+        entry.actor_display = entry.display_actor_name
+        entry.event_label = dict(PortalDemandLog.EVENT_CHOICES).get(entry.event_type, "Movimentação")
+        entry.from_attendant_display = (
+            _queue_collaborator_display_name(entry.from_attendant) if getattr(entry, "from_attendant_id", None) else "-"
+        )
+        entry.to_attendant_display = (
+            _queue_collaborator_display_name(entry.to_attendant) if getattr(entry, "to_attendant_id", None) else "-"
+        )
+    demand.activity_logs = logs
+
+
+def _decorate_portal_messages(demand):
+    opening_attachments = list(getattr(demand, "opening_attachments", []))
+    for attachment in opening_attachments:
+        attachment.author_display = attachment.uploaded_by_name or (
+            _queue_collaborator_display_name(attachment.uploaded_by) if attachment.uploaded_by_id else "Usuário"
+        )
+
+    message_rows = list(getattr(demand, "thread_messages", []))
+    total_worked_minutes = 0
+    for message in message_rows:
+        message.author_display = message.display_author_name
+        message.is_requester = message.author_role == PortalDemandMessage.ROLE_REQUESTER
+        message.is_attendant = message.author_role == PortalDemandMessage.ROLE_ATTENDANT
+        message.is_internal_note = bool(getattr(message, "is_internal", False))
+        message.role_label = "Nota interna" if message.is_internal_note else dict(PortalDemandMessage.ROLE_CHOICES).get(
+            message.author_role, "Mensagem"
+        )
+        message.canned_response_title = (
+            getattr(message.canned_response, "title", "") if getattr(message, "canned_response_id", None) else ""
+        )
+        if message.has_worklog:
+            total_worked_minutes += int(message.worked_minutes or 0)
+            message.worked_period_display = (
+                f"{message.work_started_at.strftime('%d/%m/%Y %H:%M')} até {message.work_ended_at.strftime('%d/%m/%Y %H:%M')}"
+            )
+        else:
+            message.worked_period_display = ""
+        for attachment in getattr(message, "prefetched_attachments", []):
+            attachment.author_display = attachment.uploaded_by_name or (
+                _queue_collaborator_display_name(attachment.uploaded_by) if attachment.uploaded_by_id else message.author_display
+            )
+
+    demand.opening_attachments = opening_attachments
+    demand.thread_messages = message_rows
+    demand.has_opening_block = bool((demand.description or "").strip() or opening_attachments)
+    demand.reply_count = len(message_rows)
+    demand.total_worked_minutes = total_worked_minutes
+    demand.total_worked_display = _format_portal_work_minutes(total_worked_minutes) if total_worked_minutes else "-"
+
+
+def _decorate_portal_demands(demands):
+    priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
+    feedback_map = dict(PortalDemand.FEEDBACK_CHOICES)
+    for demand in demands:
+        demand.status_render = _portal_status_meta(demand.status)
+        demand.priority_render = priority_map.get(
+            demand.priority_level or "",
+            {
+                "label": demand.priority_level or "-",
+                "color": "#61688c",
+            },
+        )
+        demand.requester_display = _queue_collaborator_display_name(demand.requester)
+        demand.assigned_display = _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to else "-"
+        demand.feedback_rating_label = feedback_map.get(demand.feedback_rating or 0, "-")
+        demand.detail_url = demand.get_absolute_url()
+        demand.sla_preview = _portal_build_sla_preview(getattr(demand, "sla_policy", None))
+        demand.sla_first_response = _portal_sla_metric("Primeira resposta", demand.first_response_due_at, demand.first_response_at)
+        demand.sla_resolution = _portal_sla_metric("Resolução", demand.resolution_due_at, demand.completed_at)
+        demand.sla_first_response_chip_css = _portal_metric_chip_css(demand.sla_first_response.get("css"))
+        demand.sla_resolution_chip_css = _portal_metric_chip_css(demand.sla_resolution.get("css"))
+        demand.first_response_due_display = _portal_due_display(demand.first_response_due_at)
+        demand.resolution_due_display = _portal_due_display(demand.resolution_due_at)
+        demand.triage_meta = _portal_triage_meta(demand)
+        demand.triage_label = demand.triage_meta["label"]
+        demand.triage_css = demand.triage_meta["css"]
+        demand.triage_score = demand.triage_meta["score"]
+        demand.triage_hint = demand.triage_meta["hint"]
+        if demand.status == PortalDemand.STATUS_PENDING:
+            demand.sla_next_label = "Primeira resposta"
+            demand.sla_next_display = demand.first_response_due_display
+            demand.sla_next_hint = demand.sla_first_response.get("hint")
+        else:
+            demand.sla_next_label = "Resolucao"
+            demand.sla_next_display = demand.resolution_due_display
+            demand.sla_next_hint = demand.sla_resolution.get("hint")
+        demand.opened_since_display = _portal_relative_time_display(demand.created_at)
+        demand.updated_since_display = _portal_relative_time_display(demand.updated_at)
+        if demand.completed_at:
+            demand.last_movement_label = "Concluída"
+            demand.last_movement_display = demand.completed_at.strftime("%d/%m/%Y %H:%M")
+        elif demand.assumed_at:
+            demand.last_movement_label = "Assumida"
+            demand.last_movement_display = demand.assumed_at.strftime("%d/%m/%Y %H:%M")
+        else:
+            demand.last_movement_label = "Abertura"
+            demand.last_movement_display = demand.created_at.strftime("%d/%m/%Y %H:%M")
+
+        if demand.status == PortalDemand.STATUS_PENDING:
+            demand.next_action_label = "Aguardando atendente"
+            demand.next_action_css = "is-pending"
+            demand.next_action_hint = "A demanda ainda está na fila de triagem."
+        elif demand.status == PortalDemand.STATUS_ASSUMED and not demand.first_response_at:
+            demand.next_action_label = "Primeira resposta pendente"
+            demand.next_action_css = "is-pending"
+            demand.next_action_hint = "O atendimento foi assumido, mas ainda não houve resposta pública."
+        elif demand.status == PortalDemand.STATUS_ASSUMED:
+            demand.next_action_label = "Conversa em andamento"
+            demand.next_action_css = "is-assumed"
+            demand.next_action_hint = "A solicitação segue em atendimento."
+        elif demand.status == PortalDemand.STATUS_COMPLETED and not demand.has_feedback:
+            demand.next_action_label = "Aguardando feedback"
+            demand.next_action_css = "is-pending"
+            demand.next_action_hint = "O atendimento foi concluído e aguarda avaliação."
+        elif demand.status == PortalDemand.STATUS_COMPLETED:
+            demand.next_action_label = "Fechada com avaliação"
+            demand.next_action_css = "is-completed"
+            demand.next_action_hint = "A demanda foi concluída e já recebeu feedback."
+        else:
+            demand.next_action_label = "Encerrada"
+            demand.next_action_css = "is-cancelled"
+            demand.next_action_hint = "A demanda foi cancelada."
+        if hasattr(demand, "prefetched_custom_values"):
+            _decorate_portal_custom_values(demand)
+
+
+def _portal_custom_field_queryset():
+    return (
+        PortalDemandCustomField.objects.filter(is_active=True)
+        .prefetch_related(
+            Prefetch(
+                "options",
+                queryset=PortalDemandCustomFieldOption.objects.filter(is_active=True).order_by("sort_order", "id"),
+            ),
+            "task_groups",
+            "task_types",
+        )
+        .order_by("sort_order", "id")
+    )
+
+
+def _portal_custom_fields():
+    return list(_portal_custom_field_queryset())
+
+
+def _portal_field_option_value(field, label):
+    base_value = slugify(label or "") or "opcao"
+    candidate = base_value[:40]
+    suffix = 2
+    while PortalDemandCustomFieldOption.objects.filter(field=field, value=candidate).exists():
+        candidate = f"{base_value[:32]}-{suffix}"
+        suffix += 1
+    return candidate[:40]
+
+
+def _portal_display_custom_value(field_type, raw_value):
+    raw_value = "" if raw_value is None else str(raw_value).strip()
+    if raw_value == "":
+        return "-"
+    if field_type == PortalDemandCustomField.FIELD_CHECKBOX:
+        return "Sim" if raw_value == "1" else "Não"
+    if field_type == PortalDemandCustomField.FIELD_DATE:
+        try:
+            return datetime.strptime(raw_value, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            return raw_value
+    if field_type == PortalDemandCustomField.FIELD_NUMBER:
+        try:
+            numeric = Decimal(raw_value)
+            return format(numeric, "f").rstrip("0").rstrip(".") or "0"
+        except Exception:
+            return raw_value
+    return raw_value
+
+
+def _decorate_portal_custom_values(demand):
+    extra_details = []
+    for custom_value in getattr(demand, "prefetched_custom_values", []):
+        definition = getattr(custom_value, "field", None)
+        if not definition:
+            continue
+        extra_details.append(
+            {
+                "label": definition.label,
+                "value": _portal_display_custom_value(definition.field_type, custom_value.value),
+                "field_type": definition.field_type,
+            }
+        )
+    demand.extra_details = extra_details
+
+
+def _portal_detail_queryset():
+    return PortalDemand.objects.select_related(
+        "requester", "assigned_to", "task_group", "task_type", "linked_queue_item", "sla_policy", "sla_policy__default_attendant"
+    ).prefetch_related(
+        Prefetch(
+            "logs",
+            queryset=PortalDemandLog.objects.select_related("actor", "from_attendant", "to_attendant", "related_message").order_by(
+                "-created_at", "-id"
+            ),
+            to_attr="activity_logs",
+        ),
+        Prefetch(
+            "attachments",
+            queryset=PortalDemandAttachment.objects.filter(message__isnull=True)
+            .select_related("uploaded_by")
+            .order_by("created_at", "id"),
+            to_attr="opening_attachments",
+        ),
+        Prefetch(
+            "messages",
+            queryset=PortalDemandMessage.objects.select_related("author", "canned_response")
+            .prefetch_related(
+                Prefetch(
+                    "attachments",
+                    queryset=PortalDemandAttachment.objects.select_related("uploaded_by").order_by("created_at", "id"),
+                    to_attr="prefetched_attachments",
+                )
+            )
+            .order_by("created_at", "id"),
+            to_attr="thread_messages",
+        ),
+        Prefetch(
+            "custom_values",
+            queryset=PortalDemandCustomValue.objects.select_related("field").order_by("field__sort_order", "field__id", "id"),
+            to_attr="prefetched_custom_values",
+        ),
+    )
+
+
+def _portal_requester_queryset(user):
+    return (
+        PortalDemand.objects.filter(requester=user)
+        .select_related("task_group", "task_type", "assigned_to", "linked_queue_item", "sla_policy", "sla_policy__default_attendant")
+        .order_by("-created_at", "-id")
+    )
+
+
+def _portal_requester_demands(user):
+    demand_rows = list(_portal_requester_queryset(user))
+    _decorate_portal_demands(demand_rows)
+    return demand_rows
+
+
+def _portal_counts_from_demands(demands):
+    pending = sum(1 for row in demands if row.status == PortalDemand.STATUS_PENDING)
+    assumed = sum(1 for row in demands if row.status == PortalDemand.STATUS_ASSUMED)
+    completed = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED)
+    awaiting_feedback = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED and not row.has_feedback)
+    feedback_values = [row.feedback_rating for row in demands if row.feedback_rating]
+    feedback_avg = (sum(feedback_values) / len(feedback_values)) if feedback_values else None
+    return {
+        "total": len(demands),
+        "pending": pending,
+        "assumed": assumed,
+        "completed": completed,
+        "active": pending + assumed,
+        "awaiting_feedback": awaiting_feedback,
+        "feedback_avg": feedback_avg,
+        "feedback_avg_display": f"{feedback_avg:.1f}/5" if feedback_avg else "-",
+    }
+
+
+def _portal_dashboard_context(user):
+    base_queryset = PortalDemand.objects.filter(requester=user)
+    aggregates = base_queryset.aggregate(
+        total=Count("id"),
+        pending=Count("id", filter=Q(status=PortalDemand.STATUS_PENDING)),
+        assumed=Count("id", filter=Q(status=PortalDemand.STATUS_ASSUMED)),
+        completed=Count("id", filter=Q(status=PortalDemand.STATUS_COMPLETED)),
+        awaiting_feedback=Count("id", filter=Q(status=PortalDemand.STATUS_COMPLETED, feedback_rating__isnull=True)),
+        feedback_avg=Avg("feedback_rating"),
+    )
+    total = aggregates.get("total") or 0
+    pending = aggregates.get("pending") or 0
+    assumed = aggregates.get("assumed") or 0
+    completed = aggregates.get("completed") or 0
+    awaiting_feedback = aggregates.get("awaiting_feedback") or 0
+    feedback_avg = aggregates.get("feedback_avg")
+    feedback_avg_display = f"{feedback_avg:.1f}/5" if feedback_avg else "-"
+    last_demand = base_queryset.order_by("-created_at", "-id").only("created_at").first()
+    admin_pending = PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if _portal_can_manage(user) else None
+
+    dashboard_cards = [
+        {
+            "label": "Total de demandas",
+            "value": total,
+            "hint": "Solicitações já registradas no portal",
+            "tone": "primary",
+        },
+        {
+            "label": "Em andamento",
+            "value": pending + assumed,
+            "hint": "Pendentes ou em atendimento",
+            "tone": "info",
+        },
+        {
+            "label": "Concluídas",
+            "value": completed,
+            "hint": "Demandas finalizadas",
+            "tone": "success",
+        },
+        {
+            "label": "Feedback médio",
+            "value": feedback_avg_display,
+            "hint": "Média das avaliações enviadas",
+            "tone": "warning",
+        },
+    ]
+
+    insight_cards = [
+        {
+            "label": "Aguardando feedback",
+            "value": awaiting_feedback,
+            "hint": "Demandas concluídas esperando retorno",
+        },
+        {
+            "label": "Pendentes",
+            "value": pending,
+            "hint": "Aguardando atendente assumir",
+        },
+        {
+            "label": "Última abertura",
+            "value": timezone.localtime(last_demand.created_at).strftime("%d/%m/%Y %H:%M") if last_demand else "-",
+            "hint": "Data mais recente registrada por você",
+        },
+    ]
+
+    if admin_pending is not None:
+        insight_cards.append(
+            {
+                "label": "Triagem do portal",
+                "value": admin_pending,
+                "hint": "Demandas globais pendentes de atendimento",
+            }
+        )
+
+    return {
+        "counts": {
+            "total": total,
+            "pending": pending,
+            "assumed": assumed,
+            "completed": completed,
+            "active": pending + assumed,
+            "awaiting_feedback": awaiting_feedback,
+            "feedback_avg_display": feedback_avg_display,
+        },
+        "dashboard_cards": dashboard_cards,
+        "insight_cards": insight_cards,
+    }
+
+
+def _build_portal_queue_note(demand):
+    requester_name = _queue_collaborator_display_name(demand.requester)
+    created_at = timezone.localtime(demand.created_at).strftime("%d/%m/%Y %H:%M")
+    chunks = [
+        f"Origem: Portal de chamados ({demand.protocol})",
+        f"Solicitante: {requester_name} ({demand.requester.userId})",
+        f"Abertura: {created_at}",
+        f"Conversa: {demand.get_absolute_url()}",
+    ]
+    if demand.description:
+        chunks.append("Detalhes completos disponíveis no campo de detalhamento da demanda.")
+    custom_values = list(
+        demand.custom_values.select_related("field").order_by("field__sort_order", "field__id", "id")
+    )
+    for entry in custom_values:
+        if not entry.value:
+            continue
+        display_value = _portal_display_custom_value(entry.field.field_type, entry.value)
+        chunks.append(f"{entry.field.label}: {display_value}")
+    return "\n".join(chunks)
+
+
+def _create_queue_item_from_portal_demand(demand, owner_user):
+    task_group = demand.task_group or (demand.task_type.group if demand.task_type else None)
+    next_position = (
+        userQueue.objects.filter(user_code=owner_user.userId).aggregate(max_pos=models.Max("n_queue_position")).get("max_pos") or 0
+    ) + 1
+    default_columns = _ensure_user_queue_kanban_columns(owner_user)
+    default_column = default_columns[0] if default_columns else None
+
+    queue_item = userQueue.objects.create(
+        user_code=owner_user.userId,
+        a_ticket=demand.protocol,
+        f_conclusion_rate=Decimal("0.00"),
+        a_description=demand.title,
+        a_demand_detail=demand.description or None,
+        a_notes=_build_portal_queue_note(demand),
+        priority_level=demand.priority_level or userQueue.PRIORITY_MEDIUM,
+        estimated_effort_level=userQueue.ESTIMATE_MEDIUM,
+        n_type_group=task_group.id if task_group else None,
+        n_type_code=demand.task_type_id or None,
+        task_group=task_group,
+        task_type=demand.task_type,
+        kanban_column=default_column,
+        kanban_sort_order=next_position,
+        n_queue_position=next_position,
+        is_current=False,
+    )
+    return queue_item
+
+
+@login_required
+def portalDemandPage(request):
+    access_denied_message = None
+    if request.GET.get("denied") == "1":
+        access_denied_message = "Você não possui acesso a esta demanda."
+    can_request_portal = _portal_can_open_new_demands(request.user)
+    if request.GET.get("requester_denied") == "1" or (not can_request_portal and _portal_requester_access_feature_enabled()):
+        access_denied_message = _portal_requester_access_denied_message()
+
+    dashboard_context = _portal_dashboard_context(request.user)
+
+    return render(
+        request,
+        "tiqueue/portal_demands.html",
+        {
+            "access_denied_message": access_denied_message,
+            "can_manage_portal": _portal_can_manage(request.user),
+            "can_request_portal": can_request_portal,
+            "portal_page_label": "Portal de Chamados",
+            "portal_nav_active": "home",
+            **dashboard_context,
+        },
+    )
+
+
+@login_required
+def portalDemandCreatePage(request):
+    if not _portal_can_open_new_demands(request.user):
+        return redirect(f"{reverse('portalDemandPage')}?requester_denied=1")
+
+    form = PortalDemandForm(request.POST or None, request.FILES or None)
+    dashboard_context = _portal_dashboard_context(request.user)
+
+    if request.method == "POST" and form.is_valid():
+        request_base_url = request.build_absolute_uri("/").rstrip("/")
+        with transaction.atomic():
+            demand = form.save(commit=False)
+            demand.requester = request.user
+            demand.status = PortalDemand.STATUS_PENDING
+            demand.priority_level = form.cleaned_data.get("priority_level") or userQueue.PRIORITY_MEDIUM
+            demand.save()
+            form.save_custom_values(demand)
+            _create_portal_attachments(
+                demand,
+                request.FILES.getlist("attachments"),
+                uploaded_by=request.user,
+            )
+            matched_policy = _portal_apply_sla_policy(demand, save=True)
+            if matched_policy and matched_policy.auto_assign_on_create and matched_policy.default_attendant_id:
+                _assume_portal_demand(demand, matched_policy.default_attendant)
+            transaction.on_commit(
+                lambda demand_id=demand.id, base_url=request_base_url: _portal_schedule_ai_routing_webhook(
+                    demand_id,
+                    base_url=base_url,
+                )
+            )
+        return redirect(f"{reverse('portalMyDemandsPage')}?created=1")
+
+    return render(
+        request,
+        "tiqueue/portal_demand_create.html",
+        {
+            "form": form,
+            "dynamic_fields": form.get_dynamic_fields(),
+            "initial_sla_preview": _portal_build_sla_preview(None),
+            "can_manage_portal": _portal_can_manage(request.user),
+            "can_request_portal": True,
+            "portal_page_label": "Nova Demanda",
+            "portal_nav_active": "create",
+            **dashboard_context,
+        },
+    )
+
+
+@login_required
+@require_GET
+def portalDemandInsightsApi(request):
+    title = (request.GET.get("title") or "").strip()
+    description = (request.GET.get("description") or "").strip()
+    priority_level = (request.GET.get("priority_level") or "").strip() or userQueue.PRIORITY_MEDIUM
+
+    task_group = None
+    task_type = None
+    group_id = (request.GET.get("task_group") or "").strip()
+    type_id = (request.GET.get("task_type") or "").strip()
+    if group_id.isdigit():
+        task_group = TaskGroup.objects.filter(pk=int(group_id)).first()
+    if type_id.isdigit():
+        task_type = TaskType.objects.select_related("group").filter(pk=int(type_id)).first()
+        if task_type and not task_group:
+            task_group = task_type.group
+
+    matched_policy = _portal_match_sla_policy(task_group=task_group, task_type=task_type, priority_level=priority_level)
+    payload = {
+        "status": "ok",
+        "knowledge": _portal_knowledge_suggestions(title, description),
+        "duplicates": _portal_duplicate_suggestions(request.user, title, description),
+        "sla": _portal_build_sla_preview(matched_policy),
+    }
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_GET
+def portalDemandAiRoutingContextApi(request, demand_id):
+    authorized, auth_mode = _portal_ai_request_authorized(request)
+    if not authorized:
+        return JsonResponse({"status": "error", "message": auth_mode}, status=403)
+
+    demand = get_object_or_404(
+        PortalDemand.objects.select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy"),
+        pk=demand_id,
+    )
+    payload = _portal_routing_context_payload(demand)
+    payload["auth_mode"] = auth_mode
+    return JsonResponse(payload)
+
+
+@csrf_exempt
+@require_POST
+def portalDemandAiRoutingApplyApi(request, demand_id):
+    authorized, auth_mode = _portal_ai_request_authorized(request)
+    if not authorized:
+        return JsonResponse({"status": "error", "message": auth_mode}, status=403)
+
+    try:
+        if (request.content_type or "").lower().startswith("application/json"):
+            payload = json.loads((request.body or b"{}").decode("utf-8") or "{}")
+        else:
+            payload = request.POST.dict()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"status": "error", "message": "Payload JSON inválido."}, status=400)
+
+    def _clean_int(value):
+        raw = str(value or "").strip()
+        return int(raw) if raw.isdigit() else None
+
+    def _clean_bool(value, default=True):
+        if value is None:
+            return default
+        return str(value).strip().lower() not in {"0", "false", "no", "off", "nao", "não"}
+
+    priority_options = {value for value, _label, _color in userQueue.default_field_options(userQueue.FIELD_PRIORITY)}
+    task_group_id = _clean_int(payload.get("task_group_id"))
+    task_type_id = _clean_int(payload.get("task_type_id"))
+    priority_level = (str(payload.get("priority_level") or userQueue.PRIORITY_MEDIUM).strip().lower() or userQueue.PRIORITY_MEDIUM)
+    confidence_raw = payload.get("confidence")
+    reason = (str(payload.get("reason") or "").strip())[:600]
+    auto_assign = _clean_bool(payload.get("auto_assign"), default=True)
+
+    if priority_level not in priority_options:
+        return JsonResponse({"status": "error", "message": "Prioridade inválida."}, status=400)
+
+    confidence = None
+    if confidence_raw not in {None, ""}:
+        try:
+            confidence = float(confidence_raw)
+        except (TypeError, ValueError):
+            return JsonResponse({"status": "error", "message": "Confidence inválido."}, status=400)
+        if confidence < 0 or confidence > 1:
+            return JsonResponse({"status": "error", "message": "Confidence deve estar entre 0 e 1."}, status=400)
+
+    task_group = TaskGroup.objects.filter(pk=task_group_id).first() if task_group_id else None
+    task_type = TaskType.objects.select_related("group").filter(pk=task_type_id).first() if task_type_id else None
+
+    if task_type_id and not task_type:
+        return JsonResponse({"status": "error", "message": "Tipo de tarefa inválido."}, status=400)
+    if task_group_id and not task_group:
+        return JsonResponse({"status": "error", "message": "Grupo de tarefa inválido."}, status=400)
+    if task_type and task_group and task_type.group_id != task_group.id:
+        return JsonResponse({"status": "error", "message": "O tipo informado não pertence ao grupo informado."}, status=400)
+    if task_type and not task_group:
+        task_group = task_type.group
+
+    with transaction.atomic():
+        demand = get_object_or_404(
+            PortalDemand.objects.select_for_update().select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy"),
+            pk=demand_id,
+        )
+
+        if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+            return JsonResponse({"status": "error", "message": "A demanda já está encerrada."}, status=400)
+
+        previous_snapshot = {
+            "task_group_id": demand.task_group_id,
+            "task_type_id": demand.task_type_id,
+            "priority_level": demand.priority_level,
+            "assigned_to_id": demand.assigned_to_id,
+            "status": demand.status,
+        }
+
+        demand.task_group = task_group
+        demand.task_type = task_type
+        demand.priority_level = priority_level
+        demand.save(update_fields=["task_group", "task_type", "priority_level", "updated_at"])
+
+        matched_policy = _portal_apply_sla_policy(demand, save=True)
+        auto_assigned = False
+        if (
+            auto_assign
+            and demand.status == PortalDemand.STATUS_PENDING
+            and matched_policy
+            and matched_policy.auto_assign_on_create
+            and matched_policy.default_attendant_id
+        ):
+            auto_assigned = bool(_assume_portal_demand(demand, matched_policy.default_attendant))
+            demand.refresh_from_db()
+        else:
+            demand.refresh_from_db()
+
+        applied_snapshot = {
+            "task_group_id": demand.task_group_id,
+            "task_type_id": demand.task_type_id,
+            "priority_level": demand.priority_level,
+            "assigned_to_id": demand.assigned_to_id,
+            "status": demand.status,
+            "sla_policy_id": demand.sla_policy_id,
+        }
+        _portal_log_event(
+            demand,
+            PortalDemandLog.EVENT_AI_ROUTED,
+            actor_name="Agente IA (N8N)",
+            summary="Roteamento automático aplicado",
+            details=json.dumps(
+                {
+                    "confidence": confidence,
+                    "reason": reason,
+                    "auth_mode": auth_mode,
+                    "auto_assign": auto_assign,
+                    "previous": previous_snapshot,
+                    "applied": applied_snapshot,
+                },
+                ensure_ascii=False,
+            ),
+            to_attendant=demand.assigned_to if demand.assigned_to_id else None,
+        )
+
+    _sync_portal_critical_notifications()
+    response_payload = {
+        "status": "ok",
+        "message": "Roteamento aplicado com sucesso.",
+        "demand_id": demand.id,
+        "protocol": demand.protocol,
+        "task_group_id": demand.task_group_id,
+        "task_type_id": demand.task_type_id,
+        "priority_level": demand.priority_level,
+        "confidence": confidence,
+        "reason": reason,
+        "auto_assigned": auto_assigned,
+        "assigned_to": {
+            "id": demand.assigned_to_id,
+            "name": _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to_id else "",
+            "user_code": getattr(demand.assigned_to, "userId", "") if demand.assigned_to_id else "",
+        },
+        "sla": _portal_build_sla_preview(demand.sla_policy),
+        "detail_url": demand.get_absolute_url(),
+    }
+    return JsonResponse(response_payload)
+
+
+@login_required
+def portalMyDemandsPage(request):
+    success_message = None
+    access_denied_message = None
+
+    if request.GET.get("created") == "1":
+        success_message = "Demanda enviada com sucesso. Ela já está na fila pendente para atendimento."
+    elif request.GET.get("denied") == "1":
+        access_denied_message = "Você não possui acesso a esta demanda."
+
+    my_demands = _portal_requester_demands(request.user)
+    counts = _portal_counts_from_demands(my_demands)
+
+    return render(
+        request,
+        "tiqueue/portal_my_demands.html",
+        {
+            "my_demands": my_demands,
+            "counts": counts,
+            "success_message": success_message,
+            "access_denied_message": access_denied_message,
+            "can_manage_portal": _portal_can_manage(request.user),
+            "can_request_portal": _portal_can_open_new_demands(request.user),
+            "portal_page_label": "Minhas Demandas",
+            "portal_nav_active": "my-demands",
+        },
+    )
+
+
+@login_required
+def portalDemandDetailPage(request, demand_id=None, demand_code=None):
+    demand_filter = {"access_code": str(demand_code or "").strip().upper()} if demand_code else {"pk": demand_id}
+    demand = get_object_or_404(_portal_detail_queryset(), **demand_filter)
+
+    if not _portal_can_access_demand(request.user, demand):
+        return redirect(f"{reverse('portalMyDemandsPage')}?denied=1")
+
+    _portal_filter_private_activity_for_user(request.user, demand)
+
+    reply_form = PortalDemandReplyForm(demand=demand, user=request.user)
+    feedback_form = PortalDemandFeedbackForm(instance=demand)
+    transfer_form = PortalDemandTransferForm(demand=demand)
+    reply_success = request.GET.get("replied") == "1"
+    feedback_success = request.GET.get("feedback") == "1"
+    transfer_success = request.GET.get("transferred") == "1"
+    workflow_state = (request.GET.get("workflow") or "").strip().lower()
+    workflow_error_message = None
+
+    if request.method == "POST":
+        form_type = (request.POST.get("form_type") or "reply").strip().lower()
+        if form_type == "feedback":
+            can_submit_feedback = _portal_can_leave_feedback(request.user, demand)
+            feedback_form = PortalDemandFeedbackForm(request.POST or None, instance=demand)
+            if feedback_form.is_valid():
+                if not can_submit_feedback:
+                    feedback_form.add_error(None, "Somente o solicitante pode avaliar a demanda concluída.")
+                else:
+                    feedback = feedback_form.save(commit=False)
+                    feedback.feedback_submitted_at = timezone.now()
+                    feedback.save(update_fields=["feedback_rating", "feedback_comment", "feedback_submitted_at", "updated_at"])
+                    return redirect(f"{demand.get_absolute_url()}?feedback=1#feedback")
+        elif form_type == "transfer":
+            transfer_form = PortalDemandTransferForm(request.POST or None, demand=demand)
+            if not _portal_can_manage(request.user):
+                transfer_form.add_error(None, "Somente atendentes administradores podem transferir demandas.")
+            elif transfer_form.is_valid():
+                with transaction.atomic():
+                    locked_demand = get_object_or_404(
+                        PortalDemand.objects.select_for_update().select_related("assigned_to", "linked_queue_item"),
+                        pk=demand.pk,
+                    )
+                    transferred, transfer_error = _transfer_portal_demand(
+                        locked_demand,
+                        transfer_form.cleaned_data["target_attendant"],
+                        request.user,
+                    )
+                if transferred:
+                    return redirect(f"{locked_demand.get_absolute_url()}?transferred=1#management")
+                transfer_form.add_error(None, transfer_error or "Nao foi possivel transferir a demanda.")
+        elif form_type == "workflow":
+            if not _portal_can_manage(request.user):
+                workflow_error_message = "Somente atendentes administradores podem alterar o ciclo de vida da demanda."
+            else:
+                workflow_action = (request.POST.get("workflow_action") or "").strip().lower()
+                with transaction.atomic():
+                    locked_demand = get_object_or_404(
+                        PortalDemand.objects.select_for_update().select_related("assigned_to", "linked_queue_item"),
+                        pk=demand.pk,
+                    )
+                    if workflow_action == "complete":
+                        changed, workflow_error_message = _complete_portal_demand(locked_demand, request.user)
+                        if changed:
+                            return redirect(f"{locked_demand.get_absolute_url()}?workflow=completed#conversation")
+                    elif workflow_action == "cancel":
+                        changed, workflow_error_message = _cancel_portal_demand(locked_demand, request.user)
+                        if changed:
+                            return redirect(f"{locked_demand.get_absolute_url()}?workflow=cancelled#conversation")
+                    else:
+                        workflow_error_message = "Acao de workflow invalida."
+        else:
+            reply_form = PortalDemandReplyForm(request.POST or None, request.FILES or None, demand=demand, user=request.user)
+            if reply_form.is_valid():
+                if not _portal_can_reply_to_demand(request.user, demand):
+                    reply_form.add_error(None, "Esta demanda não aceita novas respostas no status atual.")
+                else:
+                    if (
+                        (reply_form.cleaned_data.get("work_started_at") or reply_form.cleaned_data.get("work_ended_at"))
+                        and not _portal_can_manage(request.user)
+                    ):
+                        reply_form.add_error(None, "Somente atendentes podem registrar apontamentos de tempo.")
+                    else:
+                        with transaction.atomic():
+                            locked_demand = get_object_or_404(
+                                PortalDemand.objects.select_for_update().select_related("assigned_to", "requester"),
+                                pk=demand.pk,
+                            )
+                            message = PortalDemandMessage.objects.create(
+                                demand=locked_demand,
+                                author=request.user,
+                                author_name=_queue_collaborator_display_name(request.user),
+                                author_role=_portal_actor_role(request.user, locked_demand),
+                                canned_response=reply_form.cleaned_data.get("canned_response"),
+                                is_internal=bool(reply_form.cleaned_data.get("is_internal") and _portal_can_manage(request.user)),
+                                message=reply_form.cleaned_data.get("message") or None,
+                                work_started_at=reply_form.cleaned_data.get("work_started_at"),
+                                work_ended_at=reply_form.cleaned_data.get("work_ended_at"),
+                            )
+                            if (
+                                message.author_role == PortalDemandMessage.ROLE_ATTENDANT
+                                and not message.is_internal
+                                and not locked_demand.first_response_at
+                            ):
+                                locked_demand.first_response_at = timezone.now()
+                                locked_demand.save(update_fields=["first_response_at", "updated_at"])
+                            _create_portal_attachments(
+                                locked_demand,
+                                request.FILES.getlist("attachments"),
+                                uploaded_by=request.user,
+                                message=message,
+                            )
+                            if message.has_worklog:
+                                _portal_log_event(
+                                    locked_demand,
+                                    PortalDemandLog.EVENT_WORKLOG,
+                                    actor=request.user,
+                                    summary=f"Tempo apontado: {message.worked_time_display}.",
+                                    details=(
+                                        f"Inicio: {timezone.localtime(message.work_started_at).strftime('%d/%m/%Y %H:%M')} | "
+                                        f"Fim: {timezone.localtime(message.work_ended_at).strftime('%d/%m/%Y %H:%M')}"
+                                    ),
+                                    to_attendant=locked_demand.assigned_to if locked_demand.assigned_to_id else None,
+                                    related_message=message,
+                                )
+                        return redirect(f"{demand.get_absolute_url()}?replied=1#conversation")
+
+    _decorate_portal_demands([demand])
+    _decorate_portal_messages(demand)
+    _decorate_portal_logs(demand)
+    if _portal_can_manage(request.user):
+        _sync_portal_critical_notifications()
+    reply_canned_responses = list(reply_form.fields["canned_response"].queryset) if "canned_response" in reply_form.fields else []
+    quick_canned_responses = _portal_ranked_canned_suggestions(demand, reply_canned_responses, limit=5) if reply_canned_responses else []
+
+    return render(
+        request,
+        "tiqueue/portal_demand_detail.html",
+        {
+            "demand": demand,
+            "reply_form": reply_form,
+            "feedback_form": feedback_form,
+            "transfer_form": transfer_form,
+            "reply_success": reply_success,
+            "feedback_success": feedback_success,
+            "transfer_success": transfer_success,
+            "workflow_state": workflow_state,
+            "workflow_error_message": workflow_error_message,
+            "can_manage_portal": _portal_can_manage(request.user),
+            "can_request_portal": _portal_can_open_new_demands(request.user),
+            "can_reply": _portal_can_reply_to_demand(request.user, demand),
+            "can_leave_feedback": _portal_can_leave_feedback(request.user, demand),
+            "can_assume_here": _portal_can_manage(request.user) and demand.status == PortalDemand.STATUS_PENDING,
+            "can_transfer_here": _portal_can_manage(request.user) and demand.status not in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED},
+            "can_manage_workflow": _portal_can_manage(request.user) and demand.status in {PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED},
+            "reply_canned_responses": reply_canned_responses,
+            "quick_canned_responses": quick_canned_responses,
+            "reply_canned_response_value": reply_form["canned_response"].value() if "canned_response" in reply_form.fields else "",
+            "portal_page_label": "Conversa da Demanda",
+            "portal_nav_active": "my-demands",
+        },
+    )
+
+
+@login_required
+def portalDemandCodeDetailPage(request, demand_code):
+    return portalDemandDetailPage(request, demand_code=demand_code)
+
+
+@login_required
+def portalPendingDemandsPage(request):
+    can_manage = _portal_can_manage(request.user)
+    access_denied_message = None if can_manage else "Você não possui acesso a este módulo."
+    field_created_flag = False
+    option_created_flag = False
+    sla_created_flag = False
+    canned_created_flag = False
+
+    pending_demands = []
+    portal_custom_fields = []
+    portal_custom_field_rows = []
+    custom_field_form = PortalDemandCustomFieldCreateForm(prefix="portal_field")
+    custom_option_forms = {}
+    sla_form = PortalDemandSlaPolicyForm(prefix="portal_sla")
+    canned_response_form = PortalCannedResponseForm(prefix="portal_canned")
+    sla_policies = []
+    canned_responses = []
+
+    if request.method == "POST" and can_manage:
+        form_type = (request.POST.get("form_type") or "").strip()
+        if form_type == "create_custom_field":
+            custom_field_form = PortalDemandCustomFieldCreateForm(request.POST, prefix="portal_field")
+            if custom_field_form.is_valid():
+                next_sort = (
+                    PortalDemandCustomField.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0
+                ) + 1
+                definition = PortalDemandCustomField.objects.create(
+                    label=custom_field_form.cleaned_data["label"],
+                    field_type=custom_field_form.cleaned_data["field_type"],
+                    placeholder=custom_field_form.cleaned_data["placeholder"] or None,
+                    help_text=custom_field_form.cleaned_data["help_text"] or None,
+                    is_required=custom_field_form.cleaned_data["is_required"],
+                    sort_order=next_sort,
+                    created_by=request.user,
+                )
+                definition.task_groups.set(custom_field_form.cleaned_data["task_groups"])
+                definition.task_types.set(custom_field_form.cleaned_data["task_types"])
+                if definition.field_type == PortalDemandCustomField.FIELD_SELECT:
+                    option_label = custom_field_form.cleaned_data["initial_option_label"]
+                    PortalDemandCustomFieldOption.objects.create(
+                        field=definition,
+                        value=_portal_field_option_value(definition, option_label),
+                        label=option_label,
+                        sort_order=1,
+                    )
+                return redirect(f"{reverse('portalPendingDemandsPage')}?field_created=1")
+        elif form_type == "create_custom_option":
+            field_id = (request.POST.get("field_id") or "").strip()
+            target_field = get_object_or_404(
+                PortalDemandCustomField.objects.filter(is_active=True),
+                pk=field_id,
+                field_type=PortalDemandCustomField.FIELD_SELECT,
+            )
+            option_form = PortalDemandCustomFieldOptionForm(request.POST, prefix=f"portal_option_{target_field.id}")
+            custom_option_forms[target_field.id] = option_form
+            if option_form.is_valid():
+                next_sort = (
+                    PortalDemandCustomFieldOption.objects.filter(field=target_field).aggregate(max_sort=models.Max("sort_order")).get("max_sort")
+                    or 0
+                ) + 1
+                option_label = option_form.cleaned_data["label"]
+                PortalDemandCustomFieldOption.objects.create(
+                    field=target_field,
+                    value=_portal_field_option_value(target_field, option_label),
+                    label=option_label,
+                    sort_order=next_sort,
+                )
+                return redirect(f"{reverse('portalPendingDemandsPage')}?option_created=1")
+        elif form_type == "create_sla_policy":
+            sla_form = PortalDemandSlaPolicyForm(request.POST, prefix="portal_sla")
+            if sla_form.is_valid():
+                next_sort = (PortalDemandSlaPolicy.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+                policy = sla_form.save(commit=False)
+                policy.sort_order = next_sort
+                policy.save()
+                return redirect(f"{reverse('portalPendingDemandsPage')}?sla_created=1")
+        elif form_type == "create_canned_response":
+            canned_response_form = PortalCannedResponseForm(request.POST, prefix="portal_canned")
+            if canned_response_form.is_valid():
+                next_sort = (PortalCannedResponse.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+                canned = canned_response_form.save(commit=False)
+                canned.sort_order = next_sort
+                canned.created_by = request.user
+                canned.save()
+                return redirect(f"{reverse('portalPendingDemandsPage')}?canned_created=1")
+
+    if can_manage:
+        pending_demands = list(
+            PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING)
+            .select_related("requester", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
+            .prefetch_related(
+                Prefetch(
+                    "custom_values",
+                    queryset=PortalDemandCustomValue.objects.select_related("field").order_by("field__sort_order", "field__id", "id"),
+                    to_attr="prefetched_custom_values",
+                )
+            )
+            .order_by("created_at", "id")
+        )
+        _decorate_portal_demands(pending_demands)
+        portal_custom_fields = _portal_custom_fields()
+        for definition in portal_custom_fields:
+            if definition.id not in custom_option_forms:
+                custom_option_forms[definition.id] = PortalDemandCustomFieldOptionForm(prefix=f"portal_option_{definition.id}")
+            portal_custom_field_rows.append(
+                {
+                    "field": definition,
+                    "option_form": custom_option_forms[definition.id],
+                }
+            )
+        sla_policies = list(
+            PortalDemandSlaPolicy.objects.select_related("task_group", "task_type", "default_attendant").order_by("sort_order", "id")
+        )
+        priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
+        for policy in sla_policies:
+            policy.priority_display = (
+                priority_map.get(policy.priority_level or "", {}).get("label")
+                if policy.priority_level
+                else "Todas as prioridades"
+            )
+            policy.default_attendant_display = (
+                _queue_collaborator_display_name(policy.default_attendant) if policy.default_attendant_id else "-"
+            )
+        canned_responses = list(
+            PortalCannedResponse.objects.select_related("task_group", "task_type", "created_by").order_by("sort_order", "title", "id")
+        )
+        field_created_flag = request.GET.get("field_created") == "1"
+        option_created_flag = request.GET.get("option_created") == "1"
+        sla_created_flag = request.GET.get("sla_created") == "1"
+        canned_created_flag = request.GET.get("canned_created") == "1"
+
+    summary = {
+        "pending": PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if can_manage else 0,
+        "custom_fields": len(portal_custom_fields),
+        "sla_policies": len(sla_policies),
+        "canned_responses": len(canned_responses),
+    }
+
+    return render(
+        request,
+        "tiqueue/portal_pending_demands.html",
+        {
+            "can_manage": can_manage,
+            "access_denied_message": access_denied_message,
+            "pending_demands": pending_demands,
+            "summary": summary,
+            "assumed_flag": request.GET.get("assumed") == "1",
+            "bulk_assumed_flag": request.GET.get("bulk_assumed") == "1",
+            "field_created_flag": field_created_flag,
+            "option_created_flag": option_created_flag,
+            "sla_created_flag": sla_created_flag,
+            "canned_created_flag": canned_created_flag,
+            "portal_custom_fields": portal_custom_fields,
+            "portal_custom_field_rows": portal_custom_field_rows,
+            "custom_field_form": custom_field_form,
+            "custom_option_forms": custom_option_forms,
+            "sla_form": sla_form,
+            "canned_response_form": canned_response_form,
+            "sla_policies": sla_policies,
+            "canned_responses": canned_responses,
+        },
+    )
+
+
+def _portal_admin_base_context(request, active_key, page_title):
+    can_manage = _portal_can_manage(request.user)
+    return {
+        "can_manage": can_manage,
+        "access_denied_message": None if can_manage else "Você não possui acesso a este módulo.",
+        "summary": {
+            "pending": PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if can_manage else 0,
+            "custom_fields": PortalDemandCustomField.objects.filter(is_active=True).count() if can_manage else 0,
+            "sla_policies": PortalDemandSlaPolicy.objects.filter(is_active=True).count() if can_manage else 0,
+            "canned_responses": PortalCannedResponse.objects.filter(is_active=True).count() if can_manage else 0,
+        },
+        "portal_admin_overview": _portal_admin_operational_overview() if can_manage else {},
+        "portal_admin_nav_active": active_key,
+        "portal_admin_page_title": page_title,
+    }
+
+
+def _portal_requester_admin_summary():
+    return {
+        "sectors": PortalRequesterSector.objects.count(),
+        "active_sectors": PortalRequesterSector.objects.filter(is_active=True).count(),
+        "collaborators": PortalRequesterCollaborator.objects.count(),
+        "active_collaborators": PortalRequesterCollaborator.objects.filter(is_active=True, sector__is_active=True).count(),
+        "accounts": PortalRequesterAccount.objects.count(),
+        "active_accounts": PortalRequesterAccount.objects.filter(
+            is_active=True,
+            collaborator__is_active=True,
+            collaborator__sector__is_active=True,
+        ).count(),
+    }
+
+
+@login_required
+def portalRequesterAdminPage(request):
+    context = _portal_admin_base_context(request, "requesters", "Setores, colaboradores e acessos do portal")
+    summary = _portal_requester_admin_summary() if context["can_manage"] else {
+        "sectors": 0,
+        "active_sectors": 0,
+        "collaborators": 0,
+        "active_collaborators": 0,
+        "accounts": 0,
+        "active_accounts": 0,
+    }
+
+    editing_sector = None
+    editing_collaborator = None
+    editing_account = None
+
+    edit_sector_id = (request.GET.get("edit_sector") or "").strip()
+    edit_collaborator_id = (request.GET.get("edit_collaborator") or "").strip()
+    edit_account_id = (request.GET.get("edit_account") or "").strip()
+
+    if context["can_manage"] and edit_sector_id.isdigit():
+        editing_sector = PortalRequesterSector.objects.filter(pk=int(edit_sector_id)).first()
+    if context["can_manage"] and edit_collaborator_id.isdigit():
+        editing_collaborator = PortalRequesterCollaborator.objects.select_related("sector").filter(pk=int(edit_collaborator_id)).first()
+    if context["can_manage"] and edit_account_id.isdigit():
+        editing_account = PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user").filter(
+            pk=int(edit_account_id)
+        ).first()
+
+    sector_form = PortalRequesterSectorForm(instance=editing_sector, prefix="portal_sector")
+    collaborator_form = PortalRequesterCollaboratorForm(instance=editing_collaborator, prefix="portal_collaborator")
+    account_form = PortalRequesterAccountForm(account=editing_account, prefix="portal_account")
+
+    if request.method == "POST" and context["can_manage"]:
+        form_type = (request.POST.get("form_type") or "").strip().lower()
+
+        if form_type == "create_sector":
+            sector_form = PortalRequesterSectorForm(request.POST, prefix="portal_sector")
+            if sector_form.is_valid():
+                sector_form.save()
+                return redirect(f"{reverse('portalRequesterAdminPage')}?sector_created=1")
+
+        elif form_type == "update_sector":
+            sector_id = (request.POST.get("sector_id") or "").strip()
+            editing_sector = PortalRequesterSector.objects.filter(pk=sector_id).first() if sector_id.isdigit() else None
+            sector_form = PortalRequesterSectorForm(request.POST, instance=editing_sector, prefix="portal_sector")
+            if editing_sector and sector_form.is_valid():
+                sector = sector_form.save()
+                _sync_portal_requester_collaborator_accounts(list(sector.collaborators.select_related("sector")))
+                return redirect(f"{reverse('portalRequesterAdminPage')}?sector_updated=1")
+
+        elif form_type == "toggle_sector":
+            sector_id = (request.POST.get("sector_id") or "").strip()
+            sector = PortalRequesterSector.objects.filter(pk=sector_id).first() if sector_id.isdigit() else None
+            if sector:
+                sector.is_active = not sector.is_active
+                sector.save(update_fields=["is_active", "updated_at"])
+                _sync_portal_requester_collaborator_accounts(list(sector.collaborators.select_related("sector")))
+                return redirect(f"{reverse('portalRequesterAdminPage')}?sector_toggled=1")
+
+        elif form_type == "create_collaborator":
+            collaborator_form = PortalRequesterCollaboratorForm(request.POST, prefix="portal_collaborator")
+            if collaborator_form.is_valid():
+                collaborator_form.save()
+                return redirect(f"{reverse('portalRequesterAdminPage')}?collaborator_created=1")
+
+        elif form_type == "update_collaborator":
+            collaborator_id = (request.POST.get("collaborator_id") or "").strip()
+            editing_collaborator = (
+                PortalRequesterCollaborator.objects.select_related("sector").filter(pk=collaborator_id).first()
+                if collaborator_id.isdigit()
+                else None
+            )
+            collaborator_form = PortalRequesterCollaboratorForm(
+                request.POST,
+                instance=editing_collaborator,
+                prefix="portal_collaborator",
+            )
+            if editing_collaborator and collaborator_form.is_valid():
+                collaborator = collaborator_form.save(commit=False)
+                linked_account = PortalRequesterAccount.objects.select_related("user").filter(collaborator=editing_collaborator).first()
+                sync_errors = _portal_requester_collaborator_sync_errors(
+                    collaborator,
+                    linked_user=linked_account.user if linked_account else None,
+                )
+                for field_name, message in sync_errors.items():
+                    collaborator_form.add_error(field_name, message)
+                if not collaborator_form.errors:
+                    collaborator.save()
+                    if linked_account:
+                        linked_account.refresh_from_db()
+                        _sync_portal_requester_account_user(linked_account)
+                    return redirect(f"{reverse('portalRequesterAdminPage')}?collaborator_updated=1")
+
+        elif form_type == "toggle_collaborator":
+            collaborator_id = (request.POST.get("collaborator_id") or "").strip()
+            collaborator = (
+                PortalRequesterCollaborator.objects.select_related("sector").filter(pk=collaborator_id).first()
+                if collaborator_id.isdigit()
+                else None
+            )
+            if collaborator:
+                collaborator.is_active = not collaborator.is_active
+                collaborator.save(update_fields=["is_active", "updated_at"])
+                _sync_portal_requester_collaborator_accounts([collaborator])
+                return redirect(f"{reverse('portalRequesterAdminPage')}?collaborator_toggled=1")
+
+        elif form_type == "create_account":
+            account_form = PortalRequesterAccountForm(request.POST, prefix="portal_account")
+            if account_form.is_valid():
+                collaborator = account_form.cleaned_data["collaborator"]
+                username = account_form.cleaned_data["username"]
+                password = account_form.cleaned_data["password"]
+                is_active = account_form.cleaned_data.get("is_active", False)
+                sync_errors = _portal_requester_collaborator_sync_errors(collaborator)
+                if User.objects.filter(username=username).exists():
+                    account_form.add_error("username", "Já existe um usuário com este login.")
+                for _field_name, message in sync_errors.items():
+                    account_form.add_error("collaborator", message)
+                if not account_form.errors:
+                    user = User.objects.create_user(
+                        userId=collaborator.registration_code,
+                        username=username,
+                        email=collaborator.email,
+                        nameUser=collaborator.full_name,
+                        password=password,
+                        is_active=bool(is_active and collaborator.is_active and collaborator.sector.is_active),
+                    )
+                    account = PortalRequesterAccount.objects.create(
+                        collaborator=collaborator,
+                        user=user,
+                        is_active=is_active,
+                        created_by=request.user,
+                    )
+                    _sync_portal_requester_account_user(account, username=username)
+                    return redirect(f"{reverse('portalRequesterAdminPage')}?account_created=1")
+
+        elif form_type == "update_account":
+            account_id = (request.POST.get("account_id") or "").strip()
+            editing_account = (
+                PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user").filter(pk=account_id).first()
+                if account_id.isdigit()
+                else None
+            )
+            account_form = PortalRequesterAccountForm(request.POST, account=editing_account, prefix="portal_account")
+            if editing_account and account_form.is_valid():
+                collaborator = account_form.cleaned_data["collaborator"]
+                username = account_form.cleaned_data["username"]
+                password = account_form.cleaned_data["password"]
+                is_active = account_form.cleaned_data.get("is_active", False)
+                sync_errors = _portal_requester_collaborator_sync_errors(collaborator, linked_user=editing_account.user)
+                if User.objects.exclude(pk=editing_account.user_id).filter(username=username).exists():
+                    account_form.add_error("username", "Já existe um usuário com este login.")
+                for _field_name, message in sync_errors.items():
+                    account_form.add_error("collaborator", message)
+                if not account_form.errors:
+                    editing_account.collaborator = collaborator
+                    editing_account.is_active = is_active
+                    editing_account.save(update_fields=["collaborator", "is_active", "updated_at"])
+                    _sync_portal_requester_account_user(editing_account, password=password, username=username)
+                    return redirect(f"{reverse('portalRequesterAdminPage')}?account_updated=1")
+
+        elif form_type == "toggle_account":
+            account_id = (request.POST.get("account_id") or "").strip()
+            account = (
+                PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user").filter(pk=account_id).first()
+                if account_id.isdigit()
+                else None
+            )
+            if account:
+                account.is_active = not account.is_active
+                account.save(update_fields=["is_active", "updated_at"])
+                _sync_portal_requester_account_user(account)
+                return redirect(f"{reverse('portalRequesterAdminPage')}?account_toggled=1")
+
+    sectors = list(
+        PortalRequesterSector.objects.annotate(
+            collaborator_total=Count("collaborators", distinct=True),
+            active_collaborator_total=Count("collaborators", filter=Q(collaborators__is_active=True), distinct=True),
+        ).order_by("name", "id")
+    ) if context["can_manage"] else []
+    collaborators = list(
+        PortalRequesterCollaborator.objects.select_related("sector").order_by("full_name", "id")
+    ) if context["can_manage"] else []
+    accounts = list(
+        PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user").order_by(
+            "collaborator__full_name",
+            "id",
+        )
+    ) if context["can_manage"] else []
+
+    account_map = {account.collaborator_id: account for account in accounts}
+    for collaborator in collaborators:
+        collaborator.account = account_map.get(collaborator.id)
+        collaborator.access_enabled = bool(
+            collaborator.account
+            and collaborator.account.is_active
+            and collaborator.is_active
+            and collaborator.sector.is_active
+        )
+
+    return render(
+        request,
+        "tiqueue/portal_requesters.html",
+        {
+            **context,
+            "summary": summary,
+            "sector_form": sector_form,
+            "collaborator_form": collaborator_form,
+            "account_form": account_form,
+            "editing_sector": editing_sector,
+            "editing_collaborator": editing_collaborator,
+            "editing_account": editing_account,
+            "sectors": sectors,
+            "collaborators": collaborators,
+            "accounts": accounts,
+            "sector_created_flag": request.GET.get("sector_created") == "1",
+            "sector_updated_flag": request.GET.get("sector_updated") == "1",
+            "sector_toggled_flag": request.GET.get("sector_toggled") == "1",
+            "collaborator_created_flag": request.GET.get("collaborator_created") == "1",
+            "collaborator_updated_flag": request.GET.get("collaborator_updated") == "1",
+            "collaborator_toggled_flag": request.GET.get("collaborator_toggled") == "1",
+            "account_created_flag": request.GET.get("account_created") == "1",
+            "account_updated_flag": request.GET.get("account_updated") == "1",
+            "account_toggled_flag": request.GET.get("account_toggled") == "1",
+        },
+    )
+
+
+def _portal_pending_demands_data():
+    pending_demands = list(
+        PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING)
+        .select_related("requester", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
+        .prefetch_related(
+            Prefetch(
+                "custom_values",
+                queryset=PortalDemandCustomValue.objects.select_related("field").order_by("field__sort_order", "field__id", "id"),
+                to_attr="prefetched_custom_values",
+            )
+        )
+        .order_by("created_at", "id")
+    )
+    _decorate_portal_demands(pending_demands)
+    pending_demands.sort(key=lambda demand: (-getattr(demand, "triage_score", 0), demand.created_at, demand.id))
+    return pending_demands
+
+
+def _portal_custom_field_rows(custom_option_forms=None):
+    custom_option_forms = custom_option_forms or {}
+    portal_custom_fields = _portal_custom_fields()
+    portal_custom_field_rows = []
+    for definition in portal_custom_fields:
+        if definition.id not in custom_option_forms:
+            custom_option_forms[definition.id] = PortalDemandCustomFieldOptionForm(prefix=f"portal_option_{definition.id}")
+        portal_custom_field_rows.append(
+            {
+                "field": definition,
+                "option_form": custom_option_forms[definition.id],
+            }
+        )
+    return portal_custom_fields, portal_custom_field_rows, custom_option_forms
+
+
+def _portal_sla_policies():
+    sla_policies = list(
+        PortalDemandSlaPolicy.objects.select_related("task_group", "task_type", "default_attendant").order_by("sort_order", "id")
+    )
+    priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
+    for policy in sla_policies:
+        policy.priority_display = priority_map.get(policy.priority_level or "", {}).get("label") if policy.priority_level else "Todas as prioridades"
+        policy.default_attendant_display = _queue_collaborator_display_name(policy.default_attendant) if policy.default_attendant_id else "-"
+    return sla_policies
+
+
+def _portal_canned_responses():
+    return list(
+        PortalCannedResponse.objects.select_related("task_group", "task_type", "created_by").order_by("sort_order", "title", "id")
+    )
+
+
+def _portal_refresh_open_demands_sla():
+    open_demands = (
+        PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+        .select_related("task_group", "task_type", "sla_policy")
+        .order_by("id")
+    )
+    for demand in open_demands:
+        _portal_apply_sla_policy(demand, save=True)
+
+
+def _upsert_system_notification(source_key, title, message, level):
+    notification = SystemNotification.objects.filter(source_key=source_key).first()
+    if notification:
+        notification.title = title
+        notification.message = message
+        notification.level = level
+        notification.is_active = True
+        notification.resolved_at = None
+        notification.save(update_fields=["title", "message", "level", "is_active", "resolved_at", "updated_at"])
+        return notification
+    return SystemNotification.objects.create(
+        source_key=source_key,
+        title=title,
+        message=message,
+        level=level,
+        is_active=True,
+    )
+
+
+def _resolve_system_notifications_by_prefix(prefix, active_keys=None):
+    active_keys = set(active_keys or [])
+    queryset = SystemNotification.objects.filter(source_key__startswith=prefix)
+    if active_keys:
+        queryset = queryset.exclude(source_key__in=active_keys)
+    for notification in queryset.filter(is_active=True):
+        notification.is_active = False
+        notification.resolved_at = timezone.now()
+        notification.save(update_fields=["is_active", "resolved_at", "updated_at"])
+
+
+def _sync_portal_critical_notifications(open_demands=None):
+    if open_demands is None:
+        open_demands = list(
+            PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+            .select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
+            .order_by("created_at", "id")
+        )
+        _decorate_portal_demands(open_demands)
+
+    active_keys = set()
+    for demand in open_demands:
+        if getattr(demand, "triage_label", "") != "Critica":
+            continue
+        source_key = f"portal-demand-critical-{demand.id}"
+        title = f"Demanda critica no portal: {demand.protocol}"
+        message_parts = [
+            demand.title,
+            f"Solicitante: {getattr(demand, 'requester_display', _queue_collaborator_display_name(demand.requester))}",
+            getattr(demand, "triage_hint", ""),
+        ]
+        suggested_attendant = getattr(getattr(demand, "sla_preview", {}), "get", None)
+        if suggested_attendant and demand.sla_preview.get("default_attendant") not in {"", "-"}:
+            message_parts.append(f"Sugerido: {demand.sla_preview.get('default_attendant')}")
+        if getattr(demand, "assigned_display", "-") not in {"", "-"} and demand.status == PortalDemand.STATUS_ASSUMED:
+            message_parts.append(f"Responsavel atual: {demand.assigned_display}")
+        message = " | ".join([part for part in message_parts if part])
+        _upsert_system_notification(
+            source_key=source_key,
+            title=title,
+            message=message[:1000],
+            level=SystemNotification.LEVEL_ERROR,
+        )
+        active_keys.add(source_key)
+
+    _resolve_system_notifications_by_prefix("portal-demand-critical-", active_keys)
+
+
+@login_required
+def portalPendingDemandsPage(request):
+    context = _portal_admin_base_context(request, "pending", "Demandas Pendentes do Portal")
+    if context["can_manage"]:
+        context["pending_demands"] = _portal_pending_demands_data()
+        _sync_portal_critical_notifications(context["pending_demands"])
+        context["pending_insights"] = _portal_pending_summary_data(context["pending_demands"])
+    else:
+        context["pending_demands"] = []
+        context["pending_insights"] = {
+            "critical": 0,
+            "high_attention": 0,
+            "due_today": 0,
+            "auto_assignable": 0,
+        }
+    context["assumed_flag"] = request.GET.get("assumed") == "1"
+    context["bulk_assumed_flag"] = request.GET.get("bulk_assumed") == "1"
+    return render(request, "tiqueue/portal_pending_demands.html", context)
+
+
+@login_required
+def portalDemandFieldsConfigPage(request):
+    context = _portal_admin_base_context(request, "fields", "Campos de Abertura do Portal")
+    custom_field_form = PortalDemandCustomFieldCreateForm(prefix="portal_field")
+    custom_option_forms = {}
+
+    if request.method == "POST" and context["can_manage"]:
+        form_type = (request.POST.get("form_type") or "").strip()
+        if form_type == "create_custom_field":
+            custom_field_form = PortalDemandCustomFieldCreateForm(request.POST, prefix="portal_field")
+            if custom_field_form.is_valid():
+                next_sort = (PortalDemandCustomField.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+                definition = PortalDemandCustomField.objects.create(
+                    label=custom_field_form.cleaned_data["label"],
+                    field_type=custom_field_form.cleaned_data["field_type"],
+                    placeholder=custom_field_form.cleaned_data["placeholder"] or None,
+                    help_text=custom_field_form.cleaned_data["help_text"] or None,
+                    is_required=custom_field_form.cleaned_data["is_required"],
+                    sort_order=next_sort,
+                    created_by=request.user,
+                )
+                definition.task_groups.set(custom_field_form.cleaned_data["task_groups"])
+                definition.task_types.set(custom_field_form.cleaned_data["task_types"])
+                if definition.field_type == PortalDemandCustomField.FIELD_SELECT:
+                    option_label = custom_field_form.cleaned_data["initial_option_label"]
+                    PortalDemandCustomFieldOption.objects.create(
+                        field=definition,
+                        value=_portal_field_option_value(definition, option_label),
+                        label=option_label,
+                        sort_order=1,
+                    )
+                return redirect(f"{reverse('portalDemandFieldsConfigPage')}?field_created=1")
+        elif form_type == "create_custom_option":
+            field_id = (request.POST.get("field_id") or "").strip()
+            target_field = get_object_or_404(
+                PortalDemandCustomField.objects.filter(is_active=True),
+                pk=field_id,
+                field_type=PortalDemandCustomField.FIELD_SELECT,
+            )
+            option_form = PortalDemandCustomFieldOptionForm(request.POST, prefix=f"portal_option_{target_field.id}")
+            custom_option_forms[target_field.id] = option_form
+            if option_form.is_valid():
+                next_sort = (
+                    PortalDemandCustomFieldOption.objects.filter(field=target_field).aggregate(max_sort=models.Max("sort_order")).get("max_sort")
+                    or 0
+                ) + 1
+                option_label = option_form.cleaned_data["label"]
+                PortalDemandCustomFieldOption.objects.create(
+                    field=target_field,
+                    value=_portal_field_option_value(target_field, option_label),
+                    label=option_label,
+                    sort_order=next_sort,
+                )
+                return redirect(f"{reverse('portalDemandFieldsConfigPage')}?option_created=1")
+
+    if context["can_manage"]:
+        portal_custom_fields, portal_custom_field_rows, custom_option_forms = _portal_custom_field_rows(custom_option_forms)
+    else:
+        portal_custom_fields, portal_custom_field_rows, custom_option_forms = [], [], {}
+    context.update(
+        {
+            "custom_field_form": custom_field_form,
+            "custom_option_forms": custom_option_forms,
+            "portal_custom_fields": portal_custom_fields,
+            "portal_custom_field_rows": portal_custom_field_rows,
+            "field_created_flag": request.GET.get("field_created") == "1",
+            "option_created_flag": request.GET.get("option_created") == "1",
+        }
+    )
+    return render(request, "tiqueue/portal_pending_fields.html", context)
+
+
+@login_required
+def portalDemandSlaConfigPage(request):
+    context = _portal_admin_base_context(request, "sla", "Políticas de SLA do Portal")
+    sla_form = PortalDemandSlaPolicyForm(prefix="portal_sla")
+
+    if request.method == "POST" and context["can_manage"]:
+        sla_form = PortalDemandSlaPolicyForm(request.POST, prefix="portal_sla")
+        if sla_form.is_valid():
+            next_sort = (PortalDemandSlaPolicy.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+            policy = sla_form.save(commit=False)
+            policy.sort_order = next_sort
+            policy.save()
+            return redirect(f"{reverse('portalDemandSlaConfigPage')}?sla_created=1")
+
+    context.update(
+        {
+            "sla_form": sla_form,
+            "sla_policies": _portal_sla_policies() if context["can_manage"] else [],
+            "sla_created_flag": request.GET.get("sla_created") == "1",
+        }
+    )
+    return render(request, "tiqueue/portal_pending_sla.html", context)
+
+
+@login_required
+def portalDemandResponsesConfigPage(request):
+    context = _portal_admin_base_context(request, "responses", "Respostas Prontas do Portal")
+    canned_response_form = PortalCannedResponseForm(prefix="portal_canned")
+
+    if request.method == "POST" and context["can_manage"]:
+        canned_response_form = PortalCannedResponseForm(request.POST, prefix="portal_canned")
+        if canned_response_form.is_valid():
+            next_sort = (PortalCannedResponse.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+            canned = canned_response_form.save(commit=False)
+            canned.sort_order = next_sort
+            canned.created_by = request.user
+            canned.save()
+            return redirect(f"{reverse('portalDemandResponsesConfigPage')}?canned_created=1")
+
+    context.update(
+        {
+            "canned_response_form": canned_response_form,
+            "canned_responses": _portal_canned_responses() if context["can_manage"] else [],
+            "canned_created_flag": request.GET.get("canned_created") == "1",
+        }
+    )
+    return render(request, "tiqueue/portal_pending_responses.html", context)
+
+
+@login_required
+def portalDemandSlaConfigPage(request):
+    context = _portal_admin_base_context(request, "sla", "Politicas de SLA do Portal")
+    editing_sla_policy = None
+    edit_policy_id = (request.GET.get("edit") or "").strip()
+    if context["can_manage"] and edit_policy_id.isdigit():
+        editing_sla_policy = get_object_or_404(PortalDemandSlaPolicy, pk=int(edit_policy_id))
+    sla_form = PortalDemandSlaPolicyForm(prefix="portal_sla", instance=editing_sla_policy)
+
+    if request.method == "POST" and context["can_manage"]:
+        form_type = (request.POST.get("form_type") or "create_sla").strip().lower()
+        if form_type == "toggle_sla":
+            policy_id = (request.POST.get("policy_id") or "").strip()
+            if policy_id.isdigit():
+                policy = get_object_or_404(PortalDemandSlaPolicy, pk=int(policy_id))
+                policy.is_active = not policy.is_active
+                policy.save(update_fields=["is_active", "updated_at"])
+                _portal_refresh_open_demands_sla()
+                _sync_portal_critical_notifications()
+                return redirect(f"{reverse('portalDemandSlaConfigPage')}?sla_toggled=1")
+        else:
+            policy_id = (request.POST.get("policy_id") or "").strip()
+            editing_sla_policy = (
+                get_object_or_404(PortalDemandSlaPolicy, pk=int(policy_id))
+                if form_type == "update_sla" and policy_id.isdigit()
+                else None
+            )
+            sla_form = PortalDemandSlaPolicyForm(request.POST, prefix="portal_sla", instance=editing_sla_policy)
+            if sla_form.is_valid():
+                is_update = editing_sla_policy is not None
+                next_sort = (PortalDemandSlaPolicy.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+                policy = sla_form.save(commit=False)
+                if not is_update:
+                    policy.sort_order = next_sort
+                policy.save()
+                _portal_refresh_open_demands_sla()
+                _sync_portal_critical_notifications()
+                flag = "sla_updated" if is_update else "sla_created"
+                return redirect(f"{reverse('portalDemandSlaConfigPage')}?{flag}=1")
+
+    context.update(
+        {
+            "sla_form": sla_form,
+            "sla_policies": _portal_sla_policies() if context["can_manage"] else [],
+            "sla_created_flag": request.GET.get("sla_created") == "1",
+            "sla_updated_flag": request.GET.get("sla_updated") == "1",
+            "sla_toggled_flag": request.GET.get("sla_toggled") == "1",
+            "editing_sla_policy": editing_sla_policy,
+        }
+    )
+    return render(request, "tiqueue/portal_pending_sla.html", context)
+
+
+@login_required
+def portalDemandResponsesConfigPage(request):
+    context = _portal_admin_base_context(request, "responses", "Respostas Prontas do Portal")
+    editing_canned_response = None
+    edit_canned_id = (request.GET.get("edit") or "").strip()
+    if context["can_manage"] and edit_canned_id.isdigit():
+        editing_canned_response = get_object_or_404(PortalCannedResponse, pk=int(edit_canned_id))
+    canned_response_form = PortalCannedResponseForm(prefix="portal_canned", instance=editing_canned_response)
+
+    if request.method == "POST" and context["can_manage"]:
+        form_type = (request.POST.get("form_type") or "create_canned").strip().lower()
+        if form_type == "toggle_canned":
+            canned_id = (request.POST.get("canned_id") or "").strip()
+            if canned_id.isdigit():
+                canned = get_object_or_404(PortalCannedResponse, pk=int(canned_id))
+                canned.is_active = not canned.is_active
+                canned.save(update_fields=["is_active", "updated_at"])
+                return redirect(f"{reverse('portalDemandResponsesConfigPage')}?canned_toggled=1")
+        else:
+            canned_id = (request.POST.get("canned_id") or "").strip()
+            editing_canned_response = (
+                get_object_or_404(PortalCannedResponse, pk=int(canned_id))
+                if form_type == "update_canned" and canned_id.isdigit()
+                else None
+            )
+            canned_response_form = PortalCannedResponseForm(request.POST, prefix="portal_canned", instance=editing_canned_response)
+            if canned_response_form.is_valid():
+                is_update = editing_canned_response is not None
+                next_sort = (PortalCannedResponse.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
+                canned = canned_response_form.save(commit=False)
+                if not is_update:
+                    canned.sort_order = next_sort
+                    canned.created_by = request.user
+                canned.save()
+                flag = "canned_updated" if is_update else "canned_created"
+                return redirect(f"{reverse('portalDemandResponsesConfigPage')}?{flag}=1")
+
+    context.update(
+        {
+            "canned_response_form": canned_response_form,
+            "canned_responses": _portal_canned_responses() if context["can_manage"] else [],
+            "canned_created_flag": request.GET.get("canned_created") == "1",
+            "canned_updated_flag": request.GET.get("canned_updated") == "1",
+            "canned_toggled_flag": request.GET.get("canned_toggled") == "1",
+            "editing_canned_response": editing_canned_response,
+        }
+    )
+    return render(request, "tiqueue/portal_pending_responses.html", context)
+
+
+def _assume_portal_demand(demand, owner_user):
+    if demand.status != PortalDemand.STATUS_PENDING or demand.linked_queue_item_id:
+        return False
+
+    queue_item = _create_queue_item_from_portal_demand(demand, owner_user)
+    demand.status = PortalDemand.STATUS_ASSUMED
+    demand.assigned_to = owner_user
+    demand.linked_queue_item = queue_item
+    demand.assumed_at = timezone.now()
+    demand.save(
+        update_fields=[
+            "status",
+            "assigned_to",
+            "linked_queue_item",
+            "assumed_at",
+            "updated_at",
+        ]
+    )
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_ASSUMED,
+        actor=owner_user,
+        summary=f"Demanda assumida por {_queue_collaborator_display_name(owner_user)}.",
+        to_attendant=owner_user,
+    )
+    _sync_portal_critical_notifications()
+    return True
+
+
+def _transfer_portal_demand(demand, target_user, actor_user):
+    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+        return False, "Somente demandas ativas podem ser transferidas."
+
+    previous_attendant = demand.assigned_to
+    if previous_attendant and previous_attendant.id == target_user.id:
+        return False, "Selecione um atendente diferente do atual."
+
+    queue_item = demand.linked_queue_item
+    if queue_item is None:
+        queue_item = _create_queue_item_from_portal_demand(demand, target_user)
+        demand.linked_queue_item = queue_item
+    else:
+        _move_portal_queue_item_to_attendant(queue_item, target_user)
+
+    demand.assigned_to = target_user
+    demand.status = PortalDemand.STATUS_ASSUMED
+    if not demand.assumed_at:
+        demand.assumed_at = timezone.now()
+    demand.save(update_fields=["assigned_to", "status", "linked_queue_item", "assumed_at", "updated_at"])
+
+    if previous_attendant:
+        summary = (
+            f"Demanda transferida de {_queue_collaborator_display_name(previous_attendant)} para "
+            f"{_queue_collaborator_display_name(target_user)}."
+        )
+        event_type = PortalDemandLog.EVENT_TRANSFERRED
+    else:
+        summary = f"Demanda atribuída diretamente para {_queue_collaborator_display_name(target_user)}."
+        event_type = PortalDemandLog.EVENT_ASSUMED
+
+    _portal_log_event(
+        demand,
+        event_type,
+        actor=actor_user,
+        summary=summary,
+        from_attendant=previous_attendant,
+        to_attendant=target_user,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
+def _portal_archive_linked_queue_item(queue_item):
+    if not queue_item:
+        return None
+
+    position = queue_item.n_queue_position
+    source_fields = {field.name for field in queue_item._meta.fields}
+    target_fields = {
+        field.name
+        for field in concludedTasks._meta.fields
+        if field.name not in {"id", "n_register", "d_conclusion_date", "d_conclusion_time"}
+    }
+    allowed_fields = source_fields.intersection(target_fields)
+    data = {field_name: getattr(queue_item, field_name) for field_name in allowed_fields}
+
+    concluded = concludedTasks.objects.create(**data)
+    concluded.extra_collaborators.set(queue_item.extra_collaborators.all())
+    userQueue.objects.filter(user_code=queue_item.user_code, n_queue_position__gt=position).update(
+        n_queue_position=models.F("n_queue_position") - 1
+    )
+    queue_item.delete()
+    return concluded
+
+
+def _portal_remove_linked_queue_item(queue_item):
+    if not queue_item:
+        return
+    position = queue_item.n_queue_position
+    userQueue.objects.filter(user_code=queue_item.user_code, n_queue_position__gt=position).update(
+        n_queue_position=models.F("n_queue_position") - 1
+    )
+    queue_item.delete()
+
+
+def _complete_portal_demand(demand, actor_user):
+    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+        return False, "Somente demandas ativas podem ser concluídas."
+
+    queue_item = demand.linked_queue_item
+    if queue_item is not None:
+        _portal_archive_linked_queue_item(queue_item)
+
+    demand.status = PortalDemand.STATUS_COMPLETED
+    demand.completed_at = timezone.now()
+    demand.linked_queue_item = None
+    demand.save(update_fields=["status", "completed_at", "linked_queue_item", "updated_at"])
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_COMPLETED,
+        actor=actor_user,
+        summary=f"Demanda concluída por {_queue_collaborator_display_name(actor_user)}.",
+        to_attendant=demand.assigned_to if demand.assigned_to_id else None,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
+def _cancel_portal_demand(demand, actor_user):
+    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+        return False, "Somente demandas ativas podem ser canceladas."
+
+    queue_item = demand.linked_queue_item
+    if queue_item is not None:
+        _portal_remove_linked_queue_item(queue_item)
+
+    demand.status = PortalDemand.STATUS_CANCELLED
+    demand.linked_queue_item = None
+    demand.completed_at = None
+    demand.save(update_fields=["status", "linked_queue_item", "completed_at", "updated_at"])
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_CANCELLED,
+        actor=actor_user,
+        summary=f"Demanda cancelada por {_queue_collaborator_display_name(actor_user)}.",
+        to_attendant=demand.assigned_to if demand.assigned_to_id else None,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
+@login_required
+@require_POST
+def portalDemandAssume(request, demand_id):
+    if not _is_system_admin(request.user):
+        return redirect(f"{reverse('portalPendingDemandsPage')}?denied=1")
+
+    with transaction.atomic():
+        demand = get_object_or_404(
+            PortalDemand.objects.select_for_update().select_related("requester", "task_group", "task_type"),
+            pk=demand_id,
+        )
+
+        if not _assume_portal_demand(demand, request.user):
+            return redirect("portalPendingDemandsPage")
+
+    redirect_target = _portal_redirect_target(request, "portalPendingDemandsPage")
+    if redirect_target == reverse("portalPendingDemandsPage"):
+        redirect_target = f"{redirect_target}?assumed=1"
+    return redirect(redirect_target)
+
+
+@login_required
+@require_POST
+def portalDemandBulkAssume(request):
+    if not _is_system_admin(request.user):
+        return redirect(f"{reverse('portalPendingDemandsPage')}?denied=1")
+
+    raw_ids = []
+    raw_ids.extend(request.POST.getlist("demand_ids"))
+    csv_ids = (request.POST.get("selected_ids") or "").strip()
+    if csv_ids:
+        raw_ids.extend(csv_ids.split(","))
+
+    demand_ids = []
+    for value in raw_ids:
+        value = str(value or "").strip()
+        if value.isdigit():
+            demand_ids.append(int(value))
+
+    if not demand_ids:
+        return redirect("portalPendingDemandsPage")
+
+    unique_ids = list(dict.fromkeys(demand_ids))
+    assumed_any = False
+    with transaction.atomic():
+        demands = list(
+            PortalDemand.objects.select_for_update()
+            .select_related("requester", "task_group", "task_type")
+            .filter(id__in=unique_ids)
+            .order_by("created_at", "id")
+        )
+        for demand in demands:
+            if _assume_portal_demand(demand, request.user):
+                assumed_any = True
+
+    if assumed_any:
+        return redirect(f"{reverse('portalPendingDemandsPage')}?bulk_assumed=1")
+    return redirect("portalPendingDemandsPage")
 
 
 def _serialize_tetris_score(entry, position, current_user_id=None):
@@ -370,6 +4169,95 @@ def maxiTetrisSubmitScore(request):
             "saved": bool(is_better_score),
             "leaderboard": _get_tetris_highscores(request.user),
             "personal_best": _get_tetris_personal_best(request.user),
+        }
+    )
+
+
+def _serialize_pomodoro_session(entry):
+    return {
+        "id": entry.id,
+        "focus_minutes": entry.focus_minutes,
+        "break_minutes": entry.break_minutes,
+        "accomplishment": entry.accomplishment,
+        "completed_at_label": timezone.localtime(entry.completed_at).strftime("%d/%m/%Y %H:%M"),
+        "completed_at_iso": entry.completed_at.isoformat(),
+    }
+
+
+def _get_pomodoro_history(user, limit=40):
+    entries = PomodoroSession.objects.filter(user=user)[:limit]
+    return [_serialize_pomodoro_session(entry) for entry in entries]
+
+
+def _get_pomodoro_stats(user):
+    today = timezone.localdate()
+    week_start = today - timedelta(days=today.weekday())
+    sessions = PomodoroSession.objects.filter(user=user)
+
+    today_agg = sessions.filter(completed_at__date=today).aggregate(count=Count("id"), minutes=Sum("focus_minutes"))
+    week_agg = sessions.filter(completed_at__date__gte=week_start).aggregate(count=Count("id"), minutes=Sum("focus_minutes"))
+    total_agg = sessions.aggregate(count=Count("id"), minutes=Sum("focus_minutes"))
+
+    return {
+        "today_sessions": today_agg["count"] or 0,
+        "today_minutes": today_agg["minutes"] or 0,
+        "week_sessions": week_agg["count"] or 0,
+        "week_minutes": week_agg["minutes"] or 0,
+        "total_sessions": total_agg["count"] or 0,
+        "total_minutes": total_agg["minutes"] or 0,
+    }
+
+
+@login_required
+def pomodoroPage(request):
+    context = {
+        "pomodoro_stats": _get_pomodoro_stats(request.user),
+        "pomodoro_history": _get_pomodoro_history(request.user),
+    }
+    return render(request, "tiqueue/pomodoro.html", context)
+
+
+@login_required
+@require_POST
+def pomodoroSaveSession(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    try:
+        focus_minutes = max(1, min(180, int(payload.get("focus_minutes") or 25)))
+        break_minutes = max(1, min(60, int(payload.get("break_minutes") or 5)))
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Duracao invalida."}, status=400)
+
+    accomplishment = str(payload.get("accomplishment") or "").strip()[:240]
+
+    PomodoroSession.objects.create(
+        user=request.user,
+        focus_minutes=focus_minutes,
+        break_minutes=break_minutes,
+        accomplishment=accomplishment,
+    )
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "stats": _get_pomodoro_stats(request.user),
+            "history": _get_pomodoro_history(request.user),
+        }
+    )
+
+
+@login_required
+@require_POST
+def pomodoroDeleteSession(request, session_id):
+    PomodoroSession.objects.filter(user=request.user, id=session_id).delete()
+    return JsonResponse(
+        {
+            "status": "ok",
+            "stats": _get_pomodoro_stats(request.user),
+            "history": _get_pomodoro_history(request.user),
         }
     )
 
@@ -663,6 +4551,36 @@ def _parse_user_id(raw_value):
     return int(raw_value) if raw_value.isdigit() else None
 
 
+def _normalize_project_milestone_key(raw_value):
+    raw_value = (raw_value or "").strip()
+    valid_keys = {choice[0] for choice in ProjectMilestone.MILESTONE_CHOICES}
+    return raw_value if raw_value in valid_keys else ProjectMilestone.MILESTONE_ANALYSIS
+
+
+def _project_milestone_templates_payload():
+    payload = []
+    for value, label in ProjectMilestone.MILESTONE_CHOICES:
+        defaults = ProjectMilestone.template_defaults(value)
+        payload.append(
+            {
+                "value": value,
+                "label": label,
+                "title": defaults["title"],
+                "color": defaults["color"],
+            }
+        )
+    return payload
+
+
+def _project_milestone_next_sort(project, anchor_item=None):
+    max_sort = (
+        ProjectMilestone.objects.filter(project=project, anchor_item=anchor_item)
+        .aggregate(models.Max("sort_order"))
+        .get("sort_order__max")
+    )
+    return int(max_sort or 0) + 1
+
+
 def _serialize_roadmap_subtask(subtask):
     return {
         "id": subtask.id,
@@ -671,11 +4589,60 @@ def _serialize_roadmap_subtask(subtask):
     }
 
 
+def _serialize_project_milestone(milestone, today=None):
+    today = today or timezone.localdate()
+    target_date = milestone.target_date
+    is_overdue = bool(target_date and not milestone.is_done and target_date < today)
+    overdue_days = (today - target_date).days if is_overdue else 0
+
+    if milestone.is_done:
+        status_label = "Concluido"
+    elif is_overdue:
+        status_label = "Atrasado"
+    else:
+        status_label = "Planejado"
+
+    return {
+        "id": milestone.id,
+        "milestone_key": milestone.milestone_key,
+        "template_label": dict(ProjectMilestone.MILESTONE_CHOICES).get(milestone.milestone_key, milestone.title),
+        "anchor_item_id": milestone.anchor_item_id or "",
+        "sort_order": milestone.sort_order,
+        "title": milestone.title,
+        "description": milestone.description or "",
+        "target_date": (target_date.isoformat() if target_date else ""),
+        "color": _normalize_hex_color(milestone.color, "#5CD6A3"),
+        "is_done": bool(milestone.is_done),
+        "completed_at": timezone.localtime(milestone.completed_at).isoformat() if milestone.completed_at else "",
+        "status_label": status_label,
+        "is_overdue": is_overdue,
+        "overdue_days": overdue_days,
+    }
+
+
+def _roadmap_overdue_payload(item, today=None):
+    today = today or timezone.localdate()
+    if item.status == "done" or not item.end_date or item.end_date >= today:
+        return {
+            "is_overdue": False,
+            "overdue_days": 0,
+            "overdue_label": "",
+        }
+
+    overdue_days = (today - item.end_date).days
+    return {
+        "is_overdue": overdue_days > 0,
+        "overdue_days": overdue_days,
+        "overdue_label": f"{overdue_days} dia(s) em atraso" if overdue_days > 0 else "",
+    }
+
+
 def _serialize_roadmap_item(item):
     subtasks = list(getattr(item, "prefetched_subtasks", []) or item.subtasks.all().order_by("sort_order", "id"))
     subtask_total = len(subtasks)
     subtask_done = sum(1 for subtask in subtasks if subtask.is_done)
     responsible = getattr(item, "responsible", None)
+    overdue_payload = _roadmap_overdue_payload(item)
     return {
         "id": item.id,
         "title": item.title,
@@ -688,7 +4655,7 @@ def _serialize_roadmap_item(item):
         "subtasks": [_serialize_roadmap_subtask(subtask) for subtask in subtasks],
         "subtask_total": subtask_total,
         "subtask_done": subtask_done,
-    }
+    } | overdue_payload
 
 
 @login_required
@@ -774,7 +4741,7 @@ def manageProjects(request):
             if card_form.is_valid():
                 card_form.save()
 
-    projects = Project.objects.select_related("developer").prefetch_related("participants").all().order_by("name")
+    projects = list(Project.objects.select_related("developer").prefetch_related("participants").all().order_by("name"))
     users = User.objects.order_by("nameUser", "username")
     roadmap_items = (
         ProjectRoadmapItem.objects.select_related("project", "responsible").order_by("project__name", "sort_order", "id")
@@ -783,6 +4750,14 @@ def manageProjects(request):
     cards = ProjectKanbanCard.objects.select_related("project", "column").order_by(
         "project__name", "column__sort_order", "sort_order", "id"
     )
+
+    project_stats = {
+        "total": len(projects),
+        "active": sum(1 for p in projects if p.status == "active"),
+        "planned": sum(1 for p in projects if p.status == "planned"),
+        "paused": sum(1 for p in projects if p.status == "paused"),
+        "done": sum(1 for p in projects if p.status == "done"),
+    }
 
     return render(
         request,
@@ -793,6 +4768,7 @@ def manageProjects(request):
             "column_form": column_form,
             "card_form": card_form,
             "projects": projects,
+            "project_stats": project_stats,
             "users": users,
             "roadmap_items": roadmap_items,
             "columns": columns,
@@ -801,22 +4777,455 @@ def manageProjects(request):
     )
 
 
-@login_required
-def projectCatalogPage(request):
-    projects = list(
-        Project.objects.select_related("developer").prefetch_related("participants").filter(
-            status__in=["planned", "active", "paused"]
-        ).annotate(
-            roadmap_total=Count("roadmap_items"),
-            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done")),
-            kanban_cards_total=Count("kanban_cards"),
-        ).order_by("name")
+def _project_catalog_open_statuses():
+    return ["planned", "active", "paused"]
+
+
+def _project_catalog_redirect_response(redirect_name, return_query=""):
+    redirect_url = reverse(redirect_name)
+    return_query = (return_query or "").strip().lstrip("?")
+    if return_query:
+        redirect_url = f"{redirect_url}?{return_query}"
+    return redirect(redirect_url)
+
+
+def _normalize_hex_color(raw_value, default="#343955"):
+    raw_value = (raw_value or "").strip()
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", raw_value or ""):
+        return raw_value.lower()
+    return default
+
+
+def _project_catalog_user_options(statuses):
+    return (
+        User.objects.filter(is_active=True)
+        .filter(Q(projects__status__in=statuses) | Q(project_participations__status__in=statuses))
+        .distinct()
+        .order_by("nameUser", "username")
     )
 
-    for p in projects:
-        total = int(getattr(p, "roadmap_total", 0) or 0)
-        done = int(getattr(p, "roadmap_done", 0) or 0)
-        p.roadmap_progress_pct = int(round((done / total) * 100)) if total > 0 else 0
+
+def _decorate_project_catalog_items(projects):
+    for project in projects:
+        total = int(getattr(project, "roadmap_total", 0) or 0)
+        done = int(getattr(project, "roadmap_done", 0) or 0)
+        project.roadmap_progress_pct = int(round((done / total) * 100)) if total > 0 else 0
+        project.color = _normalize_hex_color(project.color, "#343955")
+        project.card_style = f"--project-accent: {project.color};"
+
+
+def _project_catalog_color_mix(hex_color, target_rgb=(1.0, 1.0, 1.0), ratio=0.35):
+    from reportlab.lib import colors
+
+    base = colors.HexColor(_normalize_hex_color(hex_color))
+    ratio = max(0.0, min(1.0, float(ratio)))
+    return colors.Color(
+        (base.red * (1 - ratio)) + (target_rgb[0] * ratio),
+        (base.green * (1 - ratio)) + (target_rgb[1] * ratio),
+        (base.blue * (1 - ratio)) + (target_rgb[2] * ratio),
+    )
+
+
+def _project_catalog_pdf_bar(done_pct, overdue_pct, accent_color):
+    from reportlab.graphics.shapes import Drawing, Rect
+    from reportlab.lib import colors
+
+    width = 160
+    height = 10
+    drawing = Drawing(width, height)
+    drawing.add(Rect(0, 0, width, height, rx=height / 2, ry=height / 2, fillColor=colors.HexColor("#d7dfef"), strokeColor=None))
+
+    done_width = max(0, min(width, width * (max(done_pct, 0) / 100.0)))
+    overdue_width = max(0, min(width, width * (max(overdue_pct, 0) / 100.0)))
+
+    if done_width > 0:
+        drawing.add(Rect(0, 0, done_width, height, rx=height / 2, ry=height / 2, fillColor=accent_color, strokeColor=None))
+    if overdue_width > 0:
+        x = max(0, width - overdue_width)
+        drawing.add(Rect(x, 0, overdue_width, height, rx=height / 2, ry=height / 2, fillColor=colors.HexColor("#ffb85d"), strokeColor=None))
+    return drawing
+
+
+def _build_project_catalog_pdf(project):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+
+    roadmap_items = list(
+        ProjectRoadmapItem.objects.filter(project=project)
+        .select_related("responsible")
+        .prefetch_related(
+            Prefetch(
+                "subtasks",
+                queryset=ProjectRoadmapSubtask.objects.order_by("sort_order", "id"),
+                to_attr="prefetched_subtasks",
+            )
+        )
+        .order_by("sort_order", "id")
+    )
+    participants = list(project.participants.all().order_by("nameUser", "username"))
+    today = timezone.localdate()
+    generated_at = timezone.localtime()
+
+    total_steps = len(roadmap_items)
+    done_steps = sum(1 for item in roadmap_items if item.status == "done")
+    blocked_steps = sum(1 for item in roadmap_items if item.status == "blocked")
+    doing_steps = sum(1 for item in roadmap_items if item.status == "doing")
+    planned_steps = sum(1 for item in roadmap_items if item.status == "planned")
+    overdue_steps = sum(1 for item in roadmap_items if _roadmap_overdue_payload(item, today)["is_overdue"])
+    progress_pct = int(round((done_steps / total_steps) * 100)) if total_steps else 0
+    overdue_pct = int(round((overdue_steps / total_steps) * 100)) if total_steps else 0
+
+    accent = _project_catalog_color_mix(project.color, ratio=0.0)
+    accent_soft = _project_catalog_color_mix(project.color, ratio=0.82)
+    accent_mid = _project_catalog_color_mix(project.color, ratio=0.55)
+    accent_dark = _project_catalog_color_mix(project.color, target_rgb=(0.08, 0.11, 0.20), ratio=0.22)
+
+    styles = getSampleStyleSheet()
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfTitle",
+            parent=styles["Heading1"],
+            fontName="Helvetica-Bold",
+            fontSize=21,
+            leading=24,
+            textColor=accent_dark,
+            spaceAfter=4,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfSubtitle",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=13,
+            textColor=colors.HexColor("#5d657f"),
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfSection",
+            parent=styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=12,
+            leading=15,
+            textColor=accent_dark,
+            spaceBefore=6,
+            spaceAfter=8,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfBody",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=9.2,
+            leading=12.5,
+            textColor=colors.HexColor("#33405c"),
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfMuted",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#67748f"),
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfSmall",
+            parent=styles["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=8.2,
+            leading=10,
+            textColor=accent_dark,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfStepBody",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=8.3,
+            leading=10.2,
+            textColor=colors.HexColor("#33405c"),
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="ProjectPdfStepMuted",
+            parent=styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=7.6,
+            leading=9.3,
+            textColor=colors.HexColor("#67748f"),
+        )
+    )
+
+    participants_text = ", ".join((user.nameUser or user.username) for user in participants) if participants else "-"
+    responsible_name = (project.developer.nameUser or project.developer.username) if project.developer_id else "-"
+    status_label = project.get_status_display()
+    start_label = project.start_date.strftime("%d/%m/%Y") if project.start_date else "-"
+    end_label = project.end_date.strftime("%d/%m/%Y") if project.end_date else "-"
+
+    summary_table = Table(
+        [
+            [
+                Paragraph("<b>Progresso</b><br/>%s%% concluido" % progress_pct, styles["ProjectPdfBody"]),
+                Paragraph("<b>Etapas</b><br/>%s total / %s concluidas" % (total_steps, done_steps), styles["ProjectPdfBody"]),
+                Paragraph("<b>Atrasadas</b><br/>%s etapa(s)" % overdue_steps, styles["ProjectPdfBody"]),
+                Paragraph("<b>Kanban</b><br/>%s card(s)" % int(getattr(project, "kanban_cards_total", project.kanban_cards.count())), styles["ProjectPdfBody"]),
+            ]
+        ],
+        colWidths=[44 * mm, 44 * mm, 44 * mm, 44 * mm],
+    )
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 0.8, accent_mid),
+                ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#d9e1f0")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+
+    info_table = Table(
+        [
+            [
+                Paragraph("<b>Status</b><br/>%s" % xml_escape(status_label), styles["ProjectPdfBody"]),
+                Paragraph("<b>Responsavel</b><br/>%s" % xml_escape(responsible_name), styles["ProjectPdfBody"]),
+            ],
+            [
+                Paragraph("<b>Inicio</b><br/>%s" % start_label, styles["ProjectPdfBody"]),
+                Paragraph("<b>Fim</b><br/>%s" % end_label, styles["ProjectPdfBody"]),
+            ],
+            [
+                Paragraph("<b>Participantes</b><br/>%s" % xml_escape(participants_text), styles["ProjectPdfBody"]),
+                Paragraph(
+                    "<b>Roadmap</b><br/>Planejado: %s | Em execucao: %s | Bloqueado: %s"
+                    % (planned_steps, doing_steps, blocked_steps),
+                    styles["ProjectPdfBody"],
+                ),
+            ],
+        ],
+        colWidths=[88 * mm, 88 * mm],
+    )
+    info_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#d9e1f0")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#e3e8f2")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+
+    pdf_title = f"ConnectMX - {project.name}"
+
+    story = [
+        Paragraph("Relatorio do Projeto", styles["ProjectPdfSubtitle"]),
+        Paragraph(xml_escape(pdf_title), styles["ProjectPdfTitle"]),
+        Paragraph(
+            "Gerado em %s" % generated_at.strftime("%d/%m/%Y %H:%M"),
+            styles["ProjectPdfMuted"],
+        ),
+        Spacer(1, 6),
+        _project_catalog_pdf_bar(progress_pct, overdue_pct, accent),
+        Spacer(1, 10),
+        summary_table,
+        Spacer(1, 10),
+        Paragraph("Visao Geral", styles["ProjectPdfSection"]),
+        Paragraph(xml_escape(project.description or "Sem descricao informada."), styles["ProjectPdfBody"]),
+        Spacer(1, 8),
+        info_table,
+        Spacer(1, 10),
+        Paragraph("Etapas do Roadmap", styles["ProjectPdfSection"]),
+    ]
+
+    if not roadmap_items:
+        story.append(Paragraph("Nenhuma etapa cadastrada para este projeto.", styles["ProjectPdfBody"]))
+    else:
+        for index, item in enumerate(roadmap_items, start=1):
+            overdue_payload = _roadmap_overdue_payload(item, today)
+            subtasks = list(getattr(item, "prefetched_subtasks", []) or [])
+            subtask_done = sum(1 for subtask in subtasks if subtask.is_done)
+            responsible = (item.responsible.nameUser or item.responsible.username) if item.responsible_id else "-"
+            period = " - "
+            if item.start_date or item.end_date:
+                start = item.start_date.strftime("%d/%m/%Y") if item.start_date else "-"
+                end = item.end_date.strftime("%d/%m/%Y") if item.end_date else "-"
+                period = f"{start} ate {end}"
+            title_lines = [f"<b>{index}. {xml_escape(item.title)}</b>"]
+            if item.description:
+                title_lines.append(xml_escape(item.description))
+            if subtasks:
+                subtask_lines = []
+                for subtask in subtasks:
+                    mark = "OK" if subtask.is_done else "Pendente"
+                    subtask_lines.append(f"{xml_escape(subtask.description)} ({mark})")
+                checklist_text = "; ".join(subtask_lines)
+            else:
+                checklist_text = "Sem subtarefas"
+
+            right_meta = (
+                f"<b>Status:</b> {xml_escape(dict(ProjectRoadmapItem.STATUS_CHOICES).get(item.status, item.status))}<br/>"
+                f"<b>Responsavel:</b> {xml_escape(responsible)}<br/>"
+                f"<b>Periodo:</b> {xml_escape(period)}<br/>"
+                f"<b>Checklist:</b> {subtask_done}/{len(subtasks)}<br/>"
+                f"<b>Atraso:</b> {xml_escape(overdue_payload['overdue_label'] or 'No prazo')}"
+            )
+
+            stage_table = Table(
+                [
+                    [
+                        Paragraph(
+                            "<br/>".join(title_lines)
+                            + "<br/><font color='#67748f'><b>Checklist:</b> "
+                            + checklist_text
+                            + "</font>",
+                            styles["ProjectPdfStepBody"],
+                        ),
+                        Paragraph(
+                            right_meta,
+                            styles["ProjectPdfStepMuted"],
+                        ),
+                    ],
+                ],
+                colWidths=[114 * mm, 62 * mm],
+            )
+            stage_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (0, 0), accent_soft),
+                        ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#f5f7fc")),
+                        ("BOX", (0, 0), (-1, -1), 0.8, accent_mid),
+                        ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#e3e8f2")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ("TOPPADDING", (0, 0), (-1, -1), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ]
+                )
+            )
+            story.append(KeepTogether([stage_table, Spacer(1, 5)]))
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=20 * mm,
+        bottomMargin=14 * mm,
+    )
+    doc.title = pdf_title
+    doc.author = "ConnectMX"
+
+    def _on_page(canvas, document):
+        canvas.saveState()
+        page_width, page_height = A4
+        canvas.setFillColor(accent)
+        canvas.rect(0, page_height - 16 * mm, page_width, 16 * mm, fill=1, stroke=0)
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica-Bold", 12)
+        canvas.drawString(document.leftMargin, page_height - 10.2 * mm, pdf_title[:72])
+        canvas.setFont("Helvetica", 8.5)
+        canvas.drawRightString(page_width - document.rightMargin, 9 * mm, f"Pagina {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_on_page, onLaterPages=_on_page)
+    return buffer.getvalue()
+
+
+@login_required
+def projectCatalogPage(request):
+    open_statuses = _project_catalog_open_statuses()
+    if request.method == "POST":
+        form_id = (request.POST.get("form_id") or "").strip()
+        return_query = request.POST.get("return_query") or ""
+        project_id = (request.POST.get("project_id") or "").strip()
+
+        if form_id in {"update_project_color", "edit_project_catalog", "conclude_project_catalog"} and project_id:
+            project = get_object_or_404(Project, pk=project_id, status__in=open_statuses)
+
+            if form_id == "update_project_color":
+                project.color = _normalize_hex_color(request.POST.get("color"), project.color or "#343955")
+                project.save(update_fields=["color"])
+                return _project_catalog_redirect_response("projectCatalogPage", return_query)
+
+            if form_id == "edit_project_catalog":
+                valid_statuses = {choice[0] for choice in Project.STATUS_CHOICES}
+                participant_ids = [int(pid) for pid in request.POST.getlist("participants_ids") if str(pid).isdigit()]
+                status_value = (request.POST.get("status") or "").strip()
+
+                project.name = (request.POST.get("name") or "").strip() or project.name
+                project.description = (request.POST.get("description") or "").strip() or None
+                project.developer_id = _parse_user_id(request.POST.get("developer_id"))
+                project.status = status_value if status_value in valid_statuses else project.status
+                project.color = _normalize_hex_color(request.POST.get("color"), project.color or "#343955")
+                project.start_date = _parse_iso_date(request.POST.get("start_date"))
+                project.end_date = _parse_iso_date(request.POST.get("end_date"))
+                project.save()
+                project.participants.set(participant_ids)
+                return _project_catalog_redirect_response("projectCatalogPage", return_query)
+
+            if form_id == "conclude_project_catalog":
+                project.status = "done"
+                project.save(update_fields=["status"])
+                return _project_catalog_redirect_response("projectCatalogPage", return_query)
+
+    name_q = (request.GET.get("q") or "").strip()
+    responsible_id = (request.GET.get("responsible") or "").strip()
+    participant_id = (request.GET.get("participant") or "").strip()
+    date_from = _parse_iso_date(request.GET.get("date_from"))
+    date_to = _parse_iso_date(request.GET.get("date_to"))
+
+    projects_qs = (
+        Project.objects.select_related("developer")
+        .prefetch_related("participants")
+        .filter(status__in=open_statuses)
+    )
+
+    if name_q:
+        projects_qs = projects_qs.filter(Q(name__icontains=name_q) | Q(description__icontains=name_q))
+
+    if responsible_id.isdigit():
+        projects_qs = projects_qs.filter(developer_id=int(responsible_id))
+
+    if participant_id.isdigit():
+        projects_qs = projects_qs.filter(participants__id=int(participant_id))
+
+    if date_from:
+        projects_qs = projects_qs.filter(Q(end_date__isnull=True) | Q(end_date__gte=date_from))
+
+    if date_to:
+        projects_qs = projects_qs.filter(Q(start_date__isnull=True) | Q(start_date__lte=date_to))
+
+    projects = list(
+        projects_qs.distinct().annotate(
+            roadmap_total=Count("roadmap_items", distinct=True),
+            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done"), distinct=True),
+            kanban_cards_total=Count("kanban_cards", distinct=True),
+        ).order_by("name")
+    )
+    _decorate_project_catalog_items(projects)
+    filter_users = _project_catalog_user_options(open_statuses)
+    project_edit_users = User.objects.filter(is_active=True).order_by("nameUser", "username")
 
     return render(
         request,
@@ -825,6 +5234,16 @@ def projectCatalogPage(request):
             "projects": projects,
             "page_title": "Projetos em aberto",
             "is_concluded_page": False,
+            "filter_users": filter_users,
+            "filters": {
+                "q": name_q,
+                "responsible": responsible_id,
+                "participant": participant_id,
+                "date_from": date_from.isoformat() if date_from else "",
+                "date_to": date_to.isoformat() if date_to else "",
+            },
+            "project_edit_users": project_edit_users,
+            "current_querystring": request.GET.urlencode(),
         },
     )
 
@@ -833,16 +5252,12 @@ def projectCatalogPage(request):
 def projectCatalogConcludedPage(request):
     projects = list(
         Project.objects.select_related("developer").prefetch_related("participants").filter(status="done").annotate(
-            roadmap_total=Count("roadmap_items"),
-            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done")),
-            kanban_cards_total=Count("kanban_cards"),
+            roadmap_total=Count("roadmap_items", distinct=True),
+            roadmap_done=Count("roadmap_items", filter=Q(roadmap_items__status="done"), distinct=True),
+            kanban_cards_total=Count("kanban_cards", distinct=True),
         ).order_by("name")
     )
-
-    for p in projects:
-        total = int(getattr(p, "roadmap_total", 0) or 0)
-        done = int(getattr(p, "roadmap_done", 0) or 0)
-        p.roadmap_progress_pct = int(round((done / total) * 100)) if total > 0 else 0
+    _decorate_project_catalog_items(projects)
 
     return render(
         request,
@@ -851,8 +5266,30 @@ def projectCatalogConcludedPage(request):
             "projects": projects,
             "page_title": "Projetos concluídos",
             "is_concluded_page": True,
+            "filters": {
+                "q": "",
+                "responsible": "",
+                "participant": "",
+                "date_from": "",
+                "date_to": "",
+            },
+            "current_querystring": "",
         },
     )
+
+
+@login_required
+@require_GET
+def projectCatalogExportPdf(request, project_id):
+    project = get_object_or_404(
+        Project.objects.select_related("developer").prefetch_related("participants"),
+        pk=project_id,
+    )
+    pdf_bytes = _build_project_catalog_pdf(project)
+    filename = f"connectmx-projeto-{slugify(project.name) or project.id}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @login_required
@@ -1368,11 +5805,17 @@ def projectRoadmapView(request, project_id):
         .prefetch_related(Prefetch("subtasks", queryset=ProjectRoadmapSubtask.objects.order_by("sort_order", "id"), to_attr="prefetched_subtasks"))
         .order_by("sort_order", "id")
     )
+    milestones = list(
+        ProjectMilestone.objects.filter(project=project).select_related("anchor_item").order_by("sort_order", "target_date", "id")
+    )
 
     # Build a timeline window
     starts = [i.start_date for i in items if i.start_date] + ([project.start_date] if project.start_date else [])
     ends = [i.end_date for i in items if i.end_date] + ([project.end_date] if project.end_date else [])
-    today = date.today()
+    milestone_dates = [milestone.target_date for milestone in milestones if milestone.target_date]
+    starts += milestone_dates
+    ends += milestone_dates
+    today = timezone.localdate()
     if not starts:
         starts = [today]
     if not ends:
@@ -1405,9 +5848,17 @@ def projectRoadmapView(request, project_id):
         left, width = _span(it.start_date, it.end_date)
         visual_items.append(_serialize_roadmap_item(it) | {"left": left, "width": width})
 
+    visual_milestones = []
+    for milestone in milestones:
+        left = _pos(milestone.target_date) if milestone.target_date else 0
+        visual_milestones.append(_serialize_project_milestone(milestone, today=today) | {"left": left})
+
     done_count = sum(1 for i in items if i.status == "done")
+    overdue_count = sum(1 for i in items if _roadmap_overdue_payload(i, today)["is_overdue"])
     total_count = len(items)
     progress_pct = int(round((done_count / total_count) * 100)) if total_count else 0
+    overdue_pct = int(round((overdue_count / total_count) * 100)) if total_count else 0
+    milestone_done_count = sum(1 for milestone in milestones if milestone.is_done)
 
     return render(
         request,
@@ -1419,10 +5870,127 @@ def projectRoadmapView(request, project_id):
         "window_start": window_start,
         "window_end": window_end,
         "done_count": done_count,
+        "overdue_count": overdue_count,
+            "milestones": visual_milestones,
+            "milestone_done_count": milestone_done_count,
+            "milestone_templates": _project_milestone_templates_payload(),
             "total_count": total_count,
             "progress_pct": progress_pct,
+            "overdue_pct": overdue_pct,
         },
     )
+
+
+@login_required
+@require_POST
+def projectMilestoneCreate(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    milestone_key = _normalize_project_milestone_key(payload.get("milestone_key"))
+    template_defaults = ProjectMilestone.template_defaults(milestone_key)
+    anchor_item_id = _parse_user_id(payload.get("anchor_item_id"))
+    anchor_item = ProjectRoadmapItem.objects.filter(project=project, pk=anchor_item_id).first() if anchor_item_id else None
+    milestone = ProjectMilestone.objects.create(
+        project=project,
+        anchor_item=anchor_item,
+        milestone_key=milestone_key,
+        title=template_defaults["title"],
+        description=(payload.get("description") or "").strip() or None,
+        target_date=_parse_iso_date(payload.get("target_date")),
+        color=_normalize_hex_color(template_defaults["color"], "#5CD6A3"),
+        sort_order=_project_milestone_next_sort(project, anchor_item=anchor_item),
+    )
+    return JsonResponse({"status": "ok", "milestone": _serialize_project_milestone(milestone)})
+
+
+@login_required
+@require_POST
+def projectMilestoneUpdate(request, project_id, milestone_id):
+    project = get_object_or_404(Project, pk=project_id)
+    milestone = get_object_or_404(ProjectMilestone, pk=milestone_id, project=project)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    milestone_key = _normalize_project_milestone_key(payload.get("milestone_key"))
+    template_defaults = ProjectMilestone.template_defaults(milestone_key)
+    anchor_item_id = _parse_user_id(payload.get("anchor_item_id"))
+    anchor_item = ProjectRoadmapItem.objects.filter(project=project, pk=anchor_item_id).first() if anchor_item_id else None
+    anchor_changed = milestone.anchor_item_id != (anchor_item.id if anchor_item else None)
+
+    milestone.anchor_item = anchor_item
+    milestone.milestone_key = milestone_key
+    milestone.title = template_defaults["title"]
+    milestone.description = (payload.get("description") or "").strip() or None
+    milestone.target_date = _parse_iso_date(payload.get("target_date"))
+    milestone.color = _normalize_hex_color(template_defaults["color"], milestone.color or "#5CD6A3")
+    if anchor_changed:
+        milestone.sort_order = _project_milestone_next_sort(project, anchor_item=anchor_item)
+    milestone.save(
+        update_fields=["anchor_item", "milestone_key", "title", "description", "target_date", "color", "sort_order", "updated_at"]
+    )
+    return JsonResponse({"status": "ok", "milestone": _serialize_project_milestone(milestone)})
+
+
+@login_required
+@require_POST
+def projectMilestoneToggle(request, project_id, milestone_id):
+    project = get_object_or_404(Project, pk=project_id)
+    milestone = get_object_or_404(ProjectMilestone, pk=milestone_id, project=project)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    requested_value = payload.get("is_done")
+    if requested_value in (True, False):
+        milestone.is_done = requested_value
+    else:
+        milestone.is_done = not milestone.is_done
+    milestone.completed_at = timezone.now() if milestone.is_done else None
+    milestone.save(update_fields=["is_done", "completed_at", "updated_at"])
+    return JsonResponse({"status": "ok", "milestone": _serialize_project_milestone(milestone)})
+
+
+@login_required
+@require_POST
+def projectMilestoneMove(request, project_id, milestone_id):
+    project = get_object_or_404(Project, pk=project_id)
+    milestone = get_object_or_404(ProjectMilestone, pk=milestone_id, project=project)
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    direction = (payload.get("direction") or "").strip().lower()
+    roadmap_item_ids = list(
+        ProjectRoadmapItem.objects.filter(project=project).order_by("sort_order", "id").values_list("id", flat=True)
+    )
+    slots = [None] + roadmap_item_ids
+    current_anchor = milestone.anchor_item_id if milestone.anchor_item_id in roadmap_item_ids else None
+    current_index = slots.index(current_anchor)
+
+    if direction == "left":
+        target_index = max(0, current_index - 1)
+    elif direction == "right":
+        target_index = min(len(slots) - 1, current_index + 1)
+    else:
+        return JsonResponse({"status": "error", "message": "Direcao invalida"}, status=400)
+
+    target_anchor_id = slots[target_index]
+    target_anchor = ProjectRoadmapItem.objects.filter(project=project, pk=target_anchor_id).first() if target_anchor_id else None
+
+    if milestone.anchor_item_id != (target_anchor.id if target_anchor else None):
+        milestone.anchor_item = target_anchor
+        milestone.sort_order = _project_milestone_next_sort(project, anchor_item=target_anchor)
+        milestone.save(update_fields=["anchor_item", "sort_order", "updated_at"])
+
+    return JsonResponse({"status": "ok", "milestone": _serialize_project_milestone(milestone)})
 
 
 @login_required
@@ -1504,7 +6072,39 @@ def projectRoadmapItemConclude(request, project_id, item_id):
     total = ProjectRoadmapItem.objects.filter(project=project).count()
     done = ProjectRoadmapItem.objects.filter(project=project, status="done").count()
     progress_pct = int(round((done / total) * 100)) if total else 0
-    return JsonResponse({"status": "ok", "done": done, "total": total, "progress_pct": progress_pct})
+    return JsonResponse(
+        {
+            "status": "ok",
+            "done": done,
+            "total": total,
+            "progress_pct": progress_pct,
+            "item": _serialize_roadmap_item(item),
+        }
+    )
+
+
+@login_required
+@require_POST
+def projectRoadmapItemReopen(request, project_id, item_id):
+    project = get_object_or_404(Project, pk=project_id)
+    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
+    if item.status == "done":
+        item.status = "doing"
+        item.save(update_fields=["status"])
+        _sync_roadmap_item_to_kanban(item)
+
+    total = ProjectRoadmapItem.objects.filter(project=project).count()
+    done = ProjectRoadmapItem.objects.filter(project=project, status="done").count()
+    progress_pct = int(round((done / total) * 100)) if total else 0
+    return JsonResponse(
+        {
+            "status": "ok",
+            "done": done,
+            "total": total,
+            "progress_pct": progress_pct,
+            "item": _serialize_roadmap_item(item),
+        }
+    )
 
 
 @login_required
@@ -1579,12 +6179,15 @@ def projectRoadmapSubtaskDelete(request, project_id, item_id, subtask_id):
     subtask.delete()
     return JsonResponse({"status": "ok", "subtask_id": subtask_id})
 
+@login_required
 def queueMainPage(request):
     pending_details_prefetch = Prefetch(
         "details",
         queryset=QueueTaskDetail.objects.filter(is_done=False).order_by("sort_order", "id"),
         to_attr="pending_details",
     )
+
+    today = timezone.localdate()
 
     items = list(
         userQueue.objects.all()
@@ -1597,13 +6200,16 @@ def queueMainPage(request):
                 Value(0),
                 output_field=DecimalField(max_digits=10, decimal_places=2),
             ),
+            is_portal_origin=Exists(PortalDemand.objects.filter(linked_queue_item=OuterRef("pk"))),
         )
         .prefetch_related(pending_details_prefetch)
         .order_by("user_code", "-is_current", "n_queue_position", "n_register")
     )
 
+    stats = {"attendant_count": 0, "total": len(items), "current": 0, "delayed": 0, "today": 0, "portal": 0}
+
     if not items:
-        return render(request, "tiqueue/mainQueue.html", {"columns": []})
+        return render(request, "tiqueue/mainQueue.html", {"columns": [], "stats": stats})
 
     user_ids = sorted({i.user_code for i in items if i.user_code})
     users_by_id = {u.userId: u for u in User.objects.filter(userId__in=user_ids)}
@@ -1626,6 +6232,19 @@ def queueMainPage(request):
         done = int(getattr(item, "detail_done_count", 0) or 0)
         pct = int(round((done / total) * 100)) if total > 0 else 0
         pending = [d.description for d in (getattr(item, "pending_details", []) or []) if d.description]
+
+        is_delayed = bool(item.d_predicted_date_end and item.d_predicted_date_end < today)
+        is_due_today = bool(item.d_predicted_date_end and item.d_predicted_date_end == today)
+        is_portal = bool(getattr(item, "is_portal_origin", False))
+
+        if item.is_current:
+            stats["current"] += 1
+        if is_delayed:
+            stats["delayed"] += 1
+        if is_due_today:
+            stats["today"] += 1
+        if is_portal:
+            stats["portal"] += 1
 
         columns_map[key]["cards"].append(
             {
@@ -1651,11 +6270,15 @@ def queueMainPage(request):
                 "details_done": done,
                 "pending_details": pending,
                 "hours_total": float(getattr(item, "detail_hours_total", 0) or 0),
+                "is_delayed": is_delayed,
+                "is_due_today": is_due_today,
+                "is_portal": is_portal,
             }
         )
 
     columns = [columns_map[k] for k in user_order]
-    return render(request, "tiqueue/mainQueue.html", {"columns": columns})
+    stats["attendant_count"] = len(columns)
+    return render(request, "tiqueue/mainQueue.html", {"columns": columns, "stats": stats})
 
 
 @login_required
@@ -2002,6 +6625,7 @@ def _queue_property_payload(user, kanban_columns=None, custom_columns=None):
             {
                 "id": col.id,
                 "value": str(col.id),
+                "name": col.name,
                 "label": col.name,
                 "color": col.color or "#61688c",
                 "usage_count": status_usage_map.get(col.id, 0),
@@ -3521,7 +8145,9 @@ def createMyQueueKanbanColumn(request):
     except IntegrityError:
         return JsonResponse({"status": "error", "message": "Ja existe uma coluna com esse nome."}, status=400)
 
-    return JsonResponse({"status": "ok", "id": col.id, "name": col.name, "color": col.color})
+    return JsonResponse(
+        {"status": "ok", "id": col.id, "value": str(col.id), "name": col.name, "label": col.name, "color": col.color}
+    )
 
 
 @login_required
@@ -3543,7 +8169,9 @@ def updateMyQueueKanbanColumn(request, column_id):
     col.name = name
     col.color = color
     col.save(update_fields=["name", "color"])
-    return JsonResponse({"status": "ok", "id": col.id, "name": col.name, "color": col.color})
+    return JsonResponse(
+        {"status": "ok", "id": col.id, "value": str(col.id), "name": col.name, "label": col.name, "color": col.color}
+    )
 
 
 @login_required

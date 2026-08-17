@@ -1,0 +1,1205 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log&iacute;stica | Romaneios</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/hqbooking.css' %}">
+</head>
+<body class="hq-page logistics-page romaneio-page{% if open_launch_modal %} hq-modal-open{% endif %}">
+    <div class="theme-fab" aria-label="Tema">
+        <div class="theme-toggle">
+            <span class="theme-icon" aria-hidden="true">&#9728;</span>
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+            <span class="theme-icon" aria-hidden="true">&#9790;</span>
+        </div>
+    </div>
+
+    <div class="hq-container hq-truck-page hq-truck-wide" data-romaneio-quick-submit-url="{% url 'logistics_romaneio_quick_submit' %}">
+        <header class="hq-header romaneio-entrance is-delay-0">
+            <div>
+                <h1 class="hq-title">Log&iacute;stica de Romaneios</h1>
+                <p class="hq-subtitle">Leitura por c&oacute;digo de barras, confer&ecirc;ncia dos campos e envio direto para a base Oracle de simula&ccedil;&otilde;es.</p>
+            </div>
+        </header>
+
+        <section class="romaneio-nav romaneio-entrance is-delay-1" aria-label="Navegação de romaneios">
+            <a class="romaneio-nav-link is-active" href="{% url 'logistics_romaneio' %}">
+                <span class="romaneio-nav-icon" aria-hidden="true">&#9863;</span>
+                <span>Lançamentos</span>
+            </a>
+            <a class="romaneio-nav-link" href="{% url 'logistics_romaneio_ranking' %}">
+                <span class="romaneio-nav-icon" aria-hidden="true">&#128200;</span>
+                <span>Ranking 5 dias</span>
+            </a>
+        </section>
+
+        <section class="romaneio-view-controls romaneio-entrance is-delay-1" aria-label="Modo de visualização">
+            <div class="romaneio-view-copy">
+                <strong>Modo quiosque</strong>
+                <p id="romaneioViewModeText">Desligado. A tela permanece no formato atual, com todos os blocos visíveis.</p>
+            </div>
+            <label class="romaneio-view-switch" title="Alternar modo quiosque">
+                <span class="romaneio-view-switch-label">Testar modo quiosque</span>
+                <span class="theme-switch">
+                    <input id="romaneioKioskModeSwitch" type="checkbox" onchange="toggleKioskMode(this.checked)">
+                    <span class="theme-slider"></span>
+                </span>
+            </label>
+        </section>
+
+        {% if messages %}
+        <section class="hq-card romaneio-entrance is-delay-1">
+            <div class="truck-alert-stack">
+                {% for message in messages %}
+                    <div class="truck-alert truck-alert-{{ message.tags|default:'info' }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="hq-card romaneio-launch-card romaneio-entrance is-delay-2">
+            <div class="romaneio-focus-shell">
+                <span class="romaneio-kicker">Lançamento Oracle</span>
+                <h2 class="hq-card-title romaneio-focus-title">Novo lançamento de romaneio</h2>
+                <p class="truck-section-subtitle romaneio-focus-copy">Clique no botão, escaneie o código de barras e confirme o envio. A tela foi simplificada para deixar essa rotina mais direta e intuitiva.</p>
+
+                <div class="romaneio-focus-meta">
+                    <div class="romaneio-status-chip {% if oracle_ready %}is-ready{% else %}is-warning{% endif %}">
+                        {% if oracle_ready %}
+                            Oracle pronto: {{ oracle_service_name }}
+                        {% else %}
+                            Defina ERP_SIM_DB_NAME
+                        {% endif %}
+                    </div>
+                    <div id="romaneioLatestNote" class="romaneio-focus-note">
+                        {% if latest_entry %}
+                            Último envio: {{ latest_entry.created_at|date:"d/m/Y H:i" }} &bull; {{ latest_entry.get_sync_status_display }}
+                        {% else %}
+                            Nenhum envio registrado ainda.
+                        {% endif %}
+                    </div>
+                </div>
+
+                <button type="button" class="hq-button romaneio-primary-button" onclick="openRomaneioModal()">
+                    Novo lançamento
+                </button>
+
+                <div class="romaneio-step-row">
+                    <div class="romaneio-step-chip">1. Abrir o lançamento</div>
+                    <div class="romaneio-step-chip">2. Escanear ou colar a leitura</div>
+                    <div class="romaneio-step-chip">3. Conferir e enviar</div>
+                </div>
+
+                <div class="romaneio-stat-strip">
+                    <span id="romaneioTotalCount" class="romaneio-stat-pill">{{ total_entries }} registros</span>
+                    <span id="romaneioSuccessCount" class="romaneio-stat-pill is-success">{{ success_entries }} enviados</span>
+                    <span id="romaneioErrorCount" class="romaneio-stat-pill is-error">{{ error_entries }} com erro</span>
+                </div>
+
+                <div id="romaneioContinuousShell" class="romaneio-batch-panel">
+                    <div class="romaneio-batch-head">
+                        <div>
+                            <strong>Modo leitura contínua</strong>
+                            <p>Ideal para o leitor sem fio: ative uma vez, afaste-se do computador e deixe cada leitura entrar automaticamente na fila.</p>
+                        </div>
+                        <span id="continuousReaderModeBadge" class="romaneio-status-chip">Pausado</span>
+                    </div>
+
+                    <div class="romaneio-batch-grid">
+                        <div class="hq-field">
+                            <label class="hq-label" for="continuousUserCode">Código do usuário padrão</label>
+                            <input
+                                class="hq-input"
+                                id="continuousUserCode"
+                                type="text"
+                                maxlength="40"
+                                value="{{ form_values.user_code }}"
+                                placeholder="Ex.: 7"
+                                autocomplete="off"
+                            >
+                        </div>
+                        <div class="romaneio-batch-actions">
+                            <button type="button" id="continuousReaderToggle" class="hq-button romaneio-batch-button" onclick="toggleContinuousReader()">
+                                Ativar leitura contínua
+                            </button>
+                            <button type="button" class="hq-button hq-button-secondary romaneio-batch-button-secondary" onclick="focusContinuousReader()">
+                                Focar leitor
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="continuousReaderStatus" class="romaneio-reader-status romaneio-batch-status">
+                        <div class="romaneio-reader-indicator" aria-hidden="true"></div>
+                        <div class="romaneio-reader-copy">
+                            <strong id="continuousReaderTitle">Leitura contínua pausada</strong>
+                            <p id="continuousReaderText">Informe o usuário padrão e ative o modo contínuo para capturar vários romaneios em sequência sem abrir o popup.</p>
+                        </div>
+                    </div>
+
+                    <div class="romaneio-batch-metrics">
+                        <span class="romaneio-batch-metric">Fila: <strong id="continuousQueueCount">0</strong></span>
+                        <span class="romaneio-batch-metric">Sucesso: <strong id="continuousSuccessCount">0</strong></span>
+                        <span class="romaneio-batch-metric">Erro: <strong id="continuousErrorCount">0</strong></span>
+                    </div>
+
+                    <input id="continuousReaderCapture" class="romaneio-reader-capture" type="text" autocomplete="off" tabindex="-1" aria-hidden="true">
+
+                    <div id="continuousReaderFeed" class="romaneio-batch-feed">
+                        <div class="romaneio-batch-empty">Nenhuma leitura em fila no momento.</div>
+                    </div>
+                </div>
+
+                {% if not oracle_ready %}
+                <div class="truck-alert truck-alert-warning romaneio-inline-warning">
+                    Configure <strong>ERP_SIM_DB_NAME</strong> com o service name da base de simulações para liberar o envio ao Oracle.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <div id="romaneioModalOverlay" class="hq-modal-overlay romaneio-modal-layer{% if open_launch_modal %} is-visible{% endif %}" style="display:{% if open_launch_modal %}block{% else %}none{% endif %};" onclick="closeRomaneioModal()"></div>
+        <div id="romaneioModal" class="hq-modal hq-truck-modal romaneio-modal romaneio-modal-layer{% if open_launch_modal %} is-visible{% endif %}" style="display:{% if open_launch_modal %}block{% else %}none{% endif %};">
+            <form method="POST" class="hq-form romaneio-modal-form" onsubmit="lockRomaneioModal()">
+                {% csrf_token %}
+
+                <div class="romaneio-modal-head">
+                    <div>
+                        <span class="romaneio-kicker">Novo lançamento</span>
+                        <h3 class="hq-modal-title">Registrar leitura do romaneio</h3>
+                        <p class="truck-section-subtitle">Cole ou escaneie os dados do romaneio. O usuário permanece manual, a data/hora são geradas automaticamente no momento da leitura e a sequência é calculada direto no Oracle.</p>
+                    </div>
+                    <button type="button" class="romaneio-modal-close" onclick="closeRomaneioModal()" aria-label="Fechar pop-up">&times;</button>
+                </div>
+
+                <div class="romaneio-modal-status">
+                    <div>
+                        <strong>Status da integração</strong>
+                        <p class="romaneio-modal-copy">Se houver erro de validação, os dados permanecem preenchidos. Data e hora da leitura são controladas pela tela, sem depender do código escaneado, e a sequência final é obtida pelo próximo número disponível para empresa e filial.</p>
+                    </div>
+                    <div class="romaneio-status-chip {% if oracle_ready %}is-ready{% else %}is-warning{% endif %}">
+                        {% if oracle_ready %}
+                            Oracle pronto: {{ oracle_service_name }}
+                        {% else %}
+                            Defina ERP_SIM_DB_NAME
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div id="romaneioReaderShell" class="romaneio-scan-shell">
+                    <div class="romaneio-reader-shell">
+                        <button type="button" id="barcodeReaderButton" class="hq-button romaneio-reader-button" onclick="toggleBarcodeReader()">
+                            Ler código de barras
+                        </button>
+                        <div id="romaneioReaderStatus" class="romaneio-reader-status">
+                            <div class="romaneio-reader-indicator" aria-hidden="true"></div>
+                            <div class="romaneio-reader-copy">
+                                <strong id="romaneioReaderTitle">Pronto para leitura</strong>
+                                <p id="romaneioReaderText">Clique no botão e aproxime o leitor. A leitura será capturada automaticamente.</p>
+                            </div>
+                        </div>
+                        <input id="barcodeReaderCapture" class="romaneio-reader-capture" type="text" autocomplete="off" tabindex="-1" aria-hidden="true">
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="barcode_payload">Leitura do código de barras</label>
+                        <textarea class="hq-input romaneio-scan-input" id="barcode_payload" name="barcode_payload" rows="3" placeholder="Ex.: 1/2/12345/8/1540,250">{{ form_values.barcode_payload }}</textarea>
+                    </div>
+                    <div class="hq-actions romaneio-scan-actions">
+                        <button type="button" class="hq-button hq-button-secondary" onclick="applyRomaneioScan()">Aplicar leitura</button>
+                        <button type="button" class="hq-button hq-button-secondary" onclick="clearRomaneioForm()">Limpar</button>
+                    </div>
+                </div>
+
+                <div class="hq-form-grid hq-truck-config-grid">
+                    <div class="hq-field">
+                        <label class="hq-label" for="company_code">Empresa</label>
+                        <input class="hq-input" id="company_code" name="company_code" type="text" maxlength="20" value="{{ form_values.company_code }}" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="branch_code">Filial</label>
+                        <input class="hq-input" id="branch_code" name="branch_code" type="text" maxlength="20" value="{{ form_values.branch_code }}" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="sequence_record">Sequência Oracle</label>
+                        <input class="hq-input" id="sequence_record" name="sequence_record" type="text" maxlength="40" value="{{ form_values.sequence_record }}" placeholder="Gerada automaticamente no envio" readonly>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="user_code">Código do usuário</label>
+                        <input class="hq-input" id="user_code" name="user_code" type="text" maxlength="40" value="{{ form_values.user_code }}" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="generated_date">Data da leitura</label>
+                        <input class="hq-input" id="generated_date" name="generated_date" type="date" value="{{ form_values.generated_date }}" readonly required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="generated_time">Hora da leitura</label>
+                        <input class="hq-input" id="generated_time" name="generated_time" type="time" step="1" value="{{ form_values.generated_time }}" readonly required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="volume_quantity">Quantidade de volumes</label>
+                        <input class="hq-input" id="volume_quantity" name="volume_quantity" type="number" min="0" value="{{ form_values.volume_quantity }}" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="romaneio_weight">Peso do romaneio</label>
+                        <input class="hq-input" id="romaneio_weight" name="romaneio_weight" type="text" inputmode="decimal" placeholder="Ex.: 1540,250" value="{{ form_values.romaneio_weight }}" required>
+                    </div>
+                </div>
+
+                <div class="romaneio-field-guide">
+                    <div class="romaneio-guide-card">1. Empresa</div>
+                    <div class="romaneio-guide-card">2. Filial</div>
+                    <div class="romaneio-guide-card">3. Sequência automática</div>
+                    <div class="romaneio-guide-card">4. Volumes</div>
+                    <div class="romaneio-guide-card">5. Peso</div>
+                    <div class="romaneio-guide-card">Usuário manual</div>
+                    <div class="romaneio-guide-card">Data automática</div>
+                    <div class="romaneio-guide-card">Hora automática</div>
+                </div>
+
+                <div class="hq-actions romaneio-modal-actions">
+                    <button type="button" class="hq-button hq-button-secondary" onclick="closeRomaneioModal()">Cancelar</button>
+                    <button type="submit" class="hq-button">Enviar para Oracle</button>
+                </div>
+            </form>
+        </div>
+
+        <section class="hq-card romaneio-history-card romaneio-entrance is-delay-3">
+            <details class="romaneio-history-panel">
+                <summary class="romaneio-history-summary">
+                    <div>
+                        <strong>Histórico recente</strong>
+                        <span>Abra apenas quando precisar consultar os lançamentos anteriores.</span>
+                    </div>
+                    <span id="romaneioHistoryCount" class="romaneio-history-count">{{ total_entries }}</span>
+                </summary>
+                <div class="hq-history-table-wrap">
+                    <table class="hq-history-table">
+                        <thead>
+                            <tr>
+                                <th>Data local</th>
+                                <th>Empresa</th>
+                                <th>Filial</th>
+                                <th>Sequência</th>
+                                <th>Usuário</th>
+                                <th>Geração</th>
+                                <th>Volumes</th>
+                                <th>Peso</th>
+                                <th>Status</th>
+                                <th>Mensagem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="romaneioHistoryBody">
+                            {% for row in recent_entries %}
+                            <tr>
+                                <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
+                                <td>{{ row.company_code }}</td>
+                                <td>{{ row.branch_code }}</td>
+                                <td>{{ row.sequence_record }}</td>
+                                <td>{{ row.user_code }}</td>
+                                <td>{{ row.generated_date|date:"d/m/Y" }} {{ row.generated_time|time:"H:i:s" }}</td>
+                                <td>{{ row.volume_quantity }}</td>
+                                <td>{{ row.romaneio_weight }}</td>
+                                <td>
+                                    <span class="romaneio-grid-status is-{{ row.sync_status }}">
+                                        {{ row.get_sync_status_display }}
+                                    </span>
+                                </td>
+                                <td>{{ row.sync_message|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="10">Nenhuma leitura registrada até o momento.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </section>
+    </div>
+
+    <script>
+        const ROMANEIO_MODAL_TRANSITION_MS = 240;
+        const CONTINUOUS_READER_STORAGE_KEY = "connectmx-romaneio-default-user";
+        const KIOSK_MODE_STORAGE_KEY = "connectmx-romaneio-kiosk-mode";
+        let romaneioModalLocked = false;
+        let romaneioModalCloseTimer = null;
+        let barcodeReaderState = "idle";
+        let barcodeReaderBuffer = "";
+        let barcodeReaderTimer = null;
+        let continuousReaderEnabled = false;
+        let continuousReaderBuffer = "";
+        let continuousReaderTimer = null;
+        let continuousReaderProcessing = false;
+        let continuousReaderItems = [];
+        let continuousReaderNextId = 1;
+        let romaneioPageCounters = {
+            total: 0,
+            success: 0,
+            error: 0,
+        };
+
+        function getRomaneioOverlay() {
+            return document.getElementById("romaneioModalOverlay");
+        }
+
+        function getRomaneioModal() {
+            return document.getElementById("romaneioModal");
+        }
+
+        function clearRomaneioModalTimer() {
+            if (romaneioModalCloseTimer) {
+                window.clearTimeout(romaneioModalCloseTimer);
+                romaneioModalCloseTimer = null;
+            }
+        }
+
+        function openRomaneioModal() {
+            const overlay = getRomaneioOverlay();
+            const modal = getRomaneioModal();
+            if (!overlay || !modal) return;
+            clearRomaneioModalTimer();
+            stampRomaneioReadMoment();
+            overlay.style.display = "block";
+            modal.style.display = "block";
+            document.body.classList.add("hq-modal-open");
+            overlay.classList.remove("is-closing");
+            modal.classList.remove("is-closing");
+            window.requestAnimationFrame(() => {
+                overlay.classList.add("is-visible");
+                modal.classList.add("is-visible");
+            });
+            window.setTimeout(() => {
+                document.getElementById("barcodeReaderButton")?.focus();
+            }, 90);
+        }
+
+        function closeRomaneioModal(forceClose = false) {
+            if (romaneioModalLocked && !forceClose) return;
+            cancelBarcodeReader(true);
+            const overlay = getRomaneioOverlay();
+            const modal = getRomaneioModal();
+            clearRomaneioModalTimer();
+            if (overlay) {
+                overlay.classList.remove("is-visible");
+                overlay.classList.add("is-closing");
+            }
+            if (modal) {
+                modal.classList.remove("is-visible");
+                modal.classList.add("is-closing");
+            }
+            romaneioModalCloseTimer = window.setTimeout(() => {
+                if (overlay) {
+                    overlay.style.display = "none";
+                    overlay.classList.remove("is-closing");
+                }
+                if (modal) {
+                    modal.style.display = "none";
+                    modal.classList.remove("is-closing");
+                }
+                document.body.classList.remove("hq-modal-open");
+            }, ROMANEIO_MODAL_TRANSITION_MS);
+        }
+
+        function lockRomaneioModal() {
+            stampRomaneioReadMoment();
+            romaneioModalLocked = true;
+        }
+
+        function getBarcodeReaderShell() {
+            return document.getElementById("romaneioReaderShell");
+        }
+
+        function setBarcodeReaderState(state, customText = "") {
+            barcodeReaderState = state;
+
+            const shell = getBarcodeReaderShell();
+            const button = document.getElementById("barcodeReaderButton");
+            const title = document.getElementById("romaneioReaderTitle");
+            const text = document.getElementById("romaneioReaderText");
+            const capture = document.getElementById("barcodeReaderCapture");
+
+            if (shell) {
+                shell.classList.remove("is-armed", "is-loading", "is-success", "is-error");
+                if (state !== "idle") shell.classList.add(`is-${state}`);
+            }
+
+            if (button) {
+                button.disabled = state === "loading";
+            }
+
+            if (state === "armed") {
+                if (button) button.textContent = "Cancelar leitura";
+                if (title) title.textContent = "Aguardando leitura";
+                if (text) text.textContent = customText || "Use o leitor agora. Assim que a leitura terminar, as informações serão carregadas.";
+                if (capture) {
+                    capture.value = "";
+                    capture.focus();
+                }
+                return;
+            }
+
+            if (state === "loading") {
+                if (button) button.textContent = "Processando leitura...";
+                if (title) title.textContent = "Leitura recebida";
+                if (text) text.textContent = customText || "Aguarde, estamos separando os campos e preenchendo o formulário.";
+                return;
+            }
+
+            if (state === "success") {
+                if (button) button.textContent = "Ler novamente";
+                if (title) title.textContent = "Leitura carregada com sucesso";
+                if (text) text.textContent = customText || "Os campos foram preenchidos automaticamente. Revise e envie ao Oracle.";
+                return;
+            }
+
+            if (state === "error") {
+                if (button) button.textContent = "Tentar novamente";
+                if (title) title.textContent = "Não foi possível interpretar a leitura";
+                if (text) text.textContent = customText || "Verifique o formato enviado pelo leitor ou preencha manualmente os campos.";
+                return;
+            }
+
+            if (button) button.textContent = "Ler código de barras";
+            if (title) title.textContent = "Pronto para leitura";
+            if (text) text.textContent = customText || "Clique no botão e aproxime o leitor. A leitura será capturada automaticamente.";
+        }
+
+        function clearBarcodeReaderTimer() {
+            if (barcodeReaderTimer) {
+                window.clearTimeout(barcodeReaderTimer);
+                barcodeReaderTimer = null;
+            }
+        }
+
+        function toggleBarcodeReader() {
+            if (barcodeReaderState === "armed") {
+                cancelBarcodeReader();
+                return;
+            }
+
+            if (barcodeReaderState === "loading") {
+                return;
+            }
+
+            barcodeReaderBuffer = "";
+            setBarcodeReaderState("armed");
+        }
+
+        function cancelBarcodeReader(forceReset = false) {
+            clearBarcodeReaderTimer();
+            barcodeReaderBuffer = "";
+            if (forceReset || barcodeReaderState !== "idle") {
+                setBarcodeReaderState("idle");
+            }
+        }
+
+        function finalizeBarcodeReader() {
+            const payload = String(barcodeReaderBuffer || "").trim();
+            if (!payload) {
+                setBarcodeReaderState("error", "Nenhuma leitura foi recebida. Clique novamente e passe o leitor.");
+                return;
+            }
+
+            clearBarcodeReaderTimer();
+            setBarcodeReaderState("loading");
+
+            window.setTimeout(() => {
+                const payloadField = document.getElementById("barcode_payload");
+                if (payloadField) payloadField.value = payload;
+
+                const applied = applyRomaneioScan(false);
+                if (applied) {
+                    setBarcodeReaderState("success");
+                } else {
+                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os 5 campos do romaneio automaticamente.");
+                }
+            }, 900);
+        }
+
+        function handleBarcodeReaderKeydown(event) {
+            if (barcodeReaderState !== "armed") return;
+
+            if (event.key === "Escape") {
+                event.preventDefault();
+                cancelBarcodeReader();
+                return;
+            }
+
+            if (event.key === "Enter") {
+                event.preventDefault();
+                finalizeBarcodeReader();
+                return;
+            }
+
+            if (event.key === "Tab") {
+                event.preventDefault();
+                barcodeReaderBuffer += "\t";
+                return;
+            }
+
+            if (event.key === "Backspace") {
+                event.preventDefault();
+                barcodeReaderBuffer = barcodeReaderBuffer.slice(0, -1);
+                return;
+            }
+
+            if (event.key.length === 1) {
+                event.preventDefault();
+                barcodeReaderBuffer += event.key;
+                clearBarcodeReaderTimer();
+                barcodeReaderTimer = window.setTimeout(() => {
+                    if (barcodeReaderState === "armed" && barcodeReaderBuffer.trim()) {
+                        finalizeBarcodeReader();
+                    }
+                }, 220);
+            }
+        }
+
+        function getContinuousReaderShell() {
+            return document.getElementById("romaneioContinuousShell");
+        }
+
+        function getContinuousReaderCapture() {
+            return document.getElementById("continuousReaderCapture");
+        }
+
+        function getContinuousUserCode() {
+            return String(document.getElementById("continuousUserCode")?.value || "").trim();
+        }
+
+        function getRomaneioQuickSubmitUrl() {
+            return document.querySelector("[data-romaneio-quick-submit-url]")?.dataset?.romaneioQuickSubmitUrl || "";
+        }
+
+        function setKioskMode(enabled) {
+            document.body.classList.toggle("romaneio-kiosk-mode", Boolean(enabled));
+
+            const switchInput = document.getElementById("romaneioKioskModeSwitch");
+            const modeText = document.getElementById("romaneioViewModeText");
+            if (switchInput) {
+                switchInput.checked = Boolean(enabled);
+            }
+            if (modeText) {
+                modeText.textContent = enabled
+                    ? "Ligado. A tela fica mais focada na leitura contínua, com o bloco operacional em destaque."
+                    : "Desligado. A tela permanece no formato atual, com todos os blocos visíveis.";
+            }
+
+            if (enabled && continuousReaderEnabled) {
+                window.setTimeout(() => {
+                    focusContinuousReader();
+                }, 120);
+            }
+        }
+
+        function toggleKioskMode(enabled) {
+            try {
+                if (enabled) {
+                    window.localStorage.setItem(KIOSK_MODE_STORAGE_KEY, "1");
+                } else {
+                    window.localStorage.removeItem(KIOSK_MODE_STORAGE_KEY);
+                }
+            } catch (error) {
+                // Ignore storage failures and keep the UI responsive.
+            }
+            setKioskMode(enabled);
+        }
+
+        function restoreKioskMode() {
+            try {
+                setKioskMode(window.localStorage.getItem(KIOSK_MODE_STORAGE_KEY) === "1");
+            } catch (error) {
+                setKioskMode(false);
+            }
+        }
+
+        function getCsrfToken() {
+            const cookieValue = `; ${document.cookie}`;
+            const parts = cookieValue.split("; csrftoken=");
+            if (parts.length === 2) {
+                return parts.pop().split(";").shift();
+            }
+            return "";
+        }
+
+        function isEditableTarget(target) {
+            if (!target) return false;
+            const tagName = String(target.tagName || "").toLowerCase();
+            return Boolean(
+                target.isContentEditable ||
+                tagName === "input" ||
+                tagName === "textarea" ||
+                tagName === "select"
+            );
+        }
+
+        function persistContinuousUserCode() {
+            const userCode = getContinuousUserCode();
+            if (userCode) {
+                window.localStorage.setItem(CONTINUOUS_READER_STORAGE_KEY, userCode);
+            } else {
+                window.localStorage.removeItem(CONTINUOUS_READER_STORAGE_KEY);
+            }
+        }
+
+        function restoreContinuousUserCode() {
+            const field = document.getElementById("continuousUserCode");
+            if (!field) return;
+            if (String(field.value || "").trim()) {
+                persistContinuousUserCode();
+                return;
+            }
+            const storedValue = window.localStorage.getItem(CONTINUOUS_READER_STORAGE_KEY) || "";
+            if (storedValue) {
+                field.value = storedValue;
+            }
+        }
+
+        function focusContinuousReader() {
+            const capture = getContinuousReaderCapture();
+            if (capture) {
+                capture.value = "";
+                capture.focus();
+            }
+        }
+
+        function clearContinuousReaderTimer() {
+            if (continuousReaderTimer) {
+                window.clearTimeout(continuousReaderTimer);
+                continuousReaderTimer = null;
+            }
+        }
+
+        function setContinuousReaderState(state, customText = "") {
+            const shell = getContinuousReaderShell();
+            const button = document.getElementById("continuousReaderToggle");
+            const badge = document.getElementById("continuousReaderModeBadge");
+            const title = document.getElementById("continuousReaderTitle");
+            const text = document.getElementById("continuousReaderText");
+
+            if (shell) {
+                shell.classList.remove("is-armed", "is-loading", "is-success", "is-error", "is-paused");
+                shell.classList.add(`is-${state}`);
+            }
+
+            if (state === "armed") {
+                if (button) button.textContent = "Pausar leitura contínua";
+                if (badge) {
+                    badge.textContent = "Lendo";
+                    badge.classList.add("is-ready");
+                    badge.classList.remove("is-warning");
+                }
+                if (title) title.textContent = "Leitor pronto para uso";
+                if (text) text.textContent = customText || "Aguarde a próxima leitura. Cada código capturado entra na fila e é enviado automaticamente.";
+                focusContinuousReader();
+                return;
+            }
+
+            if (state === "loading") {
+                if (button) button.textContent = "Pausar leitura contínua";
+                if (badge) {
+                    badge.textContent = "Enviando";
+                    badge.classList.add("is-ready");
+                    badge.classList.remove("is-warning");
+                }
+                if (title) title.textContent = "Processando fila";
+                if (text) text.textContent = customText || "Uma leitura está sendo enviada ao Oracle. As próximas aguardam na fila.";
+                return;
+            }
+
+            if (state === "success") {
+                if (button) button.textContent = "Pausar leitura contínua";
+                if (badge) {
+                    badge.textContent = "Lendo";
+                    badge.classList.add("is-ready");
+                    badge.classList.remove("is-warning");
+                }
+                if (title) title.textContent = "Leitura concluída";
+                if (text) text.textContent = customText || "Romaneio enviado com sucesso. O leitor continua pronto para a próxima captura.";
+                return;
+            }
+
+            if (state === "error") {
+                if (button) button.textContent = continuousReaderEnabled ? "Pausar leitura contínua" : "Ativar leitura contínua";
+                if (badge) {
+                    badge.textContent = "Atenção";
+                    badge.classList.add("is-warning");
+                    badge.classList.remove("is-ready");
+                }
+                if (title) title.textContent = "Falha na leitura ou no envio";
+                if (text) text.textContent = customText || "Revise a mensagem da última leitura. As demais continuam disponíveis na fila.";
+                return;
+            }
+
+            if (button) button.textContent = "Ativar leitura contínua";
+            if (badge) {
+                badge.textContent = "Pausado";
+                badge.classList.add("is-warning");
+                badge.classList.remove("is-ready");
+            }
+            if (title) title.textContent = "Leitura contínua pausada";
+            if (text) text.textContent = customText || "Informe o usuário padrão e ative o modo contínuo para capturar vários romaneios em sequência sem abrir o popup.";
+        }
+
+        function toggleContinuousReader() {
+            if (continuousReaderEnabled) {
+                continuousReaderEnabled = false;
+                clearContinuousReaderTimer();
+                continuousReaderBuffer = "";
+                setContinuousReaderState("paused");
+                return;
+            }
+
+            const userCode = getContinuousUserCode();
+            if (!userCode) {
+                setContinuousReaderState("error", "Informe o código do usuário padrão antes de ativar a leitura contínua.");
+                document.getElementById("continuousUserCode")?.focus();
+                return;
+            }
+
+            persistContinuousUserCode();
+            continuousReaderEnabled = true;
+            continuousReaderBuffer = "";
+            setContinuousReaderState("armed");
+            processContinuousQueue();
+        }
+
+        function enqueueContinuousScan(payload) {
+            continuousReaderItems.unshift({
+                id: continuousReaderNextId++,
+                payload,
+                status: "queued",
+                message: "Aguardando envio ao Oracle.",
+                createdAt: new Date(),
+            });
+            continuousReaderItems = continuousReaderItems.slice(0, 12);
+            renderContinuousFeed();
+            processContinuousQueue();
+        }
+
+        function renderContinuousFeed() {
+            const feed = document.getElementById("continuousReaderFeed");
+            if (!feed) return;
+
+            updateContinuousCounters();
+            if (!continuousReaderItems.length) {
+                feed.innerHTML = '<div class="romaneio-batch-empty">Nenhuma leitura em fila no momento.</div>';
+                return;
+            }
+
+            feed.innerHTML = continuousReaderItems.map((item) => {
+                const timestamp = item.createdAt instanceof Date
+                    ? item.createdAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                    : "";
+                return `
+                    <article class="romaneio-batch-item is-${item.status}">
+                        <div class="romaneio-batch-item-head">
+                            <strong>${escapeHtml(timestamp || "Agora")}</strong>
+                            <span class="romaneio-batch-item-status">${escapeHtml(getContinuousStatusLabel(item.status))}</span>
+                        </div>
+                        <div class="romaneio-batch-item-payload">${escapeHtml(item.payload)}</div>
+                        <p>${escapeHtml(item.message || "")}</p>
+                    </article>
+                `;
+            }).join("");
+        }
+
+        function getContinuousStatusLabel(status) {
+            if (status === "processing") return "Enviando";
+            if (status === "success") return "Sucesso";
+            if (status === "error") return "Erro";
+            return "Na fila";
+        }
+
+        function updateContinuousCounters() {
+            const queueCount = continuousReaderItems.filter((item) => item.status === "queued" || item.status === "processing").length;
+            const successCount = continuousReaderItems.filter((item) => item.status === "success").length;
+            const errorCount = continuousReaderItems.filter((item) => item.status === "error").length;
+
+            const queueNode = document.getElementById("continuousQueueCount");
+            const successNode = document.getElementById("continuousSuccessCount");
+            const errorNode = document.getElementById("continuousErrorCount");
+            if (queueNode) queueNode.textContent = String(queueCount);
+            if (successNode) successNode.textContent = String(successCount);
+            if (errorNode) errorNode.textContent = String(errorCount);
+        }
+
+        function escapeHtml(value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function updateRomaneioCounters(status) {
+            romaneioPageCounters.total += 1;
+            if (status === "success") {
+                romaneioPageCounters.success += 1;
+            } else if (status === "error") {
+                romaneioPageCounters.error += 1;
+            }
+
+            const totalNode = document.getElementById("romaneioTotalCount");
+            const successNode = document.getElementById("romaneioSuccessCount");
+            const errorNode = document.getElementById("romaneioErrorCount");
+            const historyCountNode = document.getElementById("romaneioHistoryCount");
+
+            if (totalNode) totalNode.textContent = `${romaneioPageCounters.total} registros`;
+            if (successNode) successNode.textContent = `${romaneioPageCounters.success} enviados`;
+            if (errorNode) errorNode.textContent = `${romaneioPageCounters.error} com erro`;
+            if (historyCountNode) historyCountNode.textContent = String(romaneioPageCounters.total);
+        }
+
+        function prependHistoryEntry(entry, requestStatus) {
+            const body = document.getElementById("romaneioHistoryBody");
+            if (!body || !entry) return;
+
+            const emptyRow = body.querySelector("tr td[colspan='10']");
+            if (emptyRow) {
+                emptyRow.parentElement.remove();
+            }
+
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${escapeHtml(entry.created_at || "")}</td>
+                <td>${escapeHtml(entry.company_code || "")}</td>
+                <td>${escapeHtml(entry.branch_code || "")}</td>
+                <td>${escapeHtml(entry.sequence_record || "-")}</td>
+                <td>${escapeHtml(entry.user_code || "")}</td>
+                <td>${escapeHtml(entry.generated_date || "")} ${escapeHtml(entry.generated_time || "")}</td>
+                <td>${escapeHtml(entry.volume_quantity || "")}</td>
+                <td>${escapeHtml(entry.romaneio_weight || "")}</td>
+                <td>
+                    <span class="romaneio-grid-status is-${requestStatus === "success" ? "success" : "error"}">
+                        ${escapeHtml(entry.sync_status || (requestStatus === "success" ? "Sincronizado" : "Erro"))}
+                    </span>
+                </td>
+                <td>${escapeHtml(entry.sync_message || "")}</td>
+            `;
+            body.prepend(row);
+            while (body.children.length > 30) {
+                body.removeChild(body.lastElementChild);
+            }
+        }
+
+        function updateLatestRomaneioNote(message) {
+            const note = document.getElementById("romaneioLatestNote");
+            if (note && message) {
+                note.textContent = message;
+            }
+        }
+
+        async function processContinuousQueue() {
+            if (continuousReaderProcessing) return;
+
+            const nextItem = continuousReaderItems.find((item) => item.status === "queued");
+            if (!nextItem) {
+                if (continuousReaderEnabled) {
+                    setContinuousReaderState("armed");
+                } else {
+                    setContinuousReaderState("paused");
+                }
+                return;
+            }
+
+            const submitUrl = getRomaneioQuickSubmitUrl();
+            const userCode = getContinuousUserCode();
+            if (!submitUrl) {
+                setContinuousReaderState("error", "A rota de envio rápido não foi encontrada na página.");
+                return;
+            }
+            if (!userCode) {
+                setContinuousReaderState("error", "Informe o código do usuário padrão para continuar com a fila.");
+                document.getElementById("continuousUserCode")?.focus();
+                return;
+            }
+
+            continuousReaderProcessing = true;
+            nextItem.status = "processing";
+            nextItem.message = "Enviando leitura para a base Oracle...";
+            renderContinuousFeed();
+            setContinuousReaderState("loading", "Uma leitura está sendo enviada. As próximas continuarão entrando na fila.");
+
+            try {
+                const response = await fetch(submitUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCsrfToken(),
+                    },
+                    body: JSON.stringify({
+                        barcode_payload: nextItem.payload,
+                        user_code: userCode,
+                    }),
+                });
+                const data = await response.json();
+
+                if (response.ok && data.status === "ok") {
+                    nextItem.status = "success";
+                    nextItem.message = data.message || "Leitura enviada com sucesso.";
+                    updateRomaneioCounters("success");
+                    prependHistoryEntry(data.entry, "success");
+                    updateLatestRomaneioNote(`Último envio: ${data.entry?.created_at || ""} • ${data.entry?.sync_status || "Sincronizado"}`);
+                    setContinuousReaderState("success", data.message || "Leitura enviada com sucesso.");
+                } else {
+                    nextItem.status = "error";
+                    nextItem.message = data.message || "Falha ao enviar a leitura.";
+                    if (data.entry) {
+                        updateRomaneioCounters("error");
+                        prependHistoryEntry(data.entry, "error");
+                        updateLatestRomaneioNote(`Última tentativa com erro: ${data.entry?.created_at || "agora"} • ${data.entry?.sync_status || "Erro"}`);
+                    }
+                    setContinuousReaderState("error", nextItem.message);
+                }
+            } catch (error) {
+                nextItem.status = "error";
+                nextItem.message = "Falha de comunicação ao enviar a leitura.";
+                setContinuousReaderState("error", nextItem.message);
+            } finally {
+                continuousReaderProcessing = false;
+                renderContinuousFeed();
+                if (continuousReaderItems.some((item) => item.status === "queued")) {
+                    window.setTimeout(processContinuousQueue, 120);
+                } else if (continuousReaderEnabled) {
+                    window.setTimeout(() => {
+                        if (continuousReaderEnabled && !continuousReaderProcessing) {
+                            setContinuousReaderState("armed");
+                        }
+                    }, 520);
+                }
+            }
+        }
+
+        function finalizeContinuousReader() {
+            const payload = String(continuousReaderBuffer || "").trim();
+            continuousReaderBuffer = "";
+            clearContinuousReaderTimer();
+
+            if (!payload) {
+                setContinuousReaderState("error", "Nenhuma leitura foi capturada pelo modo contínuo.");
+                return;
+            }
+
+            enqueueContinuousScan(payload);
+            setContinuousReaderState("loading", "Leitura capturada. A fila está enviando automaticamente.");
+        }
+
+        function handleContinuousReaderKeydown(event) {
+            if (!continuousReaderEnabled || barcodeReaderState === "armed") return;
+            if (document.body.classList.contains("hq-modal-open")) return;
+
+            const capture = getContinuousReaderCapture();
+            if (isEditableTarget(event.target) && event.target !== capture) {
+                return;
+            }
+
+            if (event.key === "Escape") {
+                event.preventDefault();
+                continuousReaderEnabled = false;
+                clearContinuousReaderTimer();
+                continuousReaderBuffer = "";
+                setContinuousReaderState("paused", "Leitura contínua pausada manualmente.");
+                return;
+            }
+
+            if (event.key === "Enter") {
+                event.preventDefault();
+                finalizeContinuousReader();
+                return;
+            }
+
+            if (event.key === "Tab") {
+                event.preventDefault();
+                continuousReaderBuffer += "\t";
+                return;
+            }
+
+            if (event.key === "Backspace") {
+                event.preventDefault();
+                continuousReaderBuffer = continuousReaderBuffer.slice(0, -1);
+                return;
+            }
+
+            if (event.key.length === 1) {
+                event.preventDefault();
+                continuousReaderBuffer += event.key;
+                clearContinuousReaderTimer();
+                continuousReaderTimer = window.setTimeout(() => {
+                    if (continuousReaderEnabled && continuousReaderBuffer.trim()) {
+                        finalizeContinuousReader();
+                    }
+                }, 220);
+            }
+        }
+
+        function normalizeRomaneioDate(value) {
+            const raw = String(value || "").trim();
+            if (!raw) return "";
+            if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+                const [dd, mm, yyyy] = raw.split("/");
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            if (/^\d{8}$/.test(raw)) {
+                if (raw.startsWith("20")) {
+                    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+                }
+                return `${raw.slice(4, 8)}-${raw.slice(2, 4)}-${raw.slice(0, 2)}`;
+            }
+            return "";
+        }
+
+        function normalizeRomaneioTime(value) {
+            const raw = String(value || "").trim();
+            if (!raw) return "";
+            if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+                return raw.length === 5 ? `${raw}:00` : raw;
+            }
+            const compact = raw.replace(/:/g, "");
+            if (/^\d{6}$/.test(compact)) {
+                return `${compact.slice(0, 2)}:${compact.slice(2, 4)}:${compact.slice(4, 6)}`;
+            }
+            if (/^\d{4}$/.test(compact)) {
+                return `${compact.slice(0, 2)}:${compact.slice(2, 4)}:00`;
+            }
+            return "";
+        }
+
+        function stampRomaneioReadMoment() {
+            const now = new Date();
+            const dateField = document.getElementById("generated_date");
+            const timeField = document.getElementById("generated_time");
+            const yyyy = String(now.getFullYear());
+            const mm = String(now.getMonth() + 1).padStart(2, "0");
+            const dd = String(now.getDate()).padStart(2, "0");
+            const hh = String(now.getHours()).padStart(2, "0");
+            const mi = String(now.getMinutes()).padStart(2, "0");
+            const ss = String(now.getSeconds()).padStart(2, "0");
+
+            if (dateField) dateField.value = `${yyyy}-${mm}-${dd}`;
+            if (timeField) timeField.value = `${hh}:${mi}:${ss}`;
+        }
+
+        function mapRomaneioValues(values) {
+            if (!Array.isArray(values)) return null;
+            if (values.length === 5) {
+                return {
+                    company: values[0],
+                    branch: values[1],
+                    sequence: values[2],
+                    volume: values[3],
+                    weight: values[4],
+                };
+            }
+            if (values.length === 8) {
+                return {
+                    company: values[0],
+                    branch: values[1],
+                    sequence: values[2],
+                    volume: values[6],
+                    weight: values[7],
+                };
+            }
+            return null;
+        }
+
+        function parseRomaneioPayload(payload) {
+            const source = String(payload || "").trim();
+            if (!source) return [];
+            const splitters = [/\r?\n/, /\t/, /\//, /\|/, /;/];
+            for (const splitter of splitters) {
+                const parts = source.split(splitter).map((item) => item.trim()).filter(Boolean);
+                if (parts.length === 5 || parts.length === 8) return parts;
+            }
+            return [];
+        }
+
+        function applyRomaneioScan(showAlert = true) {
+            const payload = document.getElementById("barcode_payload");
+            const values = parseRomaneioPayload(payload ? payload.value : "");
+            const mappedValues = mapRomaneioValues(values);
+            if (!mappedValues) {
+                if (showAlert) {
+                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou 5 dados do romaneio.");
+                }
+                return false;
+            }
+
+            document.getElementById("company_code").value = mappedValues.company;
+            document.getElementById("branch_code").value = mappedValues.branch;
+            document.getElementById("volume_quantity").value = mappedValues.volume;
+            document.getElementById("romaneio_weight").value = mappedValues.weight;
+            stampRomaneioReadMoment();
+            return true;
+        }
+
+        function clearRomaneioForm() {
+            [
+                "barcode_payload",
+                "company_code",
+                "branch_code",
+                "sequence_record",
+                "volume_quantity",
+                "romaneio_weight",
+            ].forEach((id) => {
+                const field = document.getElementById(id);
+                if (field) field.value = "";
+            });
+            stampRomaneioReadMoment();
+            cancelBarcodeReader(true);
+            document.getElementById("barcodeReaderButton")?.focus();
+        }
+
+        document.getElementById("barcode_payload")?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                applyRomaneioScan();
+            }
+        });
+
+        document.addEventListener("keydown", (event) => {
+            if (barcodeReaderState === "armed") {
+                handleBarcodeReaderKeydown(event);
+                return;
+            }
+            handleContinuousReaderKeydown(event);
+        }, true);
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                closeRomaneioModal();
+            }
+        });
+
+        document.getElementById("continuousUserCode")?.addEventListener("input", () => {
+            persistContinuousUserCode();
+        });
+
+        stampRomaneioReadMoment();
+        setBarcodeReaderState("idle");
+        restoreContinuousUserCode();
+        restoreKioskMode();
+        renderContinuousFeed();
+        setContinuousReaderState("paused");
+        romaneioPageCounters = {
+            total: parseInt((document.getElementById("romaneioTotalCount")?.textContent || "0").match(/\d+/)?.[0] || "0", 10),
+            success: parseInt((document.getElementById("romaneioSuccessCount")?.textContent || "0").match(/\d+/)?.[0] || "0", 10),
+            error: parseInt((document.getElementById("romaneioErrorCount")?.textContent || "0").match(/\d+/)?.[0] || "0", 10),
+        };
+        if (document.body.classList.contains("hq-modal-open")) {
+            window.setTimeout(() => {
+                document.getElementById("barcodeReaderButton")?.focus();
+            }, 120);
+        }
+    </script>
+</body>
+</html>

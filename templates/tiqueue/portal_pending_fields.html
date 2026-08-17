@@ -1,0 +1,166 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Campos do Portal</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body support-admin-queue-body">
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main support-admin-page support-admin-queue-page">
+        {% include 'tiqueue/partials/portal_admin_nav.html' %}
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+        {% if field_created_flag %}
+            <div class="support-banner is-success">Campo adicional criado com sucesso para novas demandas.</div>
+        {% endif %}
+        {% if option_created_flag %}
+            <div class="support-banner is-success">Nova opção adicionada com sucesso ao campo da demanda.</div>
+        {% endif %}
+
+        {% if can_manage %}
+            <section class="queue-dashboard support-pending-dashboard">
+                <article class="queue-dashboard-card support-pending-metric is-highlight">
+                    <span class="queue-dashboard-label">Campos extras</span>
+                    <strong class="queue-dashboard-value">{{ summary.custom_fields }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Pendentes</span>
+                    <strong class="queue-dashboard-value">{{ summary.pending }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">SLA</span>
+                    <strong class="queue-dashboard-value">{{ summary.sla_policies }}</strong>
+                </article>
+                <article class="queue-dashboard-card support-pending-metric">
+                    <span class="queue-dashboard-label">Respostas</span>
+                    <strong class="queue-dashboard-value">{{ summary.canned_responses }}</strong>
+                </article>
+            </section>
+
+            <section class="support-card support-admin-section support-portal-field-shell">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Abertura inteligente</span>
+                        <h2>Campos adicionais da demanda</h2>
+                    </div>
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="create_custom_field">
+                    <div class="support-form-grid">
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.label.id_for_label }}">{{ custom_field_form.label.label }}</label>
+                            {{ custom_field_form.label }}
+                            {% if custom_field_form.label.errors %}<div class="support-field-error">{{ custom_field_form.label.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.field_type.id_for_label }}">{{ custom_field_form.field_type.label }}</label>
+                            {{ custom_field_form.field_type }}
+                            {% if custom_field_form.field_type.errors %}<div class="support-field-error">{{ custom_field_form.field_type.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.placeholder.id_for_label }}">{{ custom_field_form.placeholder.label }}</label>
+                            {{ custom_field_form.placeholder }}
+                            {% if custom_field_form.placeholder.errors %}<div class="support-field-error">{{ custom_field_form.placeholder.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.initial_option_label.id_for_label }}">{{ custom_field_form.initial_option_label.label }}</label>
+                            {{ custom_field_form.initial_option_label }}
+                            {% if custom_field_form.initial_option_label.errors %}<div class="support-field-error">{{ custom_field_form.initial_option_label.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.task_groups.id_for_label }}">{{ custom_field_form.task_groups.label }}</label>
+                            {{ custom_field_form.task_groups }}
+                            {% if custom_field_form.task_groups.errors %}<div class="support-field-error">{{ custom_field_form.task_groups.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field">
+                            <label for="{{ custom_field_form.task_types.id_for_label }}">{{ custom_field_form.task_types.label }}</label>
+                            {{ custom_field_form.task_types }}
+                            {% if custom_field_form.task_types.errors %}<div class="support-field-error">{{ custom_field_form.task_types.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ custom_field_form.help_text.id_for_label }}">{{ custom_field_form.help_text.label }}</label>
+                            {{ custom_field_form.help_text }}
+                            {% if custom_field_form.help_text.errors %}<div class="support-field-error">{{ custom_field_form.help_text.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox support-field-span-2">
+                            {{ custom_field_form.is_required }}
+                            <span>{{ custom_field_form.is_required.label }}</span>
+                        </label>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">Adicionar campo</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if portal_custom_field_rows %}
+                <section class="support-portal-field-cards">
+                    {% for row in portal_custom_field_rows %}
+                        <article class="support-portal-field-card">
+                            <div class="support-portal-field-card-head">
+                                <strong>{{ row.field.label }}</strong>
+                                <div class="support-portal-field-card-badges">
+                                    <span class="support-chip is-soft" style="--chip-color: #435799;">{{ row.field.get_field_type_display }}</span>
+                                    {% if row.field.is_required %}
+                                        <span class="support-chip is-soft" style="--chip-color: #b56a2d;">Obrigatório</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% if row.field.help_text %}
+                                <p>{{ row.field.help_text }}</p>
+                            {% endif %}
+                            <div class="support-inline-pills">
+                                {% for group in row.field.task_groups.all %}
+                                    <span class="support-meta-pill">{{ group.name }}</span>
+                                {% empty %}
+                                    <span class="support-meta-pill">Todos os grupos</span>
+                                {% endfor %}
+                                {% for task_type in row.field.task_types.all %}
+                                    <span class="support-meta-pill">{{ task_type.name }}</span>
+                                {% endfor %}
+                            </div>
+                            {% if row.field.field_type == "select" %}
+                                <div class="support-portal-field-options">
+                                    {% for option in row.field.options.all %}
+                                        <span class="support-meta-pill">{{ option.label }}</span>
+                                    {% empty %}
+                                        <span class="support-meta-pill">Sem opções</span>
+                                    {% endfor %}
+                                </div>
+                                <form method="POST" class="support-portal-option-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_type" value="create_custom_option">
+                                    <input type="hidden" name="field_id" value="{{ row.field.id }}">
+                                    <div class="support-field">
+                                        <label for="{{ row.option_form.label.id_for_label }}">{{ row.option_form.label.label }}</label>
+                                        {{ row.option_form.label }}
+                                        {% if row.option_form.label.errors %}<div class="support-field-error">{{ row.option_form.label.errors|join:", " }}</div>{% endif %}
+                                    </div>
+                                    <button type="submit" class="queue-secondary-btn">Salvar opção</button>
+                                </form>
+                            {% endif %}
+                        </article>
+                    {% endfor %}
+                </section>
+            {% else %}
+                <div class="support-empty compact">
+                    <strong>Nenhum campo extra configurado</strong>
+                    <span>Cadastre aqui as novas informações que deverão aparecer ao abrir a demanda.</span>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

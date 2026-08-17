@@ -1,0 +1,277 @@
+function initDashboardCalendar() {
+    const dataNode = document.getElementById("dashboard-calendar-data");
+    const detailRoot = document.getElementById("dashboard-delivery-detail");
+    const labelNode = document.getElementById("dashboard-delivery-label");
+    const headlineNode = document.getElementById("dashboard-delivery-headline");
+    const totalNode = document.getElementById("dashboard-delivery-total");
+    const listNode = document.getElementById("dashboard-delivery-list");
+    const dayButtons = Array.from(document.querySelectorAll(".dashboard-calendar-day[data-day-key]"));
+    const previewToggles = Array.from(document.querySelectorAll("[data-preview-toggle]"));
+
+    if (!dataNode || !detailRoot || !listNode || !dayButtons.length) {
+        return;
+    }
+
+    let dayPayloads = {};
+    try {
+        dayPayloads = JSON.parse(dataNode.textContent || "{}");
+    } catch (error) {
+        console.error("Falha ao carregar o calendário do dashboard.", error);
+        return;
+    }
+
+    function setSelectedDay(key) {
+        dayButtons.forEach((button) => {
+            button.classList.toggle("is-selected", button.dataset.dayKey === key);
+        });
+        detailRoot.dataset.selectedDay = key;
+    }
+
+    function buildActionLink(href, label, extraClass = "") {
+        const link = document.createElement("a");
+        link.className = `queue-secondary-btn dashboard-delivery-action${extraClass ? ` ${extraClass}` : ""}`;
+        link.href = href;
+        link.textContent = label;
+        return link;
+    }
+
+    function buildResponsibleLabel(name) {
+        if (!name) {
+            return null;
+        }
+        const responsible = document.createElement("div");
+        responsible.className = "dashboard-delivery-responsible";
+        responsible.textContent = `Responsável: ${name}`;
+        return responsible;
+    }
+
+    function renderDay(key) {
+        const payload = dayPayloads[key] || {
+            label: key,
+            headline: "Nenhuma entrega programada.",
+            item_count: 0,
+            items: [],
+        };
+
+        if (labelNode) {
+            labelNode.textContent = payload.label || "Sem data";
+        }
+        if (headlineNode) {
+            headlineNode.textContent = payload.headline || "Nenhuma entrega programada.";
+        }
+        if (totalNode) {
+            totalNode.textContent = String(payload.item_count || 0);
+        }
+
+        listNode.textContent = "";
+
+        if (!payload.items || !payload.items.length) {
+            const emptyState = document.createElement("div");
+            emptyState.className = "dashboard-delivery-empty";
+            emptyState.textContent = "Nenhuma entrega programada para este dia.";
+            listNode.appendChild(emptyState);
+            return;
+        }
+
+        payload.items.forEach((item) => {
+            const article = document.createElement("article");
+            article.className = "dashboard-delivery-item";
+            article.style.setProperty("--delivery-accent", item.color || "#4d77d9");
+
+            const top = document.createElement("div");
+            top.className = "dashboard-delivery-item-top";
+            const kind = document.createElement("span");
+            kind.className = "dashboard-delivery-kind";
+            kind.textContent = item.kind || "Entrega";
+            top.appendChild(kind);
+
+            const copy = document.createElement("div");
+            copy.className = "dashboard-delivery-item-copy";
+
+            const title = document.createElement("h3");
+            title.className = "dashboard-delivery-title";
+            title.textContent = item.title || "Sem título";
+
+            const subtitle = document.createElement("div");
+            subtitle.className = "dashboard-delivery-subtitle";
+            subtitle.textContent = item.subtitle || "";
+
+            const meta = document.createElement("div");
+            meta.className = "dashboard-delivery-meta";
+            meta.textContent = item.meta || "";
+
+            copy.appendChild(title);
+            copy.appendChild(subtitle);
+            copy.appendChild(meta);
+            const responsible = buildResponsibleLabel(item.responsible_name);
+            if (responsible) {
+                copy.appendChild(responsible);
+            }
+
+            const actions = document.createElement("div");
+            actions.className = "dashboard-delivery-actions";
+            if (item.url) {
+                actions.appendChild(buildActionLink(item.url, item.primary_label || "Abrir"));
+            }
+            if (item.secondary_url) {
+                actions.appendChild(buildActionLink(item.secondary_url, item.secondary_label || "Ver mais", "is-subtle"));
+            }
+
+            article.appendChild(top);
+            article.appendChild(copy);
+            article.appendChild(actions);
+            listNode.appendChild(article);
+        });
+    }
+
+    dayButtons.forEach((button) => {
+        function activateDay() {
+            if (button.getAttribute("aria-disabled") === "true") {
+                return;
+            }
+            const key = button.dataset.dayKey;
+            setSelectedDay(key);
+            renderDay(key);
+        }
+
+        button.addEventListener("click", (event) => {
+            if (event.target.closest("a, button")) {
+                return;
+            }
+            activateDay();
+        });
+
+        button.addEventListener("keydown", (event) => {
+            if (event.target.closest("a, button")) {
+                return;
+            }
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                activateDay();
+            }
+        });
+    });
+
+    previewToggles.forEach((toggle) => {
+        toggle.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const dayCard = toggle.closest(".dashboard-calendar-day");
+            if (!dayCard) {
+                return;
+            }
+            const expanded = dayCard.classList.toggle("is-preview-expanded");
+            toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+            toggle.setAttribute("aria-label", expanded ? "Recolher entregas do dia" : "Expandir entregas do dia");
+            const icon = toggle.querySelector("[data-preview-toggle-icon]");
+            if (icon) {
+                icon.innerHTML = expanded ? "&#9650;" : "&#9660;";
+            }
+        });
+    });
+
+    const initialKey =
+        detailRoot.dataset.selectedDay ||
+        dayButtons.find((button) => button.classList.contains("is-selected"))?.dataset.dayKey ||
+        dayButtons.find((button) => button.getAttribute("aria-disabled") !== "true")?.dataset.dayKey;
+
+    if (initialKey) {
+        setSelectedDay(initialKey);
+        renderDay(initialKey);
+    }
+}
+
+function initDashboardCalendarFilters() {
+    const root = document.getElementById("dashboard-delivery-root");
+    if (!root) {
+        return;
+    }
+
+    root.querySelectorAll("[data-calendar-user-filter]").forEach((select) => {
+        if (select.dataset.asyncBound === "1") {
+            return;
+        }
+        select.dataset.asyncBound = "1";
+        select.addEventListener("change", () => {
+            const nextUrl = new URL(window.location.href);
+            if (select.value) {
+                nextUrl.searchParams.set("calendar_user", select.value);
+            } else {
+                nextUrl.searchParams.delete("calendar_user");
+            }
+            loadDashboardCalendar(nextUrl.toString(), true);
+        });
+    });
+}
+
+function loadDashboardCalendar(url, pushState = true) {
+    const root = document.getElementById("dashboard-delivery-root");
+    if (!root) {
+        window.location.href = url;
+        return;
+    }
+
+    const requestUrl = new URL(url, window.location.origin);
+    requestUrl.searchParams.set("calendar_partial", "1");
+    root.classList.add("is-loading");
+
+    fetch(requestUrl.toString(), {
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+        },
+    })
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.text();
+        })
+        .then((html) => {
+            root.innerHTML = html;
+            initDashboardCalendar();
+            initDashboardCalendarNavigation();
+            initDashboardCalendarFilters();
+
+            if (pushState) {
+                requestUrl.searchParams.delete("calendar_partial");
+                const browserUrl = `${requestUrl.pathname}${requestUrl.search ? requestUrl.search : ""}`;
+                window.history.pushState({ dashboardCalendar: true }, "", browserUrl);
+            }
+        })
+        .catch(() => {
+            window.location.href = url;
+        })
+        .finally(() => {
+            root.classList.remove("is-loading");
+        });
+}
+
+function initDashboardCalendarNavigation() {
+    const root = document.getElementById("dashboard-delivery-root");
+    if (!root) {
+        return;
+    }
+
+    root.querySelectorAll(".dashboard-calendar-nav-btn").forEach((link) => {
+        if (link.dataset.asyncBound === "1") {
+            return;
+        }
+        link.dataset.asyncBound = "1";
+        link.addEventListener("click", (event) => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+            event.preventDefault();
+            loadDashboardCalendar(link.href, true);
+        });
+    });
+
+    if (!window.__dashboardCalendarPopstateBound) {
+        window.__dashboardCalendarPopstateBound = true;
+        window.addEventListener("popstate", () => {
+            if (document.getElementById("dashboard-delivery-root")) {
+                loadDashboardCalendar(window.location.href, false);
+            }
+        });
+    }
+}

@@ -14,35 +14,55 @@
 <body>
     {% include 'partials/sidebar.html' %}
 
-    <div class="queue_main checklist-page">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Projetos</h1>
+    <div class="queue_main project-registry-page">
+        <section class="project-registry-hero">
+            <div class="project-registry-hero-copy">
+                <div class="project-registry-kicker">Projetos</div>
+                <h1>Cadastro de projetos</h1>
+                <div class="subtitle">Crie um novo projeto e gerencie os que ja existem, tudo em um so lugar.</div>
             </div>
-        </div>
+            <div class="project-registry-stats">
+                <div class="project-registry-stat"><strong>{{ project_stats.total }}</strong><span>Total</span></div>
+                <div class="project-registry-stat"><strong>{{ project_stats.active }}</strong><span>Em andamento</span></div>
+                <div class="project-registry-stat"><strong>{{ project_stats.planned }}</strong><span>Planejados</span></div>
+                <div class="project-registry-stat"><strong>{{ project_stats.paused }}</strong><span>Pausados</span></div>
+                <div class="project-registry-stat"><strong>{{ project_stats.done }}</strong><span>Concluidos</span></div>
+            </div>
+        </section>
 
-        <div class="checklist-grid">
-            <div class="checklist-card">
-                <div class="checklist-card-title">Novo projeto</div>
-                <form method="POST" class="checklist-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="form_id" value="project">
-                    <div class="checklist-section-grid">
-                        <div class="field span-2">
+        <section class="project-registry-card">
+            <header class="project-registry-card-head">
+                <h2>Novo projeto</h2>
+                <span class="subtitle">Preencha os dados essenciais para abrir um projeto.</span>
+            </header>
+            <form method="POST" class="project-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="project">
+
+                <div class="project-form-section">
+                    <div class="project-form-section-title">Identificacao</div>
+                    <div class="project-form-grid">
+                        <div class="pf-field pf-span-2">
                             {{ project_form.name.label_tag }}
                             {{ project_form.name }}
                         </div>
-                        <div class="field span-2">
+                        <div class="pf-field pf-span-2">
                             {{ project_form.description.label_tag }}
                             {{ project_form.description }}
                         </div>
-                        <div class="field span-2">
+                    </div>
+                </div>
+
+                <div class="project-form-section">
+                    <div class="project-form-section-title">Responsabilidade</div>
+                    <div class="project-form-grid">
+                        <div class="pf-field pf-span-2">
                             {{ project_form.developer.label_tag }}
                             {{ project_form.developer }}
                         </div>
-                        <div class="field span-2">
+                        <div class="pf-field pf-span-2">
                             {{ project_form.participants.label_tag }}
-                            <select id="projectParticipantsSelect" name="project-participants" multiple style="display:none;">
+                            <select id="projectParticipantsSelect" name="project-participants" multiple hidden>
                                 {% for u in users %}
                                     <option value="{{ u.id }}">
                                         {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
@@ -57,82 +77,95 @@
                                 {% endfor %}
                             </div>
                         </div>
-                        <div class="field">
+                    </div>
+                </div>
+
+                <div class="project-form-section">
+                    <div class="project-form-section-title">Planejamento</div>
+                    <div class="project-form-grid project-form-grid-4">
+                        <div class="pf-field">
                             {{ project_form.status.label_tag }}
                             {{ project_form.status }}
                         </div>
-                        <div class="field">
+                        <div class="pf-field pf-field-color">
                             {{ project_form.color.label_tag }}
                             {{ project_form.color }}
                         </div>
-                        <div class="field">
+                        <div class="pf-field">
                             {{ project_form.start_date.label_tag }}
                             {{ project_form.start_date }}
                         </div>
-                        <div class="field">
+                        <div class="pf-field">
                             {{ project_form.end_date.label_tag }}
                             {{ project_form.end_date }}
                         </div>
                     </div>
-                    <div class="modal-actions">
-                        <button type="submit" class="queue-primary-btn">Salvar</button>
-                    </div>
-                </form>
-            </div>
+                </div>
 
-            <div class="checklist-card">
-                <div class="checklist-card-title">Nova etapa do roadmap</div>
-                <form method="POST" class="checklist-form">
-                    {% csrf_token %}
-                    <input type="hidden" name="form_id" value="roadmap">
-                    <div class="checklist-section-grid">
-                        <div class="field span-2">
-                            {{ roadmap_form.project.label_tag }}
-                            {{ roadmap_form.project }}
-                        </div>
-                        <div class="field span-2">
-                            {{ roadmap_form.title.label_tag }}
-                            {{ roadmap_form.title }}
-                        </div>
-                        <div class="field span-2">
-                            {{ roadmap_form.description.label_tag }}
-                            {{ roadmap_form.description }}
-                        </div>
-                        <div class="field">
-                            {{ roadmap_form.status.label_tag }}
-                            {{ roadmap_form.status }}
-                        </div>
-                        <div class="field">
-                            {{ roadmap_form.sort_order.label_tag }}
-                            {{ roadmap_form.sort_order }}
-                        </div>
-                        <div class="field">
-                            {{ roadmap_form.start_date.label_tag }}
-                            {{ roadmap_form.start_date }}
-                        </div>
-                        <div class="field">
-                            {{ roadmap_form.end_date.label_tag }}
-                            {{ roadmap_form.end_date }}
-                        </div>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="submit" class="queue-primary-btn">Salvar</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <div class="project-form-actions">
+                    <button type="submit" class="queue-primary-btn">Criar projeto</button>
+                </div>
+            </form>
+        </section>
 
-        <div class="checklist-card">
-            <div class="checklist-card-title">Projetos cadastrados</div>
-            <div class="checklist-table projects-table-wrap">
-                <table class="projects-manage-table">
+        <section class="project-registry-card project-registry-card-compact">
+            <header class="project-registry-card-head">
+                <h2>Nova etapa do roadmap</h2>
+                <span class="subtitle">Adicione rapidamente uma etapa a um projeto existente.</span>
+            </header>
+            <form method="POST" class="project-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="roadmap">
+                <div class="project-form-grid">
+                    <div class="pf-field pf-span-2">
+                        {{ roadmap_form.project.label_tag }}
+                        {{ roadmap_form.project }}
+                    </div>
+                    <div class="pf-field pf-span-2">
+                        {{ roadmap_form.title.label_tag }}
+                        {{ roadmap_form.title }}
+                    </div>
+                    <div class="pf-field pf-span-2">
+                        {{ roadmap_form.description.label_tag }}
+                        {{ roadmap_form.description }}
+                    </div>
+                    <div class="pf-field">
+                        {{ roadmap_form.status.label_tag }}
+                        {{ roadmap_form.status }}
+                    </div>
+                    <div class="pf-field">
+                        {{ roadmap_form.sort_order.label_tag }}
+                        {{ roadmap_form.sort_order }}
+                    </div>
+                    <div class="pf-field">
+                        {{ roadmap_form.start_date.label_tag }}
+                        {{ roadmap_form.start_date }}
+                    </div>
+                    <div class="pf-field">
+                        {{ roadmap_form.end_date.label_tag }}
+                        {{ roadmap_form.end_date }}
+                    </div>
+                </div>
+                <div class="project-form-actions">
+                    <button type="submit" class="queue-primary-btn">Adicionar etapa</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="project-registry-card">
+            <header class="project-registry-card-head">
+                <h2>Projetos cadastrados</h2>
+                <span class="subtitle">{{ project_stats.total }} projeto{{ project_stats.total|pluralize }} no total</span>
+            </header>
+            <div class="project-table-wrap">
+                <table class="project-registry-table">
                     <thead>
                         <tr>
                             <th>Projeto</th>
                             <th>Status</th>
                             <th>Inicio</th>
                             <th>Fim</th>
-                            <th>Responsável</th>
+                            <th>Responsavel</th>
                             <th>Participantes</th>
                             <th>Cor</th>
                             <th>A&#231;&#245;es</th>
@@ -141,7 +174,7 @@
                     <tbody>
                         {% for p in projects %}
                             <tr>
-                                <td>
+                                <td class="project-registry-cell-name">
                                     <input class="queue-input-sm table-input" name="name" value="{{ p.name }}" form="project-form-{{ p.id }}">
                                     <input type="hidden" name="description" value="{{ p.description|default:'' }}" form="project-form-{{ p.id }}">
                                 </td>
@@ -160,7 +193,7 @@
                                 </td>
                                 <td>
                                     <select class="queue-input-sm table-input" name="developer_id" form="project-form-{{ p.id }}">
-                                        <option value="">Sem responsável</option>
+                                        <option value="">Sem responsavel</option>
                                         {% for u in users %}
                                             <option value="{{ u.id }}" {% if p.developer_id == u.id %}selected{% endif %}>
                                                 {% if u.nameUser %}{{ u.nameUser }}{% else %}{{ u.username }}{% endif %}
@@ -168,7 +201,7 @@
                                         {% endfor %}
                                     </select>
                                 </td>
-                                <td>
+                                <td class="project-registry-cell-participants">
                                     <div class="project-participant-picker project-participant-picker-inline" data-target-form="project-form-{{ p.id }}">
                                         {% for u in users %}
                                             <button type="button" class="project-participant-card {% if u in p.participants.all %}is-selected{% endif %}" data-user-id="{{ u.id }}">
@@ -183,20 +216,18 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <input class="queue-color" type="color" name="color" value="{{ p.color }}" form="project-form-{{ p.id }}">
+                                    <input class="queue-color project-registry-color" type="color" name="color" value="{{ p.color }}" form="project-form-{{ p.id }}">
                                 </td>
                                 <td>
-                                    <div class="projects-actions-scroll">
-                                    <div class="table-actions">
+                                    <div class="project-registry-actions">
                                         <form method="POST" id="project-form-{{ p.id }}">
                                             {% csrf_token %}
                                             <input type="hidden" name="form_id" value="edit_project">
                                             <input type="hidden" name="project_id" value="{{ p.id }}">
-                                            <button class="queue-secondary-btn project-nav-btn project-table-btn" type="submit">Atualizar</button>
+                                            <button class="queue-secondary-btn project-registry-action-btn" type="submit">Atualizar</button>
                                         </form>
-                                        <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectBoard' p.id %}">Kanban</a>
-                                        <a class="queue-secondary-btn project-nav-btn project-table-btn" href="{% url 'projectRoadmapView' p.id %}">Roadmap</a>
-                                    </div>
+                                        <a class="queue-secondary-btn project-registry-action-btn" href="{% url 'projectBoard' p.id %}">Kanban</a>
+                                        <a class="queue-secondary-btn project-registry-action-btn" href="{% url 'projectRoadmapView' p.id %}">Roadmap</a>
                                     </div>
                                 </td>
                             </tr>
@@ -206,7 +237,7 @@
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
     </div>
 

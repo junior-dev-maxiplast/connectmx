@@ -1,8 +1,10 @@
 from .models import (userQueue,
-                     concludedTasks)
+                     concludedTasks,
+                     PortalDemand)
 from django.db import transaction
 from django.db.models import F
 from django.db.models import Max
+from django.utils import timezone
 
 def userQueueSaveInDatabase(request, data):
     user_code = request.user.userId
@@ -53,6 +55,14 @@ def deleteQueueItem(request, ref_id):
         user_code = request.user.userId
         objectToDelete = userQueue.objects.get(n_register=ref_id, user_code=user_code)
         position = objectToDelete.n_queue_position
+        PortalDemand.objects.filter(linked_queue_item=objectToDelete).update(
+            status=PortalDemand.STATUS_PENDING,
+            assigned_to=None,
+            linked_queue_item=None,
+            assumed_at=None,
+            completed_at=None,
+            updated_at=timezone.now(),
+        )
         objectToDelete.delete()
 
         updateQueuePositions(user_code, position)       
@@ -63,6 +73,7 @@ def endQueueItem(request, ref_id):
         objectCurrent = userQueue.objects.get(n_register=ref_id, user_code=user_code)
         position = objectCurrent.n_queue_position
         updateQueuePositions(user_code, position)
+        linked_portal_demands = list(PortalDemand.objects.filter(linked_queue_item=objectCurrent))
 
         source_fields = {field.name for field in objectCurrent._meta.fields}
         target_fields = {
@@ -76,6 +87,19 @@ def endQueueItem(request, ref_id):
 
         concluded = concludedTasks.objects.create(**data)
         concluded.extra_collaborators.set(objectCurrent.extra_collaborators.all())
+
+        for portal_demand in linked_portal_demands:
+            portal_demand.status = PortalDemand.STATUS_COMPLETED
+            portal_demand.completed_at = timezone.now()
+            portal_demand.linked_queue_item = None
+            portal_demand.save(
+                update_fields=[
+                    "status",
+                    "completed_at",
+                    "linked_queue_item",
+                    "updated_at",
+                ]
+            )
 
         objectCurrent.delete()
 

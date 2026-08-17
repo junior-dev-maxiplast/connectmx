@@ -1,0 +1,719 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Abrir Demanda</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
+
+    <main class="support-shell support-create-page-shell">
+        {% if form.non_field_errors %}
+            <div class="support-banner is-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <section class="support-card support-create-header">
+            <div class="support-create-header-copy">
+                <span class="support-kicker">Nova solicita&ccedil;&atilde;o</span>
+                <h1>Abrir demanda</h1>
+                <p>Preencha apenas o essencial, acompanhe o SLA previsto e envie a solicita&ccedil;&atilde;o com mais clareza para acelerar o atendimento.</p>
+
+                <div class="support-create-guide-row">
+                    <article class="support-create-guide-card">
+                        <strong>1. Classifique</strong>
+                        <span>Escolha grupo, tipo e prioridade para direcionar corretamente.</span>
+                    </article>
+                    <article class="support-create-guide-card">
+                        <strong>2. Descreva</strong>
+                        <span>Explique o contexto, o impacto e o resultado esperado.</span>
+                    </article>
+                    <article class="support-create-guide-card">
+                        <strong>3. Anexe</strong>
+                        <span>Inclua evid&ecirc;ncias se precisar acelerar a an&aacute;lise.</span>
+                    </article>
+                </div>
+            </div>
+
+            <div class="support-create-header-metrics">
+                <article class="support-create-header-metric">
+                    <span>Ativas</span>
+                    <strong>{{ counts.active }}</strong>
+                </article>
+                <article class="support-create-header-metric">
+                    <span>Conclu&iacute;das</span>
+                    <strong>{{ counts.completed }}</strong>
+                </article>
+                <article class="support-create-header-metric">
+                    <span>Feedback m&eacute;dio</span>
+                    <strong>{{ counts.feedback_avg_display }}</strong>
+                </article>
+            </div>
+        </section>
+
+        <section class="support-create-layout">
+            <article class="support-card support-create-primary">
+                <div class="support-create-form-head">
+                    <div class="support-create-form-copy">
+                        <span class="support-kicker">Abertura simplificada</span>
+                        <h2>Preencha sua demanda</h2>
+                        <p>O sistema salva seu rascunho automaticamente neste navegador enquanto voc&ecirc; preenche.</p>
+                    </div>
+                    <div id="portalDraftStatus" class="support-create-draft-pill">Pronto para preencher</div>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data" class="support-form" id="portalDemandCreateForm">
+                    {% csrf_token %}
+
+                    <section class="support-create-section">
+                        <div class="support-create-section-head">
+                            <div>
+                                <h3>Essencial</h3>
+                                <p>Os dados abaixo ajudam a classificar e direcionar a solicita&ccedil;&atilde;o.</p>
+                            </div>
+                        </div>
+
+                        <div class="support-form-grid support-create-core-grid">
+                            <div class="support-field support-create-title-field">
+                                <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+                                {{ form.title }}
+                                {% if form.title.errors %}<div class="support-field-error">{{ form.title.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            <div class="support-field">
+                                <label for="{{ form.task_group.id_for_label }}">{{ form.task_group.label }}</label>
+                                {{ form.task_group }}
+                                {% if form.task_group.errors %}<div class="support-field-error">{{ form.task_group.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            <div class="support-field">
+                                <label for="{{ form.task_type.id_for_label }}">{{ form.task_type.label }}</label>
+                                {{ form.task_type }}
+                                {% if form.task_type.errors %}<div class="support-field-error">{{ form.task_type.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            <div class="support-field">
+                                <label for="{{ form.priority_level.id_for_label }}">{{ form.priority_level.label }}</label>
+                                {{ form.priority_level }}
+                                {% if form.priority_level.errors %}<div class="support-field-error">{{ form.priority_level.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="support-create-section">
+                        <div class="support-create-section-head">
+                            <div>
+                                <h3>Detalhamento</h3>
+                                <p>Descreva o cen&aacute;rio, o problema e o resultado esperado.</p>
+                            </div>
+                        </div>
+
+                        <div class="support-form-grid">
+                            <div class="support-field support-field-span-2 support-create-description-field">
+                                <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+                                {{ form.description }}
+                                {% if form.description.errors %}<div class="support-field-error">{{ form.description.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </div>
+                    </section>
+
+                    {% if dynamic_fields %}
+                        <section class="support-create-section">
+                            <div class="support-create-section-head">
+                                <div>
+                                    <h3>Complementos</h3>
+                                    <p>Campos adicionais aparecem de acordo com o grupo e o tipo selecionados.</p>
+                                </div>
+                            </div>
+
+                            <div class="support-form-grid">
+                                {% for item in dynamic_fields %}
+                                    <div
+                                        class="support-field portal-dynamic-field{% if item.is_full_width %} support-field-span-2{% endif %}"
+                                        data-portal-group-ids="{% if item.group_ids %}{{ item.group_ids|join:',' }}{% endif %}"
+                                        data-portal-type-ids="{% if item.type_ids %}{{ item.type_ids|join:',' }}{% endif %}"
+                                    >
+                                        {% if item.definition.field_type == "checkbox" %}
+                                            <label class="support-inline-checkbox support-create-checkbox-field">
+                                                {{ item.field }}
+                                                <span>{{ item.field.label }}</span>
+                                            </label>
+                                        {% else %}
+                                            <label for="{{ item.field.id_for_label }}">{{ item.field.label }}</label>
+                                            {{ item.field }}
+                                        {% endif %}
+                                        {% if item.definition.help_text %}
+                                            <small class="support-helper-text">{{ item.definition.help_text }}</small>
+                                        {% endif %}
+                                        {% if item.field.errors %}<div class="support-field-error">{{ item.field.errors|join:", " }}</div>{% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    <section class="support-create-section">
+                        <div class="support-create-section-head">
+                            <div>
+                                <h3>Arquivos</h3>
+                                <p>Anexe evid&ecirc;ncias, prints ou documentos para facilitar a triagem.</p>
+                            </div>
+                        </div>
+
+                        <div class="support-form-grid">
+                            <div class="support-field support-field-span-2 support-create-upload-field">
+                                <label for="{{ form.attachments.id_for_label }}">{{ form.attachments.label }}</label>
+                                <div id="portalUploadBox" class="support-create-upload-box" role="button" tabindex="0" aria-label="Abrir seletor de arquivos">
+                                    <div class="support-create-upload-picker">
+                                        {{ form.attachments }}
+                                        <label for="{{ form.attachments.id_for_label }}" class="support-create-upload-trigger">Abrir seletor</label>
+                                        <span id="portalAttachmentsDisplay" class="support-create-upload-display">Nenhum arquivo selecionado</span>
+                                    </div>
+                                    <div class="support-create-upload-meta">
+                                        <strong>Arquivos opcionais</strong>
+                                        <span>Clique na &aacute;rea para abrir o seletor de arquivos do navegador ou arraste e solte aqui.</span>
+                                    </div>
+                                </div>
+                                <div id="portalAttachmentsList" class="support-create-upload-list"></div>
+                                {% if form.attachments.errors %}<div class="support-field-error">{{ form.attachments.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="support-form-actions support-create-actions">
+                        <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary">Cancelar</a>
+                        <button type="submit" class="support-btn">Enviar demanda</button>
+                    </div>
+                </form>
+            </article>
+
+            <aside class="support-create-side">
+                <article class="support-card support-create-summary-card">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Resumo r&aacute;pido</span>
+                            <h2>Antes de enviar</h2>
+                        </div>
+                    </div>
+
+                    <div class="support-create-summary-list">
+                        <div class="support-create-summary-item">
+                            <span>T&iacute;tulo</span>
+                            <strong id="portalCreateSummaryTitle" class="support-create-summary-value">Ainda n&atilde;o informado</strong>
+                        </div>
+                        <div class="support-create-summary-item">
+                            <span>Grupo</span>
+                            <strong id="portalCreateSummaryGroup" class="support-create-summary-value">N&atilde;o selecionado</strong>
+                        </div>
+                        <div class="support-create-summary-item">
+                            <span>Tipo</span>
+                            <strong id="portalCreateSummaryType" class="support-create-summary-value">N&atilde;o selecionado</strong>
+                        </div>
+                        <div class="support-create-summary-item">
+                            <span>Prioridade</span>
+                            <strong id="portalCreateSummaryPriority" class="support-create-summary-value">N&atilde;o selecionada</strong>
+                        </div>
+                        <div class="support-create-summary-item">
+                            <span>Anexos</span>
+                            <strong id="portalCreateSummaryAttachments" class="support-create-summary-value">Nenhum arquivo</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="support-card support-page-aside-card">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">SLA</span>
+                            <h2>Meta aplicada</h2>
+                        </div>
+                    </div>
+                    <div id="portalSlaPreview" class="support-insight-stack">
+                        <article class="support-insight-card is-empty">
+                            <strong>{{ initial_sla_preview.title }}</strong>
+                            <span>{{ initial_sla_preview.subtitle }}</span>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="support-card support-page-aside-card">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Sugest&otilde;es</span>
+                            <h2>Base de conhecimento</h2>
+                        </div>
+                    </div>
+                    <div id="portalKnowledgeSuggestions" class="support-insight-stack">
+                        <article class="support-insight-card is-empty">
+                            <strong>Nenhuma sugest&atilde;o ainda</strong>
+                            <span>Comece a preencher o t&iacute;tulo e a descri&ccedil;&atilde;o para receber refer&ecirc;ncias &uacute;teis.</span>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="support-card support-page-aside-card">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Parecidas</span>
+                            <h2>Demandas suas em andamento</h2>
+                        </div>
+                    </div>
+                    <div id="portalDuplicateSuggestions" class="support-insight-stack">
+                        <article class="support-insight-card is-empty">
+                            <strong>Sem duplicidades detectadas</strong>
+                            <span>Se voc&ecirc; j&aacute; abriu algo parecido e ainda estiver ativo, ele aparecer&aacute; aqui.</span>
+                        </article>
+                    </div>
+                </article>
+
+                <article class="support-card support-page-aside-card">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Boas pr&aacute;ticas</span>
+                            <h2>Checklist final</h2>
+                        </div>
+                    </div>
+                    <div class="support-create-tips-list">
+                        <article class="support-create-tip">
+                            <strong>Seja objetivo</strong>
+                            <span>Explique o que ocorreu, onde ocorreu e o que voc&ecirc; espera como resultado.</span>
+                        </article>
+                        <article class="support-create-tip">
+                            <strong>Escolha corretamente o tipo</strong>
+                            <span>Isso melhora o SLA, as sugest&otilde;es e o direcionamento do atendimento.</span>
+                        </article>
+                        <article class="support-create-tip">
+                            <strong>Envie evid&ecirc;ncias se existirem</strong>
+                            <span>Arquivos reduzem retrabalho e aceleram o primeiro retorno.</span>
+                        </article>
+                    </div>
+                </article>
+            </aside>
+        </section>
+    </main>
+
+    <script>
+        (function() {
+            const form = document.getElementById("portalDemandCreateForm");
+            const groupField = document.getElementById("{{ form.task_group.id_for_label }}");
+            const typeField = document.getElementById("{{ form.task_type.id_for_label }}");
+            const priorityField = document.getElementById("{{ form.priority_level.id_for_label }}");
+            const titleField = document.getElementById("{{ form.title.id_for_label }}");
+            const descriptionField = document.getElementById("{{ form.description.id_for_label }}");
+            const attachmentsField = document.getElementById("{{ form.attachments.id_for_label }}");
+            const dynamicFields = Array.from(document.querySelectorAll(".portal-dynamic-field"));
+            const knowledgeTarget = document.getElementById("portalKnowledgeSuggestions");
+            const duplicateTarget = document.getElementById("portalDuplicateSuggestions");
+            const slaTarget = document.getElementById("portalSlaPreview");
+            const draftStatus = document.getElementById("portalDraftStatus");
+            const summaryTitle = document.getElementById("portalCreateSummaryTitle");
+            const summaryGroup = document.getElementById("portalCreateSummaryGroup");
+            const summaryType = document.getElementById("portalCreateSummaryType");
+            const summaryPriority = document.getElementById("portalCreateSummaryPriority");
+            const summaryAttachments = document.getElementById("portalCreateSummaryAttachments");
+            const attachmentsDisplay = document.getElementById("portalAttachmentsDisplay");
+            const attachmentsList = document.getElementById("portalAttachmentsList");
+            const uploadBox = document.getElementById("portalUploadBox");
+            const storageKey = "connectmx.portal.create.draft";
+            let selectedAttachments = [];
+
+            if (!form || !groupField || !typeField || !priorityField || !titleField || !descriptionField) return;
+
+            function parseIds(value) {
+                return String(value || "")
+                    .split(",")
+                    .map((item) => item.trim())
+                    .filter(Boolean);
+            }
+
+            function renderEmptyCard(title, subtitle) {
+                return `<article class="support-insight-card is-empty"><strong>${title}</strong><span>${subtitle}</span></article>`;
+            }
+
+            function truncateText(value, maxLength) {
+                const text = String(value || "").trim();
+                if (!text) return "";
+                if (text.length <= maxLength) return text;
+                return `${text.slice(0, maxLength - 1)}…`;
+            }
+
+            function selectedOptionLabel(field, emptyLabel) {
+                const option = field && field.selectedOptions && field.selectedOptions.length ? field.selectedOptions[0] : null;
+                if (!option || !option.value) return emptyLabel;
+                return option.textContent.trim();
+            }
+
+            function updateDraftStatus(message, stateClass) {
+                if (!draftStatus) return;
+                draftStatus.textContent = message;
+                draftStatus.classList.remove("is-saved", "is-loaded", "is-loading");
+                if (stateClass) draftStatus.classList.add(stateClass);
+            }
+
+            function fileSignature(file) {
+                return `${file.name}::${file.size}::${file.lastModified}`;
+            }
+
+            function formatFileSize(bytes) {
+                const size = Number(bytes || 0);
+                if (!size) return "0 KB";
+                if (size < 1024) return `${size} B`;
+                if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+                return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+            }
+
+            function syncAttachmentsToInput() {
+                if (!attachmentsField || typeof DataTransfer === "undefined") return;
+                const dataTransfer = new DataTransfer();
+                selectedAttachments.forEach((file) => dataTransfer.items.add(file));
+                attachmentsField.files = dataTransfer.files;
+            }
+
+            function renderAttachmentList() {
+                if (!attachmentsList) return;
+                if (!selectedAttachments.length) {
+                    attachmentsList.innerHTML = "";
+                    attachmentsList.classList.remove("has-files");
+                    return;
+                }
+                attachmentsList.classList.add("has-files");
+                attachmentsList.innerHTML = selectedAttachments.map((file, index) => `
+                    <article class="support-create-upload-item">
+                        <div class="support-create-upload-item-copy">
+                            <strong title="${file.name}">${truncateText(file.name, 58)}</strong>
+                            <span>${formatFileSize(file.size)}</span>
+                        </div>
+                        <button type="button" class="support-create-upload-remove" data-attachment-index="${index}" aria-label="Remover arquivo">
+                            Remover
+                        </button>
+                    </article>
+                `).join("");
+            }
+
+            function addAttachments(fileCollection) {
+                const incoming = Array.from(fileCollection || []);
+                if (!incoming.length) return;
+                const existing = new Set(selectedAttachments.map(fileSignature));
+                incoming.forEach((file) => {
+                    const signature = fileSignature(file);
+                    if (existing.has(signature)) return;
+                    existing.add(signature);
+                    selectedAttachments.push(file);
+                });
+                syncAttachmentsToInput();
+                renderAttachmentList();
+                updateSummary();
+            }
+
+            function removeAttachment(index) {
+                const numericIndex = Number(index);
+                if (Number.isNaN(numericIndex)) return;
+                selectedAttachments = selectedAttachments.filter((_file, currentIndex) => currentIndex !== numericIndex);
+                syncAttachmentsToInput();
+                renderAttachmentList();
+                updateSummary();
+            }
+
+            function updateSummary() {
+                if (summaryTitle) {
+                    summaryTitle.textContent = truncateText(titleField.value, 72) || "Ainda não informado";
+                }
+                if (summaryGroup) {
+                    summaryGroup.textContent = selectedOptionLabel(groupField, "Não selecionado");
+                }
+                if (summaryType) {
+                    summaryType.textContent = selectedOptionLabel(typeField, "Não selecionado");
+                }
+                if (summaryPriority) {
+                    summaryPriority.textContent = selectedOptionLabel(priorityField, "Não selecionada");
+                }
+                if (summaryAttachments) {
+                    const total = selectedAttachments.length;
+                    summaryAttachments.textContent = total ? `${total} arquivo(s)` : "Nenhum arquivo";
+                }
+                if (attachmentsDisplay) {
+                    const files = selectedAttachments;
+                    if (!files.length) {
+                        attachmentsDisplay.textContent = "Nenhum arquivo selecionado";
+                    } else if (files.length === 1) {
+                        attachmentsDisplay.textContent = truncateText(files[0].name, 52);
+                    } else {
+                        attachmentsDisplay.textContent = `${files.length} arquivos selecionados`;
+                    }
+                }
+            }
+
+            function filterTypes() {
+                const selectedGroup = String(groupField.value || "");
+                Array.from(typeField.options).forEach((option) => {
+                    const optionGroup = option.getAttribute("data-group-id") || "";
+                    if (!option.value) {
+                        option.hidden = false;
+                        return;
+                    }
+                    option.hidden = !!selectedGroup && optionGroup !== selectedGroup;
+                });
+
+                const current = typeField.selectedOptions[0];
+                if (current && current.hidden) {
+                    typeField.value = "";
+                }
+            }
+
+            function applyDynamicFieldScope() {
+                const selectedGroup = String(groupField.value || "");
+                const selectedType = String(typeField.value || "");
+
+                dynamicFields.forEach((wrapper) => {
+                    const groupIds = parseIds(wrapper.dataset.portalGroupIds);
+                    const typeIds = parseIds(wrapper.dataset.portalTypeIds);
+                    const matchesType = !typeIds.length || (selectedType && typeIds.includes(selectedType));
+                    const matchesGroup = !groupIds.length || (selectedGroup && groupIds.includes(selectedGroup));
+                    const shouldShow = typeIds.length ? matchesType : matchesGroup;
+                    const shouldHide = !(shouldShow || (!selectedGroup && !selectedType && !groupIds.length && !typeIds.length));
+
+                    wrapper.classList.toggle("is-hidden", shouldHide);
+                    wrapper.querySelectorAll("input, textarea, select").forEach((field) => {
+                        if (field.type === "hidden" || field.name === "csrfmiddlewaretoken") return;
+                        field.disabled = shouldHide;
+                    });
+                });
+            }
+
+            function saveDraft() {
+                const payload = {};
+                form.querySelectorAll("input, textarea, select").forEach((field) => {
+                    if (!field.name || field.type === "file" || field.type === "password" || field.name === "csrfmiddlewaretoken") {
+                        return;
+                    }
+                    if (field.type === "checkbox") {
+                        payload[field.name] = field.checked;
+                        return;
+                    }
+                    payload[field.name] = field.value;
+                });
+                localStorage.setItem(storageKey, JSON.stringify(payload));
+                updateDraftStatus("Rascunho salvo automaticamente", "is-saved");
+            }
+
+            function loadDraft() {
+                let restored = false;
+                try {
+                    const raw = localStorage.getItem(storageKey);
+                    if (!raw) {
+                        updateDraftStatus("Preenchimento novo", "");
+                        return;
+                    }
+                    const payload = JSON.parse(raw);
+                    Object.entries(payload).forEach(([name, value]) => {
+                        const field = form.querySelector(`[name="${name}"]`);
+                        if (!field || field.value) return;
+                        if (field.type === "checkbox") {
+                            field.checked = !!value;
+                            restored = restored || !!value;
+                        } else if (value) {
+                            field.value = value;
+                            restored = true;
+                        }
+                    });
+                    updateDraftStatus(
+                        restored ? "Rascunho recuperado neste navegador" : "Preenchimento novo",
+                        restored ? "is-loaded" : ""
+                    );
+                } catch (error) {
+                    updateDraftStatus("Não foi possível recuperar o rascunho", "");
+                    console.warn("Não foi possível recuperar o rascunho do portal.", error);
+                }
+            }
+
+            function renderKnowledge(rows) {
+                if (!rows.length) {
+                    knowledgeTarget.innerHTML = renderEmptyCard("Nenhuma sugestão encontrada", "Continue preenchendo com mais contexto para ampliar a busca.");
+                    return;
+                }
+                knowledgeTarget.innerHTML = rows.map((row) => `
+                    <a href="${row.url}" class="support-insight-card support-insight-link" target="_blank" rel="noreferrer">
+                        <strong>${row.title}</strong>
+                        <span>${row.category}</span>
+                        <small>${row.excerpt}</small>
+                    </a>
+                `).join("");
+            }
+
+            function renderDuplicates(rows) {
+                if (!rows.length) {
+                    duplicateTarget.innerHTML = renderEmptyCard("Sem duplicidades detectadas", "Nenhuma demanda ativa sua parece semelhante neste momento.");
+                    return;
+                }
+                duplicateTarget.innerHTML = rows.map((row) => `
+                    <a href="${row.url}" class="support-insight-card support-insight-link">
+                        <strong>${row.protocol}</strong>
+                        <span>${row.title}</span>
+                        <small>${row.status} • ${row.created_at}</small>
+                    </a>
+                `).join("");
+            }
+
+            function renderSla(data) {
+                if (!data || !data.has_policy) {
+                    slaTarget.innerHTML = renderEmptyCard(
+                        data?.title || "Sem SLA configurado",
+                        data?.subtitle || "Nenhuma política ativa corresponde ao preenchimento atual."
+                    );
+                    return;
+                }
+
+                slaTarget.innerHTML = `
+                    <article class="support-insight-card support-sla-card">
+                        <strong>${data.title}</strong>
+                        <span>${data.subtitle}</span>
+                        <div class="support-sla-grid">
+                            <div>
+                                <small>Primeira resposta</small>
+                                <strong>${data.first_response_display}</strong>
+                            </div>
+                            <div>
+                                <small>Resolução</small>
+                                <strong>${data.resolution_display}</strong>
+                            </div>
+                            <div>
+                                <small>Atendente padrão</small>
+                                <strong>${data.default_attendant}</strong>
+                            </div>
+                            <div>
+                                <small>Ação automática</small>
+                                <strong>${data.auto_assign ? "Assumir ao abrir" : "Somente meta"}</strong>
+                            </div>
+                        </div>
+                    </article>
+                `;
+            }
+
+            let requestTimer = null;
+            function fetchInsights() {
+                const params = new URLSearchParams({
+                    title: titleField.value || "",
+                    description: descriptionField.value || "",
+                    task_group: groupField.value || "",
+                    task_type: typeField.value || "",
+                    priority_level: priorityField.value || "",
+                });
+
+                fetch(`{% url 'portalDemandInsightsApi' %}?${params.toString()}`, {
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                })
+                    .then((response) => response.ok ? response.json() : Promise.reject(response))
+                    .then((data) => {
+                        renderKnowledge(data.knowledge || []);
+                        renderDuplicates(data.duplicates || []);
+                        renderSla(data.sla || null);
+                    })
+                    .catch(() => {
+                        knowledgeTarget.innerHTML = renderEmptyCard("Busca indisponível", "Não foi possível consultar a base de conhecimento agora.");
+                        duplicateTarget.innerHTML = renderEmptyCard("Consulta indisponível", "As demandas parecidas não puderam ser carregadas agora.");
+                        slaTarget.innerHTML = renderEmptyCard("SLA indisponível", "Não foi possível calcular a política neste momento.");
+                    });
+            }
+
+            function queueInsightsFetch() {
+                window.clearTimeout(requestTimer);
+                requestTimer = window.setTimeout(fetchInsights, 260);
+            }
+
+            loadDraft();
+            filterTypes();
+            applyDynamicFieldScope();
+            updateSummary();
+            fetchInsights();
+
+            [titleField, descriptionField, groupField, typeField, priorityField].forEach((field) => {
+                field.addEventListener("input", function() {
+                    if (field === groupField) filterTypes();
+                    applyDynamicFieldScope();
+                    updateSummary();
+                    saveDraft();
+                    queueInsightsFetch();
+                });
+                field.addEventListener("change", function() {
+                    if (field === groupField) filterTypes();
+                    applyDynamicFieldScope();
+                    updateSummary();
+                    saveDraft();
+                    queueInsightsFetch();
+                });
+            });
+
+            form.querySelectorAll("input, textarea, select").forEach((field) => {
+                if (field.type === "file") return;
+                field.addEventListener("change", function() {
+                    updateSummary();
+                    saveDraft();
+                });
+                field.addEventListener("blur", function() {
+                    updateSummary();
+                    saveDraft();
+                });
+            });
+
+            if (attachmentsField) {
+                attachmentsField.addEventListener("change", function() {
+                    addAttachments(attachmentsField.files);
+                    attachmentsField.value = "";
+                });
+            }
+
+            if (attachmentsList) {
+                attachmentsList.addEventListener("click", function(event) {
+                    const target = event.target.closest("[data-attachment-index]");
+                    if (!target) return;
+                    removeAttachment(target.dataset.attachmentIndex);
+                });
+            }
+
+            if (uploadBox) {
+                uploadBox.addEventListener("click", function(event) {
+                    const ignoredTarget = event.target.closest(".support-create-upload-remove");
+                    if (ignoredTarget || !attachmentsField) return;
+                    attachmentsField.click();
+                });
+                uploadBox.addEventListener("keydown", function(event) {
+                    if (!attachmentsField) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        attachmentsField.click();
+                    }
+                });
+                ["dragenter", "dragover"].forEach((eventName) => {
+                    uploadBox.addEventListener(eventName, function(event) {
+                        event.preventDefault();
+                        uploadBox.classList.add("is-dragover");
+                    });
+                });
+                ["dragleave", "dragend", "drop"].forEach((eventName) => {
+                    uploadBox.addEventListener(eventName, function(event) {
+                        event.preventDefault();
+                        if (eventName !== "drop") {
+                            uploadBox.classList.remove("is-dragover");
+                        }
+                    });
+                });
+                uploadBox.addEventListener("drop", function(event) {
+                    uploadBox.classList.remove("is-dragover");
+                    const droppedFiles = event.dataTransfer ? event.dataTransfer.files : null;
+                    addAttachments(droppedFiles);
+                });
+            }
+
+            form.addEventListener("submit", function() {
+                syncAttachmentsToInput();
+                localStorage.removeItem(storageKey);
+                updateDraftStatus("Enviando demanda...", "is-loading");
+            });
+        })();
+    </script>
+</body>
+</html>

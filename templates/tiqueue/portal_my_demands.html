@@ -1,0 +1,256 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Minhas Demandas</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
+
+    <main class="support-shell">
+        {% if success_message %}
+            <div class="support-banner is-success">{{ success_message }}</div>
+        {% endif %}
+
+        {% if access_denied_message %}
+            <div class="support-banner is-danger">{{ access_denied_message }}</div>
+        {% endif %}
+
+        <section class="support-page-hero">
+            <article class="support-page-hero-copy">
+                <span class="support-kicker">Acompanhamento</span>
+                <h1>Minhas demandas</h1>
+                <p>Agora voc&ecirc; pode localizar mais r&aacute;pido cada ticket, entender a pr&oacute;xima a&ccedil;&atilde;o esperada e priorizar o que pede resposta ou feedback.</p>
+            </article>
+
+            <article class="support-page-mini-metrics">
+                <div class="support-page-mini-metric">
+                    <span>Pendentes</span>
+                    <strong>{{ counts.pending }}</strong>
+                </div>
+                <div class="support-page-mini-metric">
+                    <span>Em atendimento</span>
+                    <strong>{{ counts.assumed }}</strong>
+                </div>
+                <div class="support-page-mini-metric">
+                    <span>Aguardando feedback</span>
+                    <strong>{{ counts.awaiting_feedback }}</strong>
+                </div>
+            </article>
+        </section>
+
+        <section class="support-card">
+            <div class="support-card-head support-list-head-wrap">
+                <div>
+                    <span class="support-kicker">Hist&oacute;rico</span>
+                    <h2>Demandas registradas</h2>
+                    <p class="support-thread-feed-intro">Use os filtros para encontrar tickets por status, pr&oacute;xima a&ccedil;&atilde;o ou urg&ecirc;ncia.</p>
+                </div>
+                <a href="{% url 'portalDemandCreatePage' %}" class="support-btn">Abrir nova demanda</a>
+            </div>
+
+            {% if my_demands %}
+                <div class="support-demand-toolbar">
+                    <div class="support-demand-toolbar-group is-search">
+                        <input id="portalDemandSearch" type="search" class="queue-search support-portal-search" placeholder="Buscar por t&iacute;tulo, protocolo, grupo ou tipo...">
+                    </div>
+                    <div class="support-demand-toolbar-group">
+                        <select id="portalDemandStatusFilter" class="queue-select support-portal-filter">
+                            <option value="">Todos os status</option>
+                            <option value="pending">Pendentes</option>
+                            <option value="assumed">Em atendimento</option>
+                            <option value="completed">Conclu&iacute;das</option>
+                            <option value="cancelled">Canceladas</option>
+                        </select>
+                    </div>
+                    <div class="support-demand-toolbar-group">
+                        <select id="portalDemandActionFilter" class="queue-select support-portal-filter">
+                            <option value="">Todas as pr&oacute;ximas a&ccedil;&otilde;es</option>
+                            <option value="Aguardando atendente">Aguardando atendente</option>
+                            <option value="Primeira resposta pendente">Primeira resposta pendente</option>
+                            <option value="Conversa em andamento">Conversa em andamento</option>
+                            <option value="Aguardando feedback">Aguardando feedback</option>
+                        </select>
+                    </div>
+                    <div class="support-demand-toolbar-group">
+                        <select id="portalDemandSort" class="queue-select support-portal-filter">
+                            <option value="recent">Mais recentes</option>
+                            <option value="oldest">Mais antigas</option>
+                            <option value="priority">Maior prioridade</option>
+                            <option value="sla">Maior risco de SLA</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="support-toolbar-meta">
+                    <span id="portalDemandVisibleCount">{{ my_demands|length }}</span>
+                    <span>demanda(s) vis&iacute;vel(is)</span>
+                </div>
+
+                <div id="portalDemandList" class="support-demand-list support-demand-list-compact">
+                    {% for demand in my_demands %}
+                        <article
+                            class="support-demand-item support-demand-item-rich"
+                            data-demand-row
+                            data-title="{{ demand.title|lower }}"
+                            data-protocol="{{ demand.protocol|lower }}"
+                            data-status="{{ demand.status }}"
+                            data-priority="{{ demand.priority_level|default:'medium' }}"
+                            data-group="{% if demand.task_group %}{{ demand.task_group.name|lower }}{% endif %}"
+                            data-type="{% if demand.task_type %}{{ demand.task_type.name|lower }}{% endif %}"
+                            data-next-action="{{ demand.next_action_label|lower }}"
+                            data-created="{{ demand.created_at|date:'U' }}"
+                            data-updated="{{ demand.updated_at|date:'U' }}"
+                            data-sla="{{ demand.sla_resolution.css }}"
+                        >
+                            <div class="support-demand-head">
+                                <div>
+                                    <strong>{{ demand.title }}</strong>
+                                    <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
+                                </div>
+                                <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                            </div>
+
+                            <div class="support-demand-meta support-demand-meta-pills">
+                                <span class="support-chip is-soft" style="--chip-color: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</span>
+                                <span class="support-chip {{ demand.next_action_css }}">{{ demand.next_action_label }}</span>
+                                <span class="support-chip {{ demand.sla_resolution_chip_css }}">SLA {{ demand.sla_resolution.status }}</span>
+                                {% if demand.status == "completed" and not demand.has_feedback %}
+                                    <span class="support-chip is-pending">Aguardando sua avalia&ccedil;&atilde;o</span>
+                                {% elif demand.has_feedback %}
+                                    <span class="support-chip is-completed">Feedback recebido</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="support-demand-stats-grid">
+                                <div class="support-demand-stat-card">
+                                    <span>Respons&aacute;vel</span>
+                                    <strong>{{ demand.assigned_display }}</strong>
+                                </div>
+                                <div class="support-demand-stat-card">
+                                    <span>{{ demand.last_movement_label }}</span>
+                                    <strong>{{ demand.last_movement_display }}</strong>
+                                </div>
+                                <div class="support-demand-stat-card">
+                                    <span>Aberta</span>
+                                    <strong>{{ demand.opened_since_display }}</strong>
+                                </div>
+                                <div class="support-demand-stat-card">
+                                    <span>Atualizada</span>
+                                    <strong>{{ demand.updated_since_display }}</strong>
+                                </div>
+                            </div>
+
+                            <div class="support-demand-meta">
+                                <span>{% if demand.task_group %}{{ demand.task_group.name }}{% else %}Sem grupo{% endif %}</span>
+                                <span>{% if demand.task_type %}{{ demand.task_type.name }}{% else %}Sem tipo{% endif %}</span>
+                                <span>{{ demand.next_action_hint }}</span>
+                            </div>
+
+                            {% if demand.description %}
+                                <p class="support-demand-description">{{ demand.description }}</p>
+                            {% endif %}
+
+                            <div class="support-demand-footer">
+                                <span>{{ demand.sla_resolution.hint }}</span>
+                                <a href="{{ demand.detail_url }}" class="support-inline-link">
+                                    {% if demand.status == "completed" and not demand.has_feedback %}
+                                        Abrir conversa e avaliar
+                                    {% else %}
+                                        Abrir conversa
+                                    {% endif %}
+                                </a>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="support-empty">
+                    <strong>Nenhuma demanda aberta ainda</strong>
+                    <span>Quando voc&ecirc; enviar a primeira solicita&ccedil;&atilde;o, ela aparecer&aacute; aqui com o status atualizado.</span>
+                </div>
+            {% endif %}
+        </section>
+    </main>
+
+    <script>
+        (function() {
+            const list = document.getElementById("portalDemandList");
+            if (!list) return;
+
+            const rows = Array.from(list.querySelectorAll("[data-demand-row]"));
+            const searchInput = document.getElementById("portalDemandSearch");
+            const statusFilter = document.getElementById("portalDemandStatusFilter");
+            const actionFilter = document.getElementById("portalDemandActionFilter");
+            const sortSelect = document.getElementById("portalDemandSort");
+            const visibleCount = document.getElementById("portalDemandVisibleCount");
+
+            const priorityRank = { high: 3, medium: 2, low: 1 };
+            const slaRank = { "is-danger": 4, "is-pending": 3, "is-info": 2, "is-success": 1, "is-neutral": 0 };
+
+            function matchesFilters(row) {
+                const rawSearch = (searchInput?.value || "").trim().toLowerCase();
+                const status = (statusFilter?.value || "").trim().toLowerCase();
+                const action = (actionFilter?.value || "").trim().toLowerCase();
+
+                const haystack = [
+                    row.dataset.title || "",
+                    row.dataset.protocol || "",
+                    row.dataset.group || "",
+                    row.dataset.type || "",
+                    row.dataset.nextAction || "",
+                ].join(" ");
+
+                if (rawSearch && !haystack.includes(rawSearch)) return false;
+                if (status && (row.dataset.status || "") !== status) return false;
+                if (action && (row.dataset.nextAction || "") !== action) return false;
+                return true;
+            }
+
+            function sortRows() {
+                const mode = (sortSelect?.value || "recent").trim();
+                const sorted = [...rows].sort((a, b) => {
+                    if (mode === "oldest") {
+                        return Number(a.dataset.created || 0) - Number(b.dataset.created || 0);
+                    }
+                    if (mode === "priority") {
+                        return (priorityRank[b.dataset.priority || ""] || 0) - (priorityRank[a.dataset.priority || ""] || 0);
+                    }
+                    if (mode === "sla") {
+                        const bySla = (slaRank[b.dataset.sla || ""] || 0) - (slaRank[a.dataset.sla || ""] || 0);
+                        if (bySla !== 0) return bySla;
+                    }
+                    return Number(b.dataset.updated || 0) - Number(a.dataset.updated || 0);
+                });
+
+                sorted.forEach((row) => list.appendChild(row));
+            }
+
+            function render() {
+                sortRows();
+                let total = 0;
+                rows.forEach((row) => {
+                    const show = matchesFilters(row);
+                    row.style.display = show ? "" : "none";
+                    if (show) total += 1;
+                });
+                if (visibleCount) visibleCount.textContent = String(total);
+            }
+
+            [searchInput, statusFilter, actionFilter, sortSelect].forEach((node) => {
+                if (!node) return;
+                node.addEventListener("input", render);
+                node.addEventListener("change", render);
+            });
+
+            render();
+        })();
+    </script>
+</body>
+</html>

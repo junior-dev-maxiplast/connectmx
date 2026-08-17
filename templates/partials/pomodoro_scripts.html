@@ -1,0 +1,319 @@
+function getCookie(name) {
+    const cookies = document.cookie ? document.cookie.split(";") : [];
+    for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + "=")) {
+            return decodeURIComponent(cookie.substring(name.length + 1));
+        }
+    }
+    return null;
+}
+
+function postJson(url, payload) {
+    const csrfToken = getCookie("csrftoken");
+    return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
+        credentials: "same-origin",
+        body: payload ? JSON.stringify(payload) : null,
+    }).then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((data && data.message) || "Erro");
+        return data;
+    });
+}
+
+function initPomodoro() {
+    const page = document.getElementById("pomodoroPage");
+    const timeEl = document.getElementById("pmTime");
+    const cycleEl = document.getElementById("pmCycleLabel");
+    const modePill = document.getElementById("pmModePill");
+    const ringProgress = document.getElementById("pmRingProgress");
+    const startBtn = document.getElementById("pmStartBtn");
+    const resetBtn = document.getElementById("pmResetBtn");
+    const skipBtn = document.getElementById("pmSkipBtn");
+    const focusInput = document.getElementById("pmFocusInput");
+    const breakInput = document.getElementById("pmBreakInput");
+    const presetButtons = Array.from(document.querySelectorAll(".pomodoro-preset-btn"));
+    const logCard = document.getElementById("pmLogCard");
+    const accomplishmentInput = document.getElementById("pmAccomplishment");
+    const saveLogBtn = document.getElementById("pmSaveLogBtn");
+    const skipLogBtn = document.getElementById("pmSkipLogBtn");
+    const historyList = document.getElementById("pmHistoryList");
+    const statToday = document.getElementById("pmStatToday");
+    const statTodayMin = document.getElementById("pmStatTodayMin");
+    const statWeek = document.getElementById("pmStatWeek");
+    const statTotal = document.getElementById("pmStatTotal");
+
+    if (!page || !timeEl || !ringProgress) return;
+
+    const RING_LENGTH = 100; // matches pathLength="100" on both circles
+    const originalTitle = document.title;
+
+    let mode = "focus";
+    let focusMinutes = 25;
+    let breakMinutes = 5;
+    let totalSeconds = focusMinutes * 60;
+    let remainingSeconds = totalSeconds;
+    let isRunning = false;
+    let timerId = null;
+    let cycleCount = 0;
+    let pendingFocusMinutes = focusMinutes;
+
+    function formatTime(seconds) {
+        const safe = Math.max(0, Math.round(seconds));
+        const m = Math.floor(safe / 60).toString().padStart(2, "0");
+        const s = Math.floor(safe % 60).toString().padStart(2, "0");
+        return `${m}:${s}`;
+    }
+
+    function renderTime() {
+        timeEl.textContent = formatTime(remainingSeconds);
+        const elapsedFraction = totalSeconds > 0 ? 1 - remainingSeconds / totalSeconds : 0;
+        const offset = RING_LENGTH - Math.min(1, Math.max(0, elapsedFraction)) * RING_LENGTH;
+        ringProgress.style.strokeDashoffset = String(offset);
+        if (isRunning) {
+            document.title = `${formatTime(remainingSeconds)} · ${mode === "focus" ? "Foco" : "Pausa"}`;
+        }
+    }
+
+    function renderModeChrome() {
+        page.dataset.mode = mode;
+        modePill.textContent = mode === "focus" ? "Foco" : "Pausa";
+        cycleEl.textContent = `Ciclo ${cycleCount + 1}`;
+        startBtn.textContent = isRunning ? "Pausar" : (remainingSeconds < totalSeconds ? "Continuar" : "Iniciar");
+        page.classList.toggle("is-running", isRunning);
+    }
+
+    function playChime() {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) return;
+            const ctx = new AudioCtx();
+            const now = ctx.currentTime;
+            [660, 880].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = freq;
+                const start = now + i * 0.16;
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.42);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(start);
+                osc.stop(start + 0.46);
+            });
+        } catch (error) {
+            /* Web Audio unavailable — silently skip the chime. */
+        }
+    }
+
+    function stopTimer() {
+        if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+        }
+        isRunning = false;
+        document.title = originalTitle;
+    }
+
+    function setMode(nextMode) {
+        mode = nextMode;
+        const minutes = mode === "focus" ? focusMinutes : breakMinutes;
+        totalSeconds = minutes * 60;
+        remainingSeconds = totalSeconds;
+        renderModeChrome();
+        renderTime();
+    }
+
+    function applyDurations({ resetIfIdle = true } = {}) {
+        focusMinutes = Math.min(180, Math.max(1, parseInt(focusInput.value, 10) || 25));
+        breakMinutes = Math.min(60, Math.max(1, parseInt(breakInput.value, 10) || 5));
+        focusInput.value = focusMinutes;
+        breakInput.value = breakMinutes;
+        if (resetIfIdle && !isRunning) {
+            const minutes = mode === "focus" ? focusMinutes : breakMinutes;
+            totalSeconds = minutes * 60;
+            remainingSeconds = totalSeconds;
+            renderTime();
+        }
+    }
+
+    function tick() {
+        remainingSeconds -= 1;
+        if (remainingSeconds <= 0) {
+            remainingSeconds = 0;
+            renderTime();
+            handlePhaseComplete();
+            return;
+        }
+        renderTime();
+    }
+
+    function handlePhaseComplete() {
+        stopTimer();
+        playChime();
+        page.classList.add("is-complete");
+        setTimeout(() => page.classList.remove("is-complete"), 900);
+
+        if (mode === "focus") {
+            pendingFocusMinutes = focusMinutes;
+            cycleCount += 1;
+            openLogCard();
+        } else {
+            setMode("focus");
+        }
+        renderModeChrome();
+    }
+
+    function openLogCard() {
+        accomplishmentInput.value = "";
+        logCard.hidden = false;
+        accomplishmentInput.focus();
+    }
+
+    function closeLogCardAndAdvance() {
+        logCard.hidden = true;
+        setMode("break");
+    }
+
+    function saveSession(accomplishment) {
+        return postJson(POMODORO_SAVE_URL, {
+            focus_minutes: pendingFocusMinutes,
+            break_minutes: breakMinutes,
+            accomplishment: accomplishment || "",
+        }).then((data) => {
+            if (data && data.stats) applyStats(data.stats);
+            if (data && data.history) renderHistory(data.history);
+        }).catch(() => {
+            /* Keep the UI responsive even if the save silently failed. */
+        });
+    }
+
+    function applyStats(stats) {
+        statToday.textContent = stats.today_sessions;
+        statTodayMin.textContent = stats.today_minutes;
+        statWeek.textContent = stats.week_sessions;
+        statTotal.textContent = stats.total_sessions;
+    }
+
+    function renderHistory(history) {
+        historyList.innerHTML = "";
+        if (!history || !history.length) {
+            const empty = document.createElement("div");
+            empty.className = "queue-empty";
+            empty.id = "pmHistoryEmpty";
+            empty.textContent = "Nenhum ciclo registrado ainda. Complete seu primeiro foco!";
+            historyList.appendChild(empty);
+            return;
+        }
+        history.forEach((entry) => {
+            const item = document.createElement("article");
+            item.className = "pomodoro-history-item";
+            item.dataset.sessionId = entry.id;
+
+            const dot = document.createElement("span");
+            dot.className = "pomodoro-history-dot";
+
+            const body = document.createElement("div");
+            body.className = "pomodoro-history-body";
+
+            const top = document.createElement("div");
+            top.className = "pomodoro-history-top";
+            const strong = document.createElement("strong");
+            strong.textContent = `${entry.focus_minutes} min de foco`;
+            const when = document.createElement("span");
+            when.textContent = entry.completed_at_label;
+            top.appendChild(strong);
+            top.appendChild(when);
+
+            const note = document.createElement("p");
+            if (entry.accomplishment) {
+                note.textContent = entry.accomplishment;
+            } else {
+                note.textContent = "Sem anotação.";
+                note.classList.add("is-muted");
+            }
+
+            body.appendChild(top);
+            body.appendChild(note);
+
+            const deleteBtn = document.createElement("button");
+            deleteBtn.type = "button";
+            deleteBtn.className = "pomodoro-history-delete";
+            deleteBtn.dataset.deleteSession = entry.id;
+            deleteBtn.setAttribute("aria-label", "Remover registro");
+            deleteBtn.innerHTML = "&times;";
+
+            item.appendChild(dot);
+            item.appendChild(body);
+            item.appendChild(deleteBtn);
+            historyList.appendChild(item);
+        });
+    }
+
+    function deleteSession(sessionId) {
+        postJson(`${POMODORO_DELETE_URL_BASE}${sessionId}/delete/`).then((data) => {
+            if (data && data.stats) applyStats(data.stats);
+            if (data && data.history) renderHistory(data.history);
+        });
+    }
+
+    startBtn.addEventListener("click", () => {
+        if (isRunning) {
+            stopTimer();
+            renderModeChrome();
+            return;
+        }
+        isRunning = true;
+        timerId = setInterval(tick, 1000);
+        renderModeChrome();
+    });
+
+    resetBtn.addEventListener("click", () => {
+        stopTimer();
+        remainingSeconds = totalSeconds;
+        renderModeChrome();
+        renderTime();
+    });
+
+    skipBtn.addEventListener("click", () => {
+        stopTimer();
+        if (mode === "focus") {
+            setMode("break");
+        } else {
+            setMode("focus");
+        }
+    });
+
+    [focusInput, breakInput].forEach((input) => {
+        input.addEventListener("change", () => applyDurations());
+    });
+
+    presetButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            focusInput.value = button.dataset.focus;
+            breakInput.value = button.dataset.break;
+            applyDurations();
+        });
+    });
+
+    saveLogBtn.addEventListener("click", () => {
+        const note = accomplishmentInput.value.trim();
+        saveSession(note).then(() => closeLogCardAndAdvance());
+    });
+
+    skipLogBtn.addEventListener("click", () => {
+        saveSession("").then(() => closeLogCardAndAdvance());
+    });
+
+    historyList.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-delete-session]");
+        if (!btn) return;
+        deleteSession(btn.dataset.deleteSession);
+    });
+
+    applyDurations({ resetIfIdle: false });
+    setMode("focus");
+}

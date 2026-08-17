@@ -1,0 +1,29 @@
+<div class="queue-page-topbar">
+    <details class="system-notifications-menu">
+        <summary class="system-notifications-trigger" aria-label="Abrir avisos do sistema">
+            <span class="system-notifications-bell" aria-hidden="true">&#128276;</span>
+            <span class="system-notifications-label">Avisos</span>
+            <span class="system-notifications-count{% if active_notifications %} has-items{% endif %}">{{ active_notifications|length }}</span>
+        </summary>
+
+        <div class="system-notifications-panel">
+            <div class="system-notifications-panel-head">
+                <strong>Notificações do sistema</strong>
+                <span>{{ active_notifications|length }} aviso(s)</span>
+            </div>
+
+            <div class="system-notifications-list">
+                {% for n in active_notifications %}
+                    <article class="system-notification-item {% if n.level == 'error' %}is-error{% elif n.level == 'warning' %}is-warning{% else %}is-info{% endif %}">
+                        <div class="system-notification-item-head">
+                            <strong>{{ n.title }}</strong>
+                        </div>
+                        <div class="system-notification-item-body">{{ n.message }}</div>
+                    </article>
+                {% empty %}
+                    <div class="system-notifications-empty">Nenhum aviso ativo no momento.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </details>
+</div>

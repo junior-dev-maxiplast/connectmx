@@ -1,0 +1,70 @@
+{% load static %}
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Timeline Geral de Projetos</title>
+    <script src="{% static '/js/theme.js'%}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css'%}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body>
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main">
+        {% include 'partials/system_notifications_dropdown.html' %}
+
+        <div class="headerMain">
+            <div class="headerTitle">
+                <h1>Timeline Geral de Projetos</h1>
+                <div class="subtitle">Uma visão horizontal das entregas de toda a equipe, por responsável.</div>
+            </div>
+            <div class="headerButton">
+                <div class="queue-toolbar">
+                    <a class="queue-secondary-btn" href="{% url 'projectCalendarPage' %}">Ver calend&aacute;rio</a>
+                    <a class="queue-secondary-btn" href="{% url 'projectCatalogPage' %}">Projetos em aberto</a>
+                    <a class="queue-primary-btn" href="{% url 'manageProjects' %}">Cadastro</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-metric-grid">
+            {% for metric in metric_cards %}
+                <article class="dashboard-metric-card tone-{{ metric.tone }}">
+                    <div class="dashboard-metric-label">{{ metric.label }}</div>
+                    <div class="dashboard-metric-value" data-count-to="{{ metric.value }}">0</div>
+                    <div class="dashboard-metric-detail">{{ metric.detail }}</div>
+                </article>
+            {% endfor %}
+        </div>
+
+        <div id="project-timeline-root" class="dashboard-delivery-root">
+            {% include 'partials/project_timeline_view.html' %}
+        </div>
+    </div>
+
+    <script>
+        function animateDashboardValues() {
+            document.querySelectorAll("[data-count-to]").forEach((node) => {
+                const target = Number(node.getAttribute("data-count-to") || "0");
+                const duration = 700;
+                const start = performance.now();
+
+                function step(now) {
+                    const progress = Math.min((now - start) / duration, 1);
+                    node.textContent = String(Math.round(target * progress));
+                    if (progress < 1) requestAnimationFrame(step);
+                }
+
+                requestAnimationFrame(step);
+            });
+        }
+
+        {% include 'partials/project_timeline_scripts.html' %}
+
+        animateDashboardValues();
+        initProjectTimelineFilters();
+        initProjectTimelineScroll();
+    </script>
+</body>

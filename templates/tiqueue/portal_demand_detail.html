@@ -1,0 +1,657 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | {{ demand.protocol }}</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+</head>
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
+
+    <main class="support-shell support-thread-shell">
+        <section class="support-thread-header-card">
+            <div class="support-thread-header-main">
+                <span class="support-kicker">Detalhamento</span>
+                <h1>{{ demand.title }}</h1>
+                <p class="support-thread-header-summary">Acompanhe a conversa, o contexto e as pr&oacute;ximas intera&ccedil;&otilde;es desta demanda em um feed mais claro e organizado.</p>
+                <div class="support-thread-subline">
+                    <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
+                    <span>{{ demand.created_at|date:"d/m/Y H:i" }}</span>
+                    <span>Solicitante: {{ demand.requester_display }}</span>
+                </div>
+                <div class="support-thread-quick-actions">
+                    <a href="#conversation" class="support-btn support-btn-secondary">Ver conversa</a>
+                    <a href="#feedback" class="support-btn support-btn-secondary">Ver feedback</a>
+                </div>
+            </div>
+
+            <div class="support-thread-header-side">
+                <div class="support-thread-status-row">
+                    <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                    <span class="support-chip is-soft" style="--chip-color: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</span>
+                    <span class="support-chip {{ demand.next_action_css }}">{{ demand.next_action_label }}</span>
+                    {% if can_assume_here %}
+                        <form method="POST" action="{% url 'portalDemandAssume' demand.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ demand.detail_url }}">
+                            <button type="submit" class="support-btn">Assumir como atendente</button>
+                        </form>
+                    {% endif %}
+                </div>
+
+                <div class="support-thread-people-grid">
+                    <article class="support-thread-person-card is-requester">
+                        <span class="support-thread-avatar is-requester">{{ demand.requester_display|first|upper }}</span>
+                        <div>
+                            <span>Solicitante</span>
+                            <strong>{{ demand.requester_display }}</strong>
+                        </div>
+                    </article>
+                    <article class="support-thread-person-card is-attendant">
+                        <span class="support-thread-avatar is-attendant">{{ demand.assigned_display|first|upper }}</span>
+                        <div>
+                            <span>Atendente</span>
+                            <strong>{{ demand.assigned_display }}</strong>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="support-thread-metrics support-thread-metrics-expanded">
+            <article class="support-thread-metric">
+                <span>C&oacute;digo p&uacute;blico</span>
+                <strong>{{ demand.protocol }}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Grupo</span>
+                <strong>{% if demand.task_group %}{{ demand.task_group.name }}{% else %}Sem grupo{% endif %}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Tipo</span>
+                <strong>{% if demand.task_type %}{{ demand.task_type.name }}{% else %}Sem tipo{% endif %}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Respons&aacute;vel</span>
+                <strong>{{ demand.assigned_display }}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Mensagens</span>
+                <strong>{{ demand.reply_count }}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Tempo apontado</span>
+                <strong>{{ demand.total_worked_display }}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>Urg&ecirc;ncia</span>
+                <strong>{{ demand.triage_label }}</strong>
+            </article>
+            <article class="support-thread-metric">
+                <span>{{ demand.sla_next_label }}</span>
+                <strong>{{ demand.sla_next_display }}</strong>
+            </article>
+        </section>
+
+        <section class="support-thread-sla-grid">
+            <article class="support-thread-sla-card">
+                <span class="support-kicker">Pol&iacute;tica de SLA</span>
+                <strong>{{ demand.sla_preview.title }}</strong>
+                <p>{{ demand.sla_preview.subtitle }}</p>
+                {% if demand.sla_preview.has_policy %}
+                    <div class="support-thread-sla-meta">
+                        <span>Primeira resposta: {{ demand.sla_preview.first_response_display }}</span>
+                        <span>Resolu&ccedil;&atilde;o: {{ demand.sla_preview.resolution_display }}</span>
+                        <span>Atendente padr&atilde;o: {{ demand.sla_preview.default_attendant }}</span>
+                    </div>
+                {% endif %}
+            </article>
+            <article class="support-thread-sla-card">
+                <span class="support-kicker">Primeira resposta</span>
+                <strong>{{ demand.sla_first_response.status }}</strong>
+                <p>{{ demand.sla_first_response.hint }}</p>
+                <div class="support-thread-sla-meta">
+                    <span>Limite: {{ demand.first_response_due_display }}</span>
+                </div>
+            </article>
+            <article class="support-thread-sla-card">
+                <span class="support-kicker">Resolu&ccedil;&atilde;o</span>
+                <strong>{{ demand.sla_resolution.status }}</strong>
+                <p>{{ demand.sla_resolution.hint }}</p>
+                <div class="support-thread-sla-meta">
+                    <span>Limite: {{ demand.resolution_due_display }}</span>
+                    <span>Urg&ecirc;ncia: {{ demand.triage_label }}</span>
+                </div>
+            </article>
+        </section>
+
+        {% if demand.extra_details %}
+            <section class="support-thread-extra-grid">
+                {% for item in demand.extra_details %}
+                    <article class="support-thread-extra-card">
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </article>
+                {% endfor %}
+            </section>
+        {% endif %}
+
+        {% if reply_success %}
+            <div class="support-banner is-success">Resposta registrada com sucesso.</div>
+        {% endif %}
+
+        {% if feedback_success %}
+            <div class="support-banner is-success">Feedback registrado com sucesso.</div>
+        {% endif %}
+
+        {% if transfer_success %}
+            <div class="support-banner is-success">Demanda transferida com sucesso.</div>
+        {% endif %}
+
+        {% if workflow_state == "completed" %}
+            <div class="support-banner is-success">Demanda conclu&iacute;da com sucesso.</div>
+        {% elif workflow_state == "cancelled" %}
+            <div class="support-banner is-success">Demanda cancelada com sucesso.</div>
+        {% endif %}
+
+        {% if workflow_error_message %}
+            <div class="support-banner is-danger">{{ workflow_error_message }}</div>
+        {% endif %}
+
+        {% if reply_form.non_field_errors %}
+            <div class="support-banner is-danger">{{ reply_form.non_field_errors }}</div>
+        {% endif %}
+
+        {% if feedback_form.non_field_errors %}
+            <div class="support-banner is-danger">{{ feedback_form.non_field_errors }}</div>
+        {% endif %}
+
+        {% if transfer_form.non_field_errors %}
+            <div class="support-banner is-danger">{{ transfer_form.non_field_errors }}</div>
+        {% endif %}
+
+        <section id="conversation" class="support-thread-layout">
+            <article class="support-card support-thread-timeline-card">
+                <div class="support-card-head support-thread-feed-head">
+                    <div>
+                        <span class="support-kicker">Hist&oacute;rico</span>
+                        <h2>Conversa da demanda</h2>
+                        <p class="support-thread-feed-intro">Tudo o que foi trocado entre solicitante e atendente aparece neste feed, com contexto, anexos e apontamentos.</p>
+                    </div>
+                    <div class="support-inline-pills support-thread-feed-badges">
+                        <span class="support-meta-pill">{{ demand.reply_count }} intera&ccedil;&otilde;es</span>
+                        <span class="support-meta-pill">{{ demand.total_worked_display }} apontados</span>
+                    </div>
+                </div>
+
+                <div class="support-thread-timeline">
+                    <article class="support-thread-message support-thread-message-opening">
+                        <div class="support-thread-message-shell">
+                            <div class="support-thread-avatar-col">
+                                <span class="support-thread-avatar is-opening">{{ demand.requester_display|first|upper }}</span>
+                            </div>
+                            <div class="support-thread-message-card">
+                                <div class="support-thread-message-head">
+                                    <div>
+                                        <strong>Abertura da demanda</strong>
+                                        <span>{{ demand.requester_display }} &bull; {{ demand.created_at|date:"d/m/Y H:i" }}</span>
+                                    </div>
+                                    <span class="support-thread-role-chip is-requester">Solicitante</span>
+                                </div>
+
+                                <div class="support-inline-pills support-inline-pills-gap">
+                                    <span class="support-meta-pill">Post inicial</span>
+                                </div>
+
+                                {% if demand.description %}
+                                    <div class="support-thread-message-body">{{ demand.description|linebreaksbr }}</div>
+                                {% else %}
+                                    <div class="support-thread-message-body is-muted">A demanda foi aberta sem descri&ccedil;&atilde;o inicial.</div>
+                                {% endif %}
+
+                                {% if demand.opening_attachments %}
+                                    <div class="support-thread-attachments">
+                                        <span class="support-thread-attachments-title">Anexos iniciais</span>
+                                        <div class="support-thread-attachment-list">
+                                            {% for attachment in demand.opening_attachments %}
+                                                <a href="{{ attachment.file.url }}" target="_blank" class="support-thread-attachment">
+                                                    <strong>{{ attachment.display_name }}</strong>
+                                                    <span>{{ attachment.created_at|date:"d/m/Y H:i" }}</span>
+                                                </a>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </article>
+
+                    {% for message in demand.thread_messages %}
+                        <article class="support-thread-message{% if message.is_requester %} is-requester{% else %} is-attendant{% endif %}{% if message.is_internal_note %} is-internal-note{% endif %}">
+                            <div class="support-thread-message-shell">
+                                <div class="support-thread-avatar-col">
+                                    <span class="support-thread-avatar {% if message.is_requester %}is-requester{% else %}is-attendant{% endif %}{% if message.is_internal_note %} is-internal{% endif %}">{{ message.author_display|first|upper }}</span>
+                                </div>
+                                <div class="support-thread-message-card">
+                                    <div class="support-thread-message-head">
+                                        <div>
+                                            <strong>{{ message.author_display }}</strong>
+                                            <span>{{ message.created_at|date:"d/m/Y H:i" }}</span>
+                                        </div>
+                                        <span class="support-thread-role-chip {% if message.is_requester %}is-requester{% else %}is-attendant{% endif %}{% if message.is_internal_note %} is-internal{% endif %}">{{ message.role_label }}</span>
+                                    </div>
+
+                                    {% if message.canned_response_title %}
+                                        <div class="support-inline-pills support-inline-pills-gap">
+                                            <span class="support-meta-pill">Base pronta: {{ message.canned_response_title }}</span>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if message.message %}
+                                        <div class="support-thread-message-body">{{ message.message|linebreaksbr }}</div>
+                                    {% endif %}
+
+                                    {% if message.has_worklog %}
+                                        <div class="support-thread-worklog">
+                                            <span class="support-thread-worklog-pill">Tempo apontado: {{ message.worked_time_display }}</span>
+                                            <small>{{ message.worked_period_display }}</small>
+                                        </div>
+                                    {% endif %}
+
+                                    {% if message.prefetched_attachments %}
+                                        <div class="support-thread-attachments">
+                                            <span class="support-thread-attachments-title">Anexos</span>
+                                            <div class="support-thread-attachment-list">
+                                                {% for attachment in message.prefetched_attachments %}
+                                                    <a href="{{ attachment.file.url }}" target="_blank" class="support-thread-attachment">
+                                                        <strong>{{ attachment.display_name }}</strong>
+                                                        <span>{{ attachment.created_at|date:"d/m/Y H:i" }}</span>
+                                                    </a>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <div class="support-empty compact">
+                            <strong>Nenhuma resposta registrada ainda</strong>
+                            <span>As pr&oacute;ximas mensagens trocadas entre usu&aacute;rio e atendente aparecer&atilde;o aqui.</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </article>
+
+            <article class="support-card support-thread-reply-card">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Intera&ccedil;&atilde;o</span>
+                        <h2>Responder demanda</h2>
+                        <p class="support-thread-feed-intro">Escreva uma atualiza&ccedil;&atilde;o objetiva, compartilhe anexos e registre tempo quando fizer sentido.</p>
+                    </div>
+                </div>
+
+                <div class="support-thread-compose-intro">
+                    <span class="support-thread-avatar is-attendant">{{ request.user.nameUser|default:request.user.username|first|upper }}</span>
+                    <div>
+                        <strong>Nova publica&ccedil;&atilde;o nesta demanda</strong>
+                        <span>As respostas ficam organizadas em formato de feed para facilitar a leitura do solicitante e da equipe.</span>
+                    </div>
+                </div>
+
+                {% if can_transfer_here or can_manage_workflow %}
+                    <div id="management" class="support-thread-management-grid">
+                        {% if can_transfer_here %}
+                            <div class="support-thread-management-card">
+                                <div class="support-thread-management-copy">
+                                    <strong>Transferir atendimento</strong>
+                                    <span>Encaminhe esta demanda para outro atendente e registre a movimenta&ccedil;&atilde;o no hist&oacute;rico.</span>
+                                </div>
+                                <form method="POST" class="support-form support-thread-transfer-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_type" value="transfer">
+                                    <div class="support-form-grid">
+                                        <div class="support-field support-field-span-2">
+                                            <label for="{{ transfer_form.target_attendant.id_for_label }}">{{ transfer_form.target_attendant.label }}</label>
+                                            {{ transfer_form.target_attendant }}
+                                            {% if transfer_form.target_attendant.errors %}<div class="support-field-error">{{ transfer_form.target_attendant.errors|join:", " }}</div>{% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="support-form-actions support-form-actions-start">
+                                        <button type="submit" class="support-btn support-btn-secondary">Transferir demanda</button>
+                                    </div>
+                                </form>
+                            </div>
+                        {% endif %}
+
+                        {% if can_manage_workflow %}
+                            <div class="support-thread-management-card is-danger-zone">
+                                <div class="support-thread-management-copy">
+                                    <strong>Encerrar o ciclo da demanda</strong>
+                                    <span>Conclua quando o atendimento estiver finalizado ou cancele se a solicita&ccedil;&atilde;o n&atilde;o precisar mais seguir no fluxo.</span>
+                                </div>
+                                <div class="support-inline-pills support-inline-pills-gap">
+                                    <span class="support-meta-pill">Status atual: {{ demand.status_render.label }}</span>
+                                    <span class="support-meta-pill">Pr&oacute;xima a&ccedil;&atilde;o: {{ demand.next_action_label }}</span>
+                                </div>
+                                <div class="support-thread-workflow-actions">
+                                    <form method="POST" class="support-thread-workflow-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="workflow">
+                                        <input type="hidden" name="workflow_action" value="complete">
+                                        <button type="submit" class="support-btn" data-confirm="Concluir esta demanda agora?">Concluir demanda</button>
+                                    </form>
+                                    <form method="POST" class="support-thread-workflow-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="workflow">
+                                        <input type="hidden" name="workflow_action" value="cancel">
+                                        <button type="submit" class="support-btn support-btn-soft-danger" data-confirm="Cancelar esta demanda agora?">Cancelar demanda</button>
+                                    </form>
+                                </div>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if can_reply %}
+                    <form method="POST" enctype="multipart/form-data" class="support-form" id="portalReplyForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="reply">
+                        <div class="support-inline-pills support-thread-compose-hints">
+                            <span class="support-meta-pill">Resposta vis&iacute;vel no feed</span>
+                            {% if can_manage_portal %}
+                                <span class="support-meta-pill">Nota interna opcional</span>
+                                <span class="support-meta-pill">Apontamento de tempo opcional</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="support-form-grid">
+                            {% if can_manage_portal %}
+                                <div class="support-field support-field-span-2">
+                                    {% if quick_canned_responses %}
+                                        <div class="support-quick-canned-wrap">
+                                            <div class="support-quick-canned-head">
+                                                <strong>Sugest&otilde;es r&aacute;pidas</strong>
+                                                <span>Baseadas no grupo e tipo desta demanda</span>
+                                            </div>
+                                            <div class="support-quick-canned-grid">
+                                                {% for canned in quick_canned_responses %}
+                                                    <button
+                                                        type="button"
+                                                        class="support-quick-canned-chip"
+                                                        data-canned-shortcut
+                                                        data-canned-id="{{ canned.id }}"
+                                                        data-canned-message="{{ canned.message|escape }}"
+                                                        data-canned-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
+                                                    >
+                                                        <strong>{{ canned.title }}</strong>
+                                                        <span>{{ canned.match_reason }}</span>
+                                                    </button>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    {% endif %}
+
+                                    <label for="{{ reply_form.canned_response.id_for_label }}">{{ reply_form.canned_response.label }}</label>
+                                    <input type="search" id="portalCannedResponseSearch" class="support-portal-search support-canned-filter-input" placeholder="Buscar resposta pronta por t&iacute;tulo...">
+                                    <div class="support-inline-select-row">
+                                        <select name="{{ reply_form.canned_response.html_name }}" id="{{ reply_form.canned_response.id_for_label }}" class="queue-select">
+                                            <option value="">Selecione uma resposta pronta</option>
+                                            {% for canned in reply_canned_responses %}
+                                                <option
+                                                    value="{{ canned.id }}"
+                                                    data-message="{{ canned.message|escape }}"
+                                                    data-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
+                                                    data-title="{{ canned.title|lower }}"
+                                                    {% if reply_canned_response_value|stringformat:'s' == canned.id|stringformat:'s' %}selected{% endif %}
+                                                >
+                                                    {{ canned.title }}
+                                                </option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="button" class="support-btn support-btn-secondary support-inline-apply-btn" id="applyCannedResponseBtn">Aplicar</button>
+                                    </div>
+                                    {% if reply_form.canned_response.errors %}<div class="support-field-error">{{ reply_form.canned_response.errors|join:", " }}</div>{% endif %}
+                                </div>
+                            {% endif %}
+
+                            <div class="support-field support-field-span-2">
+                                <label for="{{ reply_form.message.id_for_label }}">{{ reply_form.message.label }}</label>
+                                {{ reply_form.message }}
+                                {% if reply_form.message.errors %}<div class="support-field-error">{{ reply_form.message.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            <div class="support-field support-field-span-2">
+                                <label for="{{ reply_form.attachments.id_for_label }}">{{ reply_form.attachments.label }}</label>
+                                {{ reply_form.attachments }}
+                                <small class="support-helper-text">Voc&ecirc; pode anexar um ou mais arquivos em cada resposta.</small>
+                                {% if reply_form.attachments.errors %}<div class="support-field-error">{{ reply_form.attachments.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            {% if can_manage_portal %}
+                                <div class="support-field">
+                                    <label for="{{ reply_form.work_started_at.id_for_label }}">{{ reply_form.work_started_at.label }}</label>
+                                    {{ reply_form.work_started_at }}
+                                    {% if reply_form.work_started_at.errors %}<div class="support-field-error">{{ reply_form.work_started_at.errors|join:", " }}</div>{% endif %}
+                                </div>
+
+                                <div class="support-field">
+                                    <label for="{{ reply_form.work_ended_at.id_for_label }}">{{ reply_form.work_ended_at.label }}</label>
+                                    {{ reply_form.work_ended_at }}
+                                    {% if reply_form.work_ended_at.errors %}<div class="support-field-error">{{ reply_form.work_ended_at.errors|join:", " }}</div>{% endif %}
+                                </div>
+
+                                <label class="support-inline-checkbox support-field-span-2">
+                                    {{ reply_form.is_internal }}
+                                    <span>{{ reply_form.is_internal.label }}</span>
+                                </label>
+                            {% endif %}
+                        </div>
+
+                        <div class="support-form-actions">
+                            <button type="submit" class="support-btn">Enviar resposta</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="support-empty compact">
+                        <strong>Conversa encerrada para novas respostas</strong>
+                        <span>Essa demanda j&aacute; foi conclu&iacute;da ou cancelada, ent&atilde;o novas mensagens n&atilde;o est&atilde;o dispon&iacute;veis.</span>
+                    </div>
+                {% endif %}
+            </article>
+        </section>
+
+        <section class="support-thread-secondary-grid">
+            <article id="feedback" class="support-card support-thread-feedback-card">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">P&oacute;s-atendimento</span>
+                        <h2>Feedback da demanda</h2>
+                        <p class="support-thread-feed-intro">Depois da conclus&atilde;o, o solicitante pode registrar como foi a experi&ecirc;ncia de atendimento.</p>
+                    </div>
+                </div>
+
+                {% if can_leave_feedback %}
+                    <form method="POST" class="support-form">
+                        {% csrf_token %}
+                        <input type="hidden" name="form_type" value="feedback">
+                        <div class="support-form-grid">
+                            <div class="support-field">
+                                <label for="{{ feedback_form.feedback_rating.id_for_label }}">{{ feedback_form.feedback_rating.label }}</label>
+                                {{ feedback_form.feedback_rating }}
+                                {% if feedback_form.feedback_rating.errors %}<div class="support-field-error">{{ feedback_form.feedback_rating.errors|join:", " }}</div>{% endif %}
+                            </div>
+
+                            <div class="support-field support-field-span-2">
+                                <label for="{{ feedback_form.feedback_comment.id_for_label }}">{{ feedback_form.feedback_comment.label }}</label>
+                                {{ feedback_form.feedback_comment }}
+                                {% if feedback_form.feedback_comment.errors %}<div class="support-field-error">{{ feedback_form.feedback_comment.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </div>
+
+                        <div class="support-form-actions">
+                            <button type="submit" class="support-btn">Enviar feedback</button>
+                        </div>
+                    </form>
+                {% elif demand.has_feedback %}
+                    <div class="support-thread-feedback-summary">
+                        <div class="support-thread-feedback-pill">
+                            <strong>{{ demand.feedback_rating }}/5</strong>
+                            <span>{{ demand.feedback_rating_label }}</span>
+                        </div>
+                        {% if demand.feedback_comment %}
+                            <p>{{ demand.feedback_comment|linebreaksbr }}</p>
+                        {% else %}
+                            <p>O solicitante avaliou a demanda sem coment&aacute;rio complementar.</p>
+                        {% endif %}
+                        {% if demand.feedback_submitted_at %}
+                            <small>Registrado em {{ demand.feedback_submitted_at|date:"d/m/Y H:i" }}</small>
+                        {% endif %}
+                    </div>
+                {% elif demand.status == "completed" %}
+                    <div class="support-empty compact">
+                        <strong>Aguardando feedback do solicitante</strong>
+                        <span>Quando o usu&aacute;rio avaliar o atendimento, o retorno aparecer&aacute; aqui.</span>
+                    </div>
+                {% else %}
+                    <div class="support-empty compact">
+                        <strong>Feedback dispon&iacute;vel ap&oacute;s a conclus&atilde;o</strong>
+                        <span>Assim que a demanda for conclu&iacute;da, o solicitante poder&aacute; avaliar o atendimento por aqui.</span>
+                    </div>
+                {% endif %}
+            </article>
+
+            <article class="support-card support-thread-feedback-card support-thread-log-card">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Movimenta&ccedil;&otilde;es</span>
+                        <h2>Log da demanda</h2>
+                        <p class="support-thread-feed-intro">Assun&ccedil;&otilde;es, transfer&ecirc;ncias e outras altera&ccedil;&otilde;es ficam registradas em ordem cronol&oacute;gica.</p>
+                    </div>
+                </div>
+
+                {% if demand.activity_logs %}
+                    <div class="support-thread-log-list">
+                        {% for entry in demand.activity_logs %}
+                            <article class="support-thread-log-entry">
+                                <div class="support-thread-log-main">
+                                    <div class="support-thread-log-head">
+                                        <strong>{{ entry.event_label }}</strong>
+                                        <span>{{ entry.created_at|date:"d/m/Y H:i" }}</span>
+                                    </div>
+                                    <p>{{ entry.summary }}</p>
+                                    {% if entry.details %}
+                                        <small>{{ entry.details }}</small>
+                                    {% endif %}
+                                </div>
+                                <div class="support-thread-log-side">
+                                    <span>{{ entry.actor_display }}</span>
+                                    {% if entry.to_attendant_id %}
+                                        <strong>{{ entry.to_attendant_display }}</strong>
+                                    {% endif %}
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="support-empty compact">
+                        <strong>Nenhuma movimenta&ccedil;&atilde;o registrada</strong>
+                        <span>Assun&ccedil;&otilde;es, transfer&ecirc;ncias e apontamentos aparecer&atilde;o aqui.</span>
+                    </div>
+                {% endif %}
+            </article>
+        </section>
+    </main>
+
+    <script>
+        (function() {
+            const select = document.getElementById("{{ reply_form.canned_response.id_for_label }}");
+            const messageField = document.getElementById("{{ reply_form.message.id_for_label }}");
+            const internalCheckbox = document.getElementById("{{ reply_form.is_internal.id_for_label }}");
+            const applyButton = document.getElementById("applyCannedResponseBtn");
+            const searchInput = document.getElementById("portalCannedResponseSearch");
+            const shortcutButtons = Array.from(document.querySelectorAll("[data-canned-shortcut]"));
+            if (!select || !messageField || !applyButton) return;
+
+            function getSelectedText() {
+                const option = select.options[select.selectedIndex];
+                if (!option || !option.value) return "";
+                return option.textContent.trim();
+            }
+
+            function applyCannedPayload(message, suggestInternal, label, value) {
+                if (!message) return;
+                messageField.value = messageField.value && messageField.value.trim()
+                    ? `${messageField.value.trim()}\n\n${message}`
+                    : message;
+
+                if (internalCheckbox) {
+                    internalCheckbox.checked = suggestInternal;
+                }
+
+                if (value) {
+                    select.value = String(value);
+                }
+
+                if (label) {
+                    applyButton.textContent = `Aplicado: ${label}`;
+                    window.setTimeout(() => {
+                        applyButton.textContent = "Aplicar";
+                    }, 1800);
+                }
+            }
+
+            applyButton.addEventListener("click", function() {
+                const option = select.options[select.selectedIndex];
+                if (!option || !option.value) return;
+                const label = getSelectedText();
+                const message = option.dataset.message || "";
+                const suggestInternal = option.dataset.internal === "1";
+                applyCannedPayload(message, suggestInternal, label, option.value);
+            });
+
+            shortcutButtons.forEach((button) => {
+                button.addEventListener("click", function() {
+                    applyCannedPayload(
+                        button.dataset.cannedMessage || "",
+                        button.dataset.cannedInternal === "1",
+                        button.querySelector("strong")?.textContent?.trim() || "",
+                        button.dataset.cannedId || ""
+                    );
+                });
+            });
+
+            if (searchInput) {
+                searchInput.addEventListener("input", function() {
+                    const query = (searchInput.value || "").trim().toLowerCase();
+                    Array.from(select.options).forEach((option, index) => {
+                        if (index === 0) {
+                            option.hidden = false;
+                            return;
+                        }
+                        const title = (option.dataset.title || option.textContent || "").toLowerCase();
+                        option.hidden = !!query && !title.includes(query);
+                    });
+                });
+            }
+        })();
+
+        (function() {
+            document.querySelectorAll("[data-confirm]").forEach((button) => {
+                button.addEventListener("click", function(event) {
+                    const message = button.getAttribute("data-confirm");
+                    if (message && !window.confirm(message)) {
+                        event.preventDefault();
+                    }
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

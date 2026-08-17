@@ -11,7 +11,7 @@
 
 .user-card {
     background: var(--surface-1, rgba(255, 255, 255, 0.95));
-    border-radius: 16px;
+    border-radius: 10px;
     border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.10));
     box-shadow: var(--surface-shadow, 0 10px 24px rgba(28, 34, 66, 0.08));
     padding: 12px;
@@ -39,7 +39,7 @@
 
 .user-form input {
     height: 34px;
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid rgba(0, 0, 0, 0.22);
     background: rgba(0, 0, 0, 0.10);
     color: var(--page-text, #1c2242);
@@ -67,7 +67,7 @@
     border-collapse: collapse;
     table-layout: fixed;
     background: #43476b;
-    border-radius: 14px;
+    border-radius: 9px;
     overflow: hidden;
 }
 
@@ -104,7 +104,7 @@
 }
 
 .user-alert {
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 10px 12px;
     margin-bottom: 10px;
     font-size: 12px;
@@ -130,7 +130,7 @@
     top: 22px;
     right: 22px;
     width: min(360px, 92vw);
-    border-radius: 14px;
+    border-radius: 9px;
     border: 1px solid rgba(255, 72, 72, 0.55);
     background: linear-gradient(180deg, rgba(120, 18, 18, 0.96), rgba(82, 14, 14, 0.96));
     color: #ffe8e8;
@@ -155,7 +155,7 @@
 .user-access-popup-btn {
     height: 30px;
     min-width: 80px;
-    border-radius: 10px;
+    border-radius: 7px;
     border: 1px solid rgba(255, 255, 255, 0.24);
     background: rgba(255, 255, 255, 0.16);
     color: #ffffff;
