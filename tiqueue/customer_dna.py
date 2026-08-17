@@ -209,8 +209,38 @@ def _oracle_connection():
     raise RuntimeError(f"Não foi possível conectar ao ERP Senior: {last_error}")
 
 
+def _oracle_connection_safe():
+    host = os.getenv("ERP_DB_HOST", "192.168.30.2")
+    port = int(os.getenv("ERP_DB_PORT", "1521"))
+    service_name = os.getenv("ERP_DB_NAME", "dbprod")
+    user = os.getenv("ERP_DB_USER", "sapiens")
+    password = os.getenv("ERP_DB_PASSWORD", "sapiens")
+    driver_errors = {}
+
+    for driver_name in ("oracledb", "cx_Oracle"):
+        try:
+            if driver_name == "oracledb":
+                import oracledb as oracle_driver
+            else:
+                import cx_Oracle as oracle_driver
+            dsn = oracle_driver.makedsn(host, port, service_name=service_name)
+            return oracle_driver.connect(user=user, password=password, dsn=dsn)
+        except Exception as exc:
+            driver_errors[driver_name] = str(exc)
+
+    primary_error = driver_errors.get("oracledb") or driver_errors.get("cx_Oracle") or "driver Oracle nao encontrado"
+    fallback_error = driver_errors.get("cx_Oracle")
+    if fallback_error and fallback_error != primary_error:
+        raise RuntimeError(
+            "Nao foi possivel conectar ao ERP Senior. "
+            f"oracledb: {primary_error}. "
+            f"Fallback cx_Oracle: {fallback_error}."
+        )
+    raise RuntimeError(f"Nao foi possivel conectar ao ERP Senior: {primary_error}")
+
+
 def _query(sql, params):
-    connection = _oracle_connection()
+    connection = _oracle_connection_safe()
     cursor = None
     try:
         cursor = connection.cursor()
@@ -224,7 +254,7 @@ def _query(sql, params):
 
 
 def _query_many(statements, params):
-    connection = _oracle_connection()
+    connection = _oracle_connection_safe()
     results = {}
     try:
         for name, sql in statements.items():
