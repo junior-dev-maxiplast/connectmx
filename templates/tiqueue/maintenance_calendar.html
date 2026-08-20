@@ -8,186 +8,400 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/maintenance.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800" rel="stylesheet">
 </head>
-<body>
+<body class="mtn">
 {% include 'partials/sidebar.html' %}
-<div class="queue_main">
-    <div class="headerMain">
-        <div class="headerTitle"><h1>Calendário de Manutenções</h1></div>
-    </div>
-    <div class="queue-card maintenance-calendar-card">
-        <div class="maintenance-calendar-head">
-            <button id="mPrev" class="queue-secondary-btn" type="button">&#9664;</button>
-            <h3 id="mTitle"></h3>
-            <button id="mNext" class="queue-secondary-btn" type="button">&#9654;</button>
+
+<main class="mt-shell">
+    <header class="mt-head">
+        <div>
+            <span class="mt-kicker">Operação · Manutenções</span>
+            <h1>Calendário</h1>
+            <p>Agendamentos e indisponibilidades no mesmo mês. Clique em um dia para registrar, ou em um evento para ver o detalhe.</p>
         </div>
-        <div class="maintenance-weekdays">
-            <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
-        </div>
-        <div id="mGrid" class="maintenance-calendar-grid"></div>
+        <nav class="mt-nav" aria-label="Seções de manutenção">
+            <a href="{% url 'maintenanceCalendarPage' %}" class="is-active">Calendário</a>
+            <a href="{% url 'maintenanceSchedulePage' %}">Agendamentos</a>
+            <a href="{% url 'maintenanceOutagePage' %}">Indisponibilidades</a>
+            <a href="{% url 'maintenanceCatalogPage' %}">Cadastros</a>
+        </nav>
+    </header>
+
+    <section class="mt-kpis">
+        <div class="mt-kpi"><span>Eventos no mês</span><strong id="mtCalKpiTotal">0</strong><small>tudo que cai no mês exibido</small></div>
+        <div class="mt-kpi is-info"><span>Agendamentos</span><strong id="mtCalKpiSchedules">0</strong><small>janelas planejadas</small></div>
+        <div class="mt-kpi is-danger"><span>Indisponibilidades</span><strong id="mtCalKpiOutages">0</strong><small>ocorrências registradas</small></div>
+        <div class="mt-kpi is-warning"><span>Quedas</span><strong id="mtCalKpiIncidents">0</strong><small>com indicativo de queda</small></div>
+    </section>
+
+    <div class="mt-grid is-aside">
+        <section class="mt-block is-flush">
+            <div class="mt-block-head">
+                <div class="mt-cal-nav">
+                    <button type="button" class="mt-cal-step" id="mtCalPrev" aria-label="Mês anterior">&#9664;</button>
+                    <div class="mt-cal-month" id="mtCalMonth"></div>
+                    <button type="button" class="mt-cal-step" id="mtCalNext" aria-label="Próximo mês">&#9654;</button>
+                    <button type="button" class="mt-btn is-sm" id="mtCalToday">Hoje</button>
+                </div>
+                <div class="mt-filters">
+                    <button type="button" class="mt-filter is-active" data-mt-cal-filter="all">Todos</button>
+                    <button type="button" class="mt-filter" data-mt-cal-filter="schedule">Agendamentos</button>
+                    <button type="button" class="mt-filter" data-mt-cal-filter="outage">Indisponibilidades</button>
+                </div>
+            </div>
+
+            <div class="mt-cal-weekdays" aria-hidden="true">
+                <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+            </div>
+            <div class="mt-cal-grid" id="mtCalGrid"></div>
+            <div class="mt-cal-legend">
+                <span><i></i> Agendamento</span>
+                <span><i class="is-outage"></i> Indisponibilidade</span>
+                <span>Clique em um dia para criar</span>
+            </div>
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Próximos eventos</h2><small>{{ upcoming|length }}</small></div>
+            {% if upcoming %}
+            <div class="mt-list">
+                {% for ev in upcoming %}
+                <div>
+                    <span class="mt-list-dot {% if ev.is_outage %}is-outage{% endif %}"></span>
+                    <span class="mt-list-body">
+                        <strong>{{ ev.title }}</strong>
+                        <small>{{ ev.scheduled_start|date:"d/m/Y H:i" }}{% if ev.system_group %} · {{ ev.system_group.name }}{% endif %}</small>
+                    </span>
+                    <span class="mt-badge is-{{ ev.status_tone }}">{{ ev.status_label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="mt-empty-inline">Nada programado daqui para frente.</div>
+            {% endif %}
+            <div class="mt-btn-row" style="margin-top: 12px;">
+                <button type="button" class="mt-btn is-primary is-block" id="mtCalNew">+ Novo evento</button>
+            </div>
+        </section>
     </div>
+</main>
+
+{{ calendar_items|json_script:"mtCalendarItems" }}
+
+<div class="mt-overlay is-hidden" id="mtCalOverlay"></div>
+
+<div class="mt-modal is-hidden" id="mtCalFormModal" role="dialog" aria-modal="true" aria-labelledby="mtCalFormTitle">
+    <div class="mt-modal-head">
+        <div>
+            <h3 id="mtCalFormTitle">Novo evento</h3>
+            <p>Marque como indisponibilidade se já saiu do ar; caso contrário entra como janela agendada.</p>
+        </div>
+        <button type="button" class="mt-modal-close" data-mt-close aria-label="Fechar">&times;</button>
+    </div>
+
+    {% if event_form.errors %}
+    <div class="mt-errors" role="alert" style="margin-bottom: 11px;">
+        <strong>Revise os campos abaixo:</strong>
+        <ul>
+            {% for field in event_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}
+            {% for error in event_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="POST" class="mt-form">
+        {% csrf_token %}
+        <input type="hidden" name="form_id" value="create_event">
+
+        <div class="mt-field"><label for="{{ event_form.title.id_for_label }}">Título</label>{{ event_form.title }}</div>
+
+        <div class="mt-form-grid">
+            <div class="mt-field"><label for="{{ event_form.maintenance_type.id_for_label }}">Tipo</label>{{ event_form.maintenance_type }}</div>
+            <div class="mt-field"><label for="{{ event_form.situation.id_for_label }}">Situação</label>{{ event_form.situation }}</div>
+            <div class="mt-field"><label for="{{ event_form.indicator.id_for_label }}">Indicativo</label>{{ event_form.indicator }}</div>
+            <div class="mt-field"><label for="{{ event_form.system_group.id_for_label }}">Grupo</label>{{ event_form.system_group }}</div>
+            <div class="mt-field"><label for="{{ event_form.scheduled_start.id_for_label }}">Início</label>{{ event_form.scheduled_start }}</div>
+            <div class="mt-field"><label for="{{ event_form.expected_return.id_for_label }}">Previsão de retorno</label>{{ event_form.expected_return }}</div>
+            <div class="mt-field"><label for="{{ event_form.real_return.id_for_label }}">Retorno real</label>{{ event_form.real_return }}</div>
+            <div class="mt-field"><label>&nbsp;</label><label class="mt-check">{{ event_form.is_outage }}<span>Registrar como indisponibilidade</span></label></div>
+            <div class="mt-field is-full"><label for="{{ event_form.short_description.id_for_label }}">Descrição curta</label>{{ event_form.short_description }}</div>
+            <div class="mt-field is-full"><label for="{{ event_form.full_description.id_for_label }}">Descrição completa</label>{{ event_form.full_description }}</div>
+        </div>
+
+        <div class="mt-field">
+            <label>Sistemas afetados</label>
+            {% if has_systems %}
+                <div class="mt-checks">{{ event_form.affected_systems }}</div>
+            {% else %}
+                <div class="mt-checks-empty">Nenhum sistema ativo cadastrado. <a href="{% url 'maintenanceCatalogPage' %}" style="color: var(--mt-accent-deep); font-weight: 700;">Cadastrar sistemas</a>.</div>
+            {% endif %}
+        </div>
+
+        <div class="mt-modal-actions">
+            <button type="button" class="mt-btn" data-mt-close>Cancelar</button>
+            <button type="submit" class="mt-btn is-primary">Salvar evento</button>
+        </div>
+    </form>
 </div>
 
-<div id="maintenanceCreateModal" class="queue-modal-overlay" style="display:none;">
-    <div class="queue-modal-card maintenance-modal-card">
-        <div class="queue-modal-head">
-            <h3>Novo agendamento</h3>
-            <button id="maintenanceModalClose" type="button" class="queue-secondary-btn">Fechar</button>
+<div class="mt-modal is-hidden" id="mtCalDetailModal" role="dialog" aria-modal="true" aria-labelledby="mtCalDetailTitle">
+    <div class="mt-modal-head">
+        <div>
+            <h3 id="mtCalDetailTitle"></h3>
+            <p id="mtCalDetailSubtitle"></p>
         </div>
-        <form method="POST" action="{% url 'maintenanceCalendarPage' %}" class="modal-form">
-            {% csrf_token %}
-            <input type="hidden" name="form_id" value="create_event">
-            <div class="modal-grid">
-                <div class="field span-2">
-                    <label for="mc_title">Título</label>
-                    <input id="mc_title" name="event-title" type="text" required>
-                </div>
-                <div class="field">
-                    <label for="mc_type">Tipo</label>
-                    <select id="mc_type" name="event-maintenance_type">
-                        <option value="">Selecione</option>
-                        {% for item in types %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="mc_situation">Situação</label>
-                    <select id="mc_situation" name="event-situation">
-                        <option value="">Selecione</option>
-                        {% for item in situations %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="mc_indicator">Indicativo</label>
-                    <select id="mc_indicator" name="event-indicator">
-                        <option value="">Selecione</option>
-                        {% for item in indicators %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="mc_group">Grupo de sistemas</label>
-                    <select id="mc_group" name="event-system_group">
-                        <option value="">Selecione</option>
-                        {% for item in system_groups %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="field">
-                    <label for="mc_start">Data/Hora agendada</label>
-                    <input id="mc_start" name="event-scheduled_start" type="datetime-local" required>
-                </div>
-                <div class="field">
-                    <label for="mc_expected">Previsão de retorno</label>
-                    <input id="mc_expected" name="event-expected_return" type="datetime-local">
-                </div>
-                <div class="field">
-                    <label for="mc_real">Retorno real</label>
-                    <input id="mc_real" name="event-real_return" type="datetime-local">
-                </div>
-                <div class="field span-2">
-                    <label for="mc_short">Descrição curta</label>
-                    <textarea id="mc_short" name="event-short_description" rows="2"></textarea>
-                </div>
-                <div class="field span-2">
-                    <label for="mc_full">Descrição completa</label>
-                    <textarea id="mc_full" name="event-full_description" rows="4"></textarea>
-                </div>
-                <div class="field span-2">
-                    <label for="mc_systems">Sistemas afetados</label>
-                    <select id="mc_systems" name="event-affected_systems" multiple size="7">
-                        {% for item in systems %}
-                            <option value="{{ item.id }}">{{ item.group.name }} - {{ item.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="field">
-                    <label><input type="checkbox" name="event-is_outage"> Registrar como indisponibilidade</label>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button class="queue-primary-btn" type="submit">Salvar</button>
-            </div>
-        </form>
+        <button type="button" class="mt-modal-close" data-mt-close aria-label="Fechar">&times;</button>
+    </div>
+    <div class="mt-detail" id="mtCalDetailBody"></div>
+    <div class="mt-modal-actions">
+        <a class="mt-btn" id="mtCalDetailLink" href="{% url 'maintenanceSchedulePage' %}">Ver na lista</a>
+        <button type="button" class="mt-btn is-primary" data-mt-close>Fechar</button>
     </div>
 </div>
 
 <script>
-(() => {
-    const items = {{ calendar_items_json|safe }};
-    const grid = document.getElementById("mGrid");
-    const title = document.getElementById("mTitle");
-    const prev = document.getElementById("mPrev");
-    const next = document.getElementById("mNext");
-    const modal = document.getElementById("maintenanceCreateModal");
-    const modalClose = document.getElementById("maintenanceModalClose");
-    const mcStart = document.getElementById("mc_start");
-    let view = new Date();
-    view.setDate(1);
+(function () {
+    var items = JSON.parse(document.getElementById('mtCalendarItems').textContent);
+    var grid = document.getElementById('mtCalGrid');
+    var monthLabel = document.getElementById('mtCalMonth');
+    var overlay = document.getElementById('mtCalOverlay');
+    var formModal = document.getElementById('mtCalFormModal');
+    var detailModal = document.getElementById('mtCalDetailModal');
+    var startInput = document.getElementById('{{ event_form.scheduled_start.auto_id }}');
+    var outageInput = document.getElementById('{{ event_form.is_outage.auto_id }}');
+    var scheduleUrl = '{% url "maintenanceSchedulePage" %}';
+    var outageUrl = '{% url "maintenanceOutagePage" %}';
+    var MAX_PER_DAY = 3;
 
-    function key(d) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    var view = new Date();
+    view.setDate(1);
+    var filter = 'all';
+
+    var byDay = {};
+    items.forEach(function (ev) {
+        (byDay[ev.day] = byDay[ev.day] || []).push(ev);
+    });
+
+    function dayKey(year, month, day) {
+        return year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
     }
 
-    function openModalForDay(dayDate) {
-        if (!dayDate) return;
-        mcStart.value = `${dayDate}T09:00`;
-        modal.style.display = "flex";
+    function visible(ev) {
+        if (filter === 'schedule') { return !ev.is_outage; }
+        if (filter === 'outage') { return ev.is_outage; }
+        return true;
+    }
+
+    function openModal(modal) {
+        overlay.classList.remove('is-hidden');
+        modal.classList.remove('is-hidden');
+    }
+
+    function closeModals() {
+        overlay.classList.add('is-hidden');
+        formModal.classList.add('is-hidden');
+        detailModal.classList.add('is-hidden');
+    }
+
+    // Só sobrescreve a data quando ela ainda é a que nós mesmos preenchemos —
+    // assim clicar em outro dia atualiza o campo, mas o que o usuário digitou fica.
+    var autofilledStart = null;
+
+    function openForm(day) {
+        if (day && startInput && (!startInput.value || startInput.value === autofilledStart)) {
+            autofilledStart = day + 'T09:00';
+            startInput.value = autofilledStart;
+        }
+        openModal(formModal);
+        var title = formModal.querySelector('input[type="text"]');
+        if (title) { title.focus(); }
+    }
+
+    function openDetail(ev) {
+        document.getElementById('mtCalDetailTitle').textContent = ev.title;
+        document.getElementById('mtCalDetailSubtitle').textContent =
+            (ev.is_outage ? 'Indisponibilidade' : 'Agendamento') + ' · ' + ev.start_label;
+
+        var facts = [
+            ['Status', ev.status_label],
+            ['Tipo', ev.type_name || '—'],
+            ['Situação', ev.situation || '—'],
+            ['Indicativo', ev.indicator || '—'],
+            ['Grupo', ev.group || '—'],
+            ['Previsão de retorno', ev.expected_label || '—'],
+            ['Retorno real', ev.real_label || '—'],
+            ['Duração', ev.duration_label || '—']
+        ];
+
+        var body = document.getElementById('mtCalDetailBody');
+        body.textContent = '';
+
+        var factsBox = document.createElement('div');
+        factsBox.className = 'mt-detail-facts';
+        facts.forEach(function (pair) {
+            var cell = document.createElement('div');
+            var label = document.createElement('span');
+            label.textContent = pair[0];
+            var value = document.createElement('strong');
+            value.textContent = pair[1];
+            cell.appendChild(label);
+            cell.appendChild(value);
+            factsBox.appendChild(cell);
+        });
+        body.appendChild(factsBox);
+
+        if (ev.systems.length) {
+            var tags = document.createElement('div');
+            tags.className = 'mt-tags';
+            ev.systems.forEach(function (name) {
+                var tag = document.createElement('span');
+                tag.className = 'mt-tag';
+                tag.textContent = name;
+                tags.appendChild(tag);
+            });
+            body.appendChild(tags);
+        }
+
+        [ev.short_description, ev.full_description].forEach(function (text) {
+            if (!text) { return; }
+            var p = document.createElement('p');
+            p.textContent = text;
+            body.appendChild(p);
+        });
+
+        document.getElementById('mtCalDetailLink').href = ev.is_outage ? outageUrl : scheduleUrl;
+        openModal(detailModal);
     }
 
     function render() {
-        const y = view.getFullYear();
-        const m = view.getMonth();
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        title.textContent = view.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-        const start = new Date(y, m, 1);
-        const end = new Date(y, m + 1, 0);
-        const firstWeekday = start.getDay();
-        const totalCells = Math.ceil((firstWeekday + end.getDate()) / 7) * 7;
-        const byDay = {};
+        var year = view.getFullYear();
+        var month = view.getMonth();
+        var now = new Date();
+        var todayKey = dayKey(now.getFullYear(), now.getMonth(), now.getDate());
+        var firstWeekday = new Date(year, month, 1).getDay();
+        var daysInMonth = new Date(year, month + 1, 0).getDate();
+        var totalCells = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+        var counters = { total: 0, schedules: 0, outages: 0, incidents: 0 };
 
-        for (const ev of items) {
-            if (!ev.start) continue;
-            const d = new Date(ev.start);
-            const k = key(d);
-            if (!byDay[k]) byDay[k] = [];
-            byDay[k].push(ev);
+        monthLabel.textContent = view.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        grid.textContent = '';
+
+        for (var cell = 0; cell < totalCells; cell += 1) {
+            var dayNum = cell - firstWeekday + 1;
+            var inMonth = dayNum >= 1 && dayNum <= daysInMonth;
+            var key = inMonth ? dayKey(year, month, dayNum) : '';
+            var dayEvents = (inMonth ? (byDay[key] || []) : []).filter(visible);
+
+            var box = document.createElement('div');
+            box.className = 'mt-cal-day';
+            if (!inMonth) { box.classList.add('is-out'); }
+            if (inMonth && key < todayKey) { box.classList.add('is-past'); }
+            if (key === todayKey) { box.classList.add('is-today'); }
+            if (inMonth) { box.dataset.mtDay = key; }
+
+            var head = document.createElement('div');
+            head.className = 'mt-cal-day-num';
+            var num = document.createElement('b');
+            num.textContent = inMonth ? String(dayNum) : '';
+            head.appendChild(num);
+            if (dayEvents.length > MAX_PER_DAY) {
+                var more = document.createElement('span');
+                more.className = 'mt-cal-day-more';
+                more.textContent = '+' + (dayEvents.length - MAX_PER_DAY);
+                head.appendChild(more);
+            }
+            box.appendChild(head);
+
+            var list = document.createElement('div');
+            list.className = 'mt-cal-day-events';
+            dayEvents.slice(0, MAX_PER_DAY).forEach(function (ev) {
+                var chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'mt-cal-event' + (ev.is_outage ? ' is-outage' : '');
+                chip.style.setProperty('--event-color', ev.type_color);
+                chip.title = ev.title + ' · ' + ev.status_label;
+                chip.dataset.mtEvent = String(ev.id);
+                var time = document.createElement('b');
+                time.textContent = ev.time;
+                var name = document.createElement('span');
+                name.textContent = ev.title;
+                chip.appendChild(time);
+                chip.appendChild(name);
+                list.appendChild(chip);
+            });
+            box.appendChild(list);
+            grid.appendChild(box);
+
+            if (inMonth) {
+                counters.total += dayEvents.length;
+                dayEvents.forEach(function (ev) {
+                    if (ev.is_outage) { counters.outages += 1; } else { counters.schedules += 1; }
+                    if (ev.is_incident) { counters.incidents += 1; }
+                });
+            }
         }
 
-        const html = [];
-        for (let i = 0; i < totalCells; i++) {
-            const dayNum = i - firstWeekday + 1;
-            const inMonth = dayNum >= 1 && dayNum <= end.getDate();
-            const d = new Date(y, m, inMonth ? dayNum : 1);
-            const k = inMonth ? key(d) : "";
-            const isPast = inMonth && d < today;
-            const events = inMonth ? (byDay[k] || []) : [];
-            html.push(`<div class="maintenance-day ${inMonth ? "" : "is-out"} ${isPast ? "is-past" : ""}" ${inMonth && !isPast ? `data-date="${k}"` : ""}>
-                <div class="maintenance-day-num">${inMonth ? dayNum : ""}</div>
-                <div class="maintenance-day-events">
-                    ${events.map(ev => `<span class="maintenance-day-event ${ev.is_outage ? "is-outage" : ""}" style="--event-color:${ev.type_color || "#343955"}">${ev.title}</span>`).join("")}
-                </div>
-            </div>`);
-        }
-        grid.innerHTML = html.join("");
+        document.getElementById('mtCalKpiTotal').textContent = counters.total;
+        document.getElementById('mtCalKpiSchedules').textContent = counters.schedules;
+        document.getElementById('mtCalKpiOutages').textContent = counters.outages;
+        document.getElementById('mtCalKpiIncidents').textContent = counters.incidents;
     }
 
-    prev.addEventListener("click", () => { view.setMonth(view.getMonth() - 1); render(); });
-    next.addEventListener("click", () => { view.setMonth(view.getMonth() + 1); render(); });
-    grid.addEventListener("dblclick", (ev) => {
-        const day = ev.target.closest(".maintenance-day[data-date]");
-        if (!day) return;
-        openModalForDay(day.getAttribute("data-date"));
+    document.getElementById('mtCalPrev').addEventListener('click', function () {
+        view.setMonth(view.getMonth() - 1);
+        render();
     });
-    grid.addEventListener("click", (ev) => {
-        const day = ev.target.closest(".maintenance-day[data-date]");
-        if (!day) return;
-        if (ev.detail === 2) openModalForDay(day.getAttribute("data-date"));
+    document.getElementById('mtCalNext').addEventListener('click', function () {
+        view.setMonth(view.getMonth() + 1);
+        render();
     });
-    modalClose.addEventListener("click", () => { modal.style.display = "none"; });
-    modal.addEventListener("click", (ev) => {
-        if (ev.target === modal) modal.style.display = "none";
+    document.getElementById('mtCalToday').addEventListener('click', function () {
+        view = new Date();
+        view.setDate(1);
+        render();
     });
+    document.getElementById('mtCalNew').addEventListener('click', function () { openForm(null); });
+
+    document.querySelectorAll('[data-mt-cal-filter]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            document.querySelectorAll('[data-mt-cal-filter]').forEach(function (other) {
+                other.classList.toggle('is-active', other === button);
+            });
+            filter = button.dataset.mtCalFilter;
+            render();
+        });
+    });
+
+    grid.addEventListener('click', function (event) {
+        var chip = event.target.closest('[data-mt-event]');
+        if (chip) {
+            var found = items.filter(function (ev) { return String(ev.id) === chip.dataset.mtEvent; })[0];
+            if (found) { openDetail(found); }
+            return;
+        }
+        var day = event.target.closest('[data-mt-day]');
+        if (day) { openForm(day.dataset.mtDay); }
+    });
+
+    document.querySelectorAll('[data-mt-close]').forEach(function (button) {
+        button.addEventListener('click', closeModals);
+    });
+    overlay.addEventListener('click', closeModals);
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { closeModals(); }
+    });
+
+    if (outageInput) {
+        outageInput.addEventListener('change', function () {
+            document.getElementById('mtCalFormTitle').textContent =
+                outageInput.checked ? 'Nova indisponibilidade' : 'Novo evento';
+        });
+    }
+
     render();
+    {% if open_modal %}openForm(null);{% endif %}
 })();
 </script>
 </body>

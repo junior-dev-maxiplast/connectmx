@@ -92,27 +92,81 @@ ORDER BY A.DATGER DESC, A.NUMNFV DESC, A.SEQIPV DESC
 """
 
 
-CUSTOMER_SEARCH_SQL = """
+# CGCCPF e uma coluna NUMBER no E085CLI: um CNPJ que comeca com zero perde esse
+# digito na conversao para texto e chega aqui com 13 caracteres. Por isso a
+# normalizacao usa LPAD para 14 e aceita 13 ou 14 digitos -- comparar com
+# LENGTH = 14 descartava os 600 clientes de CNPJ iniciado em zero (JBS, BRF,
+# Seara, Marfrig...), que ficavam sem nenhuma visao de grupo. CPF (11 digitos ou
+# menos) continua de fora, que e o que a faixa 13-14 garante.
+CNPJ_DIGITS_SQL = "LPAD(REGEXP_REPLACE(NVL({column}, ''), '[^0-9]', ''), 14, '0')"
+CNPJ_ROOT_SQL = f"SUBSTR({CNPJ_DIGITS_SQL}, 1, 8)"
+CNPJ_IS_COMPANY_SQL = "LENGTH(REGEXP_REPLACE(NVL({column}, ''), '[^0-9]', '')) BETWEEN 13 AND 14"
+
+
+CUSTOMER_SEARCH_SQL = f"""
 SELECT * FROM (
   SELECT DISTINCT
     C.CODCLI AS CODIGO,
     C.NOMCLI AS NOME,
     C.CGCCPF AS CNPJ,
+    C.ENDCLI AS ENDERECO,
     C.CIDCLI AS CIDADE,
     C.SIGUFS AS UF
   FROM E085CLI C
   INNER JOIN E140NFV N ON N.CODCLI = C.CODCLI
+  INNER JOIN E140IPV A
+    ON A.CODEMP = N.CODEMP AND A.CODFIL = N.CODFIL AND A.NUMNFV = N.NUMNFV
+  INNER JOIN E120PED D
+    ON A.NUMPED = D.NUMPED AND A.CODEMP = D.CODEMP AND A.CODFIL = D.CODFIL
   WHERE C.CODCLI NOT IN (1001, 1002, 1004)
+    AND A.CODSNF = 'NFE'
+    AND D.SITPED <> 5
+    AND D.VLRORI <> 0
+    AND D.TNSPRO NOT IN ('90109', '90121', '90108')
     AND (
       :term IS NULL
       OR TO_CHAR(C.CODCLI) LIKE :pattern
       OR UPPER(C.NOMCLI) LIKE :pattern
-      OR REPLACE(REPLACE(REPLACE(C.CGCCPF, '.', ''), '/', ''), '-', '') LIKE :digits_pattern
+      OR {CNPJ_DIGITS_SQL.format(column='C.CGCCPF')} LIKE :digits_pattern
+      OR UPPER(C.ENDCLI) LIKE :pattern
       OR UPPER(C.CIDCLI) LIKE :pattern
     )
   ORDER BY C.NOMCLI
 )
 WHERE ROWNUM <= 12
+"""
+
+
+CUSTOMER_GROUP_MEMBERS_SQL = f"""
+WITH CLIENTE_ORIGEM AS (
+  SELECT
+    {CNPJ_ROOT_SQL.format(column='CGCCPF')} AS RAIZ_CNPJ
+  FROM E085CLI
+  WHERE CODCLI = :customer_id
+    AND {CNPJ_IS_COMPANY_SQL.format(column='CGCCPF')}
+)
+SELECT DISTINCT
+  C.CODCLI AS CODIGO,
+  C.NOMCLI AS NOME,
+  {CNPJ_DIGITS_SQL.format(column='C.CGCCPF')} AS CNPJ,
+  C.ENDCLI AS ENDERECO,
+  C.CIDCLI AS CIDADE,
+  C.SIGUFS AS UF,
+  {CNPJ_ROOT_SQL.format(column='C.CGCCPF')} AS RAIZ_CNPJ
+FROM E085CLI C
+INNER JOIN E140NFV N ON N.CODCLI = C.CODCLI
+INNER JOIN E140IPV A
+  ON A.CODEMP = N.CODEMP AND A.CODFIL = N.CODFIL AND A.NUMNFV = N.NUMNFV
+INNER JOIN E120PED D
+  ON A.NUMPED = D.NUMPED AND A.CODEMP = D.CODEMP AND A.CODFIL = D.CODFIL
+WHERE {CNPJ_IS_COMPANY_SQL.format(column='C.CGCCPF')}
+  AND {CNPJ_ROOT_SQL.format(column='C.CGCCPF')} = (SELECT RAIZ_CNPJ FROM CLIENTE_ORIGEM)
+  AND C.CODCLI NOT IN (1001, 1002, 1004)
+  AND A.CODSNF = 'NFE'
+  AND D.SITPED <> 5
+  AND D.VLRORI <> 0
+  AND D.TNSPRO NOT IN ('90109', '90121', '90108')
+ORDER BY C.CIDCLI, C.CODCLI
 """
 
 
@@ -270,15 +324,68 @@ def _query_many(statements, params):
     return results
 
 
-def _load_customer_sources(customer_id):
+def _customer_code_params(customer_codes):
+    normalized_codes = [int(code) for code in customer_codes]
+    if not normalized_codes:
+        raise ValueError("Informe ao menos um codigo de cliente.")
+    params = {f"customer_code_{index}": code for index, code in enumerate(normalized_codes)}
+    placeholders = ", ".join(f":customer_code_{index}" for index in range(len(normalized_codes)))
+    return placeholders, params
+
+
+def _resolve_customer_scope(customer_id, view_mode="individual", member_customer_id=None):
+    members = _query(CUSTOMER_GROUP_MEMBERS_SQL, {"customer_id": customer_id})
+    if not members:
+        return {
+            "mode": "individual",
+            "root": "",
+            "root_display": "",
+            "members": [],
+            "selected_member_id": customer_id,
+            "customer_codes": [customer_id],
+        }
+
+    normalized_members = [
+        {
+            "code": int(row["codigo"]),
+            "name": row["nome"] or f"Cliente {row['codigo']}",
+            "cnpj": format_cnpj(row["cnpj"]),
+            "address": row["endereco"] or "Endereco nao informado",
+            "city": row["cidade"] or "",
+            "state": row["uf"] or "",
+        }
+        for row in members
+    ]
+    root = str(members[0]["raiz_cnpj"] or "")
+    valid_codes = {member["code"] for member in normalized_members}
+    selected_member_id = member_customer_id if member_customer_id in valid_codes else None
+
+    if view_mode == "group":
+        customer_codes = [selected_member_id] if selected_member_id else sorted(valid_codes)
+    else:
+        selected_member_id = customer_id if customer_id in valid_codes else normalized_members[0]["code"]
+        customer_codes = [selected_member_id]
+
+    return {
+        "mode": "group" if view_mode == "group" else "individual",
+        "root": root,
+        "root_display": format_cnpj_root(root),
+        "members": normalized_members,
+        "selected_member_id": selected_member_id,
+        "customer_codes": customer_codes,
+    }
+
+
+def _load_customer_sources(customer_codes):
+    placeholders, params = _customer_code_params(customer_codes)
     return _query_many(
         {
-            "sales": CUSTOMER_DNA_SQL,
-            "complaints": CUSTOMER_COMPLAINTS_SQL,
-            "returns": CUSTOMER_RETURNS_SQL,
-            "cliches": CUSTOMER_CLICHES_SQL,
+            "sales": CUSTOMER_DNA_SQL.replace("B.CODCLI = :customer_id", f"B.CODCLI IN ({placeholders})"),
+            "complaints": CUSTOMER_COMPLAINTS_SQL.replace("A.USU_CODCLI = :customer_id", f"A.USU_CODCLI IN ({placeholders})"),
+            "returns": CUSTOMER_RETURNS_SQL.replace("A.USU_CODCLI = :customer_id", f"A.USU_CODCLI IN ({placeholders})"),
+            "cliches": CUSTOMER_CLICHES_SQL.replace("A.USU_CODCLI = :customer_id", f"A.USU_CODCLI IN ({placeholders})"),
         },
-        {"customer_id": customer_id},
+        params,
     )
 
 
@@ -297,12 +404,39 @@ def search_customers(term):
         {
             "code": row["codigo"],
             "name": row["nome"] or "Cliente sem nome",
-            "cnpj": row["cnpj"] or "",
+            "cnpj": format_cnpj(row["cnpj"]),
+            "address": row["endereco"] or "",
             "city": row["cidade"] or "",
             "state": row["uf"] or "",
         }
         for row in rows
     ]
+
+
+def normalize_cnpj(value):
+    """Digitos do CNPJ com o zero a esquerda que a coluna NUMBER do ERP perde."""
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    if not digits:
+        return ""
+    if 13 <= len(digits) <= 14:
+        return digits.zfill(14)
+    return digits
+
+
+def format_cnpj(value):
+    """CNPJ mascarado (00.000.000/0000-00). CPF e valores atipicos passam direto."""
+    digits = normalize_cnpj(value)
+    if len(digits) != 14:
+        return digits
+    return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+
+
+def format_cnpj_root(value):
+    """Raiz do CNPJ mascarada (00.000.000)."""
+    digits = "".join(character for character in str(value or "") if character.isdigit())
+    if len(digits) != 8:
+        return digits
+    return f"{digits[:2]}.{digits[2:5]}.{digits[5:]}"
 
 
 def _number(value):
@@ -486,7 +620,7 @@ def _build_operational_data(complaint_rows, return_rows, cliche_rows, total_reve
     }
 
 
-def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, cliche_rows=None):
+def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, cliche_rows=None, scope=None):
     if not rows:
         return None
 
@@ -589,18 +723,33 @@ def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, c
         cliche_rows or [],
         total_revenue,
     )
+    scope = scope or {
+        "mode": "individual",
+        "root": str(customer_id),
+        "root_display": "",
+        "members": [],
+        "selected_member_id": customer_id,
+    }
 
     return {
         "customer": {
             "code": customer_id,
             "name": first["nome_cliente"] or first["nome_cliente_agrupador"] or f"Cliente {customer_id}",
-            "cnpj": str(first["cnpj_cliente"]) if first["cnpj_cliente"] is not None else "Não informado",
+            "cnpj": format_cnpj(first["cnpj_cliente"]) or "Não informado",
             "city": first["cidade_cliente"] or "Não informado",
             "state": first["sigla_estado_cliente"] or "-",
             "region": first["regiao_cliente"] or "Não definido",
             "market": first["tipo_mercado_cliente"] or "Não informado",
             "address": first["endereco_cliente"] or "Não informado",
             "representative": top_representative,
+        },
+        "group": {
+            "is_group_view": scope["mode"] == "group",
+            "root": scope["root"],
+            "root_display": scope.get("root_display") or scope["root"],
+            "members": scope["members"],
+            "members_count": len(scope["members"]),
+            "selected_member_id": scope["selected_member_id"],
         },
         "metrics": {
             "revenue": _format_money(total_revenue, compact=True),
@@ -810,7 +959,291 @@ def _operational_comparisons(operational, current_start, current_end, previous_s
     return comparisons
 
 
-def _build_intelligence(rows, dashboard):
+# Faixas que definem quando uma filial esta "no vermelho". Sao limiares
+# comerciais, nao estatisticos: retracao a partir de 15% na comparacao YTD e
+# meio ano sem comprar.
+BRANCH_DECLINE_PCT = -15.0
+BRANCH_GROWTH_PCT = 15.0
+BRANCH_INACTIVE_DAYS = 180
+# Qualidade fica separada do comercial: uma filial pode estar crescendo e ainda
+# assim ser a que mais devolve. Misturar as duas coisas em um status so esconde
+# justamente o caso que interessa.
+BRANCH_SEVERE_COMPLAINTS = 1
+BRANCH_RETURN_SHARE_PCT = 1.0
+
+# `short` existe para a tabela do PDF, onde a coluna e estreita e o rotulo
+# longo quebra em duas linhas.
+BRANCH_STATUS = {
+    "sem_faturamento": {"label": "Sem faturamento no ano", "short": "Sem faturamento", "tone": "red", "critical": True},
+    "inativa": {"label": "Sem compras recentes", "short": "Sem compras", "tone": "red", "critical": True},
+    "retracao": {"label": "Em retração", "short": "Retração", "tone": "red", "critical": True},
+    "crescimento": {"label": "Em crescimento", "short": "Crescimento", "tone": "green", "critical": False},
+    "estavel": {"label": "Estável", "short": "Estável", "tone": "neutral", "critical": False},
+}
+
+
+def _classify_branch(current_revenue, previous_revenue, change_pct, days_since_last_purchase):
+    """Situacao da filial na comparacao YTD. A ordem importa: o caso mais grave vence."""
+    if previous_revenue > 0 and current_revenue <= 0:
+        return "sem_faturamento"
+    if days_since_last_purchase is not None and days_since_last_purchase > BRANCH_INACTIVE_DAYS:
+        return "inativa"
+    if change_pct is not None and change_pct <= BRANCH_DECLINE_PCT:
+        return "retracao"
+    if change_pct is not None and change_pct >= BRANCH_GROWTH_PCT:
+        return "crescimento"
+    return "estavel"
+
+
+def _index_by_branch(source_rows, code_field):
+    """Agrupa linhas de reclamacao/devolucao pelo codigo do cliente (a filial)."""
+    grouped = defaultdict(list)
+    for row in source_rows or []:
+        code = row.get(code_field)
+        if code is not None:
+            grouped[int(code)].append(row)
+    return grouped
+
+
+def _build_branch_performance(rows, dashboard, ytd_window, complaint_rows=None, return_rows=None):
+    """Desempenho de cada filial do grupo, para destacar as que estao no vermelho.
+
+    Devolve None fora da visao de grupo inteiro: com uma unidade selecionada
+    existe uma filial so, e comparar filial com ela mesma nao diz nada.
+    """
+    group = dashboard.get("group") or {}
+    members = group.get("members") or []
+    if not group.get("is_group_view") or group.get("selected_member_id") or len(members) < 2:
+        return None
+
+    current_start, current_end, previous_start, previous_end = ytd_window
+
+    rows_by_branch = defaultdict(list)
+    for row in rows:
+        code = row.get("codigo_cliente")
+        if code is not None:
+            rows_by_branch[int(code)].append(row)
+
+    complaints_by_branch = _index_by_branch(complaint_rows, "cod_cliente")
+    returns_by_branch = _index_by_branch(return_rows, "cliente")
+
+    group_revenue = sum((_number(row.get("valor_bruto_faturado")) for row in rows), Decimal("0"))
+    group_current = sum(
+        (_number(row.get("valor_bruto_faturado")) for row in rows if _in_period(row, current_start, current_end)),
+        Decimal("0"),
+    )
+
+    branches = []
+    for member in members:
+        branch_rows = rows_by_branch.get(member["code"], [])
+        current = _summarize_invoice_period(branch_rows, current_start, current_end)
+        previous = _summarize_invoice_period(branch_rows, previous_start, previous_end)
+        change_pct = _percent_change(current["revenue"], previous["revenue"])
+
+        purchase_dates = sorted(
+            value for value in (_date_value(row.get("data_geracao")) for row in branch_rows) if value
+        )
+        last_purchase = purchase_dates[-1] if purchase_dates else None
+        days_since = (date.today() - last_purchase).days if last_purchase else None
+
+        revenue_total = sum((_number(row.get("valor_bruto_faturado")) for row in branch_rows), Decimal("0"))
+        status = _classify_branch(current["revenue"], previous["revenue"], change_pct, days_since)
+        meta = BRANCH_STATUS[status]
+
+        branch_complaints = complaints_by_branch.get(member["code"], [])
+        severe_complaints = [
+            item for item in branch_complaints
+            if (item.get("classificacao") or "Leve").strip().lower() == "grave"
+        ]
+        branch_returns = returns_by_branch.get(member["code"], [])
+        returned_value = sum((_number(item.get("devolvido")) for item in branch_returns), Decimal("0"))
+        return_share_pct = round(float(returned_value / revenue_total * 100), 2) if revenue_total else 0.0
+        quality_alert = bool(
+            len(severe_complaints) >= BRANCH_SEVERE_COMPLAINTS or return_share_pct >= BRANCH_RETURN_SHARE_PCT
+        )
+
+        branches.append(
+            {
+                "code": member["code"],
+                "name": member["name"],
+                "cnpj": member["cnpj"],
+                "city": member["city"],
+                "state": member["state"],
+                "location": f"{member['city']}/{member['state']}".strip("/"),
+                "status": status,
+                "status_label": meta["label"],
+                "status_short": meta["short"],
+                "tone": meta["tone"],
+                "is_critical": meta["critical"],
+                "revenue_total": float(revenue_total),
+                "revenue_total_display": _format_money(revenue_total, compact=True),
+                "share_pct": round(float(revenue_total / group_revenue * 100), 1) if group_revenue else 0.0,
+                "ytd_revenue": float(current["revenue"]),
+                "ytd_revenue_display": _format_money(current["revenue"], compact=True),
+                "previous_ytd_revenue": float(previous["revenue"]),
+                "previous_ytd_revenue_display": _format_money(previous["revenue"], compact=True),
+                "change_pct": change_pct,
+                "change_display": _format_percent(change_pct),
+                # Quanto de receita o grupo deixou de fazer nesta filial: e o que
+                # ordena a conversa comercial, nao o percentual isolado.
+                "revenue_gap": float(current["revenue"] - previous["revenue"]),
+                "revenue_gap_display": _format_money(current["revenue"] - previous["revenue"], compact=True),
+                "orders": current["orders"],
+                "invoices": current["invoices"],
+                "last_purchase": _iso_date(last_purchase),
+                "last_purchase_display": _display_date(last_purchase) if last_purchase else "-",
+                "days_since_last_purchase": days_since,
+                "complaints": len(branch_complaints),
+                "severe_complaints": len(severe_complaints),
+                "returns": len(branch_returns),
+                "returned_value": float(returned_value),
+                "returned_value_display": _format_money(returned_value, compact=True),
+                "return_share_pct": return_share_pct,
+                "quality_alert": quality_alert,
+            }
+        )
+
+    branches.sort(key=lambda item: item["revenue_total"], reverse=True)
+    critical = [branch for branch in branches if branch["is_critical"]]
+    growing = [branch for branch in branches if branch["status"] == "crescimento"]
+    # A pior filial e a que mais tirou receita do grupo, nao a de maior queda
+    # percentual: 80% de queda em uma filial pequena pesa menos que 20% na maior.
+    critical.sort(key=lambda item: item["revenue_gap"])
+    growing.sort(key=lambda item: item["revenue_gap"], reverse=True)
+    # Qualidade ordena por valor devolvido: e o numero que a fabrica consegue atacar.
+    quality = [branch for branch in branches if branch["quality_alert"]]
+    quality.sort(key=lambda item: (item["severe_complaints"], item["returned_value"]), reverse=True)
+
+    counts = defaultdict(int)
+    for branch in branches:
+        counts[branch["status"]] += 1
+
+    critical_revenue = sum((Decimal(str(branch["revenue_total"])) for branch in critical), Decimal("0"))
+    critical_gap = sum((Decimal(str(branch["revenue_gap"])) for branch in critical), Decimal("0"))
+
+    return {
+        "count": len(branches),
+        "critical_count": len(critical),
+        "growing_count": len(growing),
+        "status_counts": dict(counts),
+        # Peso das filiais em alerta: contagem sozinha engana quando o grupo
+        # concentra a receita em uma unidade.
+        "quality_alert_count": len(quality),
+        "severe_complaints_total": sum(branch["severe_complaints"] for branch in branches),
+        "returned_value_total": float(sum((Decimal(str(branch["returned_value"])) for branch in branches), Decimal("0"))),
+        "quality_thresholds": {
+            "severe_complaints": BRANCH_SEVERE_COMPLAINTS,
+            "return_share_pct": BRANCH_RETURN_SHARE_PCT,
+        },
+        "critical_share_pct": round(float(critical_revenue / group_revenue * 100), 1) if group_revenue else 0.0,
+        "critical_gap_share_pct": round(float(abs(critical_gap) / group_current * 100), 1) if group_current else 0.0,
+        "thresholds": {
+            "decline_pct": BRANCH_DECLINE_PCT,
+            "growth_pct": BRANCH_GROWTH_PCT,
+            "inactive_days": BRANCH_INACTIVE_DAYS,
+        },
+        "group_ytd_revenue": float(group_current),
+        "critical_revenue_gap": float(critical_gap),
+        "top_concentration_pct": branches[0]["share_pct"] if branches else 0.0,
+        "top_concentration_name": branches[0]["location"] or branches[0]["name"] if branches else "",
+        "branches": branches,
+        "critical_branches": critical,
+        "growing_branches": growing,
+        "quality_branches": quality,
+    }
+
+
+def _in_period(row, start_date, end_date):
+    generation_date = _date_value(row.get("data_geracao"))
+    return bool(generation_date and start_date <= generation_date <= end_date)
+
+
+def _build_branch_cards(branch_performance):
+    """Cards de filial. Entram na tela, no payload da IA e no PDF pelo mesmo caminho."""
+    if not branch_performance:
+        return []
+
+    cards = []
+    critical = branch_performance["critical_branches"]
+    growing = branch_performance["growing_branches"]
+
+    if critical:
+        worst = critical[:3]
+        detail = "; ".join(
+            f"{branch['location'] or branch['name']} ({branch['status_label'].lower()}, {branch['change_display']})"
+            for branch in worst
+        )
+        cards.append(
+            {
+                "type": "branch_alert",
+                "tone": "red",
+                "eyebrow": "Filiais em alerta",
+                "title": f"{branch_performance['critical_count']} de {branch_performance['count']} filiais no vermelho",
+                "summary": (
+                    f"Elas somam {_format_number(branch_performance['critical_share_pct'])}% do faturamento histórico do grupo e deixaram de faturar "
+                    f"{_format_money(abs(Decimal(str(branch_performance['critical_revenue_gap']))), compact=True)} no YTD contra o mesmo período do ano anterior "
+                    f"({_format_number(branch_performance['critical_gap_share_pct'])}% do YTD do grupo). Concentre a conversa em: {detail}."
+                ),
+                "evidence": [
+                    f"{branch['location'] or branch['name']}: {branch['ytd_revenue_display']} ({branch['change_display']})"
+                    for branch in worst
+                ]
+                + [f"Critério: queda ≥ {abs(BRANCH_DECLINE_PCT):.0f}% ou {BRANCH_INACTIVE_DAYS} dias sem compra"],
+            }
+        )
+
+    quality = branch_performance["quality_branches"]
+    if quality:
+        piores = quality[:3]
+        detalhe = "; ".join(
+            f"{branch['location'] or branch['name']} ({branch['severe_complaints']} grave(s), "
+            f"{branch['returns']} devolução(ões) = {_format_number(branch['return_share_pct'], 2)}% do faturamento)"
+            for branch in piores
+        )
+        cards.append(
+            {
+                "type": "branch_quality",
+                "tone": "amber",
+                "eyebrow": "Qualidade por filial",
+                "title": f"{branch_performance['quality_alert_count']} filial(is) com qualidade em alerta",
+                "summary": (
+                    f"O grupo acumula {branch_performance['severe_complaints_total']} reclamação(ões) grave(s) e "
+                    f"{_format_money(Decimal(str(branch_performance['returned_value_total'])), compact=True)} devolvidos. "
+                    f"A concentração está em: {detalhe}."
+                ),
+                "evidence": [
+                    f"{branch['location'] or branch['name']}: {branch['returned_value_display']} devolvidos "
+                    f"({_format_number(branch['return_share_pct'], 2)}%), {branch['severe_complaints']} grave(s)"
+                    for branch in piores
+                ]
+                + [f"Critério: 1 reclamação grave ou devoluções ≥ {BRANCH_RETURN_SHARE_PCT:.0f}% do faturamento da filial"],
+            }
+        )
+
+    if growing:
+        best = growing[:3]
+        cards.append(
+            {
+                "type": "branch_highlight",
+                "tone": "green",
+                "eyebrow": "Filiais em destaque",
+                "title": f"{branch_performance['growing_count']} filial(is) crescendo acima de {BRANCH_GROWTH_PCT:.0f}%",
+                "summary": (
+                    f"O maior ganho de receita vem de {best[0]['location'] or best[0]['name']}, com {best[0]['revenue_gap_display']} a mais "
+                    f"({best[0]['change_display']}) no YTD. A maior filial do grupo concentra "
+                    f"{_format_number(branch_performance['top_concentration_pct'])}% do faturamento histórico."
+                ),
+                "evidence": [
+                    f"{branch['location'] or branch['name']}: {branch['ytd_revenue_display']} ({branch['change_display']})"
+                    for branch in best
+                ],
+            }
+        )
+
+    return cards
+
+
+def _build_intelligence(rows, dashboard, complaint_rows=None, return_rows=None):
     dated_rows = [row for row in rows if _date_value(row.get("data_geracao"))]
     if not dated_rows:
         return None
@@ -846,6 +1279,14 @@ def _build_intelligence(rows, dashboard):
     rolling_previous_start = _shift_month(rolling_current_start, -12)
     rolling_current = _summarize_invoice_period(rows, rolling_current_start, period_end)
     rolling_previous = _summarize_invoice_period(rows, rolling_previous_start, rolling_previous_end)
+
+    branch_performance = _build_branch_performance(
+        rows,
+        dashboard,
+        (current_ytd_start, period_end, previous_ytd_start, previous_ytd_end),
+        complaint_rows=complaint_rows,
+        return_rows=return_rows,
+    )
 
     current_order_ytd = _summarize_order_period(orders, current_ytd_start, period_end)
     previous_order_ytd = _summarize_order_period(orders, previous_ytd_start, previous_ytd_end)
@@ -996,6 +1437,8 @@ def _build_intelligence(rows, dashboard):
             "evidence": [f"Valor aberto: {_format_money(sum((_number(item['value']) for item in open_orders), Decimal('0')))}", f"Saldo: {_format_number(sum(item['balance_quantity'] for item in open_orders))} unidades"],
         },
     ]
+    cards.extend(_build_branch_cards(branch_performance))
+
     complaint_metrics = operational["complaints"]
     return_metrics = operational["returns"]
     cliche_metrics = operational["cliches"]
@@ -1055,6 +1498,30 @@ def _build_intelligence(rows, dashboard):
     if open_orders:
         order_numbers = ", ".join(str(item["number"]) for item in open_orders[:4])
         actions.append({"title": "Garantir execução da carteira aberta", "detail": f"Acompanhar os pedidos {order_numbers} até o faturamento completo.", "evidence": f"{len(open_orders)} pedido(s) aberto(s)."})
+    if branch_performance and branch_performance["critical_branches"]:
+        worst = branch_performance["critical_branches"][:3]
+        nomes = ", ".join(branch["location"] or branch["name"] for branch in worst)
+        actions.append({
+            "title": "Recuperar as filiais no vermelho",
+            "detail": f"Montar plano por filial comecando por {nomes}, separando queda de preco, de mix e de frequencia.",
+            "evidence": f"{branch_performance['critical_count']} de {branch_performance['count']} filiais em alerta, "
+                        f"{_format_money(abs(Decimal(str(branch_performance['critical_revenue_gap']))), compact=True)} de receita a menos no YTD.",
+        })
+    if branch_performance and branch_performance.get("quality_branches"):
+        piores = branch_performance["quality_branches"][:3]
+        nomes = ", ".join(branch["location"] or branch["name"] for branch in piores)
+        actions.append({
+            "title": "Atacar qualidade nas filiais criticas",
+            "detail": f"Levar o plano de qualidade para {nomes}, cruzando problema, maquina e nota fiscal de cada ocorrencia.",
+            "evidence": f"{branch_performance['quality_alert_count']} filial(is) em alerta, "
+                        f"{branch_performance['severe_complaints_total']} reclamacao(oes) grave(s) no grupo.",
+        })
+    if branch_performance and branch_performance["top_concentration_pct"] >= 40:
+        actions.append({
+            "title": "Reduzir a dependencia de uma filial",
+            "detail": f"A filial {branch_performance['top_concentration_name']} concentra boa parte do grupo; desenvolver as demais reduz o risco.",
+            "evidence": f"{_format_number(branch_performance['top_concentration_pct'])}% do faturamento historico em uma filial.",
+        })
     if growth_gap is not None and abs(growth_gap) >= 10:
         actions.append({"title": "Monitorar volume separado da receita", "detail": "Acompanhar mensalmente quantidade e valor por unidade para separar consumo físico de preço e mix.", "evidence": f"Diferença YTD de {_format_percent(growth_gap)}."})
     if top_two_share >= 60:
@@ -1093,6 +1560,7 @@ def _build_intelligence(rows, dashboard):
             "ytd_comparison": operational_ytd,
         },
         "monthly_series": monthly_series,
+        "branch_performance": branch_performance,
         "classification": classification,
         "actions": actions,
         "historical": {"revenue": float(total_revenue), "quantity": float(total_quantity), "orders": len(orders)},
@@ -1139,8 +1607,30 @@ def _build_ai_payload(dashboard, intelligence, fingerprint):
     source_records = {}
     for source_name in ("complaints", "returns", "cliches"):
         source_records[source_name] = deterministic_metrics["operational"][source_name].pop("items", [])
+    branch_performance = deterministic_metrics.get("branch_performance")
+    if branch_performance:
+        # `critical_branches` e `growing_branches` repetem os mesmos objetos de
+        # `branches`; no payload basta a ordem, que e a informacao que elas
+        # carregam, sem pagar o triplo de tokens pelo mesmo conteudo.
+        for key in ("critical_branches", "growing_branches", "quality_branches"):
+            branch_performance[key] = [branch["code"] for branch in branch_performance.get(key) or []]
+
+    branch_instructions = (
+        [
+            "Este e um grupo economico: `deterministic_metrics.branch_performance` traz cada filial com faturamento YTD, "
+            "variacao contra o ano anterior, participacao, ultima compra e situacao.",
+            "Dedique pelo menos um insight as filiais classificadas como criticas (`is_critical`), citando-as pelo nome e cidade.",
+            "Ordene as filiais criticas por `revenue_gap` (receita perdida), nao pelo percentual de queda isolado.",
+            "Nao trate o grupo como um cliente unico quando o comportamento das filiais for divergente.",
+            "Trate qualidade (`quality_alert`, reclamacoes graves e devolucoes por filial) separado do desempenho comercial: "
+            "uma filial pode crescer e ainda assim ser a que mais devolve.",
+        ]
+        if branch_performance
+        else []
+    )
+
     return {
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "request_type": "customer_commercial_intelligence",
         "source_system": "ConnectMX / ERP Senior",
         "source_fingerprint": fingerprint,
@@ -1149,7 +1639,12 @@ def _build_ai_payload(dashboard, intelligence, fingerprint):
         "deterministic_metrics": deterministic_metrics,
         "deterministic_insight_cards": intelligence["cards"],
         "source_records": source_records,
-        "analysis_instructions": [
+        "analysis_scope": {
+            "is_group": bool(branch_performance),
+            "branches": branch_performance["count"] if branch_performance else 0,
+            "critical_branches": branch_performance["critical_count"] if branch_performance else 0,
+        },
+        "analysis_instructions": branch_instructions + [
             "Use somente os fatos e métricas fornecidos.",
             "Não invente causas para variações, suspensões, preços ou comportamento do cliente.",
             "Diferencie crescimento de receita, quantidade e entrada de pedidos.",
@@ -1165,8 +1660,9 @@ def _build_ai_payload(dashboard, intelligence, fingerprint):
     }
 
 
-def prepare_customer_insights(customer_id):
-    sources = _load_customer_sources(customer_id)
+def prepare_customer_insights(customer_id, view_mode="individual", member_customer_id=None):
+    scope = _resolve_customer_scope(customer_id, view_mode, member_customer_id)
+    sources = _load_customer_sources(scope["customer_codes"])
     rows = sources["sales"]
     dashboard = _build_dashboard(
         rows,
@@ -1174,13 +1670,23 @@ def prepare_customer_insights(customer_id):
         complaint_rows=sources["complaints"],
         return_rows=sources["returns"],
         cliche_rows=sources["cliches"],
+        scope=scope,
     )
     if dashboard is None:
         return None
-    intelligence = _build_intelligence(rows, dashboard)
+    intelligence = _build_intelligence(
+        rows,
+        dashboard,
+        complaint_rows=sources["complaints"],
+        return_rows=sources["returns"],
+    )
     fingerprint = _source_fingerprint(sources)
     return {
         "dashboard": dashboard,
+        # Escopo efetivamente resolvido, nao o pedido: e por ele que o snapshot
+        # e gravado e reencontrado depois.
+        "view_mode": scope["mode"],
+        "member_customer_id": scope["selected_member_id"] if scope["mode"] == "group" else None,
         "metrics": intelligence["metrics"],
         "cards": intelligence["cards"],
         "period_start": intelligence["period_start"],
@@ -1191,12 +1697,14 @@ def prepare_customer_insights(customer_id):
     }
 
 
-def load_customer_dna(customer_id):
-    sources = _load_customer_sources(customer_id)
+def load_customer_dna(customer_id, view_mode="individual", member_customer_id=None):
+    scope = _resolve_customer_scope(customer_id, view_mode, member_customer_id)
+    sources = _load_customer_sources(scope["customer_codes"])
     return _build_dashboard(
         sources["sales"],
         customer_id,
         complaint_rows=sources["complaints"],
         return_rows=sources["returns"],
         cliche_rows=sources["cliches"],
+        scope=scope,
     )

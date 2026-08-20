@@ -28,6 +28,18 @@ def _initials(user):
     return (parts[0][0] + parts[-1][0]).upper()
 
 
+def _parse_ai_daily_limit(raw_value):
+    """Limite diario de IA vindo do formulario. Em branco = sem limite."""
+    value = (raw_value or "").strip()
+    if not value:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(parsed, 0)
+
+
 def _sync_dashboard_access(user, slugs, granted_by=None):
     """Deixa os acessos do usuário exatamente iguais aos slugs marcados."""
     catalog = {dash.slug: dash for dash in Dashboard.objects.filter(is_active=True)}
@@ -162,6 +174,7 @@ def createUser(request):
                     user.representative_code = representative_code if is_representative else None
                     user.is_system_admin = is_system_admin
                     user.can_access_internal = request.POST.get("can_access_internal") == "on"
+                    user.dashes_ai_daily_limit = _parse_ai_daily_limit(request.POST.get("dashes_ai_daily_limit"))
                     if password:
                         user.set_password(password)
                     user.save()
@@ -200,6 +213,7 @@ def createUser(request):
                         representative_code=representative_code if is_representative else None,
                         is_system_admin=is_system_admin,
                         can_access_internal=request.POST.get("can_access_internal") == "on",
+                        dashes_ai_daily_limit=_parse_ai_daily_limit(request.POST.get("dashes_ai_daily_limit")),
                         password=password,
                     )
                     _sync_dashboard_access(

@@ -1,0 +1,618 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | BI do TI</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    <link rel="stylesheet" href="{% static '/style/itBi.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="itbi">
+    {% include 'partials/dashes_sidebar.html' %}
+
+    <main class="bi-page">
+        <header class="bi-topbar">
+            <div>
+                <span class="bi-kicker">Central de serviços · SM</span>
+                <h1>BI do TI</h1>
+            </div>
+
+            {% if dashboard %}
+            <div class="bi-filters">
+                <div class="bi-filter-group">
+                    <span>Período</span>
+                    {% for choice in dashboard.scope.period_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.period.key %} is-active{% endif %}"
+                           href="{{ it_bi_page_url }}?periodo={{ choice.key }}&empresa={{ dashboard.scope.company.key }}&atendente={{ dashboard.scope.attendant.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Empresa</span>
+                    {% for choice in dashboard.scope.company_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.company.key %} is-active{% endif %}"
+                           href="{{ it_bi_page_url }}?periodo={{ dashboard.scope.period.key }}&empresa={{ choice.key }}&atendente={{ dashboard.scope.attendant.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Atendente</span>
+                    {% for choice in dashboard.scope.attendant_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.attendant.key %} is-active{% endif %}"
+                           href="{{ it_bi_page_url }}?periodo={{ dashboard.scope.period.key }}&empresa={{ dashboard.scope.company.key }}&atendente={{ choice.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="bi-ai-actions">
+                <form id="biIndicatorForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="empresa" value="{{ dashboard.scope.company.key }}">
+                    <input type="hidden" name="atendente" value="{{ dashboard.scope.attendant.key }}">
+                    <button type="submit" class="bi-btn" id="biIndicatorButton">
+                        <span>▦</span>{% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
+                    </button>
+                </form>
+                <form id="biAiForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="empresa" value="{{ dashboard.scope.company.key }}">
+                    <input type="hidden" name="atendente" value="{{ dashboard.scope.attendant.key }}">
+                    <button type="submit" class="bi-btn is-ai{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="biAiButton"
+                            {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                        <span>✦</span>{% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
+                    </button>
+                </form>
+                {% if insight_snapshot %}
+                    <a class="bi-btn" href="{{ it_bi_payload_url }}{{ it_bi_scope_query }}" target="_blank" rel="noopener">JSON IA</a>
+                    <a class="bi-btn is-pdf" href="{{ it_bi_pdf_url }}{{ it_bi_scope_query }}"
+                       title="{% if insight_snapshot.ai_response %}Baixar relatório com a análise da IA{% else %}Baixar relatório dos indicadores (sem análise da IA){% endif %}">PDF{% if not insight_snapshot.ai_response %} dos indicadores{% else %} completo{% endif %}</a>
+                {% endif %}
+                {% if dna_ai_quota.limit != None %}
+                    <span class="bi-quota{% if dna_ai_quota.blocked %} is-blocked{% endif %}" title="Análises de IA usadas hoje">IA {{ dna_ai_quota.used }}/{{ dna_ai_quota.limit }}</span>
+                {% endif %}
+            </div>
+            <div class="bi-status"><i></i> SM · helpdesk</div>
+            {% endif %}
+        </header>
+
+        {% if data_error %}
+            <section class="bi-shell">
+                <div class="bi-empty">
+                    <strong>Não foi possível carregar os indicadores</strong>
+                    <span>{{ data_error }}</span>
+                </div>
+            </section>
+        {% endif %}
+
+        {% if dashboard %}
+        <div class="bi-shell">
+            {% if insight_snapshot.ai_response %}
+            <section class="bi-panel bi-ai">
+                <div class="bi-panel-head">
+                    <h2>Análise da IA</h2>
+                    <span>{{ insight_snapshot.scope_label }} · {{ insight_snapshot.ai_model|default:"-" }} · {{ insight_snapshot.ai_total_tokens }} tokens</span>
+                </div>
+
+                {% if insight_stale %}
+                <p class="bi-stale">Os números mudaram desde esta análise. Gere os indicadores e peça uma nova para atualizar as conclusões.</p>
+                {% endif %}
+
+                <div class="bi-ai-head">
+                    <span class="bi-health is-{{ insight_snapshot.ai_response.health }}">{{ insight_snapshot.ai_response.health|title }}</span>
+                    <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                </div>
+
+                <div class="bi-grid is-2" style="margin-top: 13px;">
+                    <div class="bi-callout is-red"><span>Principal risco</span><strong>{{ insight_snapshot.ai_response.principal_risk }}</strong></div>
+                    <div class="bi-callout is-green"><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></div>
+                </div>
+
+                <div class="bi-ai-cards">
+                    {% for item in insight_snapshot.ai_response.insights %}
+                    <article class="bi-ai-card is-{{ item.type }}">
+                        <div class="bi-ai-card-head">
+                            <strong>{{ item.title }}</strong>
+                            <span class="bi-tag">{{ item.confidence }}</span>
+                        </div>
+                        <p>{{ item.summary }}</p>
+                        {% if item.evidence %}
+                        <div class="bi-evidence">
+                            {% for evidence in item.evidence %}<span>{{ evidence }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="bi-action"><b>Ação:</b> {{ item.recommended_action }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                {% if insight_snapshot.ai_response.recommended_actions %}
+                <div class="bi-actions-list">
+                    <span>Plano recomendado</span>
+                    <ol>{% for action in insight_snapshot.ai_response.recommended_actions %}<li>{{ action }}</li>{% endfor %}</ol>
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
+
+            {% if insight_snapshot.metrics.deep %}
+            {% with deep=insight_snapshot.metrics.deep %}
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Tempo de resolução</h2>
+                        <span>{{ deep.resolution_total }} chamados resolvidos</span>
+                    </div>
+                    <div class="bi-chart is-tall">
+                        {% for item in deep.resolution_spread %}
+                        <div title="{{ item.label }}: {{ item.total_display }} ({{ item.share_pct }}%) · média {{ item.average_display }}">
+                            <div class="bi-chart-bars">
+                                <i class="{% if forloop.counter <= 2 %}is-closed{% elif forloop.last %}is-late{% else %}is-open{% endif %}" style="height: {% widthratio item.share_pct 50 100 %}%"></i>
+                            </div>
+                            <b>{{ item.share_pct }}%</b>
+                            <small>{{ item.label }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">A altura é a participação de cada faixa. A média dentro da faixa aparece ao passar o mouse.</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Satisfação por tempo de resolução</h2>
+                        <span>nota média em cada faixa</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in deep.rating_vs_speed %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.rating_display }} · {{ item.rated }} avaliações</span></div>
+                            <div class="bi-bar-track"><i class="{% if item.rating >= 9.5 %}is-green{% elif item.rating >= 9 %}is-amber{% else %}is-red{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Escala de 0 a 10 — a barra mostra a nota, não a comparação entre faixas.</p>
+                </section>
+            </div>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Quando a demanda chega</h2>
+                        <span>pico de {{ deep.heatmap.peak }} chamados</span>
+                    </div>
+                    <div class="bi-heat">
+                        <div class="bi-heat-row is-head">
+                            <span></span>
+                            {% for label in deep.heatmap.hour_labels %}<span>{{ label }}</span>{% endfor %}
+                        </div>
+                        {% for row in deep.heatmap.rows %}
+                        <div class="bi-heat-row">
+                            <span>{{ row.label }}</span>
+                            {% for cell in row.cells %}
+                            <i style="--heat: {{ cell.intensity }}" title="{{ row.label }} {{ cell.total }} chamado(s)">{{ cell.total }}</i>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Solicitantes recorrentes</h2>
+                        <span>top 10 do período</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in deep.recurrent_requesters %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.total_display }} · {{ item.average_display }}</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">{{ item.area }}</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+            {% endwith %}
+            {% elif insight_snapshot.ai_error %}
+            <section class="bi-panel bi-ai-empty">
+                <strong>A última análise falhou</strong>
+                <em>{{ insight_snapshot.ai_error }}</em>
+            </section>
+            {% endif %}
+
+            <section class="bi-kpis">
+                <div class="bi-kpi is-blue">
+                    <span>Chamados</span>
+                    <strong>{{ dashboard.metrics.tickets_display }}</strong>
+                    <small>abertos em {{ dashboard.scope.period.label|lower }}</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Fechados</span>
+                    <strong>{{ dashboard.metrics.closed_display }}</strong>
+                    <small>{{ dashboard.metrics.closed_pct }}% do período</small>
+                </div>
+                <div class="bi-kpi is-amber">
+                    <span>Backlog</span>
+                    <strong>{{ dashboard.metrics.backlog_display }}</strong>
+                    <small>em aberto hoje, todo o histórico</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>Tempo de resolução</span>
+                    <strong>{{ dashboard.metrics.resolution_display }}</strong>
+                    <small>média da abertura ao fechamento</small>
+                </div>
+                <div class="bi-kpi is-blue">
+                    <span>Tempo de atendimento</span>
+                    <strong>{{ dashboard.metrics.attending_display }}</strong>
+                    <small>média apontada no chamado</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Avaliação</span>
+                    <strong>{{ dashboard.metrics.rating_display }}</strong>
+                    <small>{{ dashboard.metrics.rating_count }} avaliações no período</small>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>SLA vencido</span>
+                    <strong>{{ dashboard.sla.breached_display }}</strong>
+                    <small>{{ dashboard.sla.breached_pct }}% dos {{ dashboard.sla.measured_display }} com SLA</small>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>Avaliações ruins</span>
+                    <strong>{{ dashboard.ratings.bad }}</strong>
+                    <small>nota até {{ dashboard.ratings.bad_max }} · {{ dashboard.ratings.bad_pct }}% das avaliadas</small>
+                </div>
+            </section>
+
+            <div class="bi-grid is-aside">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Abertos e fechados por mês</h2>
+                        <span>{{ dashboard.scope.period.label }} · {{ dashboard.scope.company.label }}</span>
+                    </div>
+                    {% if dashboard.monthly %}
+                    <div class="bi-chart">
+                        {% for item in dashboard.monthly %}
+                        <div title="{{ item.label }}: {{ item.abertos }} aberto(s), {{ item.fechados }} fechado(s)">
+                            <div class="bi-chart-bars">
+                                <i class="is-open" style="height: {{ item.height_pct }}%"></i>
+                                <i class="is-closed" style="height: {% widthratio item.fechados item.abertos item.height_pct %}%"></i>
+                            </div>
+                            <small>{{ item.label }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="bi-legend">
+                        <span><i class="is-open"></i> Abertos</span>
+                        <span><i class="is-closed"></i> Fechados</span>
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem chamados no período selecionado.</div>
+                    {% endif %}
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Backlog por status</h2>
+                        <span>{{ dashboard.metrics.backlog_display }}</span>
+                    </div>
+                    {% if dashboard.backlog.items %}
+                    <div class="bi-bars">
+                        {% for item in dashboard.backlog.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Nenhum chamado em aberto.</div>
+                    {% endif %}
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Atendentes</h2>
+                    <span>{{ dashboard.attendants|length }} no período</span>
+                </div>
+                {% if dashboard.attendants %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Atendente</th><th class="is-num">Chamados</th><th class="is-num">Participação</th>
+                                <th class="is-num">Fechados</th><th class="is-num">Tempo médio</th>
+                                <th class="is-num">Tempo apontado</th><th class="is-num">Avaliação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.attendants %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.name }}</strong><small>{{ item.login }}</small></div></td>
+                                <td class="is-num">{{ item.total_display }}</td>
+                                <td class="is-num">{{ item.share_pct }}%</td>
+                                <td class="is-num">{{ item.closed_pct }}%</td>
+                                <td class="is-num">{{ item.average_display }}</td>
+                                <td class="is-num">{{ item.logged_display }}</td>
+                                <td class="is-num">
+                                    {% if item.rating_count %}
+                                        <span class="bi-tag {% if item.rating >= 9 %}is-green{% elif item.rating >= 7 %}is-amber{% else %}is-red{% endif %}">{{ item.rating_display }}</span>
+                                    {% else %}-{% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem chamados atribuídos no período.</div>
+                {% endif %}
+            </section>
+
+            <div class="bi-grid is-3">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>SLA</h2><span>meta {{ dashboard.sla.conclusion_target_display }} · resposta {{ dashboard.sla.response_target_display }}</span></div>
+                    <div class="bi-split">
+                        <div><span>Dentro do prazo</span><strong class="is-green">{{ dashboard.sla.within_pct }}%</strong><small>conclusão</small></div>
+                        <div><span>1ª resposta fora</span><strong class="is-amber">{{ dashboard.sla.response_breached_pct }}%</strong><small>média de {{ dashboard.sla.response_average_display }}</small></div>
+                    </div>
+                    <div class="bi-bars">
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Conclusão vencida</strong><span>{{ dashboard.sla.breached_display }} · {{ dashboard.sla.breached_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-red" style="width: {{ dashboard.sla.breached_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>1ª resposta vencida</strong><span>{{ dashboard.sla.response_breached_display }} · {{ dashboard.sla.response_breached_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.sla.response_breached_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Com SLA medido</strong><span>{{ dashboard.sla.measured_display }} · {{ dashboard.sla.measured_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ dashboard.sla.measured_pct }}%"></i></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Relação chamados avaliados</h2><span>sobre os fechados</span></div>
+                    <div class="bi-split">
+                        <div><span>Avaliados</span><strong class="is-green">{{ dashboard.ratings.rated_display }}</strong><small>{{ dashboard.ratings.rated_pct }}%</small></div>
+                        <div><span>Não avaliados</span><strong class="is-red">{{ dashboard.ratings.unrated_display }}</strong><small>{{ dashboard.ratings.unrated_pct }}%</small></div>
+                    </div>
+                    <div class="bi-stack">
+                        <i class="is-green" style="width: {{ dashboard.ratings.rated_pct }}%"></i>
+                        <i class="is-red" style="width: {{ dashboard.ratings.unrated_pct }}%"></i>
+                    </div>
+                    <div class="bi-bars" style="margin-top: 13px;">
+                        {% for item in dashboard.ratings.spread|slice:":5" %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="{% if forloop.counter <= 2 %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Apontamentos</h2><span>timeline do chamado</span></div>
+                    <div class="bi-split">
+                        <div><span>Total apontado</span><strong>{{ dashboard.logged.total_hours }}h</strong><small>{{ dashboard.logged.total_display }}</small></div>
+                        <div><span>Média por chamado</span><strong>{{ dashboard.logged.average_display }}</strong><small>entre os que têm lançamento</small></div>
+                    </div>
+                    <div class="bi-bars">
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Chamados com apontamento</strong><span>{{ dashboard.logged.tickets_with_log_display }} · {{ dashboard.logged.coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ dashboard.logged.coverage_pct }}%"></i></div>
+                        </div>
+                    </div>
+                    <p class="bi-note">Só {{ dashboard.logged.coverage_pct }}% dos chamados têm tempo lançado na timeline — o total apontado é piso, não medida fechada.</p>
+                </section>
+            </div>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Tempo de atendimento por setor</h2><span>média em dias, da abertura ao fechamento</span></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.area_times %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.days_display }}d · {{ item.total }} chamado(s)</span></div>
+                            <div class="bi-bar-track"><i class="{% if item.days >= 15 %}is-red{% elif item.days >= 7 %}is-amber{% else %}is-blue{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem chamados fechados no período.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Prioridade</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.priorities.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.average_display }}</span></div>
+                            <div class="bi-bar-track"><i class="{% if forloop.first %}is-red{% else %}is-blue{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+            </div>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Tipo de chamado</h2><span>top 10</span></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.types.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Setor de atendimento</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.service_areas.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+
+            <div class="bi-grid is-3">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Empresa</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.companies %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Origem</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.origins.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Setor solicitante</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.requester_areas.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Chamados em aberto mais antigos</h2>
+                    <span>backlog completo, independente do período</span>
+                </div>
+                <div class="bi-aging">
+                    <div><span>Até 7 dias</span><strong>{{ dashboard.aging.counts.ate_7 }}</strong></div>
+                    <div><span>8 a 30 dias</span><strong>{{ dashboard.aging.counts.de_8_a_30 }}</strong></div>
+                    <div class="is-amber"><span>31 a 90 dias</span><strong>{{ dashboard.aging.counts.de_31_a_90 }}</strong></div>
+                    <div class="is-red"><span>Mais de 90 dias</span><strong>{{ dashboard.aging.counts.acima_90 }}</strong></div>
+                </div>
+                {% if dashboard.aging.items %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr><th>Chamado</th><th>Abertura</th><th class="is-num">Dias</th><th>Status</th><th>Prioridade</th><th>Atendente</th><th>Empresa</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.aging.items %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.code }}</strong><small>{{ item.subject }}</small></div></td>
+                                <td>{{ item.opened_display }}</td>
+                                <td class="is-num"><span class="bi-tag is-{{ item.tone }}">{{ item.days }}</span></td>
+                                <td>{{ item.status }}</td>
+                                <td>{{ item.priority }}</td>
+                                <td>{{ item.attendant }}</td>
+                                <td>{{ item.company }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Nenhum chamado em aberto.</div>
+                {% endif %}
+            </section>
+        </div>
+        {% endif %}
+    </main>
+
+    <div class="bi-limit-overlay" id="biLimitOverlay" hidden>
+        <div class="bi-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="biLimitTitle">
+            <div class="bi-limit-icon" aria-hidden="true">!</div>
+            <h2 id="biLimitTitle">Limite diário de análises atingido</h2>
+            <p id="biLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+            <p class="bi-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="bi-limit-close" id="biLimitClose">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var prepareUrl = "{{ it_bi_prepare_url }}";
+        var aiUrl = "{{ it_bi_ai_url }}";
+        var overlay = document.getElementById('biLimitOverlay');
+        var closeButton = document.getElementById('biLimitClose');
+
+        function showLimit(message) {
+            if (!overlay) { return window.alert(message); }
+            if (message) { document.getElementById('biLimitText').textContent = message; }
+            overlay.hidden = false;
+        }
+        if (closeButton) { closeButton.addEventListener('click', function () { overlay.hidden = true; }); }
+        if (overlay) {
+            overlay.addEventListener('click', function (event) { if (event.target === overlay) { overlay.hidden = true; } });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay && !overlay.hidden) { overlay.hidden = true; }
+        });
+
+        function wire(formId, buttonId, url, loadingLabel) {
+            var form = document.getElementById(formId);
+            var button = document.getElementById(buttonId);
+            if (!form || !button) { return; }
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                // Quem ja estourou a cota nem dispara a requisicao.
+                if (button.dataset.aiBlocked === '1') { return showLimit(); }
+                var original = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="bi-spinner"></span> ' + loadingLabel;
+                fetch(url, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(function (response) {
+                    return response.json().then(function (payload) { return { response: response, payload: payload }; });
+                }).then(function (result) {
+                    var payload = result.payload;
+                    if (payload.code === 'ai_daily_limit') {
+                        button.disabled = false;
+                        button.innerHTML = original;
+                        button.dataset.aiBlocked = '1';
+                        return showLimit(payload.message);
+                    }
+                    if (!result.response.ok || payload.status !== 'ok') {
+                        throw new Error(payload.message || 'Falha ao executar a solicitação.');
+                    }
+                    window.location.reload();
+                }).catch(function (error) {
+                    button.disabled = false;
+                    button.innerHTML = original;
+                    window.alert(error.message);
+                });
+            });
+        }
+
+        wire('biIndicatorForm', 'biIndicatorButton', prepareUrl, 'Calculando...');
+        wire('biAiForm', 'biAiButton', aiUrl, 'Analisando...');
+    })();
+    </script>
+</body>
+</html>

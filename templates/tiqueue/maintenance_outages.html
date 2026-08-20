@@ -8,49 +8,208 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/maintenance.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800" rel="stylesheet">
 </head>
-<body>
+<body class="mtn">
 {% include 'partials/sidebar.html' %}
-<div class="queue_main maintenance-page">
-    <div class="headerMain"><div class="headerTitle"><h1>Registro de Indisponibilidades</h1></div></div>
-    <section class="checklist-card checklist-form-card maintenance-form-card">
-        <form method="POST" class="modal-form">
-            {% csrf_token %}
-            <input type="hidden" name="form_id" value="create_outage">
-            <div class="modal-grid">
-                <div class="field"><label>Título</label>{{ outage_form.title }}</div>
-                <div class="field"><label>Tipo</label>{{ outage_form.maintenance_type }}</div>
-                <div class="field"><label>Situação</label>{{ outage_form.situation }}</div>
-                <div class="field"><label>Indicativo</label>{{ outage_form.indicator }}</div>
-                <div class="field"><label>Grupo</label>{{ outage_form.system_group }}</div>
-                <div class="field"><label>Data/Hora da ocorrência</label>{{ outage_form.scheduled_start }}</div>
-                <div class="field"><label>Previsão de retorno</label>{{ outage_form.expected_return }}</div>
-                <div class="field"><label>Retorno real</label>{{ outage_form.real_return }}</div>
-                <div class="field span-2"><label>Descrição curta</label>{{ outage_form.short_description }}</div>
-                <div class="field span-2"><label>Descrição completa</label>{{ outage_form.full_description }}</div>
-                <div class="field span-2"><label>Sistemas afetados</label><div class="maintenance-systems-list">{{ outage_form.affected_systems }}</div></div>
-            </div>
-            <div class="modal-actions"><button class="queue-danger-btn" type="submit">Salvar indisponibilidade</button></div>
-        </form>
-    </section>
-    <section class="queue-card maintenance-history-card">
-        <h3>Últimos registros</h3>
-        <div class="queue-table-wrap">
-            <table class="queue-table queue-table-modern">
-                <thead><tr><th>Data/Hora</th><th>Título</th><th>Situação</th><th>Sistemas</th></tr></thead>
-                <tbody>
-                {% for ev in recent_outage %}
-                    <tr class="maintenance-outage-row">
-                        <td>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</td><td>{{ ev.title }}</td>
-                        <td>{% if ev.situation %}{{ ev.situation.name }}{% else %}-{% endif %}</td>
-                        <td>{% for s in ev.affected_systems.all %}<span class="task-type-chip">{{ s.name }}</span>{% empty %}-{% endfor %}</td>
-                    </tr>
-                {% empty %}<tr><td colspan="4">Sem indisponibilidades registradas.</td></tr>{% endfor %}
-                </tbody>
-            </table>
+
+<main class="mt-shell">
+    <header class="mt-head">
+        <div>
+            <span class="mt-kicker">Operação · Manutenções</span>
+            <h1>Indisponibilidades</h1>
+            <p>Registro do que saiu do ar. Preencha o retorno real para fechar a ocorrência e alimentar o tempo médio.</p>
+        </div>
+        <nav class="mt-nav" aria-label="Seções de manutenção">
+            <a href="{% url 'maintenanceCalendarPage' %}">Calendário</a>
+            <a href="{% url 'maintenanceSchedulePage' %}">Agendamentos</a>
+            <a href="{% url 'maintenanceOutagePage' %}" class="is-active">Indisponibilidades</a>
+            <a href="{% url 'maintenanceCatalogPage' %}">Cadastros</a>
+        </nav>
+    </header>
+
+    <section class="mt-kpis">
+        <div class="mt-kpi is-danger">
+            <span>Em aberto</span>
+            <strong>{{ stats.open }}</strong>
+            <small>sem retorno real registrado</small>
+        </div>
+        <div class="mt-kpi is-warning">
+            <span>Últimos 30 dias</span>
+            <strong>{{ stats.last_30_days }}</strong>
+            <small>ocorrências no período</small>
+        </div>
+        <div class="mt-kpi is-info">
+            <span>Quedas</span>
+            <strong>{{ stats.incidents }}</strong>
+            <small>marcadas com indicativo de queda</small>
+        </div>
+        <div class="mt-kpi">
+            <span>Tempo médio</span>
+            <strong>{% if stats.average_downtime %}{{ stats.average_downtime }}{% else %}—{% endif %}</strong>
+            <small>das ocorrências já normalizadas</small>
         </div>
     </section>
-</div>
+
+    <div class="mt-grid is-aside">
+        <section class="mt-block is-flush">
+            <div class="mt-block-head">
+                <h2>Ocorrências <small>· {{ stats.total }} no total</small></h2>
+                <div class="mt-filters">
+                    <input type="search" class="mt-search" id="mtOutageSearch" placeholder="Buscar por título, tipo ou sistema" autocomplete="off">
+                    <button type="button" class="mt-filter is-active" data-mt-filter="all">Todas</button>
+                    <button type="button" class="mt-filter" data-mt-filter="running">Em aberto</button>
+                    <button type="button" class="mt-filter" data-mt-filter="late">Sem retorno</button>
+                    <button type="button" class="mt-filter" data-mt-filter="done">Normalizadas</button>
+                    <button type="button" class="mt-filter" data-mt-filter="incident">Quedas</button>
+                </div>
+            </div>
+
+            {% if recent_outage %}
+            <div class="mt-table-wrap">
+                <table class="mt-table" id="mtOutageTable">
+                    <thead>
+                        <tr><th>Ocorrência</th><th>Indisponibilidade</th><th>Tipo</th><th>Situação</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for ev in recent_outage %}
+                        <tr data-mt-status="{{ ev.status_key }}"
+                            data-mt-incident="{% if ev.indicator and ev.indicator.is_incident %}1{% else %}0{% endif %}"
+                            data-mt-search="{{ ev.title|lower }} {% if ev.maintenance_type %}{{ ev.maintenance_type.name|lower }}{% endif %} {% if ev.situation %}{{ ev.situation.name|lower }}{% endif %} {% if ev.system_group %}{{ ev.system_group.name|lower }}{% endif %} {% for s in ev.affected_systems.all %}{{ s.name|lower }} {% endfor %}">
+                            <td>
+                                <div class="mt-when">
+                                    <strong>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</strong>
+                                    <small>{% if ev.real_return %}normalizada {{ ev.real_return|date:"d/m H:i" }}{% elif ev.expected_return %}previsto {{ ev.expected_return|date:"d/m H:i" }}{% else %}sem previsão de retorno{% endif %}</small>
+                                    {% if ev.duration_label %}<small>{% if ev.real_return %}durou {{ ev.duration_label }}{% else %}fora do ar há {{ ev.duration_label }}{% endif %}</small>{% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="mt-cell-title">
+                                    <strong>{{ ev.title }}</strong>
+                                    {% if ev.short_description %}<small>{{ ev.short_description }}</small>{% endif %}
+                                    {% if ev.affected_systems.all %}
+                                    <div class="mt-tags">
+                                        {% for s in ev.affected_systems.all %}<span class="mt-tag">{{ s.name }}</span>{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if ev.maintenance_type %}
+                                    <span class="mt-tag" style="--tag-color: {{ ev.maintenance_type.color|default:'#343955' }}"><i></i>{{ ev.maintenance_type.name }}</span>
+                                {% else %}<span class="mt-tag is-off">sem tipo</span>{% endif %}
+                            </td>
+                            <td>{% if ev.situation %}{{ ev.situation.name }}{% else %}<span class="mt-tag is-off">—</span>{% endif %}</td>
+                            <td>
+                                <span class="mt-badge is-{{ ev.status_tone }}"><em></em>{{ ev.status_label }}</span>
+                                {% if ev.indicator and ev.indicator.is_incident %}<span class="mt-tag is-alert">{{ ev.indicator.name }}</span>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <div class="mt-empty-inline" id="mtOutageNoMatch" hidden>Nenhuma indisponibilidade corresponde ao filtro.</div>
+            </div>
+            {% else %}
+            <div style="padding: 0 15px 15px;">
+                <div class="mt-empty">
+                    <strong>Nenhuma indisponibilidade registrada</strong>
+                    <span>Registre aqui o que saiu do ar sem aviso. As janelas planejadas ficam em Agendamentos.</span>
+                </div>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Nova indisponibilidade</h2></div>
+
+            {% if outage_form.errors %}
+            <div class="mt-errors" role="alert">
+                <strong>Revise os campos abaixo:</strong>
+                <ul>
+                    {% for field in outage_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}
+                    {% for error in outage_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <form method="POST" class="mt-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_outage">
+
+                <div class="mt-field"><label for="{{ outage_form.title.id_for_label }}">Título</label>{{ outage_form.title }}</div>
+
+                <div class="mt-form-grid">
+                    <div class="mt-field"><label for="{{ outage_form.maintenance_type.id_for_label }}">Tipo</label>{{ outage_form.maintenance_type }}</div>
+                    <div class="mt-field"><label for="{{ outage_form.situation.id_for_label }}">Situação</label>{{ outage_form.situation }}</div>
+                    <div class="mt-field"><label for="{{ outage_form.indicator.id_for_label }}">Indicativo</label>{{ outage_form.indicator }}</div>
+                    <div class="mt-field"><label for="{{ outage_form.system_group.id_for_label }}">Grupo</label>{{ outage_form.system_group }}</div>
+                    <div class="mt-field is-full"><label for="{{ outage_form.scheduled_start.id_for_label }}">Início da ocorrência</label>{{ outage_form.scheduled_start }}</div>
+                    <div class="mt-field is-full"><label for="{{ outage_form.expected_return.id_for_label }}">Previsão de retorno</label>{{ outage_form.expected_return }}</div>
+                    <div class="mt-field is-full"><label for="{{ outage_form.real_return.id_for_label }}">Retorno real</label>{{ outage_form.real_return }}<small>Enquanto estiver vazio a ocorrência fica em aberto.</small></div>
+                </div>
+
+                <div class="mt-field"><label for="{{ outage_form.short_description.id_for_label }}">Descrição curta</label>{{ outage_form.short_description }}</div>
+                <div class="mt-field"><label for="{{ outage_form.full_description.id_for_label }}">Descrição completa</label>{{ outage_form.full_description }}</div>
+
+                <div class="mt-field">
+                    <label>Sistemas afetados</label>
+                    {% if has_systems %}
+                        <div class="mt-checks">{{ outage_form.affected_systems }}</div>
+                    {% else %}
+                        <div class="mt-checks-empty">Nenhum sistema ativo cadastrado. <a href="{% url 'maintenanceCatalogPage' %}" style="color: var(--mt-accent-deep); font-weight: 700;">Cadastrar sistemas</a>.</div>
+                    {% endif %}
+                </div>
+
+                <div class="mt-btn-row" style="justify-content: flex-end;">
+                    <button type="submit" class="mt-btn is-danger">Salvar indisponibilidade</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</main>
+
+<script>
+(function () {
+    var table = document.getElementById('mtOutageTable');
+    if (!table) { return; }
+
+    var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+    var search = document.getElementById('mtOutageSearch');
+    var noMatch = document.getElementById('mtOutageNoMatch');
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-mt-filter]'));
+    var filter = 'all';
+
+    function matchesFilter(row) {
+        if (filter === 'all') { return true; }
+        if (filter === 'incident') { return row.dataset.mtIncident === '1'; }
+        return row.dataset.mtStatus === filter;
+    }
+
+    function apply() {
+        var term = (search.value || '').trim().toLowerCase();
+        var visible = 0;
+
+        rows.forEach(function (row) {
+            var show = matchesFilter(row) && (!term || (row.dataset.mtSearch || '').indexOf(term) !== -1);
+            row.hidden = !show;
+            if (show) { visible += 1; }
+        });
+
+        noMatch.hidden = visible > 0;
+    }
+
+    buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            buttons.forEach(function (other) { other.classList.toggle('is-active', other === button); });
+            filter = button.dataset.mtFilter;
+            apply();
+        });
+    });
+
+    search.addEventListener('input', apply);
+})();
+</script>
 </body>
 </html>

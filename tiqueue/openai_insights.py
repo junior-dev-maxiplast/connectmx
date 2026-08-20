@@ -51,15 +51,47 @@ def _extract_output_text(response):
     return "\n".join(texts)
 
 
-def _validate_insight_response(data):
-    required = {
-        "executive_summary": str,
-        "classification": str,
-        "principal_opportunity": str,
-        "principal_attention": str,
-        "insights": list,
-        "recommended_actions": list,
-    }
+# Formato do DNA do Cliente, usado quando a chamada não informa um schema.
+LEGACY_REQUIRED_FIELDS = {
+    "executive_summary": str,
+    "classification": str,
+    "principal_opportunity": str,
+    "principal_attention": str,
+    "insights": list,
+    "recommended_actions": list,
+}
+
+JSON_TYPE_MAP = {
+    "string": str,
+    "array": list,
+    "object": dict,
+    "boolean": bool,
+    "integer": int,
+    "number": (int, float),
+}
+
+
+def _required_fields_from_schema(response_schema):
+    """Campos obrigatórios lidos do próprio schema enviado à IA.
+
+    A validação era fixa no formato do DNA do Cliente, então qualquer painel com
+    schema próprio (o BI do TI devolve `health` e `principal_risk`, não
+    `classification`) era recusado mesmo com a resposta correta.
+    """
+    schema = (response_schema or {}).get("schema") or {}
+    properties = schema.get("properties") or {}
+    required = schema.get("required") or list(properties.keys())
+    fields = {}
+    for name in required:
+        json_type = (properties.get(name) or {}).get("type")
+        expected = JSON_TYPE_MAP.get(json_type)
+        if expected is not None:
+            fields[name] = expected
+    return fields or LEGACY_REQUIRED_FIELDS
+
+
+def _validate_insight_response(data, response_schema=None):
+    required = _required_fields_from_schema(response_schema) if response_schema else LEGACY_REQUIRED_FIELDS
     if not isinstance(data, dict):
         raise OpenAIInsightError("A resposta estruturada da IA não é um objeto JSON.")
     for field, expected_type in required.items():
@@ -68,7 +100,18 @@ def _validate_insight_response(data):
     return data
 
 
-def generate_customer_insights(ai_payload, runtime_config=None):
+DEFAULT_SYSTEM_PROMPT = (
+    "Você é um analista comercial B2B. Produza somente análises sustentadas pelos "
+    "dados enviados e respeite rigorosamente o formato JSON solicitado."
+)
+
+
+def generate_customer_insights(ai_payload, runtime_config=None, system_prompt=None):
+    """Envia o payload à OpenAI e devolve a análise.
+
+    `system_prompt` permite que outros painéis usem o mesmo motor com o papel
+    adequado — o BI do TI não é análise comercial.
+    """
     config = runtime_config or get_openai_runtime_config()
     if not config["enabled"]:
         raise OpenAIInsightError("A integração OpenAI está desativada nas configurações.")
@@ -85,7 +128,7 @@ def generate_customer_insights(ai_payload, runtime_config=None):
                 "role": "developer",
                 "content": [{
                     "type": "input_text",
-                    "text": "Você é um analista comercial B2B. Produza somente análises sustentadas pelos dados enviados e respeite rigorosamente o formato JSON solicitado.",
+                    "text": system_prompt or DEFAULT_SYSTEM_PROMPT,
                 }],
             },
             {
@@ -122,7 +165,7 @@ def generate_customer_insights(ai_payload, runtime_config=None):
         raise OpenAIInsightError("A OpenAI retornou um JSON inválido.") from exc
     usage = response.get("usage") or {}
     return {
-        "response": _validate_insight_response(structured_response),
+        "response": _validate_insight_response(structured_response, response_schema),
         "response_id": response.get("id"),
         "model": response.get("model") or config["model"],
         "usage": {

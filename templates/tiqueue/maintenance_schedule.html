@@ -8,45 +8,202 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/maintenance.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800" rel="stylesheet">
 </head>
-<body>
+<body class="mtn">
 {% include 'partials/sidebar.html' %}
-<div class="queue_main maintenance-page">
-    <div class="headerMain"><div class="headerTitle"><h1>Agendamentos de Manutenção</h1></div></div>
-    <section class="checklist-card checklist-form-card maintenance-form-card">
-        <form method="POST" class="modal-form">
-            {% csrf_token %}
-            <input type="hidden" name="form_id" value="create_schedule">
-            <div class="modal-grid">
-                <div class="field"><label>Título</label>{{ schedule_form.title }}</div>
-                <div class="field"><label>Tipo</label>{{ schedule_form.maintenance_type }}</div>
-                <div class="field"><label>Situação</label>{{ schedule_form.situation }}</div>
-                <div class="field"><label>Indicativo</label>{{ schedule_form.indicator }}</div>
-                <div class="field"><label>Grupo</label>{{ schedule_form.system_group }}</div>
-                <div class="field"><label>Data/Hora agendada</label>{{ schedule_form.scheduled_start }}</div>
-                <div class="field"><label>Previsão de retorno</label>{{ schedule_form.expected_return }}</div>
-                <div class="field"><label>Retorno real</label>{{ schedule_form.real_return }}</div>
-                <div class="field span-2"><label>Descrição curta</label>{{ schedule_form.short_description }}</div>
-                <div class="field span-2"><label>Descrição completa</label>{{ schedule_form.full_description }}</div>
-                <div class="field span-2"><label>Sistemas afetados</label><div class="maintenance-systems-list">{{ schedule_form.affected_systems }}</div></div>
-            </div>
-            <div class="modal-actions"><button class="queue-primary-btn" type="submit">Salvar agendamento</button></div>
-        </form>
-    </section>
-    <section class="queue-card maintenance-history-card">
-        <h3>Próximos agendamentos</h3>
-        <div class="queue-table-wrap">
-            <table class="queue-table queue-table-modern">
-                <thead><tr><th>Agendamento</th><th>Título</th><th>Tipo</th><th>Grupo</th></tr></thead>
-                <tbody>
-                {% for ev in recent_schedule %}
-                    <tr><td>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</td><td>{{ ev.title }}</td><td>{% if ev.maintenance_type %}{{ ev.maintenance_type.name }}{% else %}-{% endif %}</td><td>{% if ev.system_group %}{{ ev.system_group.name }}{% else %}-{% endif %}</td></tr>
-                {% empty %}<tr><td colspan="4">Sem agendamentos cadastrados.</td></tr>{% endfor %}
-                </tbody>
-            </table>
+
+<main class="mt-shell">
+    <header class="mt-head">
+        <div>
+            <span class="mt-kicker">Operação · Manutenções</span>
+            <h1>Agendamentos</h1>
+            <p>Programe as janelas planejadas de manutenção. O que já saiu do ar sem aviso entra em Indisponibilidades.</p>
+        </div>
+        <nav class="mt-nav" aria-label="Seções de manutenção">
+            <a href="{% url 'maintenanceCalendarPage' %}">Calendário</a>
+            <a href="{% url 'maintenanceSchedulePage' %}" class="is-active">Agendamentos</a>
+            <a href="{% url 'maintenanceOutagePage' %}">Indisponibilidades</a>
+            <a href="{% url 'maintenanceCatalogPage' %}">Cadastros</a>
+        </nav>
+    </header>
+
+    <section class="mt-kpis">
+        <div class="mt-kpi is-info">
+            <span>Agendados</span>
+            <strong>{{ stats.upcoming }}</strong>
+            <small>janelas ainda por acontecer</small>
+        </div>
+        <div class="mt-kpi">
+            <span>Próximos 7 dias</span>
+            <strong>{{ stats.next_7_days }}</strong>
+            <small>entram em execução nesta semana</small>
+        </div>
+        <div class="mt-kpi is-warning">
+            <span>Em andamento</span>
+            <strong>{{ stats.running }}</strong>
+            <small>iniciadas e sem retorno registrado</small>
+        </div>
+        <div class="mt-kpi">
+            <span>Concluídos</span>
+            <strong>{{ stats.done }}</strong>
+            <small>com retorno real informado</small>
         </div>
     </section>
-</div>
+
+    <div class="mt-grid is-aside">
+        <section class="mt-block is-flush">
+            <div class="mt-block-head">
+                <h2>Janelas programadas <small>· {{ stats.total }} no total</small></h2>
+                <div class="mt-filters">
+                    <input type="search" class="mt-search" id="mtScheduleSearch" placeholder="Buscar por título, tipo ou sistema" autocomplete="off">
+                    <button type="button" class="mt-filter is-active" data-mt-filter="all">Todos</button>
+                    <button type="button" class="mt-filter" data-mt-filter="upcoming">Agendados</button>
+                    <button type="button" class="mt-filter" data-mt-filter="running">Em andamento</button>
+                    <button type="button" class="mt-filter" data-mt-filter="late">Em atraso</button>
+                    <button type="button" class="mt-filter" data-mt-filter="done">Concluídos</button>
+                </div>
+            </div>
+
+            {% if recent_schedule %}
+            <div class="mt-table-wrap">
+                <table class="mt-table" id="mtScheduleTable">
+                    <thead>
+                        <tr><th>Janela</th><th>Manutenção</th><th>Tipo</th><th>Grupo</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for ev in recent_schedule %}
+                        <tr data-mt-status="{{ ev.status_key }}"
+                            data-mt-search="{{ ev.title|lower }} {% if ev.maintenance_type %}{{ ev.maintenance_type.name|lower }}{% endif %} {% if ev.system_group %}{{ ev.system_group.name|lower }}{% endif %} {% for s in ev.affected_systems.all %}{{ s.name|lower }} {% endfor %}">
+                            <td>
+                                <div class="mt-when">
+                                    <strong>{{ ev.scheduled_start|date:"d/m/Y H:i" }}</strong>
+                                    <small>{% if ev.real_return %}retorno {{ ev.real_return|date:"d/m H:i" }}{% elif ev.expected_return %}previsto {{ ev.expected_return|date:"d/m H:i" }}{% else %}sem previsão de retorno{% endif %}</small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="mt-cell-title">
+                                    <strong>{{ ev.title }}</strong>
+                                    {% if ev.short_description %}<small>{{ ev.short_description }}</small>{% endif %}
+                                    {% if ev.affected_systems.all %}
+                                    <div class="mt-tags">
+                                        {% for s in ev.affected_systems.all %}<span class="mt-tag">{{ s.name }}</span>{% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if ev.maintenance_type %}
+                                    <span class="mt-tag" style="--tag-color: {{ ev.maintenance_type.color|default:'#343955' }}"><i></i>{{ ev.maintenance_type.name }}</span>
+                                {% else %}<span class="mt-tag is-off">sem tipo</span>{% endif %}
+                            </td>
+                            <td>{% if ev.system_group %}{{ ev.system_group.name }}{% else %}<span class="mt-tag is-off">—</span>{% endif %}</td>
+                            <td>
+                                <span class="mt-badge is-{{ ev.status_tone }}"><em></em>{{ ev.status_label }}</span>
+                                {% if ev.indicator and ev.indicator.is_incident %}<span class="mt-tag is-alert">{{ ev.indicator.name }}</span>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                <div class="mt-empty-inline" id="mtScheduleNoMatch" hidden>Nenhum agendamento corresponde ao filtro.</div>
+            </div>
+            {% else %}
+            <div style="padding: 0 15px 15px;">
+                <div class="mt-empty">
+                    <strong>Nenhuma manutenção agendada</strong>
+                    <span>Use o formulário ao lado para programar a primeira janela. Ela aparece automaticamente no calendário de manutenções.</span>
+                </div>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Novo agendamento</h2></div>
+
+            {% if schedule_form.errors %}
+            <div class="mt-errors" role="alert">
+                <strong>Revise os campos abaixo:</strong>
+                <ul>
+                    {% for field in schedule_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}
+                    {% for error in schedule_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <form method="POST" class="mt-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_schedule">
+
+                <div class="mt-field"><label for="{{ schedule_form.title.id_for_label }}">Título</label>{{ schedule_form.title }}</div>
+
+                <div class="mt-form-grid">
+                    <div class="mt-field"><label for="{{ schedule_form.maintenance_type.id_for_label }}">Tipo</label>{{ schedule_form.maintenance_type }}</div>
+                    <div class="mt-field"><label for="{{ schedule_form.situation.id_for_label }}">Situação</label>{{ schedule_form.situation }}</div>
+                    <div class="mt-field"><label for="{{ schedule_form.indicator.id_for_label }}">Indicativo</label>{{ schedule_form.indicator }}</div>
+                    <div class="mt-field"><label for="{{ schedule_form.system_group.id_for_label }}">Grupo</label>{{ schedule_form.system_group }}</div>
+                    <div class="mt-field is-full"><label for="{{ schedule_form.scheduled_start.id_for_label }}">Início agendado</label>{{ schedule_form.scheduled_start }}</div>
+                    <div class="mt-field is-full"><label for="{{ schedule_form.expected_return.id_for_label }}">Previsão de retorno</label>{{ schedule_form.expected_return }}</div>
+                    <div class="mt-field is-full"><label for="{{ schedule_form.real_return.id_for_label }}">Retorno real</label>{{ schedule_form.real_return }}<small>Preencha depois da janela para marcar como concluída.</small></div>
+                </div>
+
+                <div class="mt-field"><label for="{{ schedule_form.short_description.id_for_label }}">Descrição curta</label>{{ schedule_form.short_description }}</div>
+                <div class="mt-field"><label for="{{ schedule_form.full_description.id_for_label }}">Descrição completa</label>{{ schedule_form.full_description }}</div>
+
+                <div class="mt-field">
+                    <label>Sistemas afetados</label>
+                    {% if has_systems %}
+                        <div class="mt-checks">{{ schedule_form.affected_systems }}</div>
+                    {% else %}
+                        <div class="mt-checks-empty">Nenhum sistema ativo cadastrado. <a href="{% url 'maintenanceCatalogPage' %}" style="color: var(--mt-accent-deep); font-weight: 700;">Cadastrar sistemas</a>.</div>
+                    {% endif %}
+                </div>
+
+                <div class="mt-btn-row" style="justify-content: flex-end;">
+                    <button type="submit" class="mt-btn is-primary">Salvar agendamento</button>
+                </div>
+            </form>
+        </section>
+    </div>
+</main>
+
+<script>
+(function () {
+    var table = document.getElementById('mtScheduleTable');
+    if (!table) { return; }
+
+    var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+    var search = document.getElementById('mtScheduleSearch');
+    var noMatch = document.getElementById('mtScheduleNoMatch');
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-mt-filter]'));
+    var status = 'all';
+
+    function apply() {
+        var term = (search.value || '').trim().toLowerCase();
+        var visible = 0;
+
+        rows.forEach(function (row) {
+            var okStatus = status === 'all' || row.dataset.mtStatus === status;
+            var okTerm = !term || (row.dataset.mtSearch || '').indexOf(term) !== -1;
+            var show = okStatus && okTerm;
+            row.hidden = !show;
+            if (show) { visible += 1; }
+        });
+
+        noMatch.hidden = visible > 0;
+    }
+
+    buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            buttons.forEach(function (other) { other.classList.toggle('is-active', other === button); });
+            status = button.dataset.mtFilter;
+            apply();
+        });
+    });
+
+    search.addEventListener('input', apply);
+})();
+</script>
 </body>
 </html>

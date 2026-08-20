@@ -106,7 +106,7 @@ from .models import (
     DataModelField,
     DataModelRelation,
 )
-from accounts.models import User
+from accounts.models import User, DashesAiUsage
 from .models import TaskType, TaskGroup
 from . import services as service
 from django.http import JsonResponse, HttpResponse
@@ -141,8 +141,16 @@ from urllib import request as urllib_request, parse as urllib_parse, error as ur
 from xml.sax.saxutils import escape as xml_escape
 import calendar as month_calendar
 from functools import wraps
+from .it_bi import (
+    load_it_dashboard,
+    build_it_ai_payload,
+    compute_deep_analytics,
+    it_dashboard_fingerprint,
+    list_attendants,
+    IT_BI_SYSTEM_PROMPT,
+)
 from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
-from .models import CustomerInsightSnapshot
+from .models import CustomerInsightSnapshot, ItBiInsightSnapshot
 from .models import Dashboard, DashboardAccess
 from .ai_config import (
     ALLOWED_REASONING_EFFORTS,
@@ -152,6 +160,7 @@ from .ai_config import (
 )
 from .openai_insights import OpenAIInsightError, generate_customer_insights, test_openai_connection
 from .customer_dna_pdf import build_customer_dna_pdf
+from .it_bi_pdf import build_it_bi_pdf
 
 def _project_dashboard_deadline_meta(target_date, today):
     if not target_date:
@@ -1252,6 +1261,318 @@ def dashesLogoutPage(request):
     return redirect("dashesLoginPage")
 
 
+@_dashes_access_required("ti-bi")
+def dashesItBiPage(request):
+    """Painel de BI do TI: indicadores do helpdesk (SM)."""
+    period_key = (request.GET.get("periodo") or "12").strip()
+    company_key = (request.GET.get("empresa") or "all").strip()
+    attendant_key = (request.GET.get("atendente") or "all").strip()
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_it_dashboard(period_key, company_key, attendant_key)
+        attendant_key = dashboard["scope"]["attendant"]["key"]
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o SM: {exc}"
+
+    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
+    # A analise guardada pode ser de numeros antigos: comparar a impressao do
+    # recorte avisa que ela envelheceu, em vez de exibir conclusao vencida.
+    stale = bool(
+        snapshot and dashboard and snapshot.source_fingerprint != it_dashboard_fingerprint(dashboard)
+    )
+
+    return render(
+        request,
+        "tiqueue/it_bi.html",
+        {
+            "dashboard": dashboard,
+            "data_error": data_error,
+            "insight_snapshot": snapshot,
+            "insight_stale": stale,
+            "dashes_mode": True,
+            "active_dash": "ti-bi",
+            "dashes_menu": allowed_dashboards(request.user),
+            "it_bi_page_url": reverse("dashesItBiPage"),
+            "it_bi_prepare_url": reverse("itBiPrepareInsights"),
+            "it_bi_ai_url": reverse("itBiRequestAiInsights"),
+            "it_bi_payload_url": reverse("itBiInsightPayloadApi"),
+            "it_bi_pdf_url": reverse("itBiExportPdf"),
+            "it_bi_scope_query": _it_bi_scope_query(period_key, company_key, attendant_key),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+        },
+    )
+
+
+def _it_bi_scope_from_source(source):
+    return (
+        (source.get("periodo") or "12").strip(),
+        (source.get("empresa") or "all").strip(),
+        (source.get("atendente") or "all").strip(),
+    )
+
+
+def _it_bi_scope_query(period_key, company_key, attendant_key):
+    return "?" + urllib_parse.urlencode(
+        {"periodo": period_key, "empresa": company_key, "atendente": attendant_key}
+    )
+
+
+def _it_bi_snapshot(period_key, company_key, attendant_key):
+    """Snapshot do recorte. O atendente entra na chave como período e empresa."""
+    return ItBiInsightSnapshot.objects.filter(
+        period_key=period_key, company_key=company_key, attendant_key=attendant_key
+    ).first()
+
+
+@login_required
+@require_POST
+def itBiPrepareInsights(request):
+    """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
+    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.POST)
+
+    try:
+        dashboard = load_it_dashboard(period_key, company_key, attendant_key)
+        scope = dashboard["scope"]
+        # Os cruzamentos pesados só rodam aqui, no pedido explícito: é isso que
+        # separa o painel de abertura rápida das análises processadas.
+        deep = compute_deep_analytics(
+            scope["period"]["key"], scope["company"]["key"], scope["attendant"]["key"]
+        )
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Nao foi possivel consultar o SM: {exc}"},
+            status=503,
+        )
+
+    fingerprint = it_dashboard_fingerprint(dashboard)
+    snapshot, created = ItBiInsightSnapshot.objects.update_or_create(
+        period_key=scope["period"]["key"],
+        company_key=scope["company"]["key"],
+        attendant_key=scope["attendant"]["key"],
+        defaults={
+            "scope_label": (
+                f"{scope['period']['label']} - {scope['company']['label']}"
+                f" - {scope['attendant']['label']}"
+            ),
+            "source_fingerprint": fingerprint,
+            "metrics": {
+                "volume": dashboard["metrics"],
+                "sla": dashboard["sla"],
+                "ratings": {k: v for k, v in dashboard["ratings"].items() if k != "spread"},
+                "logged": dashboard["logged"],
+                "deep": deep,
+            },
+            "ai_payload": build_it_ai_payload(dashboard, fingerprint, deep=deep),
+            "status": ItBiInsightSnapshot.STATUS_PREPARED,
+            "ai_response": {},
+            "ai_error": None,
+            "created_by": request.user,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "created": created,
+            "snapshot_id": snapshot.id,
+            "message": "Indicadores calculados e payload preparado.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def itBiRequestAiInsights(request):
+    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.POST)
+
+    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
+            status=409,
+        )
+
+    # Mesma cota diaria do DNA: o teto e por usuario, nao por painel.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
+            status=409,
+        )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    snapshot.status = ItBiInsightSnapshot.STATUS_PROCESSING
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
+
+    try:
+        ai_result = generate_customer_insights(
+            snapshot.ai_payload,
+            runtime_config=runtime_config,
+            system_prompt=IT_BI_SYSTEM_PROMPT,
+        )
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = ItBiInsightSnapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    usage = ai_result["usage"]
+    snapshot.status = ItBiInsightSnapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
+
+
+@login_required
+@require_GET
+def itBiInsightPayloadApi(request):
+    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
+    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "scope": snapshot.scope_label,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "model": snapshot.ai_model,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+
+def _customer_dna_scope_from_source(source):
+    """Le view/unidade de um QueryDict (GET ou POST) e devolve o escopo do DNA."""
+    view_mode = "group" if source.get("view") == "group" else "individual"
+    raw_member_id = (source.get("unidade") or "").strip()
+    try:
+        member_customer_id = int(raw_member_id) if raw_member_id else None
+    except (TypeError, ValueError):
+        member_customer_id = None
+    # Unidade so faz sentido dentro do grupo: no individual o escopo ja e o
+    # proprio cliente, e deixar o parametro passar criaria dois snapshots
+    # diferentes para o mesmo conjunto de dados.
+    if view_mode != "group":
+        member_customer_id = None
+    return view_mode, member_customer_id
+
+
+def _customer_dna_scope_from_request(request):
+    return _customer_dna_scope_from_source(request.GET)
+
+
+DASHES_AI_LIMIT_MESSAGE = (
+    "Você atingiu o limite diário de análises de IA. "
+    "Entre em contato com a administração ou com a TI para liberar novas consultas."
+)
+
+
+def _dashes_ai_quota(user):
+    """Limite diário de IA e consumo de hoje. `limit=None` significa sem teto."""
+    limit = getattr(user, "dashes_ai_daily_limit", None)
+    today = timezone.localdate()
+    used = (
+        DashesAiUsage.objects.filter(user=user, usage_date=today)
+        .values_list("request_count", flat=True)
+        .first()
+        or 0
+    )
+    return {
+        "limit": limit,
+        "used": used,
+        "remaining": None if limit is None else max(limit - used, 0),
+        "blocked": limit is not None and used >= limit,
+        "date": today,
+    }
+
+
+def _consume_dashes_ai_quota(user):
+    """Registra mais uma análise do dia.
+
+    O incremento é feito no banco (`F`), não em Python: duas abas pedindo a
+    análise ao mesmo tempo sobrescreveriam o contador uma da outra.
+    """
+    today = timezone.localdate()
+    usage, _ = DashesAiUsage.objects.get_or_create(user=user, usage_date=today)
+    DashesAiUsage.objects.filter(pk=usage.pk).update(
+        request_count=models.F("request_count") + 1,
+        last_request_at=timezone.now(),
+    )
+    usage.refresh_from_db()
+    return usage
+
+
+def _customer_dna_scope_query(view_mode, member_customer_id):
+    """Querystring do escopo, para o JSON e o PDF abrirem no mesmo recorte da tela."""
+    if view_mode != "group":
+        return ""
+    params = {"view": "group"}
+    if member_customer_id:
+        params["unidade"] = member_customer_id
+    return "?" + urllib_parse.urlencode(params)
+
+
+def _customer_dna_snapshot(customer_id, view_mode="individual", member_customer_id=None):
+    """Snapshot daquele cliente **naquele escopo**.
+
+    Individual, grupo inteiro e unidade do grupo geram numeros distintos e cada
+    um guarda o seu snapshot; buscar so por customer_code devolvia o mais
+    recente e misturava os escopos na tela, na IA, no JSON e no PDF.
+    """
+    return CustomerInsightSnapshot.objects.filter(
+        customer_code=customer_id,
+        view_mode=view_mode,
+        member_customer_id=member_customer_id,
+    ).first()
+
+
 @_dashes_access_required("customer-dna")
 def dashesCustomerDnaPage(request):
     raw_customer_id = (request.GET.get("cliente") or "10832").strip()
@@ -1260,22 +1581,27 @@ def dashesCustomerDnaPage(request):
     except (TypeError, ValueError):
         customer_id = 10832
 
+    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
     dashboard = None
     data_error = None
     try:
-        dashboard = load_customer_dna(customer_id)
+        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id)
+        if dashboard and not dashboard["group"]["is_group_view"]:
+            view_mode, member_customer_id = "individual", None
         if dashboard is None:
             data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
     except Exception as exc:
         data_error = f"Não foi possível consultar o ERP Senior: {exc}"
 
-    insight_snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    insight_snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
     return render(
         request,
         "tiqueue/customer_dna.html",
         {
             "dashboard": dashboard,
             "customer_id": customer_id,
+            "dna_view_mode": view_mode,
+            "dna_member_customer_id": member_customer_id,
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
             "dashes_mode": True,
@@ -1287,6 +1613,9 @@ def dashesCustomerDnaPage(request):
             "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
             "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
             "dna_page_url": reverse("dashesCustomerDnaPage"),
+            "dna_scope_query": _customer_dna_scope_query(view_mode, member_customer_id),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
         },
     )
 
@@ -1299,16 +1628,19 @@ def customerDnaPage(request):
     except (TypeError, ValueError):
         customer_id = 10832
 
+    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
     dashboard = None
     data_error = None
     try:
-        dashboard = load_customer_dna(customer_id)
+        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id)
+        if dashboard and not dashboard["group"]["is_group_view"]:
+            view_mode, member_customer_id = "individual", None
         if dashboard is None:
             data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
     except Exception as exc:
         data_error = f"Não foi possível consultar o ERP Senior: {exc}"
 
-    insight_snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    insight_snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
 
     return render(
         request,
@@ -1316,6 +1648,8 @@ def customerDnaPage(request):
         {
             "dashboard": dashboard,
             "customer_id": customer_id,
+            "dna_view_mode": view_mode,
+            "dna_member_customer_id": member_customer_id,
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
             "dna_search_url": reverse("customerDnaSearchApi"),
@@ -1324,6 +1658,9 @@ def customerDnaPage(request):
             "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
             "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
             "dna_page_url": reverse("customerDnaPage"),
+            "dna_scope_query": _customer_dna_scope_query(view_mode, member_customer_id),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
         },
     )
 
@@ -1351,8 +1688,15 @@ def customerDnaPrepareInsights(request):
     except (TypeError, ValueError):
         return JsonResponse({"status": "error", "message": "Cliente inválido."}, status=400)
 
+    view_mode = "group" if request.POST.get("view") == "group" else "individual"
+    raw_member_id = (request.POST.get("unidade") or "").strip()
     try:
-        prepared = prepare_customer_insights(customer_id)
+        member_customer_id = int(raw_member_id) if raw_member_id else None
+    except (TypeError, ValueError):
+        member_customer_id = None
+
+    try:
+        prepared = prepare_customer_insights(customer_id, view_mode, member_customer_id)
     except Exception as exc:
         return JsonResponse(
             {"status": "error", "message": f"Não foi possível preparar os insights: {exc}"},
@@ -1364,10 +1708,18 @@ def customerDnaPrepareInsights(request):
             status=404,
         )
 
+    # O escopo pedido pode nao ser o escopo obtido (cliente sem grupo, unidade
+    # invalida): grava o que o _resolve_customer_scope de fato resolveu, senao a
+    # leitura procuraria por uma combinacao que nunca existiu.
+    view_mode = prepared["view_mode"]
+    member_customer_id = prepared["member_customer_id"]
+
     snapshot, created = CustomerInsightSnapshot.objects.update_or_create(
         customer_code=customer_id,
         source_fingerprint=prepared["source_fingerprint"],
         defaults={
+            "view_mode": view_mode,
+            "member_customer_id": member_customer_id,
             "customer_name": prepared["dashboard"]["customer"]["name"],
             "source_period_start": prepared["period_start"],
             "source_period_end": prepared["period_end"],
@@ -1398,11 +1750,26 @@ def customerDnaRequestAiInsights(request):
     except (TypeError, ValueError):
         return JsonResponse({"status": "error", "message": "Cliente inválido."}, status=400)
 
-    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    view_mode, member_customer_id = _customer_dna_scope_from_source(request.POST)
+    snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
     if snapshot is None or not snapshot.ai_payload:
         return JsonResponse(
             {"status": "error", "message": "Gere primeiro os indicadores e o payload deste cliente."},
             status=409,
+        )
+
+    # A cota e checada antes de qualquer coisa cara: a chamada a OpenAI custa
+    # dinheiro e nao deve sair se o usuario ja estourou o teto do dia.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
         )
 
     runtime_config = get_openai_runtime_config()
@@ -1411,6 +1778,8 @@ def customerDnaRequestAiInsights(request):
             {"status": "error", "message": "Configure e ative a OpenAI em Sistema → Configurações."},
             status=409,
         )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
 
     snapshot.status = CustomerInsightSnapshot.STATUS_PROCESSING
     snapshot.ai_provider = "openai"
@@ -1421,6 +1790,11 @@ def customerDnaRequestAiInsights(request):
     try:
         ai_result = generate_customer_insights(snapshot.ai_payload, runtime_config=runtime_config)
     except Exception as exc:
+        # Devolve a cota: o teto existe para controlar consumo de IA, e uma
+        # chamada que falhou nao entregou analise nenhuma ao usuario.
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
         if not isinstance(exc, OpenAIInsightError):
             exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
         snapshot.status = CustomerInsightSnapshot.STATUS_ERROR
@@ -1467,6 +1841,7 @@ def customerDnaRequestAiInsights(request):
             "message": "Análise OpenAI gerada e armazenada com sucesso.",
             "snapshot_id": snapshot.id,
             "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
             "redirect_url": f"{reverse('customerDnaPage')}?cliente={customer_id}",
         }
     )
@@ -1475,7 +1850,8 @@ def customerDnaRequestAiInsights(request):
 @login_required
 @require_GET
 def customerDnaInsightPayloadApi(request, customer_id):
-    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
+    snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
     if snapshot is None:
         return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
     return JsonResponse(
@@ -1503,7 +1879,8 @@ def customerDnaInsightPayloadApi(request, customer_id):
 @login_required
 @require_GET
 def customerDnaExportPdf(request, customer_id):
-    snapshot = CustomerInsightSnapshot.objects.filter(customer_code=customer_id).first()
+    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
+    snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
     if snapshot is None or not snapshot.ai_payload or not snapshot.ai_response:
         return HttpResponse(
             "Gere os indicadores e conclua a análise de IA antes de exportar o PDF.",
@@ -1512,7 +1889,9 @@ def customerDnaExportPdf(request, customer_id):
         )
 
     try:
-        dashboard = load_customer_dna(customer_id)
+        # Sem o escopo o PDF juntava indicadores do grupo com um dashboard
+        # individual, e os numeros da capa nao batiam com os das paginas.
+        dashboard = load_customer_dna(customer_id, snapshot.view_mode, snapshot.member_customer_id)
     except Exception as exc:
         return HttpResponse(f"Não foi possível consultar o ERP Senior: {exc}", status=503)
     if dashboard is None:
@@ -1520,6 +1899,34 @@ def customerDnaExportPdf(request, customer_id):
 
     pdf_bytes = build_customer_dna_pdf(dashboard, snapshot)
     filename = f"connectmx-dna-cliente-{customer_id}-{slugify(snapshot.customer_name) or customer_id}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+@require_GET
+def itBiExportPdf(request):
+    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
+    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return HttpResponse(
+            "Gere os indicadores deste recorte antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
+        # análise de um filtro com os números de outro.
+        dashboard = load_it_dashboard(
+            snapshot.period_key, snapshot.company_key, snapshot.attendant_key
+        )
+    except Exception as exc:
+        return HttpResponse(f"Não foi possível consultar o SM: {exc}", status=503)
+
+    pdf_bytes = build_it_bi_pdf(dashboard, snapshot)
+    filename = f"connectmx-bi-ti-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
@@ -10004,6 +10411,15 @@ def maintenancePage(request):
     return redirect("maintenanceSchedulePage")
 
 
+MAINTENANCE_CATALOG_MODELS = {
+    "toggle_type": MaintenanceType,
+    "toggle_situation": MaintenanceSituation,
+    "toggle_indicator": MaintenanceIndicator,
+    "toggle_group": MaintenanceSystemGroup,
+    "toggle_system": MaintenanceSystem,
+}
+
+
 def _maintenance_catalog_forms():
     return {
         "type_form": MaintenanceTypeForm(prefix="type"),
@@ -10044,6 +10460,14 @@ def maintenanceCatalogPage(request):
             if forms_data["system_form"].is_valid():
                 forms_data["system_form"].save()
                 return redirect("maintenanceCatalogPage")
+        elif form_id in MAINTENANCE_CATALOG_MODELS:
+            model = MAINTENANCE_CATALOG_MODELS[form_id]
+            item_id = (request.POST.get("item_id") or "").strip()
+            item = model.objects.filter(pk=item_id).first() if item_id.isdigit() else None
+            if item:
+                item.is_active = not item.is_active
+                item.save(update_fields=["is_active"])
+            return redirect("maintenanceCatalogPage")
 
     return render(
         request,
@@ -10057,6 +10481,59 @@ def maintenanceCatalogPage(request):
             "systems": MaintenanceSystem.objects.select_related("group").all().order_by("group__name", "name"),
         },
     )
+
+
+MAINTENANCE_STATUS_TONES = {"done": "success", "upcoming": "info", "late": "danger", "running": "warning"}
+MAINTENANCE_SCHEDULE_LABELS = {
+    "done": "Concluído",
+    "upcoming": "Agendado",
+    "late": "Em atraso",
+    "running": "Em andamento",
+}
+MAINTENANCE_OUTAGE_LABELS = {
+    "done": "Normalizada",
+    "upcoming": "Programada",
+    "late": "Sem retorno",
+    "running": "Em aberto",
+}
+
+
+def _format_maintenance_duration(delta):
+    """Timedelta em texto curto ('2h 15min'). Devolve None quando nao ha o que medir."""
+    if delta is None or delta.total_seconds() < 0:
+        return None
+    minutes = int(delta.total_seconds() // 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        return f"{days}d {hours}h" if hours else f"{days}d"
+    if hours:
+        return f"{hours}h {minutes}min" if minutes else f"{hours}h"
+    return f"{minutes}min"
+
+
+def _decorate_maintenance_events(events, now, labels=MAINTENANCE_SCHEDULE_LABELS):
+    """Marca cada evento com o estado da janela, usado pelos selos e filtros da tela."""
+    for ev in events:
+        if ev.real_return:
+            ev.status_key = "done"
+        elif ev.scheduled_start and ev.scheduled_start > now:
+            ev.status_key = "upcoming"
+        elif ev.expected_return and ev.expected_return < now:
+            ev.status_key = "late"
+        else:
+            ev.status_key = "running"
+
+        ev.status_label = labels[ev.status_key]
+        ev.status_tone = MAINTENANCE_STATUS_TONES[ev.status_key]
+
+        if ev.real_return and ev.scheduled_start:
+            ev.duration_label = _format_maintenance_duration(ev.real_return - ev.scheduled_start)
+        elif ev.scheduled_start and ev.status_key in ("running", "late"):
+            ev.duration_label = _format_maintenance_duration(now - ev.scheduled_start)
+        else:
+            ev.duration_label = None
+    return events
 
 
 @login_required
@@ -10074,17 +10551,37 @@ def maintenanceOutagePage(request):
                 outage_form.save_m2m()
                 return redirect("maintenanceOutagePage")
 
-    recent_outage = (
-        MaintenanceEvent.objects.filter(is_outage=True)
-        .select_related("maintenance_type", "situation", "indicator", "system_group")
-        .prefetch_related("affected_systems")
-        .order_by("-scheduled_start", "-id")[:50]
+    now = timezone.now()
+    base_qs = MaintenanceEvent.objects.filter(is_outage=True)
+    recent_outage = _decorate_maintenance_events(
+        list(
+            base_qs.select_related("maintenance_type", "situation", "indicator", "system_group")
+            .prefetch_related("affected_systems")
+            .order_by("-scheduled_start", "-id")[:50]
+        ),
+        now,
+        MAINTENANCE_OUTAGE_LABELS,
     )
+
+    closed = base_qs.filter(real_return__isnull=False).values_list("scheduled_start", "real_return")
+    spans = [end - start for start, end in closed if start and end and end >= start]
+    average_downtime = _format_maintenance_duration(sum(spans, timedelta()) / len(spans)) if spans else None
 
     return render(
         request,
         "tiqueue/maintenance_outages.html",
-        {"outage_form": outage_form, "recent_outage": recent_outage},
+        {
+            "outage_form": outage_form,
+            "recent_outage": recent_outage,
+            "has_systems": MaintenanceSystem.objects.filter(is_active=True).exists(),
+            "stats": {
+                "total": base_qs.count(),
+                "open": base_qs.filter(real_return__isnull=True).count(),
+                "last_30_days": base_qs.filter(scheduled_start__gte=now - timedelta(days=30)).count(),
+                "incidents": base_qs.filter(indicator__is_incident=True).count(),
+                "average_downtime": average_downtime,
+            },
+        },
     )
 
 
@@ -10103,11 +10600,15 @@ def maintenanceSchedulePage(request):
                 schedule_form.save_m2m()
                 return redirect("maintenanceSchedulePage")
 
-    recent_schedule = (
-        MaintenanceEvent.objects.filter(is_outage=False)
-        .select_related("maintenance_type", "situation", "indicator", "system_group")
-        .prefetch_related("affected_systems")
-        .order_by("-scheduled_start", "-id")[:50]
+    now = timezone.now()
+    base_qs = MaintenanceEvent.objects.filter(is_outage=False)
+    recent_schedule = _decorate_maintenance_events(
+        list(
+            base_qs.select_related("maintenance_type", "situation", "indicator", "system_group")
+            .prefetch_related("affected_systems")
+            .order_by("-scheduled_start", "-id")[:50]
+        ),
+        now,
     )
 
     return render(
@@ -10116,12 +10617,70 @@ def maintenanceSchedulePage(request):
         {
             "schedule_form": schedule_form,
             "recent_schedule": recent_schedule,
+            "has_systems": MaintenanceSystem.objects.filter(is_active=True).exists(),
+            "stats": {
+                "total": base_qs.count(),
+                "upcoming": base_qs.filter(scheduled_start__gt=now).count(),
+                "next_7_days": base_qs.filter(
+                    scheduled_start__gte=now, scheduled_start__lt=now + timedelta(days=7)
+                ).count(),
+                "running": base_qs.filter(scheduled_start__lte=now, real_return__isnull=True).count(),
+                "done": base_qs.filter(real_return__isnull=False).count(),
+            },
         },
     )
 
 
+def _maintenance_calendar_payload(events, now):
+    """
+    Serializa os eventos para o grid do calendario.
+
+    A data vai como texto local ja formatado ('2026-08-18'), nao como ISO em UTC:
+    o `new Date(iso)` do navegador reinterpreta o fuso e jogava eventos da
+    madrugada para o dia anterior, divergindo das tabelas renderizadas pelo Django.
+    """
+    payload = []
+    for ev in _decorate_maintenance_events(list(events), now):
+        start = timezone.localtime(ev.scheduled_start) if ev.scheduled_start else None
+        expected = timezone.localtime(ev.expected_return) if ev.expected_return else None
+        real = timezone.localtime(ev.real_return) if ev.real_return else None
+        if start is None:
+            continue
+        payload.append(
+            {
+                "id": ev.id,
+                "title": ev.title,
+                "day": start.strftime("%Y-%m-%d"),
+                "time": start.strftime("%H:%M"),
+                "start_label": start.strftime("%d/%m/%Y %H:%M"),
+                "expected_label": expected.strftime("%d/%m/%Y %H:%M") if expected else "",
+                "real_label": real.strftime("%d/%m/%Y %H:%M") if real else "",
+                "is_outage": ev.is_outage,
+                "type_color": (ev.maintenance_type.color if ev.maintenance_type_id else "#343955"),
+                "type_name": ev.maintenance_type.name if ev.maintenance_type_id else "",
+                "situation": ev.situation.name if ev.situation_id else "",
+                "indicator": ev.indicator.name if ev.indicator_id else "",
+                "is_incident": bool(ev.indicator_id and ev.indicator.is_incident),
+                "group": ev.system_group.name if ev.system_group_id else "",
+                "systems": [s.name for s in ev.affected_systems.all()],
+                "short_description": ev.short_description or "",
+                "full_description": ev.full_description or "",
+                "status_key": ev.status_key,
+                "status_label": (
+                    MAINTENANCE_OUTAGE_LABELS if ev.is_outage else MAINTENANCE_SCHEDULE_LABELS
+                )[ev.status_key],
+                "status_tone": ev.status_tone,
+                "duration_label": ev.duration_label or "",
+            }
+        )
+    return payload
+
+
 @login_required
 def maintenanceCalendarPage(request):
+    event_form = MaintenanceEventForm(prefix="event")
+    open_modal = False
+
     if request.method == "POST":
         form_id = (request.POST.get("form_id") or "").strip()
         if form_id == "create_event":
@@ -10132,36 +10691,30 @@ def maintenanceCalendarPage(request):
                 event.save()
                 event_form.save_m2m()
                 return redirect("maintenanceCalendarPage")
+            open_modal = True
 
+    now = timezone.now()
     events = (
-        MaintenanceEvent.objects.select_related("maintenance_type", "indicator")
-        .all()
+        MaintenanceEvent.objects.select_related("maintenance_type", "situation", "indicator", "system_group")
+        .prefetch_related("affected_systems")
         .order_by("scheduled_start", "id")
     )
-    calendar_items = []
-    for ev in events:
-        calendar_items.append(
-            {
-                "id": ev.id,
-                "title": ev.title,
-                "start": ev.scheduled_start.isoformat() if ev.scheduled_start else None,
-                "end": ev.expected_return.isoformat() if ev.expected_return else None,
-                "is_outage": ev.is_outage,
-                "type_color": (ev.maintenance_type.color if ev.maintenance_type_id else "#343955"),
-                "indicator": ev.indicator.name if ev.indicator_id else "",
-            }
-        )
+    upcoming = _decorate_maintenance_events(
+        list(events.filter(scheduled_start__gte=now)[:8]),
+        now,
+    )
 
     return render(
         request,
         "tiqueue/maintenance_calendar.html",
         {
-            "calendar_items_json": json.dumps(calendar_items),
-            "types": MaintenanceType.objects.filter(is_active=True).order_by("name"),
-            "situations": MaintenanceSituation.objects.filter(is_active=True).order_by("name"),
-            "indicators": MaintenanceIndicator.objects.filter(is_active=True).order_by("name"),
-            "system_groups": MaintenanceSystemGroup.objects.filter(is_active=True).order_by("name"),
-            "systems": MaintenanceSystem.objects.filter(is_active=True).select_related("group").order_by("group__name", "name"),
+            "event_form": event_form,
+            "open_modal": open_modal,
+            "upcoming": upcoming,
+            "has_systems": MaintenanceSystem.objects.filter(is_active=True).exists(),
+            # Vai como json_script no template: os titulos sao texto do usuario e
+            # um "</script>" dentro de um json.dumps|safe quebraria a pagina.
+            "calendar_items": _maintenance_calendar_payload(events, now),
         },
     )
 

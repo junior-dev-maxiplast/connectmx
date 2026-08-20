@@ -8,7 +8,7 @@
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
-    <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=5">
+    <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=7">
     {% if dashes_mode %}<link rel="stylesheet" href="{% static '/style/dashes.css' %}">{% endif %}
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
 </head>
@@ -36,6 +36,8 @@
                     <form id="dnaIndicatorForm">
                         {% csrf_token %}
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
+                        <input type="hidden" name="view" value="{{ dna_view_mode }}">
+                        <input type="hidden" name="unidade" value="{{ dna_member_customer_id|default:'' }}">
                         <button type="submit" class="dna-indicator-btn" id="generateIndicatorButton">
                             <span>▦</span>
                             {% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
@@ -44,23 +46,57 @@
                     <form id="dnaAiForm">
                         {% csrf_token %}
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
-                        <button type="submit" class="dna-insight-btn{% if insight_snapshot %} is-ready{% endif %}" id="requestAiButton" {% if not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                        <input type="hidden" name="view" value="{{ dna_view_mode }}">
+                        <input type="hidden" name="unidade" value="{{ dna_member_customer_id|default:'' }}">
+                        <button type="submit" class="dna-insight-btn{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="requestAiButton"
+                                {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
                             <span class="dna-insight-spark">✦</span>
                             {% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
                         </button>
                     </form>
                     {% if insight_snapshot %}
-                        <a class="dna-json-btn" href="{{ dna_payload_url }}" target="_blank" rel="noopener">JSON IA</a>
+                        <a class="dna-json-btn" href="{{ dna_payload_url }}{{ dna_scope_query }}" target="_blank" rel="noopener">JSON IA</a>
                     {% endif %}
                     {% if insight_snapshot and insight_snapshot.ai_response %}
-                        <a class="dna-pdf-btn is-ready" href="{{ dna_pdf_url }}" title="Baixar relatório completo em PDF">PDF completo</a>
+                        <a class="dna-pdf-btn is-ready" href="{{ dna_pdf_url }}{{ dna_scope_query }}" title="Baixar relatório completo em PDF">PDF completo</a>
                     {% else %}
                         <button type="button" class="dna-pdf-btn" disabled title="Gere os indicadores e conclua a análise de IA">PDF completo</button>
+                    {% endif %}
+                    {% if dna_ai_quota.limit != None %}
+                        <span class="dna-ai-quota{% if dna_ai_quota.blocked %} is-blocked{% endif %}" title="Análises de IA usadas hoje">
+                            IA {{ dna_ai_quota.used }}/{{ dna_ai_quota.limit }}
+                        </span>
                     {% endif %}
                     <div class="dna-topbar-status"><span></span> ERP Senior</div>
                 {% endif %}
             </div>
         </header>
+
+        {% if dashboard %}
+            <section class="dna-scope-panel dna-panel">
+                <div class="dna-scope-copy">
+                    <span>Vis&atilde;o dos dados</span>
+                    <strong>{% if dna_view_mode == 'group' %}Grupo econ&ocirc;mico{% else %}Cliente individual{% endif %}</strong>
+                </div>
+                <nav class="dna-scope-switch" aria-label="Modo de visualiza&ccedil;&atilde;o do DNA">
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}"{% if dna_view_mode != 'group' %} class="is-active"{% endif %}>Cliente</a>
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view=group"{% if dna_view_mode == 'group' %} class="is-active"{% endif %}>Grupo econ&ocirc;mico</a>
+                </nav>
+                {% if dna_view_mode == 'group' %}
+                    <form method="get" class="dna-group-filter">
+                        <input type="hidden" name="cliente" value="{{ customer_id }}">
+                        <input type="hidden" name="view" value="group">
+                        <label for="dnaGroupMember">Unidade do grupo</label>
+                        <select id="dnaGroupMember" name="unidade" onchange="this.form.submit()">
+                            <option value="">Todas as {{ dashboard.group.members_count }} unidades - raiz CNPJ {{ dashboard.group.root_display }}</option>
+                            {% for member in dashboard.group.members %}
+                                <option value="{{ member.code }}"{% if member.code == dashboard.group.selected_member_id %} selected{% endif %}>{{ member.cnpj }} - C&oacute;d. {{ member.code }} - {{ member.city }}/{{ member.state }} | {{ member.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                {% endif %}
+            </section>
+        {% endif %}
 
         {% if data_error %}
             <section class="dna-empty-state">
@@ -448,6 +484,18 @@
         {% endif %}
     </main>
 
+    <div class="dna-limit-overlay" id="dnaLimitOverlay" hidden>
+        <div class="dna-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="dnaLimitTitle" aria-describedby="dnaLimitText">
+            <div class="dna-limit-icon" aria-hidden="true">!</div>
+            <h2 id="dnaLimitTitle">Limite diário de análises atingido</h2>
+            <p id="dnaLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+                <p class="dna-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="dna-limit-close" id="dnaLimitClose">Entendi</button>
+        </div>
+    </div>
+
     <script>
         (() => {
             const page = document.querySelector('.dna-page');
@@ -458,12 +506,30 @@
             const indicatorButton = document.getElementById('generateIndicatorButton');
             const aiForm = document.getElementById('dnaAiForm');
             const aiButton = document.getElementById('requestAiButton');
+            const currentQuery = new URLSearchParams(window.location.search);
             let timer;
+
+            const limitOverlay = document.getElementById('dnaLimitOverlay');
+            const limitClose = document.getElementById('dnaLimitClose');
+            const showLimitPopup = (message) => {
+                if (!limitOverlay) return window.alert(message);
+                if (message) document.getElementById('dnaLimitText').textContent = message;
+                limitOverlay.hidden = false;
+            };
+            if (limitClose) limitClose.addEventListener('click', () => { limitOverlay.hidden = true; });
+            if (limitOverlay) limitOverlay.addEventListener('click', (event) => {
+                if (event.target === limitOverlay) limitOverlay.hidden = true;
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && limitOverlay && !limitOverlay.hidden) limitOverlay.hidden = true;
+            });
 
             const submitDashboardAction = (form, button, url, loadingLabel) => {
                 if (!form || !button) return;
                 form.addEventListener('submit', async (event) => {
                     event.preventDefault();
+                    // Quem ja estourou a cota nem chega a disparar a requisicao.
+                    if (button.dataset.aiBlocked === '1') return showLimitPopup();
                     const originalLabel = button.innerHTML;
                     button.disabled = true;
                     button.innerHTML = `<span class="dna-button-spinner"></span> ${loadingLabel}`;
@@ -474,13 +540,19 @@
                             headers: { 'X-Requested-With': 'XMLHttpRequest' },
                         });
                         const payload = await response.json();
+                        if (payload.code === 'ai_daily_limit') {
+                            button.disabled = false;
+                            button.innerHTML = originalLabel;
+                            button.dataset.aiBlocked = '1';
+                            return showLimitPopup(payload.message);
+                        }
                         if (!response.ok || payload.status !== 'ok') throw new Error(payload.message || 'Falha ao executar a solicitação.');
-                        window.location.href = `${page.dataset.pageUrl}?cliente=${encodeURIComponent({{ customer_id }})}`;
+                        window.location.href = `${page.dataset.pageUrl}?${currentQuery.toString()}`;
                     } catch (error) {
                         button.disabled = false;
                         button.innerHTML = originalLabel;
                         window.alert(error.message);
-                        window.location.href = `${page.dataset.pageUrl}?cliente=${encodeURIComponent({{ customer_id }})}`;
+                        window.location.href = `${page.dataset.pageUrl}?${currentQuery.toString()}`;
                     }
                 });
             };

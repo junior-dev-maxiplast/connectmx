@@ -280,6 +280,19 @@ body {
 .dna-empty-state h2 { margin: 16px 0 8px; font-size: 19px; }
 .dna-empty-state p { margin: 5px 0; color: var(--dna-muted); font-size: 12px; }
 
+.dna-scope-panel { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding: 11px 14px; }
+.dna-scope-copy { display: grid; gap: 2px; min-width: 145px; }
+.dna-scope-copy span, .dna-group-filter label { color: var(--dna-muted); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.dna-scope-copy strong { font-size: 11px; }
+.dna-scope-switch { display: inline-flex; padding: 3px; background: rgba(4,17,24,.5); border: 1px solid var(--dna-border); border-radius: 8px; }
+.dna-scope-switch a { padding: 7px 10px; color: var(--dna-muted); border-radius: 5px; font-size: 9px; font-weight: 700; text-decoration: none; transition: .18s ease; }
+.dna-scope-switch a:hover { color: var(--dna-text); background: rgba(101,168,255,.1); }
+.dna-scope-switch a.is-active { color: #07151e; background: linear-gradient(135deg, var(--dna-green), #3cae64); }
+.dna-group-filter { min-width: 0; display: grid; grid-template-columns: auto minmax(260px, 1fr); align-items: center; gap: 8px; margin-left: auto; }
+.dna-group-filter select { min-width: 0; width: 100%; padding: 8px 29px 8px 10px; color: var(--dna-text); background: #0b222d; border: 1px solid var(--dna-border); border-radius: 7px; font: inherit; font-size: 9px; outline: 0; cursor: pointer; }
+.dna-group-filter select:focus { border-color: rgba(101,213,93,.65); box-shadow: 0 0 0 3px rgba(101,213,93,.1); }
+.dna-group-filter select option { color: #eef8f9; background: #0b222d; }
+
 @media (max-width: 1250px) {
     .dna-customer-hero { grid-template-columns: auto 1fr repeat(2, minmax(150px, .7fr)); }
     .dna-hero-fact:last-child { display: none; }
@@ -307,6 +320,8 @@ body {
     .dna-intelligence-head { align-items: flex-start; flex-direction: column; }
     .dna-snapshot-meta { width: 100%; box-sizing: border-box; padding: 10px 0 0; border-top: 1px solid var(--dna-border); border-left: 0; text-align: left; }
     .dna-chart-card:last-child { grid-column: auto; }
+    .dna-scope-panel { align-items: stretch; flex-direction: column; }
+    .dna-group-filter { width: 100%; grid-template-columns: 1fr; margin-left: 0; }
 }
 
 @media (max-width: 580px) {
@@ -320,3 +335,18 @@ body {
     .dna-open-order { grid-template-columns: repeat(2, 1fr); }
     .dna-signal-columns { grid-template-columns: 1fr; }
 }
+
+/* ----------------------------------------------- limite diario de IA ----- */
+
+.dna-ai-quota { display: inline-flex; align-items: center; height: 38px; padding: 0 11px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(126, 169, 183, .18); background: rgba(126, 169, 183, .06); color: var(--dna-muted); font-size: 10px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dna-ai-quota.is-blocked { border-color: rgba(214, 63, 86, .42); background: rgba(214, 63, 86, .12); color: #ff9aab; }
+
+.dna-limit-overlay { position: fixed; inset: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(3, 10, 15, .72); backdrop-filter: blur(3px); }
+.dna-limit-overlay[hidden] { display: none; }
+.dna-limit-modal { width: min(420px, 100%); box-sizing: border-box; display: grid; justify-items: center; gap: 10px; padding: 26px 24px 22px; border-radius: 14px; border: 1px solid rgba(214, 63, 86, .32); background: linear-gradient(180deg, #0b2029, #081820); box-shadow: 0 26px 60px rgba(0, 0, 0, .45); text-align: center; }
+.dna-limit-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: rgba(214, 63, 86, .16); color: #ff8fa2; font-size: 20px; font-weight: 800; }
+.dna-limit-modal h2 { margin: 0; color: var(--dna-text); font-size: 15px; font-weight: 700; }
+.dna-limit-modal p { margin: 0; color: var(--dna-muted); font-size: 11.5px; line-height: 1.6; }
+.dna-limit-meta { font-size: 10.5px !important; font-variant-numeric: tabular-nums; }
+.dna-limit-close { margin-top: 6px; padding: 9px 20px; border-radius: 8px; border: 0; background: linear-gradient(135deg, #7ae96f, #4ac478); color: #07151e; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.dna-limit-close:hover { filter: brightness(1.07); }
