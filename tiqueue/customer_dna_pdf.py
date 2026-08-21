@@ -165,6 +165,94 @@ def build_customer_dna_pdf(dashboard, snapshot):
         story.append(KeepTogether([card_table, Spacer(1, 5)]))
     story.append(Spacer(1, 3))
 
+    # Grupo economico: a leitura por filial e o que separa "o cliente caiu" de
+    # "duas filiais cairam e o resto cresceu". So existe na visao do grupo inteiro.
+    branch_performance = intelligence.get("branch_performance") or {}
+    branches = branch_performance.get("branches") or []
+    if branches:
+        story.append(Paragraph("Desempenho por filial", styles["DnaSection"]))
+        resumo = (
+            f"{branch_performance.get('critical_count', 0)} de {branch_performance.get('count', 0)} filiais no vermelho"
+            f" (queda a partir de {abs(branch_performance.get('thresholds', {}).get('decline_pct', 15)):.0f}%"
+            f" ou {branch_performance.get('thresholds', {}).get('inactive_days', 180)} dias sem compra)."
+        )
+        story.extend([paragraph(resumo), Spacer(1, 4)])
+
+        criticas = branch_performance.get("critical_branches") or []
+        if criticas:
+            destaque_rows = [[
+                paragraph("Filial em alerta", "DnaTableHead"),
+                paragraph("Situacao", "DnaTableHead"),
+                paragraph("Receita a menos", "DnaTableHead"),
+            ]]
+            for branch in criticas[:6]:
+                destaque_rows.append([
+                    paragraph(f"{_text(branch.get('location'))} - Cod. {_text(branch.get('code'))}", "DnaBodySmall"),
+                    paragraph(branch.get("status_label"), "DnaBodySmall"),
+                    paragraph(branch.get("revenue_gap_display"), "DnaBodySmall"),
+                ])
+            story.extend([
+                styled_table(destaque_rows, [86 * mm, 46 * mm, 44 * mm], header=True, repeat_rows=1, background=amber_soft),
+                Spacer(1, 6),
+            ])
+
+        qualidade = branch_performance.get("quality_branches") or []
+        if qualidade:
+            quality_rows = [[
+                paragraph("Qualidade em alerta", "DnaTableHead"),
+                paragraph("Graves", "DnaTableHead"),
+                paragraph("Devolucoes", "DnaTableHead"),
+                paragraph("Valor devolvido", "DnaTableHead"),
+                paragraph("% do fat.", "DnaTableHead"),
+            ]]
+            for branch in qualidade[:6]:
+                quality_rows.append([
+                    paragraph(f"{_text(branch.get('location'))} - Cod. {_text(branch.get('code'))}", "DnaBodySmall"),
+                    paragraph(branch.get("severe_complaints"), "DnaBodySmall"),
+                    paragraph(branch.get("returns"), "DnaBodySmall"),
+                    paragraph(branch.get("returned_value_display"), "DnaBodySmall"),
+                    paragraph(f"{_text(branch.get('return_share_pct'))}%".replace(".", ","), "DnaBodySmall"),
+                ])
+            story.extend([
+                styled_table(quality_rows, [72 * mm, 18 * mm, 24 * mm, 36 * mm, 26 * mm], header=True, repeat_rows=1, background=red_soft),
+                Spacer(1, 6),
+            ])
+
+        branch_rows = [[
+            paragraph("Filial", "DnaTableHead"),
+            paragraph("YTD", "DnaTableHead"),
+            paragraph("Ano anterior", "DnaTableHead"),
+            paragraph("Variacao", "DnaTableHead"),
+            paragraph("Ultima compra", "DnaTableHead"),
+            paragraph("Situacao", "DnaTableHead"),
+        ]]
+        for branch in branches:
+            # Codigo e CNPJ vao embaixo do nome: em coluna propria o CNPJ nao
+            # cabe em uma linha e quebra no meio dos digitos.
+            identificacao = (
+                f"{escape(_text(branch.get('location')))}"
+                f"<br/><font color='#647983'>Cod. {escape(_text(branch.get('code')))} &#183; "
+                f"{escape(_text(branch.get('cnpj')))}</font>"
+            )
+            branch_rows.append([
+                Paragraph(identificacao, styles["DnaBodySmall"]),
+                paragraph(branch.get("ytd_revenue_display"), "DnaBodySmall"),
+                paragraph(branch.get("previous_ytd_revenue_display"), "DnaBodySmall"),
+                paragraph(_pct(branch.get("change_pct")), "DnaBodySmall"),
+                paragraph(branch.get("last_purchase_display"), "DnaBodySmall"),
+                paragraph(branch.get("status_short") or branch.get("status_label"), "DnaBodySmall"),
+            ])
+        story.extend([
+            styled_table(
+                branch_rows,
+                [58 * mm, 22 * mm, 24 * mm, 18 * mm, 24 * mm, 30 * mm],
+                header=True,
+                repeat_rows=1,
+                font_size=6.8,
+            ),
+            Spacer(1, 6),
+        ])
+
     def comparison_rows(title, values):
         rows = [[Paragraph(title, styles["DnaTableHead"]), paragraph("Atual", "DnaTableHead"), paragraph("Anterior", "DnaTableHead"), paragraph("Variacao", "DnaTableHead")]]
         for label, item in values:

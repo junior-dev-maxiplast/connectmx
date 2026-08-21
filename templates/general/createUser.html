@@ -138,6 +138,7 @@
                                         data-is-admin="{% if row.user.is_system_admin %}1{% else %}0{% endif %}"
                                         data-can-internal="{% if row.user.can_access_internal %}1{% else %}0{% endif %}"
                                         data-dashboards="{{ row.dashboard_slugs|join:"," }}"
+                                        data-ai-limit="{% if row.user.dashes_ai_daily_limit != None %}{{ row.user.dashes_ai_daily_limit }}{% endif %}"
                                     >&#9998;</button>
                                 </td>
                                 {% endif %}
@@ -426,6 +427,7 @@
             document.getElementById("edit_email").value = data.email || "";
             document.getElementById("edit_is_system_admin").checked = (data.isAdmin || "") === "1";
             document.getElementById("edit_can_access_internal").checked = (data.canInternal || "") === "1";
+            document.getElementById("edit_dashes_ai_daily_limit").value = data.aiLimit || "";
             document.getElementById("edit_password").value = "";
             syncRepresentativeFields("edit");
 

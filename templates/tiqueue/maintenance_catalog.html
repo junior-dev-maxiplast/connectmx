@@ -8,56 +8,158 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/maintenance.css'%}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700,800" rel="stylesheet">
 </head>
-<body>
+<body class="mtn">
 {% include 'partials/sidebar.html' %}
-<div class="queue_main maintenance-page">
-    <div class="headerMain"><div class="headerTitle"><h1>Cadastro de Manutenções</h1></div></div>
-    <section class="checklist-card checklist-form-card maintenance-catalog-card maintenance-catalog-modern">
-        <h3>Cadastros rápidos</h3>
-        <div class="maintenance-catalog-grid maintenance-catalog-grid-modern">
-            <div class="maintenance-catalog-block">
-                <div class="maintenance-catalog-head">Tipos</div>
-                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_type">{{ type_form.name }}{{ type_form.color }}<button class="queue-secondary-btn" type="submit">+ Tipo</button></form>
-                <div class="maintenance-chip-list">
-                    {% for item in types %}<span class="maintenance-chip" style="--chip-color: {{ item.color|default:'#343955' }}">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem tipos cadastrados.</span>{% endfor %}
-                </div>
-            </div>
 
-            <div class="maintenance-catalog-block">
-                <div class="maintenance-catalog-head">Situações</div>
-                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_situation">{{ situation_form.name }}<button class="queue-secondary-btn" type="submit">+ Situação</button></form>
-                <div class="maintenance-chip-list">
-                    {% for item in situations %}<span class="maintenance-chip">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem situações cadastradas.</span>{% endfor %}
-                </div>
-            </div>
-
-            <div class="maintenance-catalog-block">
-                <div class="maintenance-catalog-head">Indicativos</div>
-                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_indicator">{{ indicator_form.name }}<label class="queue-checkbox-label">{{ indicator_form.is_incident }} Queda</label><button class="queue-secondary-btn" type="submit">+ Indicativo</button></form>
-                <div class="maintenance-chip-list">
-                    {% for item in indicators %}<span class="maintenance-chip {% if item.is_incident %}maintenance-chip-alert{% endif %}">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem indicativos cadastrados.</span>{% endfor %}
-                </div>
-            </div>
-
-            <div class="maintenance-catalog-block">
-                <div class="maintenance-catalog-head">Grupos de sistemas</div>
-                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_group">{{ group_form.name }}<button class="queue-secondary-btn" type="submit">+ Grupo</button></form>
-                <div class="maintenance-chip-list">
-                    {% for item in system_groups %}<span class="maintenance-chip">{{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem grupos cadastrados.</span>{% endfor %}
-                </div>
-            </div>
-
-            <div class="maintenance-catalog-block">
-                <div class="maintenance-catalog-head">Sistemas</div>
-                <form method="POST" class="maintenance-inline-form maintenance-inline-form-modern">{% csrf_token %}<input type="hidden" name="form_id" value="create_system">{{ system_form.group }}{{ system_form.name }}<button class="queue-secondary-btn" type="submit">+ Sistema</button></form>
-                <div class="maintenance-chip-list">
-                    {% for item in systems %}<span class="maintenance-chip">{{ item.group.name }} · {{ item.name }}</span>{% empty %}<span class="maintenance-chip-empty">Sem sistemas cadastrados.</span>{% endfor %}
-                </div>
-            </div>
+<main class="mt-shell">
+    <header class="mt-head">
+        <div>
+            <span class="mt-kicker">Operação · Manutenções</span>
+            <h1>Cadastros</h1>
+            <p>As listas que alimentam os agendamentos e as indisponibilidades. Só itens ativos aparecem nos formulários e no calendário — clique em um item para ativar ou desativar.</p>
         </div>
+        <nav class="mt-nav" aria-label="Seções de manutenção">
+            <a href="{% url 'maintenanceCalendarPage' %}">Calendário</a>
+            <a href="{% url 'maintenanceSchedulePage' %}">Agendamentos</a>
+            <a href="{% url 'maintenanceOutagePage' %}">Indisponibilidades</a>
+            <a href="{% url 'maintenanceCatalogPage' %}" class="is-active">Cadastros</a>
+        </nav>
+    </header>
+
+    <section class="mt-kpis is-5">
+        <div class="mt-kpi"><span>Tipos</span><strong>{{ types|length }}</strong><small>classificam a manutenção</small></div>
+        <div class="mt-kpi is-info"><span>Situações</span><strong>{{ situations|length }}</strong><small>estado da janela</small></div>
+        <div class="mt-kpi is-warning"><span>Indicativos</span><strong>{{ indicators|length }}</strong><small>marcam quedas</small></div>
+        <div class="mt-kpi"><span>Grupos</span><strong>{{ system_groups|length }}</strong><small>famílias de sistemas</small></div>
+        <div class="mt-kpi"><span>Sistemas</span><strong>{{ systems|length }}</strong><small>itens afetáveis</small></div>
     </section>
-</div>
+
+    <div class="mt-cat-grid">
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Tipos</h2><span class="mt-cat-count">{{ types|length }}</span></div>
+            {% if type_form.errors %}<div class="mt-errors" role="alert"><ul>{% for field in type_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+            <form method="POST" class="mt-cat-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_type">
+                <div class="mt-field"><label for="{{ type_form.name.id_for_label }}">Nome</label>{{ type_form.name }}</div>
+                <div class="mt-field" style="flex: 0 0 auto;"><label for="{{ type_form.color.id_for_label }}">Cor</label>{{ type_form.color }}</div>
+                <label class="mt-check">{{ type_form.is_active }}<span>Ativo</span></label>
+                <button type="submit" class="mt-btn is-primary">Adicionar</button>
+            </form>
+            <div class="mt-cat-list">
+                {% for item in types %}
+                    <form method="POST" class="mt-tag-form">{% csrf_token %}<input type="hidden" name="form_id" value="toggle_type"><input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="mt-tag {% if not item.is_active %}is-off{% endif %}" style="--tag-color: {{ item.color|default:'#343955' }}" title="{% if item.is_active %}Desativar{% else %}Ativar{% endif %} {{ item.name }}"><i></i>{{ item.name }}</button>
+                    </form>
+                {% empty %}
+                    <span class="mt-empty-inline">Sem tipos cadastrados.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Situações</h2><span class="mt-cat-count">{{ situations|length }}</span></div>
+            {% if situation_form.errors %}<div class="mt-errors" role="alert"><ul>{% for field in situation_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+            <form method="POST" class="mt-cat-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_situation">
+                <div class="mt-field"><label for="{{ situation_form.name.id_for_label }}">Nome</label>{{ situation_form.name }}</div>
+                <label class="mt-check">{{ situation_form.is_active }}<span>Ativa</span></label>
+                <button type="submit" class="mt-btn is-primary">Adicionar</button>
+            </form>
+            <div class="mt-cat-list">
+                {% for item in situations %}
+                    <form method="POST" class="mt-tag-form">{% csrf_token %}<input type="hidden" name="form_id" value="toggle_situation"><input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="mt-tag {% if not item.is_active %}is-off{% endif %}" title="{% if item.is_active %}Desativar{% else %}Ativar{% endif %} {{ item.name }}">{{ item.name }}</button>
+                    </form>
+                {% empty %}
+                    <span class="mt-empty-inline">Sem situações cadastradas.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Indicativos</h2><span class="mt-cat-count">{{ indicators|length }}</span></div>
+            {% if indicator_form.errors %}<div class="mt-errors" role="alert"><ul>{% for field in indicator_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+            <form method="POST" class="mt-cat-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_indicator">
+                <div class="mt-field"><label for="{{ indicator_form.name.id_for_label }}">Nome</label>{{ indicator_form.name }}</div>
+                <label class="mt-check">{{ indicator_form.is_incident }}<span>Queda</span></label>
+                <label class="mt-check">{{ indicator_form.is_active }}<span>Ativo</span></label>
+                <button type="submit" class="mt-btn is-primary">Adicionar</button>
+            </form>
+            <div class="mt-cat-list">
+                {% for item in indicators %}
+                    <form method="POST" class="mt-tag-form">{% csrf_token %}<input type="hidden" name="form_id" value="toggle_indicator"><input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="mt-tag {% if item.is_incident %}is-alert{% endif %} {% if not item.is_active %}is-off{% endif %}" title="{% if item.is_active %}Desativar{% else %}Ativar{% endif %} {{ item.name }}">{{ item.name }}</button>
+                    </form>
+                {% empty %}
+                    <span class="mt-empty-inline">Sem indicativos cadastrados.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="mt-block">
+            <div class="mt-block-head"><h2>Grupos de sistemas</h2><span class="mt-cat-count">{{ system_groups|length }}</span></div>
+            {% if group_form.errors %}<div class="mt-errors" role="alert"><ul>{% for field in group_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+            <form method="POST" class="mt-cat-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_group">
+                <div class="mt-field"><label for="{{ group_form.name.id_for_label }}">Nome</label>{{ group_form.name }}</div>
+                <label class="mt-check">{{ group_form.is_active }}<span>Ativo</span></label>
+                <button type="submit" class="mt-btn is-primary">Adicionar</button>
+            </form>
+            <div class="mt-cat-list">
+                {% for item in system_groups %}
+                    <form method="POST" class="mt-tag-form">{% csrf_token %}<input type="hidden" name="form_id" value="toggle_group"><input type="hidden" name="item_id" value="{{ item.id }}">
+                        <button type="submit" class="mt-tag {% if not item.is_active %}is-off{% endif %}" title="{% if item.is_active %}Desativar{% else %}Ativar{% endif %} {{ item.name }}">{{ item.name }}</button>
+                    </form>
+                {% empty %}
+                    <span class="mt-empty-inline">Sem grupos cadastrados.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="mt-block is-full">
+            <div class="mt-block-head"><h2>Sistemas</h2><span class="mt-cat-count">{{ systems|length }}</span></div>
+            {% if system_form.errors %}<div class="mt-errors" role="alert"><ul>{% for field in system_form %}{% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}{% endfor %}</ul></div>{% endif %}
+            {% if system_groups %}
+            <form method="POST" class="mt-cat-form">
+                {% csrf_token %}
+                <input type="hidden" name="form_id" value="create_system">
+                <div class="mt-field" style="flex: 0 1 200px;"><label for="{{ system_form.group.id_for_label }}">Grupo</label>{{ system_form.group }}</div>
+                <div class="mt-field"><label for="{{ system_form.name.id_for_label }}">Nome do sistema</label>{{ system_form.name }}</div>
+                <label class="mt-check">{{ system_form.is_active }}<span>Ativo</span></label>
+                <button type="submit" class="mt-btn is-primary">Adicionar</button>
+            </form>
+            {% else %}
+            <div class="mt-checks-empty" style="margin-bottom: 11px;">Cadastre um grupo antes de adicionar sistemas.</div>
+            {% endif %}
+
+            {% if systems %}
+                {% regroup systems by group as systems_by_group %}
+                <div class="mt-grid is-3">
+                    {% for group in systems_by_group %}
+                    <div class="mt-cat-group">
+                        <div class="mt-cat-group-head">{{ group.grouper.name }}</div>
+                        <div class="mt-cat-list">
+                            {% for item in group.list %}<form method="POST" class="mt-tag-form">{% csrf_token %}<input type="hidden" name="form_id" value="toggle_system"><input type="hidden" name="item_id" value="{{ item.id }}"><button type="submit" class="mt-tag {% if not item.is_active %}is-off{% endif %}" title="{% if item.is_active %}Desativar{% else %}Ativar{% endif %} {{ item.name }}">{{ item.name }}</button></form>{% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="mt-empty">
+                    <strong>Nenhum sistema cadastrado</strong>
+                    <span>Os sistemas são o que você marca como afetado em um agendamento ou em uma indisponibilidade.</span>
+                </div>
+            {% endif %}
+        </section>
+    </div>
+</main>
 </body>
 </html>

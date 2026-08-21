@@ -640,8 +640,12 @@ class MaintenanceEventForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["affected_systems"].queryset = MaintenanceSystem.objects.filter(is_active=True).order_by("name")
-        self.fields["affected_systems"].widget = forms.CheckboxSelectMultiple()
+        field = self.fields["affected_systems"]
+        # A troca do widget precisa vir antes do queryset: atribuir o queryset e
+        # so depois o widget deixava o CheckboxSelectMultiple sem choices, e a
+        # lista de sistemas afetados renderizava vazia.
+        field.widget = forms.CheckboxSelectMultiple()
+        field.queryset = MaintenanceSystem.objects.filter(is_active=True).order_by("group__name", "name")
 
 
 class MyAgendaReminderForm(forms.ModelForm):

@@ -26,4 +26,11 @@ para o estado inicial do acesso interno (o modal de edição preenche via JS).
     <p class="cx-hint">Nenhum painel cadastrado no catálogo.</p>
     {% endfor %}
     <p class="cx-hint">Administradores do sistema enxergam todos os painéis, independente do que estiver marcado.</p>
+
+    <div class="cx-fieldset-title">Limite de análises de IA</div>
+    <div class="cx-field">
+        <label for="{{ prefix }}_dashes_ai_daily_limit">Consultas de IA por dia</label>
+        <input id="{{ prefix }}_dashes_ai_daily_limit" type="number" name="dashes_ai_daily_limit" min="0" step="1" placeholder="Sem limite">
+    </div>
+    <p class="cx-hint">Quantas análises de IA este usuário pode pedir por dia no Dashes. Deixe em branco para não limitar; 0 bloqueia todas. O contador zera todo dia.</p>
 </div>

@@ -1647,8 +1647,21 @@ class CustomerInsightSnapshot(models.Model):
         (STATUS_ERROR, "Erro"),
     ]
 
+    VIEW_INDIVIDUAL = "individual"
+    VIEW_GROUP = "group"
+    VIEW_CHOICES = [
+        (VIEW_INDIVIDUAL, "Cliente individual"),
+        (VIEW_GROUP, "Grupo econômico"),
+    ]
+
     customer_code = models.BigIntegerField(db_index=True)
     customer_name = models.CharField(max_length=240)
+    # O escopo faz parte da identidade do snapshot: o mesmo cliente rende
+    # números completamente diferentes no individual, no grupo inteiro e em uma
+    # unidade do grupo. Sem guardar isso, a tela, a IA, o JSON e o PDF pegavam
+    # sempre o snapshot mais recente, fosse ele de que escopo fosse.
+    view_mode = models.CharField(max_length=12, choices=VIEW_CHOICES, default=VIEW_INDIVIDUAL)
+    member_customer_id = models.BigIntegerField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
     source_period_start = models.DateField(blank=True, null=True)
     source_period_end = models.DateField(blank=True, null=True)
@@ -1688,6 +1701,61 @@ class CustomerInsightSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.customer_code} - {self.customer_name} - {self.source_period_end or '-'}"
+
+
+class ItBiInsightSnapshot(models.Model):
+    """Análise de IA do painel BI do TI, por recorte de período e empresa.
+
+    Espelha o CustomerInsightSnapshot, mas com chave própria: aqui o escopo é
+    período + empresa, não um cliente, e os números mudam a cada recorte.
+    """
+
+    STATUS_PREPARED = "prepared"
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PREPARED, "Preparado"),
+        (STATUS_PROCESSING, "Processando na IA"),
+        (STATUS_COMPLETED, "Concluído"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    period_key = models.CharField(max_length=8)
+    company_key = models.CharField(max_length=8)
+    attendant_key = models.CharField(max_length=120, default="all")
+    scope_label = models.CharField(max_length=120, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
+    source_fingerprint = models.CharField(max_length=64, db_index=True)
+    metrics = models.JSONField(default=dict)
+    ai_payload = models.JSONField(default=dict)
+    ai_response = models.JSONField(default=dict, blank=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_response_id = models.CharField(max_length=120, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    ai_requested_at = models.DateTimeField(blank=True, null=True)
+    ai_completed_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="it_bi_insight_snapshots",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["period_key", "company_key", "attendant_key"],
+                name="unique_it_bi_insight_scope",
+            )
+        ]
+
+    def __str__(self):
+        return f"BI do TI - {self.scope_label or self.period_key} - {self.status}"
 
 
 class Dashboard(models.Model):

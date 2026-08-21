@@ -1,0 +1,258 @@
+/* ==========================================================================
+   BI do TI — painel do ConnectMX Dashes.
+   Mesma paleta escura do DNA do Cliente, com escopo próprio em .itbi.
+   ========================================================================== */
+
+:root {
+    --bi-bg: #06131b;
+    --bi-surface: #0a1b24;
+    --bi-surface-2: #0d222c;
+    --bi-border: rgba(126, 169, 183, .18);
+    --bi-text: #eef8f9;
+    --bi-muted: #87a2ad;
+    --bi-green: #65d55d;
+    --bi-blue: #65a8ff;
+    --bi-amber: #efb63f;
+    --bi-red: #ff7a8c;
+    --bi-purple: #d65cff;
+}
+
+body.itbi { margin: 0; background: var(--bi-bg); color: var(--bi-text); font-family: "Open Sans", sans-serif; }
+body.itbi * { box-sizing: border-box; }
+body.itbi a { color: inherit; text-decoration: none; }
+
+.bi-page { min-height: 100vh; margin-left: 236px; padding: 0 18px 30px; background:
+    radial-gradient(circle at 78% 0, rgba(31, 116, 109, .13), transparent 32%),
+    linear-gradient(180deg, #07151e 0, #051119 100%); }
+
+/* ---------------------------------------------------------------- topbar -- */
+
+.bi-topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; min-height: 78px; border-bottom: 1px solid var(--bi-border); }
+.bi-kicker { color: var(--bi-muted); font-size: 11px; }
+.bi-topbar h1 { margin: 2px 0 0; font-size: 21px; letter-spacing: .01em; }
+.bi-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bi-filter-group { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 10px; border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .05); }
+.bi-filter-group > span { padding: 0 6px; color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.bi-filter { padding: 6px 11px; border-radius: 7px; color: var(--bi-muted); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+.bi-filter:hover { color: var(--bi-text); background: rgba(126, 169, 183, .1); }
+.bi-filter.is-active { color: #07151e; background: linear-gradient(135deg, #7ae96f, #4ac478); font-weight: 700; }
+.bi-status { display: inline-flex; align-items: center; gap: 7px; color: var(--bi-muted); font-size: 11px; }
+.bi-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--bi-green); box-shadow: 0 0 12px var(--bi-green); }
+
+/* ----------------------------------------------------------------- shell -- */
+
+.bi-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 16px; }
+.bi-panel { min-width: 0; padding: 15px 17px; border-radius: 12px; border: 1px solid var(--bi-border); background: var(--bi-surface); }
+.bi-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.bi-panel-head h2 { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.bi-panel-head span { color: var(--bi-muted); font-size: 10px; }
+
+.bi-grid { display: grid; gap: 12px; }
+.bi-grid.is-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bi-grid.is-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bi-grid.is-aside { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+
+/* ------------------------------------------------------------------- kpi -- */
+
+.bi-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.bi-kpi { position: relative; overflow: hidden; display: grid; gap: 4px; padding: 14px 15px; border-radius: 12px; border: 1px solid var(--bi-border); background: var(--bi-surface); }
+.bi-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--bi-green); }
+.bi-kpi.is-blue::before { background: var(--bi-blue); }
+.bi-kpi.is-amber::before { background: var(--bi-amber); }
+.bi-kpi.is-red::before { background: var(--bi-red); }
+.bi-kpi.is-purple::before { background: var(--bi-purple); }
+.bi-kpi span { color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.bi-kpi strong { font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.bi-kpi small { color: var(--bi-muted); font-size: 10px; }
+
+/* --------------------------------------------------------------- colunas -- */
+
+.bi-chart { display: flex; align-items: flex-end; gap: 5px; height: 168px; }
+.bi-chart > div { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; }
+.bi-chart-bars { position: relative; width: 100%; flex: 1; min-height: 0; display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+.bi-chart-bars i { display: block; width: 46%; min-height: 3px; border-radius: 3px 3px 0 0; }
+.bi-chart-bars i.is-open { background: linear-gradient(180deg, rgba(101, 168, 255, .95), rgba(101, 168, 255, .35)); }
+.bi-chart-bars i.is-closed { background: linear-gradient(180deg, rgba(101, 213, 93, .95), rgba(101, 213, 93, .3)); }
+.bi-chart small { color: var(--bi-muted); font-size: 8.5px; white-space: nowrap; }
+.bi-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 10px; color: var(--bi-muted); font-size: 10px; }
+.bi-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.bi-legend i { width: 9px; height: 9px; border-radius: 3px; }
+.bi-legend i.is-open { background: var(--bi-blue); }
+.bi-legend i.is-closed { background: var(--bi-green); }
+
+/* ---------------------------------------------------------------- barras -- */
+
+.bi-bars { display: grid; gap: 10px; min-width: 0; }
+.bi-bar { display: grid; gap: 5px; min-width: 0; }
+.bi-bar-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.bi-bar-head strong { min-width: 0; overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.bi-bar-head span { color: var(--bi-muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bi-bar-track { height: 6px; border-radius: 999px; background: rgba(126, 169, 183, .12); overflow: hidden; }
+.bi-bar-track i { display: block; height: 100%; border-radius: inherit; background: var(--bi-green); }
+.bi-bar-track i.is-blue { background: var(--bi-blue); }
+.bi-bar-track i.is-amber { background: var(--bi-amber); }
+.bi-bar-track i.is-red { background: var(--bi-red); }
+.bi-bar-track i.is-purple { background: var(--bi-purple); }
+
+/* --------------------------------------------------------------- tabelas -- */
+
+.bi-table-wrap { overflow-x: auto; }
+.bi-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.bi-table th { padding: 8px 12px; text-align: left; color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; border-bottom: 1px solid var(--bi-border); }
+.bi-table td { padding: 9px 12px; border-bottom: 1px solid rgba(126, 169, 183, .09); vertical-align: middle; }
+.bi-table tbody tr:last-child td { border-bottom: 0; }
+.bi-table tbody tr:hover td { background: rgba(126, 169, 183, .05); }
+.bi-table .is-num { text-align: right; font-variant-numeric: tabular-nums; }
+.bi-cell { display: grid; gap: 2px; min-width: 0; }
+.bi-cell strong { font-size: 11.5px; font-weight: 600; }
+.bi-cell small { color: var(--bi-muted); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.bi-tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .07); color: var(--bi-muted); font-size: 9.5px; font-weight: 600; white-space: nowrap; }
+.bi-tag.is-red { border-color: rgba(255, 122, 140, .35); background: rgba(255, 122, 140, .12); color: var(--bi-red); }
+.bi-tag.is-amber { border-color: rgba(239, 182, 63, .34); background: rgba(239, 182, 63, .12); color: var(--bi-amber); }
+.bi-tag.is-green { border-color: rgba(101, 213, 93, .32); background: rgba(101, 213, 93, .12); color: var(--bi-green); }
+
+/* ------------------------------------------------------------------ aging -- */
+
+.bi-aging { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-bottom: 13px; }
+.bi-aging > div { display: grid; gap: 3px; padding: 11px 12px; border-radius: 10px; background: rgba(126, 169, 183, .06); }
+.bi-aging span { color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.bi-aging strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.bi-aging > div.is-amber strong { color: var(--bi-amber); }
+.bi-aging > div.is-red strong { color: var(--bi-red); }
+
+/* ------------------------------------------------------------------ vazio -- */
+
+.bi-empty { display: grid; gap: 6px; justify-items: center; padding: 40px 20px; text-align: center; border-radius: 12px; border: 1px dashed var(--bi-border); }
+.bi-empty strong { font-size: 13px; }
+.bi-empty span { max-width: 460px; color: var(--bi-muted); font-size: 11px; line-height: 1.6; }
+.bi-empty-inline { padding: 22px 0; text-align: center; color: var(--bi-muted); font-size: 10.5px; }
+
+/* ------------------------------------------------------------- responsivo -- */
+
+@media (max-width: 1400px) {
+    .bi-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1180px) {
+    .bi-grid.is-aside, .bi-grid.is-3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 960px) {
+    .bi-kpis, .bi-grid.is-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .bi-aging { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* A margem so pode cair junto com a sidebar do Dashes, que vira estatica em
+   760px (dashes.css). Zerar antes disso joga o painel por baixo dela. */
+@media (max-width: 760px) {
+    .bi-page { margin-left: 0; padding: 0 12px 26px; }
+}
+
+@media (max-width: 620px) {
+    .bi-kpis, .bi-grid.is-2 { grid-template-columns: minmax(0, 1fr); }
+    .bi-chart { height: 130px; }
+}
+
+/* ------------------------------------------------------- pares e pilhas -- */
+
+.bi-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--bi-border); }
+.bi-split > div { display: grid; gap: 2px; min-width: 0; }
+.bi-split span { color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.bi-split strong { font-size: 19px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.bi-split strong.is-green { color: var(--bi-green); }
+.bi-split strong.is-amber { color: var(--bi-amber); }
+.bi-split strong.is-red { color: var(--bi-red); }
+.bi-split small { color: var(--bi-muted); font-size: 9.5px; }
+
+.bi-stack { display: flex; gap: 2px; height: 9px; border-radius: 999px; overflow: hidden; background: rgba(126, 169, 183, .12); }
+.bi-stack i { display: block; height: 100%; }
+.bi-stack i.is-green { background: var(--bi-green); }
+.bi-stack i.is-red { background: var(--bi-red); }
+
+.bi-note { margin: 12px 0 0; color: var(--bi-muted); font-size: 10px; line-height: 1.55; }
+
+/* ------------------------------------------------------------ acoes de IA -- */
+
+.bi-ai-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bi-ai-actions form { margin: 0; }
+.bi-btn { height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .06); color: var(--bi-muted); font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.bi-btn:hover { color: var(--bi-text); border-color: rgba(101, 213, 93, .35); }
+.bi-btn.is-ai.is-ready { color: #07151e; background: linear-gradient(135deg, #7ae96f, #4ac478); border-color: rgba(135, 245, 121, .5); }
+.bi-btn.is-ai.is-ready:hover { filter: brightness(1.07); }
+.bi-btn:disabled { opacity: .55; cursor: not-allowed; }
+.bi-quota { height: 34px; display: inline-flex; align-items: center; padding: 0 11px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .06); color: var(--bi-muted); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bi-quota.is-blocked { border-color: rgba(255, 122, 140, .42); background: rgba(255, 122, 140, .12); color: var(--bi-red); }
+.bi-spinner { width: 12px; height: 12px; border: 2px solid rgba(7, 21, 30, .25); border-top-color: currentColor; border-radius: 50%; animation: bi-spin .7s linear infinite; }
+@keyframes bi-spin { to { transform: rotate(360deg); } }
+
+/* ------------------------------------------------------------ painel de IA -- */
+
+.bi-ai { border-color: rgba(101, 213, 93, .26); background: linear-gradient(180deg, rgba(101, 213, 93, .05), var(--bi-surface) 60%); }
+.bi-stale { margin: 0 0 12px; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(239, 182, 63, .32); background: rgba(239, 182, 63, .1); color: var(--bi-amber); font-size: 10.5px; }
+.bi-ai-head { display: flex; align-items: flex-start; gap: 12px; }
+.bi-ai-head p { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--bi-text); }
+.bi-health { flex: 0 0 auto; padding: 4px 11px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.bi-health.is-saudavel { background: rgba(101, 213, 93, .16); color: var(--bi-green); }
+.bi-health.is-atencao { background: rgba(239, 182, 63, .16); color: var(--bi-amber); }
+.bi-health.is-critico { background: rgba(255, 122, 140, .16); color: var(--bi-red); }
+
+.bi-callout { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: rgba(126, 169, 183, .06); border-left: 3px solid var(--bi-border); }
+.bi-callout.is-red { border-left-color: var(--bi-red); }
+.bi-callout.is-green { border-left-color: var(--bi-green); }
+.bi-callout span { color: var(--bi-muted); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.bi-callout strong { font-size: 11.5px; font-weight: 600; line-height: 1.55; }
+
+.bi-ai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 13px; }
+.bi-ai-card { display: grid; gap: 7px; padding: 13px 14px; border-radius: 10px; border: 1px solid var(--bi-border); background: var(--bi-surface-2); border-left: 3px solid var(--bi-blue); }
+.bi-ai-card.is-positive { border-left-color: var(--bi-green); }
+.bi-ai-card.is-attention, .bi-ai-card.is-quality { border-left-color: var(--bi-amber); }
+.bi-ai-card.is-risk { border-left-color: var(--bi-red); }
+.bi-ai-card.is-capacity { border-left-color: var(--bi-purple); }
+.bi-ai-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bi-ai-card-head strong { font-size: 11.5px; font-weight: 700; }
+.bi-ai-card p { margin: 0; color: var(--bi-muted); font-size: 10.5px; line-height: 1.6; }
+.bi-evidence { display: flex; flex-wrap: wrap; gap: 5px; }
+.bi-evidence span { padding: 3px 8px; border-radius: 6px; background: rgba(126, 169, 183, .08); color: var(--bi-muted); font-size: 9.5px; }
+.bi-action { color: var(--bi-text) !important; }
+.bi-action b { color: var(--bi-green); }
+
+.bi-actions-list { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--bi-border); }
+.bi-actions-list > span { color: var(--bi-muted); font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.bi-actions-list ol { margin: 8px 0 0; padding-left: 18px; color: var(--bi-text); font-size: 11px; line-height: 1.75; }
+
+.bi-ai-empty { display: grid; gap: 5px; justify-items: center; text-align: center; padding: 22px 18px; border-style: dashed; }
+.bi-ai-empty strong { font-size: 12px; }
+.bi-ai-empty span { max-width: 480px; color: var(--bi-muted); font-size: 10.5px; line-height: 1.6; }
+.bi-ai-empty em { color: var(--bi-red); font-size: 10px; font-style: normal; }
+
+/* ------------------------------------------------------- popup de limite -- */
+
+.bi-limit-overlay { position: fixed; inset: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(3, 10, 15, .72); backdrop-filter: blur(3px); }
+.bi-limit-overlay[hidden] { display: none; }
+.bi-limit-modal { width: min(420px, 100%); box-sizing: border-box; display: grid; justify-items: center; gap: 10px; padding: 26px 24px 22px; border-radius: 14px; border: 1px solid rgba(255, 122, 140, .32); background: linear-gradient(180deg, #0b2029, #081820); box-shadow: 0 26px 60px rgba(0, 0, 0, .45); text-align: center; }
+.bi-limit-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 122, 140, .16); color: var(--bi-red); font-size: 20px; font-weight: 800; }
+.bi-limit-modal h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.bi-limit-modal p { margin: 0; color: var(--bi-muted); font-size: 11.5px; line-height: 1.6; }
+.bi-limit-meta { font-size: 10.5px !important; font-variant-numeric: tabular-nums; }
+.bi-limit-close { margin-top: 6px; padding: 9px 20px; border-radius: 8px; border: 0; background: linear-gradient(135deg, #7ae96f, #4ac478); color: #07151e; font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+
+/* ------------------------------------------------ graficos processados -- */
+
+.bi-chart.is-tall { height: 190px; }
+.bi-chart b { color: var(--bi-text); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+.bi-chart-bars i.is-late { background: linear-gradient(180deg, rgba(255, 122, 140, .95), rgba(255, 122, 140, .3)); }
+.bi-bar-sub { color: var(--bi-muted); font-size: 9px; }
+.bi-btn.is-pdf { color: #fff4ce; background: linear-gradient(135deg, rgba(198, 136, 38, .9), rgba(132, 91, 184, .9)); border-color: rgba(239, 182, 63, .45); }
+.bi-btn.is-pdf:hover { filter: brightness(1.08); }
+
+.bi-heat { display: grid; gap: 4px; }
+.bi-heat-row { display: grid; grid-template-columns: 34px repeat(6, minmax(0, 1fr)); gap: 4px; align-items: center; }
+.bi-heat-row > span { color: var(--bi-muted); font-size: 9px; font-weight: 700; text-align: center; }
+.bi-heat-row.is-head > span { letter-spacing: .04em; text-transform: uppercase; }
+.bi-heat-row i { display: grid; place-items: center; height: 26px; border-radius: 6px; font-size: 9.5px; font-style: normal; font-variant-numeric: tabular-nums;
+    /* A intensidade vem do dado (0 a 1) e vira opacidade do verde: célula
+       vazia fica no fundo neutro, pico fica sólido. */
+    background: rgba(101, 213, 93, calc(var(--heat, 0) * 0.85 + 0.04));
+    color: var(--bi-text); }
+.bi-heat-row i:hover { outline: 1px solid rgba(101, 213, 93, .5); }

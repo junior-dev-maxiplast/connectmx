@@ -29,6 +29,9 @@ def make_user(username, **extra):
 class DashesAccessTests(TestCase):
     def setUp(self):
         self.dna = Dashboard.objects.get(slug="customer-dna")
+        # O catalogo ganha paineis por migration; este teste afirma o conjunto
+        # exato que o admin enxerga, entao controla o proprio fixture.
+        Dashboard.objects.exclude(slug="customer-dna").delete()
         self.extra = Dashboard.objects.create(
             slug="fleet-costs",
             name="Custos de Frota",
@@ -180,6 +183,7 @@ class DashesAccessManagementTests(TestCase):
 
     def setUp(self):
         self.dna = Dashboard.objects.get(slug="customer-dna")
+        Dashboard.objects.exclude(slug="customer-dna").delete()
         self.admin = make_user("admin.geral", is_system_admin=True)
         self.client.force_login(self.admin)
         self.url = reverse("createUser")
