@@ -1,0 +1,885 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | BI de Viagens</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    {# itBi.css é a casca compartilhada dos painéis do Dashes (tudo que é .bi-*). #}
+    <link rel="stylesheet" href="{% static '/style/itBi.css' %}">
+    <link rel="stylesheet" href="{% static '/style/travelBi.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="travelbi">
+    {% include 'partials/dashes_sidebar.html' %}
+
+    <main class="bi-page">
+        <header class="bi-topbar">
+            <div>
+                <span class="bi-kicker">Frota e logística · ERP Senior</span>
+                <h1>BI de Viagens</h1>
+            </div>
+
+            {% if dashboard %}
+            <div class="bi-filters">
+                <div class="bi-filter-group">
+                    <span>Período</span>
+                    {% for choice in dashboard.scope.period_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.period.key %} is-active{% endif %}"
+                           href="{{ travel_page_url }}?periodo={{ choice.key }}&frota={{ dashboard.scope.carrier.key }}&situacao={{ dashboard.scope.situation.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Frota</span>
+                    {% for choice in dashboard.scope.carrier_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.carrier.key %} is-active{% endif %}"
+                           href="{{ travel_page_url }}?periodo={{ dashboard.scope.period.key }}&frota={{ choice.key }}&situacao={{ dashboard.scope.situation.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Situação</span>
+                    {% for choice in dashboard.scope.situation_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.situation.key %} is-active{% endif %}"
+                           href="{{ travel_page_url }}?periodo={{ dashboard.scope.period.key }}&frota={{ dashboard.scope.carrier.key }}&situacao={{ choice.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="bi-ai-actions">
+                <form id="biIndicatorForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="frota" value="{{ dashboard.scope.carrier.key }}">
+                    <input type="hidden" name="situacao" value="{{ dashboard.scope.situation.key }}">
+                    <button type="submit" class="bi-btn" id="biIndicatorButton">
+                        <span>▦</span>{% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
+                    </button>
+                </form>
+                <form id="biAiForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="frota" value="{{ dashboard.scope.carrier.key }}">
+                    <input type="hidden" name="situacao" value="{{ dashboard.scope.situation.key }}">
+                    <button type="submit" class="bi-btn is-ai{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="biAiButton"
+                            {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                        <span>✦</span>{% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
+                    </button>
+                </form>
+                {% if insight_snapshot %}
+                    <a class="bi-btn" href="{{ travel_payload_url }}{{ travel_scope_query }}" target="_blank" rel="noopener">JSON IA</a>
+                    <a class="bi-btn is-pdf" href="{{ travel_pdf_url }}{{ travel_scope_query }}"
+                       title="{% if insight_snapshot.ai_response %}Baixar relatório com a análise da IA{% else %}Baixar relatório dos indicadores (sem análise da IA){% endif %}">PDF{% if not insight_snapshot.ai_response %} dos indicadores{% else %} completo{% endif %}</a>
+                {% endif %}
+                {% if dna_ai_quota.limit != None %}
+                    <span class="bi-quota{% if dna_ai_quota.blocked %} is-blocked{% endif %}" title="Análises de IA usadas hoje">IA {{ dna_ai_quota.used }}/{{ dna_ai_quota.limit }}</span>
+                {% endif %}
+            </div>
+            <div class="bi-status"><i></i> Senior · USU_TCADVIA</div>
+            {% endif %}
+        </header>
+
+        {% if data_error %}
+            <section class="bi-shell">
+                <div class="bi-empty">
+                    <strong>Não foi possível carregar os indicadores</strong>
+                    <span>{{ data_error }}</span>
+                </div>
+            </section>
+        {% endif %}
+
+        {% if dashboard %}
+        <div class="bi-shell">
+            {% if insight_snapshot.ai_response %}
+            <section class="bi-panel bi-ai">
+                <div class="bi-panel-head">
+                    <h2>Análise da IA</h2>
+                    <span>{{ insight_snapshot.scope_label }} · {{ insight_snapshot.ai_model|default:"-" }} · {{ insight_snapshot.ai_total_tokens }} tokens</span>
+                </div>
+
+                {% if insight_stale %}
+                <p class="bi-stale">Os números mudaram desde esta análise. Gere os indicadores e peça uma nova para atualizar as conclusões.</p>
+                {% endif %}
+
+                <div class="bi-ai-head">
+                    <span class="bi-health is-{{ insight_snapshot.ai_response.health }}">{{ insight_snapshot.ai_response.health|title }}</span>
+                    <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                </div>
+
+                <div class="bi-grid is-2" style="margin-top: 13px;">
+                    <div class="bi-callout is-red"><span>Principal risco</span><strong>{{ insight_snapshot.ai_response.principal_risk }}</strong></div>
+                    <div class="bi-callout is-green"><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></div>
+                </div>
+
+                <div class="bi-ai-cards">
+                    {% for item in insight_snapshot.ai_response.insights %}
+                    <article class="bi-ai-card is-{{ item.type }}">
+                        <div class="bi-ai-card-head">
+                            <strong>{{ item.title }}</strong>
+                            <span class="bi-tag">{{ item.confidence }}</span>
+                        </div>
+                        <p>{{ item.summary }}</p>
+                        {% if item.evidence %}
+                        <div class="bi-evidence">
+                            {% for evidence in item.evidence %}<span>{{ evidence }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="bi-action"><b>Ação:</b> {{ item.recommended_action }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                {% if insight_snapshot.ai_response.recommended_actions %}
+                <div class="bi-actions-list">
+                    <span>Plano recomendado</span>
+                    <ol>{% for action in insight_snapshot.ai_response.recommended_actions %}<li>{{ action }}</li>{% endfor %}</ol>
+                </div>
+                {% endif %}
+            </section>
+            {% elif insight_snapshot.ai_error %}
+            <section class="bi-panel bi-ai-empty">
+                <strong>A última análise falhou</strong>
+                <em>{{ insight_snapshot.ai_error }}</em>
+            </section>
+            {% endif %}
+
+            <section class="bi-kpis">
+                <div class="bi-kpi is-blue">
+                    <span>Viagens</span>
+                    <strong>{{ dashboard.metrics.trips_display }}</strong>
+                    <small>geradas em {{ dashboard.scope.period.full_label|lower }}</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Finalizadas</span>
+                    <strong>{{ dashboard.metrics.finished_display }}</strong>
+                    <small>{{ dashboard.metrics.finished_pct }}% do período</small>
+                </div>
+                <div class="bi-kpi is-amber">
+                    <span>Em aberto hoje</span>
+                    <strong>{{ dashboard.open_backlog.total_display }}</strong>
+                    <small>{{ dashboard.open_backlog.advance_display }} adiantados sem baixa</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>KM rodado</span>
+                    <strong>{{ dashboard.metrics.km_total_display }}</strong>
+                    <small>média de {{ dashboard.metrics.km_average_display }} por viagem</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>Carga transportada</span>
+                    <strong>{{ dashboard.cargo.weight_display }}</strong>
+                    <small>{{ dashboard.cargo.weight_per_trip_display }} por viagem · {{ dashboard.cargo.coverage_pct }}% com roteiro</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Consumo médio</span>
+                    <strong>{{ dashboard.metrics.consumption_display }} km/l</strong>
+                    <small>base de {{ dashboard.metrics.consumption_base }} viagens ({{ dashboard.metrics.consumption_base_pct }}%)</small>
+                </div>
+                <div class="bi-kpi is-blue">
+                    <span>Custo da frota</span>
+                    <strong>{% if dashboard.cost.has_closed_month %}{{ dashboard.cost.closed_total_display }}{% else %}-{% endif %}</strong>
+                    <small>contábil · {{ dashboard.cost.closed_months }} mês(es) fechado(s)</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>Custo por km</span>
+                    <strong>{{ dashboard.cost.per_km_display }}</strong>
+                    <small>custo contábil sobre o km rodado</small>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>Erro de cadastro</span>
+                    <strong>{{ dashboard.validation.wrong_display }}</strong>
+                    <small>{{ dashboard.validation.wrong_pct }}% das viagens do recorte</small>
+                </div>
+            </section>
+
+            {% if dashboard.cost.has_data %}
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Custo da frota por competência</h2>
+                    <span>centros de custo da frota no razão contábil</span>
+                </div>
+                <div class="bi-split">
+                    <div>
+                        <span>Custo fechado</span>
+                        <strong>{{ dashboard.cost.closed_total_display }}</strong>
+                        <small>{{ dashboard.cost.closed_months }} competência(s) · {{ dashboard.cost.closed_km_display }}</small>
+                    </div>
+                    <div>
+                        <span>Custo por tonelada</span>
+                        <strong>{{ dashboard.cost.per_ton_display }}</strong>
+                        <small>{% if dashboard.cost.has_cargo %}{{ dashboard.cost.cargo_weight_display }} em {{ dashboard.cost.cargo_months }} competência(s) com roteiro{% else %}sem roteiro no recorte{% endif %}</small>
+                    </div>
+                    <div>
+                        <span>Adiantamento</span>
+                        <strong class="is-amber">{{ dashboard.cost.advance_total_display }}</strong>
+                        <small>{{ dashboard.cost.advance_share_pct }}% do custo da frota</small>
+                    </div>
+                </div>
+                <div class="bi-chart is-tall{% if dashboard.cost.months|length < 3 %} is-sparse{% endif %}">
+                    {% for item in dashboard.cost.months %}
+                    <div title="{{ item.label }}: {{ item.cost_display }} · {{ item.km_display }} · {{ item.cost_per_km_display }}/km{% if item.is_open %} (competência em aberto){% endif %}">
+                        <div class="bi-chart-bars">
+                            <i class="{% if item.is_open %}is-late{% else %}is-km{% endif %}" style="height: {{ item.height_pct }}%"></i>
+                        </div>
+                        <b>{% if item.tick %}{{ item.cost_per_km_display }}{% endif %}</b>
+                        <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="bi-legend">
+                    <span><i class="is-km"></i> Competência fechada</span>
+                    <span><i class="is-open" style="background: var(--bi-red)"></i> Em aberto</span>
+                </div>
+                <div class="bi-bars" style="margin-top: 13px;">
+                    {% for item in dashboard.cost.fleets %}
+                    <div class="bi-bar">
+                        <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.cost_display }} · {{ item.share_pct }}%</span></div>
+                        <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="bi-note">O custo vem da data do lançamento contábil e a quilometragem, da data da viagem — as duas se encontram na competência, não no dia. O adiantamento é dinheiro entregue ao motorista e já está dentro do custo, por isso aparece como fatia e não somado.{% if dashboard.cost.open_month %} A competência {{ dashboard.cost.open_month }} ainda não recebeu o lançamento de fechamento: ela aparece no gráfico mas fica fora do custo por km.{% endif %}</p>
+            </section>
+            {% endif %}
+
+            <div class="bi-grid is-aside">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Viagens e quilometragem {{ dashboard.scope.series_label }}</h2>
+                        <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.carrier.label }}</span>
+                    </div>
+                    {% if dashboard.monthly %}
+                    <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                        {% for item in dashboard.monthly %}
+                        <div title="{{ item.label }}: {{ item.trips }} viagem(ns), {{ item.km_display }}, {{ item.advance_display }}">
+                            <div class="bi-chart-bars">
+                                <i class="is-open" style="height: {{ item.height_pct }}%"></i>
+                                <i class="is-closed" style="height: {% widthratio item.finished item.trips item.height_pct %}%"></i>
+                            </div>
+                            <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="bi-legend">
+                        <span><i class="is-open"></i> Geradas</span>
+                        <span><i class="is-closed"></i> Finalizadas</span>
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem viagens no período selecionado.</div>
+                    {% endif %}
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Qualidade do cadastro</h2>
+                        <span>{{ dashboard.metrics.trips_display }} viagens</span>
+                    </div>
+                    <div class="tv-quality">
+                        <div>
+                            <span>Cadastro correto</span>
+                            <strong>{{ dashboard.validation.correct_pct }}%</strong>
+                            <small>{{ dashboard.validation.correct_display }} viagens</small>
+                        </div>
+                        <div class="is-red">
+                            <span>Com erro</span>
+                            <strong>{{ dashboard.validation.wrong_pct }}%</strong>
+                            <small>{{ dashboard.validation.wrong_display }} viagens</small>
+                        </div>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.validation.reasons %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-red" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Nenhum erro de cadastro no recorte.</div>{% endfor %}
+                    </div>
+                    <p class="bi-note">A participação é sobre as viagens com erro, não sobre o total. Cada viagem entra em um motivo só — o primeiro que ela infringe.</p>
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Frotas</h2>
+                    <span>{{ dashboard.carriers|length }} no período</span>
+                </div>
+                {% if dashboard.carriers %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Frota</th><th class="is-num">Viagens</th><th class="is-num">Participação</th>
+                                <th class="is-num">KM rodado</th><th class="is-num">Consumo</th>
+                                <th class="is-num">Adiantamento</th><th class="is-num">Duração média</th>
+                                <th class="is-num">Veículos</th><th class="is-num">Erro</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.carriers %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.label }}</strong><small>{{ item.cnpj|default:item.name }}</small></div></td>
+                                <td class="is-num">{{ item.trips_display }}</td>
+                                <td class="is-num">{{ item.share_pct }}%</td>
+                                <td class="is-num">{{ item.km_display }}</td>
+                                <td class="is-num">{{ item.consumption_display }} km/l</td>
+                                <td class="is-num">{{ item.advance_display }}</td>
+                                <td class="is-num">{{ item.duration_display }}</td>
+                                <td class="is-num">{{ item.vehicles }}</td>
+                                <td class="is-num">
+                                    <span class="bi-tag {% if item.error_pct >= 5 %}is-red{% elif item.error_pct >= 2 %}is-amber{% else %}is-green{% endif %}">{{ item.error_pct }}%</span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem viagens no recorte.</div>
+                {% endif %}
+            </section>
+
+            {% if dashboard.cargo.has_data %}
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Rotas</h2>
+                    <span>{{ dashboard.cargo.route_count }} rota(s) no recorte · {{ dashboard.cargo.weight_display }}</span>
+                </div>
+                <div class="bi-split">
+                    {% for item in dashboard.cargo.kinds %}
+                    <div>
+                        <span>{{ item.label }}</span>
+                        <strong class="{% if item.label == 'Rotas Principais' %}is-green{% else %}is-amber{% endif %}">{{ item.weight_display }}</strong>
+                        <small>{{ item.share_pct }}% da carga · {{ item.trips_display }} passagem(ns)</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Rota</th><th>Tipo</th><th class="is-num">Viagens</th>
+                                <th class="is-num">Carga</th><th class="is-num">Por viagem</th>
+                                <th class="is-num">Paletes</th><th class="is-num">Pernas</th>
+                                <th class="is-num">Veículos</th><th class="is-num">Participação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.cargo.routes %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.name }}</strong><small>rota {{ item.key }}</small></div></td>
+                                <td><span class="bi-tag {% if item.opportunistic %}is-amber{% else %}is-green{% endif %}">{% if item.opportunistic %}Aproveitamento{% else %}Principal{% endif %}</span></td>
+                                <td class="is-num">{{ item.trips_display }}</td>
+                                <td class="is-num">{{ item.weight_display }}</td>
+                                <td class="is-num">{{ item.weight_per_trip_display }}</td>
+                                <td class="is-num">{{ item.pallets_display }}</td>
+                                <td class="is-num">{{ item.legs }}</td>
+                                <td class="is-num">{{ item.vehicles }}</td>
+                                <td class="is-num">{{ item.share_pct }}%</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="bi-note">Uma viagem pode passar por mais de uma rota — {{ dashboard.cargo.multi_route_trips }} passaram no recorte —, então a coluna de viagens conta a mesma viagem em cada rota por onde ela passou e a soma da coluna é maior que o total de viagens. Carga e paletes são aditivos e somam certo. Quilometragem por rota não é calculada: o km é da viagem inteira e não se reparte entre as pernas.</p>
+            </section>
+            {% endif %}
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Perfil da frota</h2>
+                        <span>{{ dashboard.fleet_profile.plates }} placas com cadastro no recorte</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.fleet_profile.ages %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.consumption_display }} km/l · {{ item.plates }} placa(s)</span></div>
+                            <div class="bi-bar-track"><i class="{% if item.consumption >= dashboard.outliers.reference %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">{{ item.trips_display }} viagens · {{ item.km_display }}</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Nenhuma placa com cadastro no recorte.</div>{% endfor %}
+                    </div>
+                    <p class="bi-note">A barra é o consumo de cada faixa, não o tamanho dela. Idade aqui não isola desgaste: a frota mistura carreta, caminhão leve e utilitário, e o porte do veículo pesa mais no km/l do que o ano.{% if dashboard.fleet_profile.unregistered_plates %} {{ dashboard.fleet_profile.unregistered_plates }} placa(s) do recorte não têm cadastro de veículo e ficam de fora deste bloco.{% endif %}</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Modelos que mais rodam</h2>
+                        <span>por quilometragem no recorte</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.fleet_profile.models %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.km_display }} · {{ item.plates }} placa(s)</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">{{ item.trips_display }} viagens</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Consumo fora do padrão</h2>
+                        <span>referência da frota: {{ dashboard.outliers.reference_display }} km/l</span>
+                    </div>
+                    {% if dashboard.outliers.items %}
+                    <div class="tv-dev">
+                        {% for item in dashboard.outliers.items %}
+                        <div class="tv-dev-row" title="{{ item.plate }}: {{ item.consumption_display }} km/l em {{ item.trips }} viagens ({{ item.km_display }}, {{ item.liters_display }})">
+                            <span class="tv-plate">{{ item.plate }}</span>
+                            <div class="tv-dev-track">
+                                <i class="is-{{ item.tone }}" style="width: {% widthratio item.share_pct 200 100 %}%"></i>
+                            </div>
+                            <small>{{ item.consumption_display }} km/l<br>{{ item.deviation_display }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="tv-dev-scale"><span>consome mais</span><span>referência</span><span>consome menos</span></div>
+                    <p class="bi-note">Só entram placas com pelo menos {{ dashboard.outliers.min_trips }} viagens e desvio acima de {{ dashboard.outliers.threshold_pct }}% da referência — com duas viagens a média não se sustenta. A frota mistura tipos de veículo, então parte do desvio é porte, não condução.</p>
+                    {% else %}
+                    <div class="bi-empty-inline">Nenhuma placa fora da faixa no recorte.</div>
+                    {% endif %}
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Previsto x realizado</h2>
+                        <span>chegada prevista no cadastro</span>
+                    </div>
+                    <div class="bi-split">
+                        <div><span>Comparáveis</span><strong>{{ dashboard.forecast.comparable_display }}</strong><small>de {{ dashboard.forecast.measured_display }} com as duas datas</small></div>
+                        <div><span>Atrasadas</span><strong class="is-red">{{ dashboard.forecast.late_pct }}%</strong><small>{{ dashboard.forecast.late_display }} viagens · {{ dashboard.forecast.delay_average_display }}</small></div>
+                    </div>
+                    <div class="bi-bars">
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Previsão reescrita no fechamento</strong><span>{{ dashboard.forecast.same_date_display }} · {{ dashboard.forecast.same_date_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.forecast.same_date_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Chegou depois do previsto</strong><span>{{ dashboard.forecast.late_display }} · {{ dashboard.forecast.late_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-red" style="width: {{ dashboard.forecast.late_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Chegou no prazo</strong><span>{{ dashboard.forecast.on_time }} · {{ dashboard.forecast.on_time_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-green" style="width: {{ dashboard.forecast.on_time_pct }}%"></i></div>
+                        </div>
+                    </div>
+                    <p class="bi-note">Em {{ dashboard.forecast.same_date_pct }}% das viagens a chegada prevista é idêntica à realizada: o campo é reescrito na baixa. O percentual de atraso só considera as {{ dashboard.forecast.comparable_display }} em que as duas datas continuam diferentes — não é um SLA da operação, é o que a base permite medir.</p>
+                </section>
+            </div>
+
+            <div class="bi-grid is-3">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Carga por viagem</h2><span>{{ dashboard.cargo.trips_with_cargo_display }} com roteiro</span></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.cargo.bands.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">média de {{ item.average_display }} · {{ item.pallets_display }} palete(s) · {{ item.km_average_display }}</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem roteiro no recorte.</div>{% endfor %}
+                    </div>
+                    <p class="bi-note">São {{ dashboard.cargo.pallets_per_trip_display }} paletes e {{ dashboard.cargo.legs_per_trip_display }} pernas por viagem, a {{ dashboard.cargo.kg_per_pallet_display }} kg por palete.{% if dashboard.cargo.invalid_legs %} {{ dashboard.cargo.invalid_legs }} perna(s) acima de {{ dashboard.limits.cargo_max_kg }} kg ficaram de fora: nenhum conjunto rodoviário carrega isso.{% endif %}</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Distância por viagem</h2><span>{{ dashboard.km_bands.total }} com KM válido</span></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.km_bands.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">média de {{ item.average_display }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Só entram viagens com KM entre {{ dashboard.limits.km_min }} e {{ dashboard.limits.km_max }} km — fora disso a base tem chegada menor que a saída e hodômetro digitado no lugar da diferença.</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Duração da viagem</h2><span>média de {{ dashboard.metrics.duration_average_display }} · {{ dashboard.duration_bands.total }} com saída e chegada</span></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.duration_bands.items %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">média de {{ item.average_display }} · {{ item.km_average_display }}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Data em branco é gravada como 1900-12-31 no cadastro, não como nulo; e acima de {{ dashboard.limits.duration_max }} dias o que existe na base é ano digitado errado. Os dois casos ficam de fora.</p>
+                </section>
+            </div>
+
+            {% if insight_snapshot.metrics.deep %}
+            {% with deep=insight_snapshot.metrics.deep %}
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Consumo e custo {{ dashboard.scope.series_label }}</h2>
+                        <span>km/l da frota no recorte</span>
+                    </div>
+                    <div class="bi-chart is-tall{% if deep.monthly_efficiency|length < 3 %} is-sparse{% endif %}">
+                        {% for item in deep.monthly_efficiency %}
+                        <div title="{{ item.label }}: {{ item.consumption_display }} km/l · adiantamento {{ item.advance_per_km_display }}/km · {{ item.trips }} viagens · {{ item.km_display }}">
+                            <div class="bi-chart-bars">
+                                <i class="{% if item.consumption >= dashboard.outliers.reference %}is-closed{% else %}is-open{% endif %}" style="height: {{ item.height_pct }}%"></i>
+                            </div>
+                            <b>{% if item.tick %}{{ item.consumption_display }}{% endif %}</b>
+                            <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Verde é ponto acima da referência de {{ dashboard.outliers.reference_display }} km/l.{% if not dashboard.scope.is_closed_period %} O último ponto da série ainda não fechou: o adiantamento já saiu e a quilometragem só entra quando a viagem volta.{% endif %}</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Consumo por faixa de distância</h2>
+                        <span>viagem longa rende mais por litro?</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in deep.km_band_consumption %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips_display }} viagens</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                    <p class="bi-note">A barra compara as faixas entre si. Faixa curta com poucas viagens tem média instável — confira a contagem antes de concluir.</p>
+                </section>
+            </div>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Quando a viagem sai</h2>
+                        <span>pico de {{ deep.heatmap.peak }} saídas</span>
+                    </div>
+                    <div class="bi-heat">
+                        <div class="bi-heat-row is-head">
+                            <span></span>
+                            {% for label in deep.heatmap.hour_labels %}<span>{{ label }}</span>{% endfor %}
+                        </div>
+                        {% for row in deep.heatmap.rows %}
+                        <div class="bi-heat-row">
+                            <span>{{ row.label }}</span>
+                            {% for cell in row.cells %}
+                            <i style="--heat: {{ cell.intensity }}" title="{{ row.label }}: {{ cell.total }} saída(s)">{{ cell.total }}</i>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Mostra quando a frota sai, para falar de escala e janela de carregamento — não de desempenho de motorista.</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Consumo por motorista</h2>
+                        <span>{{ deep.driver_efficiency.measured }} com base suficiente</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in deep.driver_efficiency.best %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }} · frota {{ item.fleet }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips }} viagens</span></div>
+                            <div class="bi-bar-track"><i class="is-green" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                        {% for item in deep.driver_efficiency.worst %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }} · frota {{ item.fleet }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips }} viagens</span></div>
+                            <div class="bi-bar-track"><i class="is-red" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <p class="bi-note">Melhores em verde, piores em vermelho. O motorista não escolhe o veículo em toda viagem, então a leitura só fecha junto com o desvio por placa.</p>
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Faixas de adiantamento</h2>
+                    <span>{{ dashboard.metrics.advance_total_display }} · média de {{ dashboard.metrics.advance_average_display }}</span>
+                </div>
+                <div class="bi-bars">
+                    {% for item in deep.advance_bands %}
+                    <div class="bi-bar">
+                        <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}% · {{ item.value_display }}</span></div>
+                        <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
+                        <small class="bi-bar-sub">distância média de {{ item.km_average_display }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="bi-note">A distância média de cada faixa mostra se o adiantamento acompanha o porte da viagem ou se é um valor de hábito.</p>
+            </section>
+            {% endwith %}
+            {% endif %}
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Motoristas</h2>
+                    <span>top {{ dashboard.drivers|length }} por volume</span>
+                </div>
+                {% if dashboard.drivers %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Motorista</th><th>Frota</th><th class="is-num">Viagens</th>
+                                <th class="is-num">Participação</th><th class="is-num">KM rodado</th>
+                                <th class="is-num">Consumo</th><th class="is-num">Adiantamento</th>
+                                <th class="is-num">Duração média</th><th class="is-num">Erro</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.drivers %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.label }}</strong><small>{{ item.key }}</small></div></td>
+                                <td>{{ item.fleet_label }}</td>
+                                <td class="is-num">{{ item.trips_display }}</td>
+                                <td class="is-num">{{ item.share_pct }}%</td>
+                                <td class="is-num">{{ item.km_display }}</td>
+                                <td class="is-num">{{ item.consumption_display }} km/l</td>
+                                <td class="is-num">{{ item.advance_display }}</td>
+                                <td class="is-num">{{ item.duration_display }}</td>
+                                <td class="is-num">
+                                    <span class="bi-tag {% if item.error_pct >= 5 %}is-red{% elif item.error_pct >= 2 %}is-amber{% endif %}">{{ item.error_pct }}%</span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="bi-note">Não existe cadastro de nome de motorista nesta base — a identificação possível é o par frota + código, como no relatório de origem.</p>
+                {% else %}
+                <div class="bi-empty-inline">Sem viagens no recorte.</div>
+                {% endif %}
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Veículos</h2>
+                    <span>{{ dashboard.metrics.vehicles }} placas · {{ dashboard.metrics.drivers }} motoristas · {{ dashboard.metrics.fleets }} frota(s)</span>
+                </div>
+                {% if dashboard.vehicles %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Placa</th><th>Modelo</th><th>Idade</th><th class="is-num">Viagens</th>
+                                <th class="is-num">KM rodado</th><th class="is-num">KM médio</th>
+                                <th class="is-num">Litros</th><th class="is-num">Consumo</th>
+                                <th class="is-num">Hodômetro</th><th class="is-num">Erro</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.vehicles|slice:":25" %}
+                            <tr>
+                                <td><span class="tv-plate">{{ item.plate }}</span></td>
+                                <td><div class="bi-cell"><strong>{{ item.model }}</strong><small>{{ item.fleet_label }}</small></div></td>
+                                <td>{% if item.registered %}<span class="bi-tag">{{ item.model_year }}</span> {{ item.age_label }}{% else %}<span class="bi-tag is-amber">sem cadastro</span>{% endif %}</td>
+                                <td class="is-num">{{ item.trips_display }}</td>
+                                <td class="is-num">{{ item.km_display }}</td>
+                                <td class="is-num">{{ item.km_average_display }}</td>
+                                <td class="is-num">{{ item.liters_display }}</td>
+                                <td class="is-num">
+                                    <span class="bi-tag {% if item.consumption >= dashboard.outliers.reference %}is-green{% else %}is-amber{% endif %}">{{ item.consumption_display }}</span>
+                                </td>
+                                <td class="is-num">{{ item.odometer_display }}</td>
+                                <td class="is-num">{{ item.error_pct }}%</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="bi-note">A placa é normalizada antes de agrupar (maiúsculas, sem hífen e sem espaço): no cadastro as mesmas placas aparecem sob grafias diferentes e sem isso o mesmo veículo apareceria duas vezes. Modelo e ano vêm do cadastro de veículos, com uma linha por placa — o registro ativo na frente do inativo. Mostrando as 25 primeiras por quilometragem.</p>
+                {% else %}
+                <div class="bi-empty-inline">Sem veículos no recorte.</div>
+                {% endif %}
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Viagens em aberto</h2>
+                    <span>fila completa, independente do período e da situação</span>
+                </div>
+                <div class="bi-aging is-5">
+                    <div class="is-green"><span>Ainda no prazo</span><strong>{{ dashboard.open_backlog.counts.no_prazo }}</strong></div>
+                    <div><span>Até 7 dias vencida</span><strong>{{ dashboard.open_backlog.counts.ate_7 }}</strong></div>
+                    <div class="is-amber"><span>8 a 30 dias</span><strong>{{ dashboard.open_backlog.counts.de_8_a_30 }}</strong></div>
+                    <div class="is-red"><span>Mais de 30 dias</span><strong>{{ dashboard.open_backlog.counts.acima_30 }}</strong></div>
+                    <div><span>Sem previsão</span><strong>{{ dashboard.open_backlog.counts.sem_previsao }}</strong></div>
+                </div>
+                {% if dashboard.open_backlog.items %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Viagem</th><th>Placa</th><th>Motorista</th><th>Gerada</th>
+                                <th>Chegada prevista</th><th class="is-num">Dias vencida</th>
+                                <th class="is-num">Adiantado</th><th>Título</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.open_backlog.items %}
+                            <tr>
+                                <td><div class="bi-cell"><strong>{{ item.trip }}</strong><small>frota {{ item.fleet }}</small></div></td>
+                                <td><span class="tv-plate">{{ item.plate }}</span></td>
+                                <td>{{ item.driver }}</td>
+                                <td>{{ item.created_display }}</td>
+                                <td>{{ item.forecast_display }}</td>
+                                <td class="is-num"><span class="bi-tag is-{{ item.tone }}">{{ item.days_overdue }}</span></td>
+                                <td class="is-num">{{ item.advance_display }}</td>
+                                <td>{{ item.title }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="bi-note">Sem chegada prevista, os dias contam da geração da viagem. Cada linha é adiantamento pago sem prestação de contas: {{ dashboard.open_backlog.advance_display }} no total da fila.</p>
+                {% else %}
+                <div class="bi-empty-inline">Nenhuma viagem em aberto.</div>
+                {% endif %}
+            </section>
+
+            <div class="bi-grid is-3">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Situação</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.situations %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="{% if item.label == 'Finalizada' %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Empresa</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.companies %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">{{ item.km_display }}</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Cobertura dos campos</h2><span>o que a base preenche</span></div>
+                    <div class="bi-bars">
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Quilometragem</strong><span>{{ dashboard.metrics.trips_with_km }} · {{ dashboard.metrics.km_coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ dashboard.metrics.km_coverage_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Litros abastecidos</strong><span>{{ dashboard.metrics.liters_total_display }} · {{ dashboard.metrics.liters_coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ dashboard.metrics.liters_coverage_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Adiantamento</strong><span>{{ dashboard.metrics.trips_with_advance }} · {{ dashboard.metrics.advance_coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.metrics.advance_coverage_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Saída e chegada</strong><span>{{ dashboard.metrics.trips_with_duration }} · {{ dashboard.metrics.duration_coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-green" style="width: {{ dashboard.metrics.duration_coverage_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Placa com cadastro de veículo</strong><span>{{ dashboard.fleet_profile.registered_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ dashboard.fleet_profile.registered_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Roteiro (carga e rota)</strong><span>{{ dashboard.cargo.trips_with_cargo_display }} · {{ dashboard.cargo.coverage_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="{% if dashboard.cargo.coverage_pct >= 90 %}is-green{% else %}is-red{% endif %}" style="width: {{ dashboard.cargo.coverage_pct }}%"></i></div>
+                            <small class="bi-bar-sub">o roteiro só passou a ser preenchido em setembro de 2025</small>
+                        </div>
+                    </div>
+                    <p class="bi-note">Toda média deste painel vale sobre a cobertura correspondente, não sobre o total de viagens. Placa sem cadastro de veículo costuma ser digitação: quase todas estão a um caractere de uma placa que existe. Num recorte que alcance antes de setembro de 2025, carga e rota caem porque a tabela não existia — não porque a operação encolheu.</p>
+                </section>
+            </div>
+        </div>
+        {% endif %}
+    </main>
+
+    <div class="bi-limit-overlay" id="biLimitOverlay" hidden>
+        <div class="bi-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="biLimitTitle">
+            <div class="bi-limit-icon" aria-hidden="true">!</div>
+            <h2 id="biLimitTitle">Limite diário de análises atingido</h2>
+            <p id="biLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+            <p class="bi-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="bi-limit-close" id="biLimitClose">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var prepareUrl = "{{ travel_prepare_url }}";
+        var aiUrl = "{{ travel_ai_url }}";
+        var overlay = document.getElementById('biLimitOverlay');
+        var closeButton = document.getElementById('biLimitClose');
+
+        function showLimit(message) {
+            if (!overlay) { return window.alert(message); }
+            if (message) { document.getElementById('biLimitText').textContent = message; }
+            overlay.hidden = false;
+        }
+        if (closeButton) { closeButton.addEventListener('click', function () { overlay.hidden = true; }); }
+        if (overlay) {
+            overlay.addEventListener('click', function (event) { if (event.target === overlay) { overlay.hidden = true; } });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay && !overlay.hidden) { overlay.hidden = true; }
+        });
+
+        function wire(formId, buttonId, url, loadingLabel) {
+            var form = document.getElementById(formId);
+            var button = document.getElementById(buttonId);
+            if (!form || !button) { return; }
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                // Quem ja estourou a cota nem dispara a requisicao.
+                if (button.dataset.aiBlocked === '1') { return showLimit(); }
+                var original = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="bi-spinner"></span> ' + loadingLabel;
+                fetch(url, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(function (response) {
+                    return response.json().then(function (payload) { return { response: response, payload: payload }; });
+                }).then(function (result) {
+                    var payload = result.payload;
+                    if (payload.code === 'ai_daily_limit') {
+                        button.disabled = false;
+                        button.innerHTML = original;
+                        button.dataset.aiBlocked = '1';
+                        return showLimit(payload.message);
+                    }
+                    if (!result.response.ok || payload.status !== 'ok') {
+                        throw new Error(payload.message || 'Falha ao executar a solicitação.');
+                    }
+                    window.location.reload();
+                }).catch(function (error) {
+                    button.disabled = false;
+                    button.innerHTML = original;
+                    window.alert(error.message);
+                });
+            });
+        }
+
+        wire('biIndicatorForm', 'biIndicatorButton', prepareUrl, 'Calculando...');
+        wire('biAiForm', 'biAiButton', aiUrl, 'Analisando...');
+    })();
+    </script>
+</body>
+</html>

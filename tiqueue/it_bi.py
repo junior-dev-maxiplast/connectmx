@@ -11,6 +11,16 @@ import os
 from datetime import date, datetime
 from decimal import Decimal
 
+# Periodo e vocabulario comum dos paineis do Dashes, nao regra do SM: o BI de
+# Viagens usa exatamente os mesmos recortes.
+from .bi_periods import (
+    ALL_TIME,
+    mark_series_ticks,
+    period_choices,
+    resolve_period,
+    series_label,
+)
+
 
 # O CASE de nomes da consulta original vive melhor aqui: dá para acrescentar um
 # atendente sem mexer em SQL, e quem não estiver no mapa aparece pelo login.
@@ -45,14 +55,6 @@ SLA_MAX_SECONDS = 30 * 24 * 3600
 # fiel do que recalcular na mão (pega também o que estourou e segue aberto).
 RATING_BAD_MAX = 5
 RATING_GOOD_MIN = 9
-
-PERIOD_CHOICES = [
-    ("3", "3 meses", 3),
-    ("6", "6 meses", 6),
-    ("12", "12 meses", 12),
-    ("24", "24 meses", 24),
-    ("all", "Tudo", None),
-]
 
 AGING_BUCKETS = [
     ("ate_7", "Até 7 dias", 0, 7),
@@ -186,15 +188,6 @@ def _share(part, total):
     return round(float(_number(part) / _number(total) * 100), 1) if _number(total) else 0.0
 
 
-def resolve_period(raw_value):
-    """Normaliza o filtro de período vindo da querystring."""
-    value = (raw_value or "12").strip()
-    for key, label, months in PERIOD_CHOICES:
-        if key == value:
-            return {"key": key, "label": label, "months": months}
-    return {"key": "12", "label": "12 meses", "months": 12}
-
-
 def resolve_company(raw_value):
     value = (raw_value or "").strip()
     if not value or value == "all":
@@ -245,7 +238,13 @@ def _scope_sql(period, company, attendant=None, date_column="A.date_open"):
     """Cláusulas de filtro compartilhadas por todas as agregações."""
     clauses = [f"A.status_id NOT IN ({', '.join(str(item) for item in EXCLUDED_STATUS)})"]
     params = []
-    if period["months"]:
+    if period.get("start") and period.get("end"):
+        # Mês fechado: intervalo com fim exclusivo, vindo pronto do Python. Faz
+        # a conta no banco exigiria `DATE_FORMAT(..., '%Y-%m-01')`, e esse `%`
+        # briga com o marcador de parâmetro do driver.
+        clauses.append(f"{date_column} >= %s AND {date_column} < %s")
+        params.extend([period["start"], period["end"]])
+    elif period.get("months"):
         clauses.append(f"{date_column} >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)")
         params.append(period["months"])
     if company["id"] is not None:
@@ -271,9 +270,18 @@ def load_it_dashboard(period_key="12", company_key="all", attendant_key="all", a
     where_open, params_open = _scope_sql(period, company, attendant)
     # O backlog ignora o filtro de período de propósito: um chamado aberto há
     # dois anos continua sendo backlog de hoje, e some se filtrado por data.
-    where_backlog, params_backlog = _scope_sql({"months": None}, company, attendant)
+    where_backlog, params_backlog = _scope_sql(ALL_TIME, company, attendant)
 
     sla_filter = f"A.time_in_sla BETWEEN {SLA_MIN_SECONDS} AND {SLA_MAX_SECONDS}"
+
+    # Num recorte de um mês a série vira diária: `DATE()` em vez da competência.
+    # Nada de `DATE_FORMAT(..., '%Y-%m-%d')` — esse `%` briga com o marcador de
+    # parâmetro do driver.
+    series_expression = (
+        "DATE(A.date_open)"
+        if period["granularity"] == "day"
+        else "CONCAT(YEAR(A.date_open), '-', LPAD(MONTH(A.date_open), 2, '0'))"
+    )
 
     statements = {
         "totals": f"""
@@ -297,12 +305,12 @@ def load_it_dashboard(period_key="12", company_key="all", attendant_key="all", a
             WHERE {where_open} AND E.rating_average IS NOT NULL
         """,
         "monthly": f"""
-            SELECT CONCAT(YEAR(A.date_open), '-', LPAD(MONTH(A.date_open), 2, '0')) AS competencia,
+            SELECT {series_expression} AS competencia,
                    COUNT(*) AS abertos,
                    SUM(A.status_id = {CLOSED_STATUS}) AS fechados
             FROM helpdesk.helpdesk A
             WHERE {where_open}
-            GROUP BY YEAR(A.date_open), MONTH(A.date_open)
+            GROUP BY {series_expression}
             ORDER BY competencia
         """,
         "backlog_status": f"""
@@ -504,18 +512,19 @@ def _build_it_dashboard(data, period, company, attendant=None, attendants_availa
     fechados = _int(totals.get("fechados"))
     abertos = _int(totals.get("abertos"))
 
+    granularity = period["granularity"]
     monthly = []
     for row in data["monthly"]:
         competencia = str(row.get("competencia") or "")
-        year, _, month = competencia.partition("-")
         monthly.append(
             {
                 "competencia": competencia,
-                "label": f"{month}/{year}" if year and month else competencia,
+                "label": series_label(competencia, granularity),
                 "abertos": _int(row.get("abertos")),
                 "fechados": _int(row.get("fechados")),
             }
         )
+    mark_series_ticks(monthly)
     peak_month = max((item["abertos"] for item in monthly), default=0)
     for item in monthly:
         item["height_pct"] = round(item["abertos"] / peak_month * 100, 1) if peak_month else 0.0
@@ -673,7 +682,9 @@ def _build_it_dashboard(data, period, company, attendant=None, attendants_availa
             "period": period,
             "company": company,
             "attendant": attendant or {"key": "all", "label": "Todos os atendentes", "login": None},
-            "period_choices": [{"key": key, "label": label} for key, label, _ in PERIOD_CHOICES],
+            "period_choices": period_choices(),
+            "series_granularity": granularity,
+            "series_label": "por dia" if granularity == "day" else "por mês",
             "company_choices": [{"key": "all", "label": "Todas as empresas"}]
             + [{"key": str(key), "label": label} for key, label in sorted(COMPANY_NAMES.items())],
             "attendant_choices": [{"key": "all", "label": "Todos"}]
@@ -966,7 +977,7 @@ def build_it_ai_payload(dashboard, fingerprint, deep=None):
         "source_system": "ConnectMX / SM helpdesk",
         "source_fingerprint": fingerprint,
         "scope": {
-            "period": scope["period"]["label"],
+            "period": scope["period"]["full_label"],
             "company": scope["company"]["label"],
             "attendant": scope["attendant"]["label"],
             "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -1004,6 +1015,15 @@ def build_it_ai_payload(dashboard, fingerprint, deep=None):
             "`total_attending_time` acompanha o tempo corrido em chamados longos; também saneado na mesma faixa.",
             f"Só {dashboard['logged']['coverage_pct']}% dos chamados têm tempo lançado na timeline: o total apontado é piso.",
             "O backlog não respeita o filtro de período — é a fila aberta de hoje, de todo o histórico.",
+            *(
+                []
+                if scope["period"].get("end")
+                else [
+                    "O recorte alcança o mês corrente, que ainda não fechou: chamados abertos nos "
+                    "últimos dias ainda não tiveram tempo de fechar, o que derruba a taxa de "
+                    "fechamento e o tempo médio de resolução. O recorte 'Mês passado' não tem esse viés.",
+                ]
+            ),
         ],
         "analysis_instructions": [
             "Use somente os indicadores fornecidos; não invente causas para variações.",

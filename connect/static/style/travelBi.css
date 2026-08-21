@@ -1,0 +1,82 @@
+/* ==========================================================================
+   BI de Viagens — painel do ConnectMX Dashes.
+
+   Este arquivo carrega DEPOIS de itBi.css, que é a casca compartilhada dos
+   painéis do Dashes: tudo que começa com `.bi-` (grid, painel, KPI, barras,
+   tabela, cartões de IA, popup de cota) já vem de lá e não se repete aqui.
+   Só o escopo do body e os blocos que existem exclusivamente na frota moram
+   neste arquivo.
+   ========================================================================== */
+
+body.travelbi { margin: 0; background: var(--bi-bg); color: var(--bi-text); font-family: "Open Sans", sans-serif; }
+body.travelbi * { box-sizing: border-box; }
+body.travelbi a { color: inherit; text-decoration: none; }
+
+/* Tipos de insight que só o painel de frota usa. */
+.bi-ai-card.is-cost { border-left-color: var(--bi-amber); }
+.bi-ai-card.is-fleet { border-left-color: var(--bi-purple); }
+
+/* Cinco faixas de aging (a quinta é "sem chegada prevista"). */
+.bi-aging.is-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.bi-aging > div.is-green strong { color: var(--bi-green); }
+
+/* ------------------------------------------------------------ placa ------ */
+
+/* Placa em fonte tabular: alinhada em coluna, ela vira um identificador que dá
+   para varrer com o olho — em fonte proporcional as sete posições dançam. */
+.tv-plate { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px;
+    border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .08);
+    font-family: "Consolas", "SF Mono", monospace; font-size: 10.5px; letter-spacing: .06em; }
+
+/* ------------------------------------------------------- desvio de consumo */
+
+/* Barra divergente: o zero fica no meio e cada placa se afasta para a direita
+   (consome menos que a frota) ou para a esquerda (consome mais). Comparar
+   contra a referência é o ponto — uma barra normal comparia placa com placa. */
+.tv-dev { display: grid; gap: 9px; }
+.tv-dev-row { display: grid; grid-template-columns: 108px minmax(0, 1fr) 96px; gap: 10px; align-items: center; }
+.tv-dev-row > small { color: var(--bi-muted); font-size: 9.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.tv-dev-track { position: relative; height: 18px; border-radius: 6px; background: rgba(126, 169, 183, .1); }
+.tv-dev-track::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--bi-border); }
+.tv-dev-track i { position: absolute; top: 4px; bottom: 4px; border-radius: 3px; }
+.tv-dev-track i.is-red { right: 50%; background: linear-gradient(270deg, rgba(255, 122, 140, .95), rgba(255, 122, 140, .4)); }
+.tv-dev-track i.is-green { left: 50%; background: linear-gradient(90deg, rgba(101, 213, 93, .95), rgba(101, 213, 93, .4)); }
+.tv-dev-scale { display: flex; justify-content: space-between; margin-top: 4px; color: var(--bi-muted); font-size: 9px; }
+
+/* --------------------------------------------------------- qualidade ----- */
+
+.tv-quality { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 13px; }
+.tv-quality > div { display: grid; gap: 3px; padding: 12px 14px; border-radius: 10px; background: rgba(126, 169, 183, .06); border-left: 3px solid var(--bi-green); }
+.tv-quality > div.is-red { border-left-color: var(--bi-red); }
+.tv-quality span { color: var(--bi-muted); font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+.tv-quality strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.tv-quality > div.is-red strong { color: var(--bi-red); }
+.tv-quality small { color: var(--bi-muted); font-size: 10px; }
+
+/* -------------------------------------------------------- série mensal --- */
+
+.bi-chart-bars i.is-km { background: linear-gradient(180deg, rgba(214, 92, 255, .9), rgba(214, 92, 255, .28)); }
+.bi-legend i.is-km { background: var(--bi-purple); }
+
+/* Série de um ou dois pontos (um mês fechado, por exemplo): sem limite de
+   largura a barra se estica pelo painel inteiro e parece defeito de layout. A
+   coluna ganha largura fixa e o gráfico centraliza o que sobrou. */
+.bi-chart.is-sparse { justify-content: center; gap: 28px; }
+.bi-chart.is-sparse > div { flex: 0 0 104px; }
+
+/* Linha de referência no gráfico de consumo: a média da frota, para o mês ser
+   lido contra o padrão e não contra o pico da própria série. */
+.tv-reference { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(101, 213, 93, .45); pointer-events: none; }
+.tv-reference span { position: absolute; right: 0; top: -13px; color: var(--bi-green); font-size: 8.5px; }
+.bi-chart.is-referenced { position: relative; }
+
+/* ------------------------------------------------------------ responsivo -- */
+
+@media (max-width: 960px) {
+    .bi-aging.is-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tv-dev-row { grid-template-columns: 84px minmax(0, 1fr) 72px; }
+}
+
+@media (max-width: 620px) {
+    .tv-quality { grid-template-columns: minmax(0, 1fr); }
+}

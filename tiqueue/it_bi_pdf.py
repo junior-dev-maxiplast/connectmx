@@ -90,7 +90,7 @@ def build_it_bi_pdf(dashboard, snapshot):
         Paragraph("CONNECTMX DASHES / BI DO TI", styles["BiSubtitle"]),
         Paragraph("Indicadores do service desk", styles["BiTitle"]),
         Paragraph(
-            f"{escape(_text(scope['period']['label']))} | {escape(_text(scope['company']['label']))}"
+            f"{escape(_text(scope['period']['full_label']))} | {escape(_text(scope['company']['label']))}"
             f" | {escape(_text(scope['attendant']['label']))}"
             f" | Gerado em {generated_at.strftime('%d/%m/%Y %H:%M')}",
             styles["BiMuted"],
