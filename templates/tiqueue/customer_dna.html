@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ConnectMX | DNA de Cliente</title>
     <script src="{% static '/js/theme.js' %}"></script>
+    <script src="{% static '/js/dashesFetch.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
     <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=7">
@@ -539,7 +540,7 @@
                             body: new FormData(form),
                             headers: { 'X-Requested-With': 'XMLHttpRequest' },
                         });
-                        const payload = await response.json();
+                        const payload = await window.dashesReadJson(response);
                         if (payload.code === 'ai_daily_limit') {
                             button.disabled = false;
                             button.innerHTML = originalLabel;
@@ -574,7 +575,7 @@
                 showMessage('Buscando clientes...');
                 try {
                     const response = await fetch(`${page.dataset.searchUrl}?q=${encodeURIComponent(input.value.trim())}`);
-                    const payload = await response.json();
+                    const payload = await window.dashesReadJson(response);
                     if (!response.ok || payload.status !== 'ok') throw new Error(payload.message || 'Falha na busca');
                     results.replaceChildren();
                     if (!payload.items.length) return showMessage('Nenhum cliente encontrado.');

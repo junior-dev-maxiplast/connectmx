@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ConnectMX | BI de Viagens</title>
     <script src="{% static '/js/theme.js' %}"></script>
+    <script src="{% static '/js/dashesFetch.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
     {# itBi.css é a casca compartilhada dos painéis do Dashes (tudo que é .bi-*). #}
@@ -856,7 +857,9 @@
                     body: new FormData(form),
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
                 }).then(function (response) {
-                    return response.json().then(function (payload) { return { response: response, payload: payload }; });
+                    return window.dashesReadJson(response).then(function (payload) {
+                        return { response: response, payload: payload };
+                    });
                 }).then(function (result) {
                     var payload = result.payload;
                     if (payload.code === 'ai_daily_limit') {
