@@ -1721,7 +1721,7 @@ class ItBiInsightSnapshot(models.Model):
         (STATUS_ERROR, "Erro"),
     ]
 
-    period_key = models.CharField(max_length=8)
+    period_key = models.CharField(max_length=20)
     company_key = models.CharField(max_length=8)
     attendant_key = models.CharField(max_length=120, default="all")
     scope_label = models.CharField(max_length=120, blank=True, null=True)
@@ -1820,3 +1820,59 @@ class DashboardAccess(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.dashboard.slug}"
+
+
+class TravelBiInsightSnapshot(models.Model):
+    """Análise de IA do BI de Viagens, por recorte de período, frota e situação.
+
+    Mesma mecânica do ItBiInsightSnapshot, com a chave do painel de viagens:
+    trocar de frota ou de situação muda todos os números, então cada recorte
+    guarda o seu snapshot em vez de sobrescrever o anterior.
+    """
+
+    STATUS_PREPARED = "prepared"
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PREPARED, "Preparado"),
+        (STATUS_PROCESSING, "Processando na IA"),
+        (STATUS_COMPLETED, "Concluído"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    period_key = models.CharField(max_length=20)
+    carrier_key = models.CharField(max_length=20, default="all")
+    situation_key = models.CharField(max_length=8, default="all")
+    scope_label = models.CharField(max_length=160, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
+    source_fingerprint = models.CharField(max_length=64, db_index=True)
+    metrics = models.JSONField(default=dict)
+    ai_payload = models.JSONField(default=dict)
+    ai_response = models.JSONField(default=dict, blank=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_response_id = models.CharField(max_length=120, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    ai_requested_at = models.DateTimeField(blank=True, null=True)
+    ai_completed_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="travel_bi_insight_snapshots",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["period_key", "carrier_key", "situation_key"],
+                name="unique_travel_bi_insight_scope",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Viagens {self.scope_label or self.period_key}"

@@ -149,8 +149,16 @@ from .it_bi import (
     list_attendants,
     IT_BI_SYSTEM_PROMPT,
 )
+from .travel_bi import (
+    load_travel_dashboard,
+    build_travel_ai_payload,
+    compute_deep_analytics as compute_travel_deep_analytics,
+    travel_dashboard_fingerprint,
+    list_carriers,
+    TRAVEL_BI_SYSTEM_PROMPT,
+)
 from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
-from .models import CustomerInsightSnapshot, ItBiInsightSnapshot
+from .models import CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot
 from .models import Dashboard, DashboardAccess
 from .ai_config import (
     ALLOWED_REASONING_EFFORTS,
@@ -161,6 +169,7 @@ from .ai_config import (
 from .openai_insights import OpenAIInsightError, generate_customer_insights, test_openai_connection
 from .customer_dna_pdf import build_customer_dna_pdf
 from .it_bi_pdf import build_it_bi_pdf
+from .travel_bi_pdf import build_travel_bi_pdf
 
 def _project_dashboard_deadline_meta(target_date, today):
     if not target_date:
@@ -1354,7 +1363,7 @@ def itBiPrepareInsights(request):
         attendant_key=scope["attendant"]["key"],
         defaults={
             "scope_label": (
-                f"{scope['period']['label']} - {scope['company']['label']}"
+                f"{scope['period']['full_label']} - {scope['company']['label']}"
                 f" - {scope['attendant']['label']}"
             ),
             "source_fingerprint": fingerprint,
@@ -1930,6 +1939,269 @@ def itBiExportPdf(request):
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+# ------------------------------------------------------------ BI de Viagens --
+
+def _travel_bi_scope_from_source(source):
+    return (
+        (source.get("periodo") or "12").strip(),
+        (source.get("frota") or "all").strip(),
+        (source.get("situacao") or "all").strip(),
+    )
+
+
+def _travel_bi_scope_query(period_key, carrier_key, situation_key):
+    return "?" + urllib_parse.urlencode(
+        {"periodo": period_key, "frota": carrier_key, "situacao": situation_key}
+    )
+
+
+def _travel_bi_snapshot(period_key, carrier_key, situation_key):
+    """Snapshot do recorte. Frota e situacao entram na chave junto com o periodo."""
+    return TravelBiInsightSnapshot.objects.filter(
+        period_key=period_key, carrier_key=carrier_key, situation_key=situation_key
+    ).first()
+
+
+@_dashes_access_required("viagens")
+def dashesTravelBiPage(request):
+    """Painel de viagens: frota, quilometragem, consumo e adiantamentos."""
+    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_travel_dashboard(period_key, carrier_key, situation_key)
+        scope = dashboard["scope"]
+        # O recorte volta normalizado: frota inexistente na querystring cai para
+        # "todas", e a chave do snapshot precisa ser a mesma que a tela mostra.
+        period_key = scope["period"]["key"]
+        carrier_key = scope["carrier"]["key"]
+        situation_key = scope["situation"]["key"]
+    except Exception as exc:
+        data_error = f"Nao foi possivel consultar o ERP Senior: {exc}"
+
+    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
+    # A analise guardada pode ser de numeros antigos: comparar a impressao do
+    # recorte avisa que ela envelheceu, em vez de exibir conclusao vencida.
+    stale = bool(
+        snapshot and dashboard and snapshot.source_fingerprint != travel_dashboard_fingerprint(dashboard)
+    )
+
+    return render(
+        request,
+        "tiqueue/travel_bi.html",
+        {
+            "dashboard": dashboard,
+            "data_error": data_error,
+            "insight_snapshot": snapshot,
+            "insight_stale": stale,
+            "dashes_mode": True,
+            "active_dash": "viagens",
+            "dashes_menu": allowed_dashboards(request.user),
+            "travel_page_url": reverse("dashesTravelBiPage"),
+            "travel_prepare_url": reverse("travelBiPrepareInsights"),
+            "travel_ai_url": reverse("travelBiRequestAiInsights"),
+            "travel_payload_url": reverse("travelBiInsightPayloadApi"),
+            "travel_pdf_url": reverse("travelBiExportPdf"),
+            "travel_scope_query": _travel_bi_scope_query(period_key, carrier_key, situation_key),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+        },
+    )
+
+
+@login_required
+@require_POST
+def travelBiPrepareInsights(request):
+    """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
+    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.POST)
+
+    try:
+        carriers = list_carriers()
+        dashboard = load_travel_dashboard(
+            period_key, carrier_key, situation_key, carriers_available=carriers
+        )
+        scope = dashboard["scope"]
+        # Os cruzamentos pesados so rodam aqui, no pedido explicito: e isso que
+        # separa o painel de abertura rapida das analises processadas.
+        deep = compute_travel_deep_analytics(
+            scope["period"]["key"], scope["carrier"]["key"], scope["situation"]["key"]
+        )
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Nao foi possivel consultar o ERP Senior: {exc}"},
+            status=503,
+        )
+
+    fingerprint = travel_dashboard_fingerprint(dashboard)
+    snapshot, created = TravelBiInsightSnapshot.objects.update_or_create(
+        period_key=scope["period"]["key"],
+        carrier_key=scope["carrier"]["key"],
+        situation_key=scope["situation"]["key"],
+        defaults={
+            "scope_label": (
+                f"{scope['period']['full_label']} - {scope['carrier']['label']}"
+                f" - {scope['situation']['label']}"
+            ),
+            "source_fingerprint": fingerprint,
+            "metrics": {
+                "volume": dashboard["metrics"],
+                "validation": dashboard["validation"],
+                "forecast": dashboard["forecast"],
+                "outliers": dashboard["outliers"],
+                "deep": deep,
+            },
+            "ai_payload": build_travel_ai_payload(dashboard, fingerprint, deep=deep),
+            "status": TravelBiInsightSnapshot.STATUS_PREPARED,
+            "ai_response": {},
+            "ai_error": None,
+            "created_by": request.user,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "created": created,
+            "snapshot_id": snapshot.id,
+            "message": "Indicadores calculados e payload preparado.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def travelBiRequestAiInsights(request):
+    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.POST)
+
+    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
+            status=409,
+        )
+
+    # Mesma cota diaria do DNA e do BI do TI: o teto e por usuario, nao por painel.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
+            status=409,
+        )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    snapshot.status = TravelBiInsightSnapshot.STATUS_PROCESSING
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
+
+    try:
+        ai_result = generate_customer_insights(
+            snapshot.ai_payload,
+            runtime_config=runtime_config,
+            system_prompt=TRAVEL_BI_SYSTEM_PROMPT,
+        )
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = TravelBiInsightSnapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    usage = ai_result["usage"]
+    snapshot.status = TravelBiInsightSnapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
+
+
+@login_required
+@require_GET
+def travelBiInsightPayloadApi(request):
+    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
+    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "scope": snapshot.scope_label,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "model": snapshot.ai_model,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+@login_required
+@require_GET
+def travelBiExportPdf(request):
+    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
+    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return HttpResponse(
+            "Gere os indicadores deste recorte antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
+        # analise de um filtro com os numeros de outro.
+        dashboard = load_travel_dashboard(
+            snapshot.period_key, snapshot.carrier_key, snapshot.situation_key
+        )
+    except Exception as exc:
+        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
+
+    pdf_bytes = build_travel_bi_pdf(dashboard, snapshot)
+    filename = f"connectmx-bi-viagens-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
 
 
 def projectCalendarPage(request):

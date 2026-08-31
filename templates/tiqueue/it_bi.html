@@ -226,7 +226,7 @@
                 <div class="bi-kpi is-blue">
                     <span>Chamados</span>
                     <strong>{{ dashboard.metrics.tickets_display }}</strong>
-                    <small>abertos em {{ dashboard.scope.period.label|lower }}</small>
+                    <small>abertos em {{ dashboard.scope.period.full_label|lower }}</small>
                 </div>
                 <div class="bi-kpi">
                     <span>Fechados</span>
@@ -268,8 +268,8 @@
             <div class="bi-grid is-aside">
                 <section class="bi-panel">
                     <div class="bi-panel-head">
-                        <h2>Abertos e fechados por mês</h2>
-                        <span>{{ dashboard.scope.period.label }} · {{ dashboard.scope.company.label }}</span>
+                        <h2>Abertos e fechados {{ dashboard.scope.series_label }}</h2>
+                        <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.company.label }}</span>
                     </div>
                     {% if dashboard.monthly %}
                     <div class="bi-chart">
@@ -279,7 +279,7 @@
                                 <i class="is-open" style="height: {{ item.height_pct }}%"></i>
                                 <i class="is-closed" style="height: {% widthratio item.fechados item.abertos item.height_pct %}%"></i>
                             </div>
-                            <small>{{ item.label }}</small>
+                            <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
                         </div>
                         {% endfor %}
                     </div>
