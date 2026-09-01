@@ -1616,11 +1616,14 @@ def dashesCustomerDnaPage(request):
             "dashes_mode": True,
             "active_dash": "customer-dna",
             "dashes_menu": allowed_dashboards(request.user),
-            "dna_search_url": reverse("customerDnaSearchApi"),
-            "dna_prepare_url": reverse("customerDnaPrepareInsights"),
-            "dna_ai_url": reverse("customerDnaRequestAiInsights"),
-            "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
-            "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
+            # Sob /dashes/, e não sob /clientes/: uma conta exclusiva do Dashes
+            # é barrada pelo middleware fora deste prefixo, e a busca voltava
+            # como HTML de redirecionamento no lugar do JSON.
+            "dna_search_url": reverse("dashesCustomerDnaSearchApi"),
+            "dna_prepare_url": reverse("dashesCustomerDnaPrepareInsights"),
+            "dna_ai_url": reverse("dashesCustomerDnaRequestAiInsights"),
+            "dna_payload_url": reverse("dashesCustomerDnaInsightPayloadApi", args=[customer_id]),
+            "dna_pdf_url": reverse("dashesCustomerDnaExportPdf", args=[customer_id]),
             "dna_page_url": reverse("dashesCustomerDnaPage"),
             "dna_scope_query": _customer_dna_scope_query(view_mode, member_customer_id),
             "dna_ai_quota": _dashes_ai_quota(request.user),

@@ -5,6 +5,8 @@ todos os paineis. Estes testes fixam o comportamento novo: acesso e sempre
 explicito, por painel.
 """
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -263,3 +265,71 @@ class DashesAccessManagementTests(TestCase):
         )
 
         self.assertEqual(target.dashboard_accesses.count(), 0)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+class DashesPanelApiRoutingTests(TestCase):
+    """As rotas que o JS de um painel chama precisam morar sob /dashes/.
+
+    Uma conta exclusiva do Dashes é redirecionada pelo middleware fora desse
+    prefixo. Como `fetch` segue o redirect sozinho e devolve 200, o JS recebia a
+    página HTML e `response.json()` estourava com "Unexpected token '<'" — que
+    não diz nada a quem está usando a tela. O DNA do Cliente tinha as rotas sob
+    /clientes/ e era o único painel afetado.
+    """
+
+    def setUp(self):
+        self.dna = Dashboard.objects.get(slug="customer-dna")
+        self.user = make_user("sodashes", can_access_internal=False)
+        DashboardAccess.objects.create(user=self.user, dashboard=self.dna)
+        self.client.force_login(self.user)
+        session = self.client.session
+        session["dashes_authenticated"] = True
+        session.save()
+
+    def test_panel_hands_the_javascript_urls_under_dashes(self):
+        response = self.client.get(reverse("dashesCustomerDnaPage"))
+
+        for key in ("dna_search_url", "dna_prepare_url", "dna_ai_url",
+                    "dna_payload_url", "dna_pdf_url"):
+            self.assertTrue(
+                response.context[key].startswith("/dashes/"),
+                f"{key} = {response.context[key]}",
+            )
+
+    def test_search_answers_json_to_a_dashes_only_account(self):
+        # O sintoma relatado: a busca respondia 302 para /dashes/ e o fetch
+        # recebia HTML começando com "<!DOCTYPE".
+        with patch("tiqueue.views.search_customers", return_value=[]):
+            response = self.client.get(reverse("dashesCustomerDnaSearchApi") + "?q=teste")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response["Content-Type"])
+
+    def test_old_internal_route_still_refuses_a_dashes_only_account(self):
+        # A rota antiga continua servindo a tela interna do ConnectMX, que esta
+        # conta não pode abrir: corrigir o painel não podia afrouxar isso.
+        response = self.client.get(reverse("customerDnaSearchApi") + "?q=teste")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/dashes/")
+
+    def test_every_dashes_panel_keeps_its_api_inside_the_prefix(self):
+        # Vale para os três painéis, para o problema não voltar no próximo.
+        for name, args in (
+            ("dashesCustomerDnaSearchApi", None),
+            ("dashesCustomerDnaPrepareInsights", None),
+            ("dashesCustomerDnaRequestAiInsights", None),
+            ("dashesCustomerDnaInsightPayloadApi", [10832]),
+            ("dashesCustomerDnaExportPdf", [10832]),
+            ("itBiPrepareInsights", None),
+            ("itBiRequestAiInsights", None),
+            ("itBiInsightPayloadApi", None),
+            ("itBiExportPdf", None),
+            ("travelBiPrepareInsights", None),
+            ("travelBiRequestAiInsights", None),
+            ("travelBiInsightPayloadApi", None),
+            ("travelBiExportPdf", None),
+        ):
+            url = reverse(name, args=args)
+            self.assertTrue(url.startswith("/dashes/"), f"{name} = {url}")
