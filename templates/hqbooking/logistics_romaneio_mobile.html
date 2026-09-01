@@ -1,0 +1,103 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#00bf63">
+    <title>Contagem de pallets | ConnectMX</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/romaneioMobile.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open Sans:400,600,700,800" rel="stylesheet">
+</head>
+<body class="rmb">
+    {% csrf_token %}
+
+    <header class="rmb-topbar">
+        <span class="rmb-eyebrow">Contagem de pallets</span>
+        <div class="theme-toggle" aria-label="Tema">
+            <label class="theme-switch" title="Alternar tema">
+                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme &amp;&amp; ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
+                <span class="theme-slider"></span>
+            </label>
+        </div>
+    </header>
+
+    <main class="rmb-shell" data-rmb-shell data-step="matricula"
+          data-quick-submit-url="{% url 'logistics_romaneio_quick_submit' %}">
+
+        <div class="rmb-progress" aria-hidden="true"><i></i><i></i><i></i></div>
+
+        <!-- ------------------------------------------------- passo 1: matrícula -- -->
+        <section class="rmb-step rmb-step-matricula">
+            <div class="rmb-body">
+                <p class="rmb-kicker">Passo 1 de 3</p>
+                <h1 class="rmb-title">Qual é a sua matrícula?</h1>
+                <p class="rmb-lede">Ela vai junto em cada pallet que você salvar.</p>
+                <input class="rmb-display-input" id="rmbMatricula" type="text" inputmode="numeric"
+                       autocomplete="off" maxlength="40" placeholder="0000" aria-label="Matrícula">
+            </div>
+            <div class="rmb-footer">
+                <button type="button" class="rmb-button" id="rmbMatriculaNext" disabled>Continuar</button>
+            </div>
+        </section>
+
+        <!-- ---------------------------------------------------- passo 2: leitura -- -->
+        <section class="rmb-step rmb-step-ler">
+            <div class="rmb-body is-centered">
+                <p class="rmb-kicker">Passo 2 de 3</p>
+                <h1 class="rmb-title">Ler o pallet</h1>
+
+                <div class="rmb-target" aria-hidden="true">
+                    <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 16V9a3 3 0 0 1 3-3h7M32 6h7a3 3 0 0 1 3 3v7M42 32v7a3 3 0 0 1-3 3h-7M16 42H9a3 3 0 0 1-3-3v-7"/>
+                        <path d="M15 17v14M20 17v14M25 17v14M30 17v14M34 17v14" stroke-width="2.8"/>
+                    </svg>
+                </div>
+
+                <p class="rmb-lede">Aponte a câmera para o código de barras do romaneio.</p>
+                <span class="rmb-pill">Matrícula <strong id="rmbMatriculaEcho">—</strong></span>
+                <p class="rmb-alert" id="rmbCameraAlert" hidden></p>
+            </div>
+            <div class="rmb-footer">
+                <button type="button" class="rmb-button is-hero" id="rmbScanButton">Ler Pallet</button>
+                <button type="button" class="rmb-button is-text" data-rmb-back-matricula>Trocar matrícula</button>
+            </div>
+        </section>
+
+        <!-- ----------------------------------------------- passo 3: conferência -- -->
+        <section class="rmb-step rmb-step-conferencia">
+            <div class="rmb-body">
+                <p class="rmb-kicker">Passo 3 de 3</p>
+                <h1 class="rmb-title">Confira a leitura</h1>
+                <div id="rmbReadout"></div>
+            </div>
+            <div class="rmb-footer">
+                <button type="button" class="rmb-button is-hero" id="rmbSaveButton">Salvar Leitura</button>
+                <button type="button" class="rmb-button is-text is-danger" data-rmb-cancel-review>Cancelar</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- ------------------------------------------------- tela de leitura -- -->
+    <div class="rmb-scanner" id="rmbScanner" role="dialog" aria-modal="true" aria-label="Leitura do pallet">
+        <div class="rmb-scanner-stage">
+            <video id="rmbVideo" playsinline muted autoplay></video>
+            <div class="rmb-frame" aria-hidden="true">
+                <i></i><i></i><i></i><i></i>
+                <span class="rmb-laser"></span>
+            </div>
+        </div>
+        <div class="rmb-scanner-foot">
+            <p class="rmb-scanner-status" id="rmbScannerStatus"></p>
+            <button type="button" class="rmb-button is-ghost" data-rmb-cancel-scan>Cancelar</button>
+        </div>
+    </div>
+
+    <div class="rmb-toast" id="rmbToast" role="status" aria-live="polite"></div>
+
+    <script src="{% static '/js/romaneioMobile.js' %}"></script>
+</body>
+</html>

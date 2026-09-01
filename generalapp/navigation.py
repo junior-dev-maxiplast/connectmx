@@ -74,6 +74,7 @@ NAV_GROUPS = [
             ("wifiVoucherPage", "Vouchers de wifi", "internet visitante"),
             ("tires_dashboard", "Logística — Pneus", "caminhao frota pneu"),
             ("logistics_romaneio", "Logística — Romaneios", "expedicao carga"),
+            ("logistics_romaneio_mobile", "Logística — Contagem de pallets", "celular camera codigo de barras leitura pallet"),
             ("hqbooking_login", "Reserva da sede", "sala espaco"),
             ("lunch_booking", "Reserva de almoço", "refeicao"),
         ],
