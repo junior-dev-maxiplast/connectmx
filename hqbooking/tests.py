@@ -986,6 +986,22 @@ class LogisticsRomaneioTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "logistics-page")
 
+    def test_romaneio_mobile_page_renders_scan_flow(self):
+        response = self.client.get(reverse("logistics_romaneio_mobile"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Matrícula")
+        self.assertContains(response, "Ler Pallet")
+        self.assertContains(response, "Salvar Leitura")
+        # A tela grava pela mesma rota de envio rápido usada pelo leitor de mesa.
+        self.assertContains(response, reverse("logistics_romaneio_quick_submit"))
+
+    def test_romaneio_mobile_page_has_camera_reading_only(self):
+        """A leitura é só pela câmera: nada de digitação ou captura de coletor."""
+        response = self.client.get(reverse("logistics_romaneio_mobile"))
+        self.assertContains(response, "<video")
+        self.assertNotContains(response, "textarea")
+        self.assertNotContains(response, "coletor")
+
     @patch("hqbooking.views._fetch_simulation_romaneio_ranking_data")
     def test_romaneio_ranking_page_renders(self, ranking_mock):
         ranking_mock.return_value = {

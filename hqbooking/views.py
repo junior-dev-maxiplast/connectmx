@@ -1228,6 +1228,19 @@ def logistics_romaneio_page(request):
     )
 
 
+def logistics_romaneio_mobile_page(request):
+    """Contagem de pallets no celular: matrícula, leitura pela câmera e gravação.
+
+    Tela separada da versão de mesa porque o fluxo é outro: lá o leitor HID
+    dispara teclas na página inteira e a pessoa confere um formulário completo;
+    aqui a leitura vem só da câmera, um passo por vez, e a conferência é de
+    exibição com dois botões. A gravação reaproveita
+    `logistics_romaneio_quick_submit`, então a página não precisa de contexto:
+    matrícula e leitura vivem no aparelho até o momento do envio.
+    """
+    return render(request, "hqbooking/logistics_romaneio_mobile.html")
+
+
 @require_POST
 def logistics_romaneio_quick_submit(request):
     try:

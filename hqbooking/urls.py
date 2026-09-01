@@ -13,6 +13,7 @@ urlpatterns = [
     ),
     path("logistica/romaneios/", views.logistics_romaneio_page, name="logistics_romaneio"),
     path("logistica/romaneios/ranking/", views.logistics_romaneio_ranking_page, name="logistics_romaneio_ranking"),
+    path("logistica/romaneios/mobile/", views.logistics_romaneio_mobile_page, name="logistics_romaneio_mobile"),
     path("logistica/romaneios/api/quick-submit/", views.logistics_romaneio_quick_submit, name="logistics_romaneio_quick_submit"),
     path("almoco/", views.lunch_booking_page, name="lunch_booking"),
     path("almoco/admin/", views.lunch_booking_admin_page, name="lunch_booking_admin"),
