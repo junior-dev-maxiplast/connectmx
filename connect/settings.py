@@ -44,6 +44,19 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()]
 
+# Atrás do nginx o TLS termina no proxy: o Django recebe a requisição em HTTP e,
+# sem isso, `request.is_secure()` é False. O CSRF então compara o Origin
+# `https://...` do navegador com um host que ele acha ser http e recusa todo
+# POST. Só é seguro porque o nginx sempre reescreve X-Forwarded-Proto e o
+# runserver escuta apenas em 127.0.0.1, fora do alcance da rede.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Origens completas (com esquema e porta) de onde o site é aberto. O Django 4+
+# exige a lista quando o acesso é por HTTPS.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+]
+
 
 # Application definition
 

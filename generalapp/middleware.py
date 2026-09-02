@@ -29,6 +29,9 @@ class RequireLoginMiddleware:
         "/sede/",
         "/almoco/",
         "/logistica/",
+        # API do ConnectMX Mobile: cliente nativo, sem sessão. A autorização é a
+        # chave em X-ConnectMX-Key, conferida em hqbooking/mobile_api.py.
+        "/api/mobile/",
     )
 
     # Requester-facing area: unauthenticated visitors go to the portal's own

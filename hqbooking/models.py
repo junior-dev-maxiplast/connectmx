@@ -90,6 +90,12 @@ class SimulationRomaneioEntry(models.Model):
     volume_quantity = models.PositiveIntegerField()
     romaneio_weight = models.DecimalField(max_digits=14, decimal_places=3)
     barcode_payload = models.TextField(blank=True, null=True)
+    # Identificador gerado pelo ConnectMX Mobile para cada leitura da fila local.
+    # Existe porque o app reenvia sozinho quando a rede volta: se a resposta do
+    # INSERT se perder no caminho, o retry chegaria como um romaneio novo e
+    # dobraria a contagem de pallets. Com ele o servidor reconhece a repetição e
+    # devolve o registro que já gravou. Vazio nos lançamentos feitos pela web.
+    client_reference = models.CharField(max_length=64, blank=True, default="", db_index=True)
     sync_status = models.CharField(max_length=10, choices=SYNC_STATUS_CHOICES, default=SYNC_PENDING)
     sync_message = models.CharField(max_length=255, blank=True, null=True)
     synced_at = models.DateTimeField(blank=True, null=True)
