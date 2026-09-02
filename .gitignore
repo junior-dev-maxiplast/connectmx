@@ -1,3 +1,53 @@
+# Segredos e ambiente local. Só o .env.example vai para o repositório.
 .env
-*.pyc
+.env.*
+!.env.example
+
+# Bytecode e caches do Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+ENV/
+
+# Banco de dados local do Django. Cada máquina tem o seu; versionar o arquivo
+# faz um binário de vários MB subir a cada commit e ainda gera conflito toda vez
+# que duas pessoas gravam algo. `connect/static/` NÃO entra aqui: é fonte.
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+
+# Saída do collectstatic (gerada no deploy, não é fonte)
+staticfiles/
+
+# Uploads dos usuários: entram pelo sistema em produção, não pelo git.
+media/
+
+# Artefatos de execução: PDFs e PNGs gerados pelos relatórios e pelas
+# ferramentas de preview. São reproduzíveis.
+tmp/
+output/
+
+# Logs
+*.log
+
+# Caches de teste e ferramentas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Editores e sistema operacional
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
