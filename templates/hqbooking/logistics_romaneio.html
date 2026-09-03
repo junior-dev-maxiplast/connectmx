@@ -212,7 +212,7 @@
                     </div>
                     <div class="hq-field">
                         <label class="hq-label" for="barcode_payload">Leitura do código de barras</label>
-                        <textarea class="hq-input romaneio-scan-input" id="barcode_payload" name="barcode_payload" rows="3" placeholder="Ex.: 1/2/12345/8/1540,250">{{ form_values.barcode_payload }}</textarea>
+                        <textarea class="hq-input romaneio-scan-input" id="barcode_payload" name="barcode_payload" rows="3" placeholder="Ex.: 1/2/8/1540,250/4521/103">{{ form_values.barcode_payload }}</textarea>
                     </div>
                     <div class="hq-actions romaneio-scan-actions">
                         <button type="button" class="hq-button hq-button-secondary" onclick="applyRomaneioScan()">Aplicar leitura</button>
@@ -234,8 +234,16 @@
                         <input class="hq-input" id="sequence_record" name="sequence_record" type="text" maxlength="40" value="{{ form_values.sequence_record }}" placeholder="Gerada automaticamente no envio" readonly>
                     </div>
                     <div class="hq-field">
-                        <label class="hq-label" for="user_code">Código do usuário</label>
+                        <label class="hq-label" for="user_code">Matrícula</label>
                         <input class="hq-input" id="user_code" name="user_code" type="text" maxlength="40" value="{{ form_values.user_code }}" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="package_code">Código do pallet</label>
+                        <input class="hq-input" id="package_code" name="package_code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" value="{{ form_values.package_code }}" placeholder="Ex.: 4521" required>
+                    </div>
+                    <div class="hq-field">
+                        <label class="hq-label" for="address_code">Endereçamento</label>
+                        <input class="hq-input" id="address_code" name="address_code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" value="{{ form_values.address_code }}" placeholder="Ex.: 103" required>
                     </div>
                     <div class="hq-field">
                         <label class="hq-label" for="generated_date">Data da leitura</label>
@@ -258,10 +266,12 @@
                 <div class="romaneio-field-guide">
                     <div class="romaneio-guide-card">1. Empresa</div>
                     <div class="romaneio-guide-card">2. Filial</div>
-                    <div class="romaneio-guide-card">3. Sequência automática</div>
-                    <div class="romaneio-guide-card">4. Volumes</div>
-                    <div class="romaneio-guide-card">5. Peso</div>
-                    <div class="romaneio-guide-card">Usuário manual</div>
+                    <div class="romaneio-guide-card">3. Volumes</div>
+                    <div class="romaneio-guide-card">4. Peso</div>
+                    <div class="romaneio-guide-card">5. Código do pallet</div>
+                    <div class="romaneio-guide-card">6. Endereçamento</div>
+                    <div class="romaneio-guide-card">Matrícula manual</div>
+                    <div class="romaneio-guide-card">Sequência automática</div>
                     <div class="romaneio-guide-card">Data automática</div>
                     <div class="romaneio-guide-card">Hora automática</div>
                 </div>
@@ -290,7 +300,9 @@
                                 <th>Empresa</th>
                                 <th>Filial</th>
                                 <th>Sequência</th>
-                                <th>Usuário</th>
+                                <th>Matrícula</th>
+                                <th>Pallet</th>
+                                <th>Endereço</th>
                                 <th>Geração</th>
                                 <th>Volumes</th>
                                 <th>Peso</th>
@@ -306,6 +318,8 @@
                                 <td>{{ row.branch_code }}</td>
                                 <td>{{ row.sequence_record }}</td>
                                 <td>{{ row.user_code }}</td>
+                                <td>{{ row.package_code|default:"-" }}</td>
+                                <td>{{ row.address_code|default:"-" }}</td>
                                 <td>{{ row.generated_date|date:"d/m/Y" }} {{ row.generated_time|time:"H:i:s" }}</td>
                                 <td>{{ row.volume_quantity }}</td>
                                 <td>{{ row.romaneio_weight }}</td>
@@ -318,7 +332,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="10">Nenhuma leitura registrada até o momento.</td>
+                                <td colspan="12">Nenhuma leitura registrada até o momento.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -522,7 +536,7 @@
                 if (applied) {
                     setBarcodeReaderState("success");
                 } else {
-                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os 5 campos do romaneio automaticamente.");
+                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os 6 campos do romaneio automaticamente.");
                 }
             }, 900);
         }
@@ -867,7 +881,7 @@
             const body = document.getElementById("romaneioHistoryBody");
             if (!body || !entry) return;
 
-            const emptyRow = body.querySelector("tr td[colspan='10']");
+            const emptyRow = body.querySelector("tr td[colspan='12']");
             if (emptyRow) {
                 emptyRow.parentElement.remove();
             }
@@ -879,6 +893,8 @@
                 <td>${escapeHtml(entry.branch_code || "")}</td>
                 <td>${escapeHtml(entry.sequence_record || "-")}</td>
                 <td>${escapeHtml(entry.user_code || "")}</td>
+                <td>${escapeHtml(entry.package_code || "-")}</td>
+                <td>${escapeHtml(entry.address_code || "-")}</td>
                 <td>${escapeHtml(entry.generated_date || "")} ${escapeHtml(entry.generated_time || "")}</td>
                 <td>${escapeHtml(entry.volume_quantity || "")}</td>
                 <td>${escapeHtml(entry.romaneio_weight || "")}</td>
@@ -1093,27 +1109,19 @@
             if (timeField) timeField.value = `${hh}:${mi}:${ss}`;
         }
 
+        // Formato atual da etiqueta: Empresa/Filial/Volumes/Peso/Código do
+        // pallet/Endereçamento — 6 campos, espelhando `_map_romaneio_payload`
+        // em `hqbooking/views.py`. Matrícula e sequência não vêm no código.
         function mapRomaneioValues(values) {
-            if (!Array.isArray(values)) return null;
-            if (values.length === 5) {
-                return {
-                    company: values[0],
-                    branch: values[1],
-                    sequence: values[2],
-                    volume: values[3],
-                    weight: values[4],
-                };
-            }
-            if (values.length === 8) {
-                return {
-                    company: values[0],
-                    branch: values[1],
-                    sequence: values[2],
-                    volume: values[6],
-                    weight: values[7],
-                };
-            }
-            return null;
+            if (!Array.isArray(values) || values.length !== 6) return null;
+            return {
+                company: values[0],
+                branch: values[1],
+                volume: values[2],
+                weight: values[3],
+                packageCode: values[4],
+                addressCode: values[5],
+            };
         }
 
         function parseRomaneioPayload(payload) {
@@ -1122,7 +1130,7 @@
             const splitters = [/\r?\n/, /\t/, /\//, /\|/, /;/];
             for (const splitter of splitters) {
                 const parts = source.split(splitter).map((item) => item.trim()).filter(Boolean);
-                if (parts.length === 5 || parts.length === 8) return parts;
+                if (parts.length === 6) return parts;
             }
             return [];
         }
@@ -1133,7 +1141,7 @@
             const mappedValues = mapRomaneioValues(values);
             if (!mappedValues) {
                 if (showAlert) {
-                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou 5 dados do romaneio.");
+                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou os 6 dados do romaneio.");
                 }
                 return false;
             }
@@ -1142,6 +1150,8 @@
             document.getElementById("branch_code").value = mappedValues.branch;
             document.getElementById("volume_quantity").value = mappedValues.volume;
             document.getElementById("romaneio_weight").value = mappedValues.weight;
+            document.getElementById("package_code").value = mappedValues.packageCode;
+            document.getElementById("address_code").value = mappedValues.addressCode;
             stampRomaneioReadMoment();
             return true;
         }
@@ -1154,6 +1164,8 @@
                 "sequence_record",
                 "volume_quantity",
                 "romaneio_weight",
+                "package_code",
+                "address_code",
             ].forEach((id) => {
                 const field = document.getElementById(id);
                 if (field) field.value = "";

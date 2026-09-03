@@ -734,8 +734,13 @@ def _simulation_oracle_config():
         "host": os.getenv("ERP_SIM_DB_HOST", "192.168.30.2"),
         "port": int(os.getenv("ERP_SIM_DB_PORT", "1521")),
         "service_name": service_name,
-        "user": os.getenv("ERP_SIM_DB_USER", "seniorerpsimulacoes"),
-        "password": os.getenv("ERP_SIM_DB_PASSWORD", "seniorerpsimulacoes"),
+        # As colunas novas da USU_TCONROM já existem na base de produção — não
+        # há mais um usuário próprio de simulação. O login é o mesmo usado nos
+        # BI's (`tiqueue/customer_dna.py`, `tiqueue/views.py`): reaproveita
+        # ERP_DB_USER/ERP_DB_PASSWORD de propósito, para que uma troca de
+        # senha em produção não fique esquecida aqui.
+        "user": os.getenv("ERP_DB_USER", "sapiens"),
+        "password": os.getenv("ERP_DB_PASSWORD", "sapiens"),
         "is_ready": bool(service_name),
     }
 
@@ -777,6 +782,26 @@ def _parse_romaneio_int(raw_value):
     return int(raw_value) if raw_value.isdigit() else None
 
 
+# USU_NUMEMB e USU_CODEND são NUMBER na USU_TCONROM (confirmado direto no
+# dicionário de dados do Oracle: NUMBER(9) e NUMBER(6)) — apesar do nome
+# "código", pallet e endereçamento são puramente numéricos, sem letra nem
+# hífen. A normalização também remove zeros à esquerda, porque é assim que o
+# Oracle vai guardar o valor: sem ela, "004521" e "4521" pareceriam pallets
+# diferentes na checagem de duplicidade quando na verdade são a mesma linha.
+def _parse_romaneio_numeric_code(raw_value, max_digits):
+    raw_text = str(raw_value or "").strip()
+    if not raw_text or not raw_text.isdigit():
+        return None
+    normalized = str(int(raw_text))
+    if len(normalized) > max_digits:
+        return None
+    return normalized
+
+
+ROMANEIO_PACKAGE_CODE_MAX_DIGITS = 9  # USU_NUMEMB NUMBER(9)
+ROMANEIO_ADDRESS_CODE_MAX_DIGITS = 6  # USU_CODEND NUMBER(6)
+
+
 def _parse_romaneio_decimal(raw_value):
     normalized = str(raw_value or "").strip().replace("R$", "").replace(" ", "")
     if not normalized:
@@ -788,6 +813,14 @@ def _parse_romaneio_decimal(raw_value):
         return None
 
 
+# Formato atual da etiqueta: Empresa/Filial/Quantidade de volumes/Peso/
+# Código do pallet/Endereçamento — 6 campos, nesta ordem, separados por quebra
+# de linha, tab, `/`, `|` ou `;`. Matrícula e sequência não vêm no código: a
+# primeira é digitada no aparelho e a segunda é calculada no Oracle a partir
+# de USU_SEQCON no momento do envio (`_next_simulation_romaneio_sequence`).
+ROMANEIO_PAYLOAD_FIELD_COUNT = 6
+
+
 def _split_romaneio_payload(raw_payload):
     source = str(raw_payload or "").strip()
     if not source:
@@ -796,31 +829,22 @@ def _split_romaneio_payload(raw_payload):
     splitters = [r"\r?\n", r"\t", r"/", r"\|", r";"]
     for splitter in splitters:
         parts = [item.strip() for item in re.split(splitter, source) if item.strip()]
-        if len(parts) in (5, 8):
+        if len(parts) == ROMANEIO_PAYLOAD_FIELD_COUNT:
             return parts
     return []
 
 
 def _map_romaneio_payload(parts):
-    if not isinstance(parts, list):
+    if not isinstance(parts, list) or len(parts) != ROMANEIO_PAYLOAD_FIELD_COUNT:
         return None
-    if len(parts) == 5:
-        return {
-            "company_code": parts[0],
-            "branch_code": parts[1],
-            "source_sequence": parts[2],
-            "volume_quantity": parts[3],
-            "romaneio_weight": parts[4],
-        }
-    if len(parts) == 8:
-        return {
-            "company_code": parts[0],
-            "branch_code": parts[1],
-            "source_sequence": parts[2],
-            "volume_quantity": parts[6],
-            "romaneio_weight": parts[7],
-        }
-    return None
+    return {
+        "company_code": parts[0],
+        "branch_code": parts[1],
+        "volume_quantity": parts[2],
+        "romaneio_weight": parts[3],
+        "package_code": parts[4],
+        "address_code": parts[5],
+    }
 
 
 def _extract_romaneio_payload(raw_payload):
@@ -832,9 +856,10 @@ def _extract_romaneio_payload(raw_payload):
     return {
         "company_code": mapped["company_code"],
         "branch_code": mapped["branch_code"],
-        "source_sequence": mapped["source_sequence"],
         "volume_quantity": _parse_romaneio_int(mapped["volume_quantity"]),
         "romaneio_weight": _parse_romaneio_decimal(mapped["romaneio_weight"]),
+        "package_code": _parse_romaneio_numeric_code(mapped["package_code"], ROMANEIO_PACKAGE_CODE_MAX_DIGITS),
+        "address_code": _parse_romaneio_numeric_code(mapped["address_code"], ROMANEIO_ADDRESS_CODE_MAX_DIGITS),
     }
 
 
@@ -882,7 +907,7 @@ def _connect_simulation_oracle():
         raise RuntimeError(
             "A configuração padrão da base de simulações não está disponível. "
             "Verifique as variáveis ERP_SIM_DB_HOST, ERP_SIM_DB_PORT, ERP_SIM_DB_NAME, "
-            "ERP_SIM_DB_USER e ERP_SIM_DB_PASSWORD."
+            "ERP_DB_USER e ERP_DB_PASSWORD."
         )
 
     last_error = None
@@ -918,11 +943,19 @@ def _insert_simulation_romaneio_oracle(entry):
         "empresa": int(entry.company_code) if str(entry.company_code).isdigit() else entry.company_code,
         "filial": int(entry.branch_code) if str(entry.branch_code).isdigit() else entry.branch_code,
         "sequencia_registro": None,
-        "cod_usuario": int(entry.user_code) if str(entry.user_code).isdigit() else entry.user_code,
+        # USU_CODMAT: matrícula digitada no aparelho, não o login de sistema —
+        # o nome da coluna no ERP é o do funcionário, não o do usuário.
+        "matricula": int(entry.user_code) if str(entry.user_code).isdigit() else entry.user_code,
         "data_geracao": entry.generated_date,
         "hora_geracao": int(entry.generated_time.strftime("%H%M")),
         "quantidade_volumes": int(entry.volume_quantity),
         "peso_romaneio": Decimal(entry.romaneio_weight),
+        # USU_NUMEMB e USU_CODEND são NUMBER no Oracle (NUMBER(9) e NUMBER(6)) —
+        # confirmado no dicionário de dados. `package_code`/`address_code`
+        # chegam aqui já normalizados (só dígitos, sem zero à esquerda) por
+        # `_parse_romaneio_numeric_code`, então o cast é seguro.
+        "codigo_embalagem": int(entry.package_code) if str(entry.package_code).isdigit() else entry.package_code,
+        "endereco": int(entry.address_code) if str(entry.address_code).isdigit() else entry.address_code,
     }
 
     last_error = None
@@ -944,20 +977,24 @@ def _insert_simulation_romaneio_oracle(entry):
                 USU_CODEMP,
                 USU_CODFIL,
                 USU_SEQCON,
-                USU_CODUSU,
+                USU_CODMAT,
                 USU_DATGER,
                 USU_HORGER,
                 USU_QTDVOL,
-                USU_PESROM
+                USU_PESROM,
+                USU_NUMEMB,
+                USU_CODEND
             ) VALUES (
                 :empresa,
                 :filial,
                 :sequencia_registro,
-                :cod_usuario,
+                :matricula,
                 :data_geracao,
                 :hora_geracao,
                 :quantidade_volumes,
-                :peso_romaneio
+                :peso_romaneio,
+                :codigo_embalagem,
+                :endereco
             )
             """,
             payload,
@@ -989,6 +1026,36 @@ def _insert_simulation_romaneio_oracle(entry):
     )
 
 
+def _find_duplicate_romaneio_entry(package_code):
+    """Devolve a leitura já contabilizada desta embalagem, se existir.
+
+    Só um `sync_status` de sucesso conta como "já contabilizado": uma
+    tentativa anterior que ficou com erro no Oracle, ou que ela mesma foi
+    recusada por duplicidade, não pode travar uma nova tentativa para o mesmo
+    pallet. Embalagem vazia nunca é duplicada — nem toda leitura antiga trazia
+    o código do pallet.
+    """
+    package_code = str(package_code or "").strip()
+    if not package_code:
+        return None
+    return (
+        SimulationRomaneioEntry.objects.filter(
+            package_code=package_code,
+            sync_status=SimulationRomaneioEntry.SYNC_SUCCESS,
+        )
+        .order_by("-id")
+        .first()
+    )
+
+
+def _duplicate_romaneio_message(package_code, duplicate):
+    return (
+        f"O pallet {package_code} já foi contabilizado antes — matrícula {duplicate.user_code}, "
+        f"sequência {duplicate.sequence_record}, em "
+        f"{duplicate.generated_date.strftime('%d/%m/%Y')} {duplicate.generated_time.strftime('%H:%M')}."
+    )
+
+
 def _submit_romaneio_entry(
     *,
     company_code,
@@ -998,9 +1065,39 @@ def _submit_romaneio_entry(
     generated_time,
     volume_quantity,
     romaneio_weight,
+    package_code="",
+    address_code="",
     barcode_payload=None,
     client_reference="",
 ):
+    package_code = str(package_code or "").strip()
+    address_code = str(address_code or "").strip()
+
+    # Regra de negócio: cada embalagem entra uma única vez. Duas matrículas
+    # diferentes lendo o mesmo pallet, ou a mesma matrícula relendo por
+    # engano, caem aqui do mesmo jeito — o que importa é o `package_code`,
+    # não quem leu.
+    duplicate = _find_duplicate_romaneio_entry(package_code)
+    if duplicate:
+        message = _duplicate_romaneio_message(package_code, duplicate)
+        entry = SimulationRomaneioEntry.objects.create(
+            company_code=company_code,
+            branch_code=branch_code,
+            sequence_record="",
+            user_code=user_code,
+            generated_date=generated_date,
+            generated_time=generated_time,
+            volume_quantity=volume_quantity,
+            romaneio_weight=romaneio_weight,
+            package_code=package_code,
+            address_code=address_code,
+            barcode_payload=barcode_payload,
+            client_reference=client_reference,
+            sync_status=SimulationRomaneioEntry.SYNC_DUPLICATE,
+            sync_message=message,
+        )
+        return entry, message
+
     entry = SimulationRomaneioEntry.objects.create(
         company_code=company_code,
         branch_code=branch_code,
@@ -1010,6 +1107,8 @@ def _submit_romaneio_entry(
         generated_time=generated_time,
         volume_quantity=volume_quantity,
         romaneio_weight=romaneio_weight,
+        package_code=package_code,
+        address_code=address_code,
         barcode_payload=barcode_payload,
         client_reference=client_reference,
         sync_status=SimulationRomaneioEntry.SYNC_PENDING,
@@ -1022,6 +1121,12 @@ def _submit_romaneio_entry(
         entry.save(update_fields=["sequence_record", "sync_status", "sync_message"])
         return entry, error
 
+    # A constraint `uq_romaneio_package_success` do modelo é só um backstop de
+    # integridade local para a corrida entre duas leituras da mesma embalagem
+    # passando pela checagem acima ao mesmo tempo — não tem como recuperar
+    # dela aqui sem arriscar rotular como "duplicado" um envio que este mesmo
+    # request acabou de gravar de verdade no Oracle. Uma trava correta contra
+    # essa corrida depende de constraint na própria USU_TCONROM.
     entry.sync_status = SimulationRomaneioEntry.SYNC_SUCCESS
     entry.sync_message = (
         f"Registro enviado com sucesso para a base de simulações. Sequência gerada: {entry.sequence_record}."
@@ -1043,14 +1148,14 @@ def _fetch_simulation_romaneio_ranking_data(days=5):
         cur.execute(
             """
             SELECT
-                USU_CODUSU,
+                USU_CODMAT,
                 COUNT(*) AS total_romaneios,
                 NVL(SUM(USU_QTDVOL), 0) AS total_volumes,
                 NVL(SUM(USU_PESROM), 0) AS total_peso
             FROM USU_TCONROM
             WHERE TRUNC(USU_DATGER) BETWEEN :data_inicial AND :data_final
-            GROUP BY USU_CODUSU
-            ORDER BY total_romaneios DESC, total_peso DESC, total_volumes DESC, USU_CODUSU
+            GROUP BY USU_CODMAT
+            ORDER BY total_romaneios DESC, total_peso DESC, total_volumes DESC, USU_CODMAT
             """,
             {"data_inicial": start_date, "data_final": end_date},
         )
@@ -1148,6 +1253,8 @@ def logistics_romaneio_page(request):
         "generated_time": read_now.strftime("%H:%M:%S"),
         "volume_quantity": "",
         "romaneio_weight": "",
+        "package_code": "",
+        "address_code": "",
     }
     open_launch_modal = False
 
@@ -1162,12 +1269,16 @@ def logistics_romaneio_page(request):
             "generated_time": (request.POST.get("generated_time") or "").strip(),
             "volume_quantity": (request.POST.get("volume_quantity") or "").strip(),
             "romaneio_weight": (request.POST.get("romaneio_weight") or "").strip(),
+            "package_code": (request.POST.get("package_code") or "").strip(),
+            "address_code": (request.POST.get("address_code") or "").strip(),
         }
 
         barcode_payload = form_values["barcode_payload"] or None
         company_code = form_values["company_code"]
         branch_code = form_values["branch_code"]
         user_code = form_values["user_code"]
+        package_code = _parse_romaneio_numeric_code(form_values["package_code"], ROMANEIO_PACKAGE_CODE_MAX_DIGITS)
+        address_code = _parse_romaneio_numeric_code(form_values["address_code"], ROMANEIO_ADDRESS_CODE_MAX_DIGITS)
         read_now = timezone.localtime()
         generated_date = _parse_romaneio_date(form_values["generated_date"]) or read_now.date()
         generated_time = _parse_romaneio_time(form_values["generated_time"]) or read_now.time().replace(microsecond=0)
@@ -1183,6 +1294,12 @@ def logistics_romaneio_page(request):
         elif romaneio_weight is None:
             open_launch_modal = True
             messages.error(request, "Informe um peso de romaneio válido.")
+        elif not package_code:
+            open_launch_modal = True
+            messages.error(request, "Informe um código do pallet numérico (até 9 dígitos).")
+        elif not address_code:
+            open_launch_modal = True
+            messages.error(request, "Informe um endereçamento numérico (até 6 dígitos).")
         else:
             entry, error = _submit_romaneio_entry(
                 company_code=company_code,
@@ -1192,6 +1309,8 @@ def logistics_romaneio_page(request):
                 generated_time=generated_time,
                 volume_quantity=volume_quantity,
                 romaneio_weight=romaneio_weight,
+                package_code=package_code,
+                address_code=address_code,
                 barcode_payload=barcode_payload,
             )
             if error:
@@ -1263,7 +1382,7 @@ def logistics_romaneio_quick_submit(request):
         return JsonResponse(
             {
                 "status": "error",
-                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou 5 campos do romaneio.",
+                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou os 6 campos do romaneio.",
             },
             status=400,
         )
@@ -1272,6 +1391,8 @@ def logistics_romaneio_quick_submit(request):
     branch_code = mapped_payload["branch_code"]
     volume_quantity = mapped_payload["volume_quantity"]
     romaneio_weight = mapped_payload["romaneio_weight"]
+    package_code = mapped_payload["package_code"]
+    address_code = mapped_payload["address_code"]
     generated_now = timezone.localtime()
     generated_date = generated_now.date()
     generated_time = generated_now.time().replace(microsecond=0)
@@ -1282,6 +1403,16 @@ def logistics_romaneio_quick_submit(request):
         return JsonResponse({"status": "error", "message": "A leitura não trouxe uma quantidade de volumes válida."}, status=400)
     if romaneio_weight is None:
         return JsonResponse({"status": "error", "message": "A leitura não trouxe um peso de romaneio válido."}, status=400)
+    if not package_code:
+        return JsonResponse(
+            {"status": "error", "message": "A leitura não trouxe um código do pallet numérico válido."},
+            status=400,
+        )
+    if not address_code:
+        return JsonResponse(
+            {"status": "error", "message": "A leitura não trouxe um endereçamento numérico válido."},
+            status=400,
+        )
 
     entry, error = _submit_romaneio_entry(
         company_code=company_code,
@@ -1291,12 +1422,15 @@ def logistics_romaneio_quick_submit(request):
         generated_time=generated_time,
         volume_quantity=volume_quantity,
         romaneio_weight=romaneio_weight,
+        package_code=package_code,
+        address_code=address_code,
         barcode_payload=barcode_payload,
     )
     if error:
+        is_duplicate = entry.sync_status == SimulationRomaneioEntry.SYNC_DUPLICATE
         return JsonResponse(
             {
-                "status": "error",
+                "status": "duplicate" if is_duplicate else "error",
                 "message": error,
                 "entry": {
                     "created_at": timezone.localtime(entry.created_at).strftime("%d/%m/%Y %H:%M"),
@@ -1308,11 +1442,13 @@ def logistics_romaneio_quick_submit(request):
                     "generated_time": entry.generated_time.strftime("%H:%M"),
                     "volume_quantity": entry.volume_quantity,
                     "romaneio_weight": str(entry.romaneio_weight),
+                    "package_code": entry.package_code,
+                    "address_code": entry.address_code,
                     "sync_status": entry.get_sync_status_display(),
                     "sync_message": entry.sync_message,
                 },
             },
-            status=500,
+            status=409 if is_duplicate else 500,
         )
 
     return JsonResponse(
@@ -1329,6 +1465,8 @@ def logistics_romaneio_quick_submit(request):
                 "generated_time": entry.generated_time.strftime("%H:%M"),
                 "volume_quantity": entry.volume_quantity,
                 "romaneio_weight": str(entry.romaneio_weight),
+                "package_code": entry.package_code,
+                "address_code": entry.address_code,
                 "sync_status": entry.get_sync_status_display(),
                 "sync_message": entry.sync_message,
             },

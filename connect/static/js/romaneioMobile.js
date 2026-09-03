@@ -85,7 +85,8 @@
     /* -------------------------------------------------- leitura do payload -- */
 
     // Mesmas regras do servidor (_split_romaneio_payload / _map_romaneio_payload):
-    // o código traz 5 ou 8 campos separados por quebra de linha, tab, / , | ou ;.
+    // o código traz 6 campos separados por quebra de linha, tab, / , | ou ; —
+    // Empresa/Filial/Volumes/Peso/Código do pallet/Endereçamento.
     function splitPayload(payload) {
         var source = String(payload || "").trim();
         if (!source) return [];
@@ -94,20 +95,22 @@
             var parts = source.split(splitters[i]).map(function (item) {
                 return item.trim();
             }).filter(Boolean);
-            if (parts.length === 5 || parts.length === 8) return parts;
+            if (parts.length === 6) return parts;
         }
         return [];
     }
 
     function mapPayload(payload) {
         var parts = splitPayload(payload);
-        if (parts.length === 5) {
-            return { company: parts[0], branch: parts[1], sequence: parts[2], volumes: parts[3], weight: parts[4] };
-        }
-        if (parts.length === 8) {
-            return { company: parts[0], branch: parts[1], sequence: parts[2], volumes: parts[6], weight: parts[7] };
-        }
-        return null;
+        if (parts.length !== 6) return null;
+        return {
+            company: parts[0],
+            branch: parts[1],
+            volumes: parts[2],
+            weight: parts[3],
+            packageCode: parts[4],
+            addressCode: parts[5]
+        };
     }
 
     function buildTile(label, value, wide) {
@@ -127,8 +130,8 @@
         els.readout.innerHTML = "";
 
         // A contagem de volumes é o que a pessoa confere de relance: fica sozinha
-        // no bloco de destaque. Empresa, filial, sequência e peso só confirmam
-        // que a leitura é do romaneio certo.
+        // no bloco de destaque. Empresa, filial, pallet, endereço e peso só
+        // confirmam que a leitura é do romaneio certo.
         var hero = document.createElement("div");
         hero.className = "rmb-hero";
         var heroValue = document.createElement("span");
@@ -145,7 +148,8 @@
         grid.className = "rmb-grid";
         grid.appendChild(buildTile("Empresa", scan.company));
         grid.appendChild(buildTile("Filial", scan.branch));
-        grid.appendChild(buildTile("Sequência de origem", scan.sequence));
+        grid.appendChild(buildTile("Código do pallet", scan.packageCode, true));
+        grid.appendChild(buildTile("Endereçamento", scan.addressCode));
         grid.appendChild(buildTile("Peso", scan.weight));
         els.readout.appendChild(grid);
     }
@@ -164,7 +168,8 @@
             payload: String(payload).trim(),
             company: mapped.company,
             branch: mapped.branch,
-            sequence: mapped.sequence,
+            packageCode: mapped.packageCode,
+            addressCode: mapped.addressCode,
             volumes: mapped.volumes,
             weight: mapped.weight
         };
