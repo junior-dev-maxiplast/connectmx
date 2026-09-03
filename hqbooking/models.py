@@ -75,10 +75,16 @@ class SimulationRomaneioEntry(models.Model):
     SYNC_PENDING = "pending"
     SYNC_SUCCESS = "success"
     SYNC_ERROR = "error"
+    # A embalagem já estava contabilizada na USU_TCONROM. É recusa definitiva,
+    # não é falha: guardamos a tentativa para ficar registrado quem tentou
+    # recontar o mesmo pallet, e por isso ela tem status próprio em vez de cair
+    # em `error` junto com problema de rede ou de driver.
+    SYNC_DUPLICATE = "duplicate"
     SYNC_STATUS_CHOICES = [
         (SYNC_PENDING, "Pendente"),
         (SYNC_SUCCESS, "Enviado"),
         (SYNC_ERROR, "Erro"),
+        (SYNC_DUPLICATE, "Já contabilizado"),
     ]
 
     company_code = models.CharField(max_length=20)
@@ -89,6 +95,15 @@ class SimulationRomaneioEntry(models.Model):
     generated_time = models.TimeField()
     volume_quantity = models.PositiveIntegerField()
     romaneio_weight = models.DecimalField(max_digits=14, decimal_places=3)
+    # USU_NUMEMB: o código do pallet impresso na etiqueta. É a chave da contagem
+    # — cada embalagem entra uma única vez, e é por este campo que a segunda
+    # leitura é recusada. É NUMBER(9) no Oracle (só dígitos); guardado aqui
+    # como texto já normalizado por `_parse_romaneio_numeric_code` (sem zero
+    # à esquerda) para casar com o valor que o Oracle vai armazenar.
+    package_code = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    # USU_CODEND: endereçamento que veio na etiqueta. NUMBER(6) no Oracle,
+    # mesma normalização do package_code.
+    address_code = models.CharField(max_length=40, blank=True, default="")
     barcode_payload = models.TextField(blank=True, null=True)
     # Identificador gerado pelo ConnectMX Mobile para cada leitura da fila local.
     # Existe porque o app reenvia sozinho quando a rede volta: se a resposta do
@@ -103,6 +118,20 @@ class SimulationRomaneioEntry(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+        constraints = [
+            # Trava de verdade contra a corrida: duas leituras da mesma
+            # embalagem partindo ao mesmo tempo passariam pela checagem em
+            # `_find_duplicate_romaneio_entry` antes de qualquer uma commitar.
+            # O índice único garante que só a primeira vira "success" mesmo
+            # nesse caso; a segunda esbarra no IntegrityError e é convertida em
+            # SYNC_DUPLICATE por quem chamou. Vazio fica de fora: lançamentos
+            # antigos sem `package_code` não podem colidir entre si.
+            models.UniqueConstraint(
+                fields=["package_code"],
+                condition=models.Q(sync_status="success") & ~models.Q(package_code=""),
+                name="uq_romaneio_package_success",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.company_code}/{self.branch_code} - {self.sequence_record}"

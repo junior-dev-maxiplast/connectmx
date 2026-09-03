@@ -1063,12 +1063,14 @@ class LogisticsRomaneioTests(TestCase):
         response = self.client.post(
             reverse("logistics_romaneio"),
             {
-                "barcode_payload": "1|2|123|8|1540,250",
+                "barcode_payload": "1|2|8|1540,250|9001|103",
                 "company_code": "1",
                 "branch_code": "2",
                 "user_code": "9001",
                 "volume_quantity": "8",
                 "romaneio_weight": "1540,250",
+                "package_code": "9001",
+                "address_code": "103",
             },
             follow=True,
         )
@@ -1083,10 +1085,35 @@ class LogisticsRomaneioTests(TestCase):
         self.assertEqual(entry.volume_quantity, 8)
         self.assertEqual(str(entry.romaneio_weight), "1540.250")
         self.assertEqual(entry.user_code, "9001")
+        self.assertEqual(entry.package_code, "9001")
+        self.assertEqual(entry.address_code, "103")
         insert_mock.assert_called_once()
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", return_value="Falha Oracle")
     def test_romaneio_post_marks_error_when_oracle_fails(self, insert_mock):
+        response = self.client.post(
+            reverse("logistics_romaneio"),
+            {
+                "company_code": "1",
+                "branch_code": "2",
+                "user_code": "9001",
+                "volume_quantity": "8",
+                "romaneio_weight": "1540,250",
+                "package_code": "9002",
+                "address_code": "104",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 1)
+        entry = SimulationRomaneioEntry.objects.first()
+        self.assertEqual(entry.sync_status, SimulationRomaneioEntry.SYNC_ERROR)
+        self.assertEqual(entry.sync_message, "Falha Oracle")
+        insert_mock.assert_called_once()
+
+    def test_romaneio_post_requires_package_and_address(self):
+        """Os dois campos novos são obrigatórios no cadastro manual da tela de mesa."""
         response = self.client.post(
             reverse("logistics_romaneio"),
             {
@@ -1100,11 +1127,8 @@ class LogisticsRomaneioTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(SimulationRomaneioEntry.objects.count(), 1)
-        entry = SimulationRomaneioEntry.objects.first()
-        self.assertEqual(entry.sync_status, SimulationRomaneioEntry.SYNC_ERROR)
-        self.assertEqual(entry.sync_message, "Falha Oracle")
-        insert_mock.assert_called_once()
+        self.assertFalse(SimulationRomaneioEntry.objects.exists())
+        self.assertContains(response, "código do pallet")
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
     def test_romaneio_quick_submit_creates_entry(self, insert_mock):
@@ -1112,7 +1136,7 @@ class LogisticsRomaneioTests(TestCase):
             reverse("logistics_romaneio_quick_submit"),
             data=json.dumps(
                 {
-                    "barcode_payload": "1/2/123/8/1540,250",
+                    "barcode_payload": "1/2/8/1540,250/9010/201",
                     "user_code": "9001",
                 }
             ),
@@ -1128,6 +1152,8 @@ class LogisticsRomaneioTests(TestCase):
         self.assertEqual(entry.branch_code, "2")
         self.assertEqual(entry.user_code, "9001")
         self.assertEqual(entry.sequence_record, "124")
+        self.assertEqual(entry.package_code, "9010")
+        self.assertEqual(entry.address_code, "201")
         insert_mock.assert_called_once()
 
     def test_romaneio_quick_submit_requires_user(self):
@@ -1135,7 +1161,7 @@ class LogisticsRomaneioTests(TestCase):
             reverse("logistics_romaneio_quick_submit"),
             data=json.dumps(
                 {
-                    "barcode_payload": "1/2/123/8/1540,250",
+                    "barcode_payload": "1/2/8/1540,250/9010/201",
                     "user_code": "",
                 }
             ),
@@ -1145,6 +1171,70 @@ class LogisticsRomaneioTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "error")
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_romaneio_quick_submit_rejects_same_package_twice(self, insert_mock):
+        """Regra de negócio: cada embalagem só entra uma vez, não importa a matrícula."""
+        first = self.client.post(
+            reverse("logistics_romaneio_quick_submit"),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9001"}),
+            content_type="application/json",
+        )
+        self.assertEqual(first.status_code, 200)
+
+        second = self.client.post(
+            reverse("logistics_romaneio_quick_submit"),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9002"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(second.status_code, 409)
+        payload = second.json()
+        self.assertEqual(payload["status"], "duplicate")
+        self.assertIn("9088", payload["message"])
+        self.assertIn("9001", payload["message"])
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 2)
+        duplicate_entry = SimulationRomaneioEntry.objects.order_by("-id").first()
+        self.assertEqual(duplicate_entry.sync_status, SimulationRomaneioEntry.SYNC_DUPLICATE)
+        self.assertEqual(duplicate_entry.user_code, "9002")
+        # A segunda tentativa nem chega a tocar no Oracle: a checagem é local.
+        insert_mock.assert_called_once()
+
+    def test_romaneio_quick_submit_rejects_non_numeric_package_code(self):
+        """USU_NUMEMB é NUMBER no Oracle: um código com letra tem que ser recusado
+        antes de chegar perto do INSERT, não estourar lá com ORA-01722."""
+        response = self.client.post(
+            reverse("logistics_romaneio_quick_submit"),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/PLT-04521/101", "user_code": "9001"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("numérico", response.json()["message"])
+        self.assertFalse(SimulationRomaneioEntry.objects.exists())
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_romaneio_quick_submit_normalizes_leading_zeros_for_duplicate_check(self, insert_mock):
+        """"004521" e "4521" são a mesma embalagem pro Oracle (NUMBER não guarda
+        zero à esquerda) — a checagem de duplicidade precisa enxergar isso também."""
+        first = self.client.post(
+            reverse("logistics_romaneio_quick_submit"),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/004521/101", "user_code": "9001"}),
+            content_type="application/json",
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["entry"]["package_code"], "4521")
+
+        second = self.client.post(
+            reverse("logistics_romaneio_quick_submit"),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/4521/101", "user_code": "9002"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()["status"], "duplicate")
+        insert_mock.assert_called_once()
 
 
 class MobileApiTests(TestCase):
@@ -1172,13 +1262,15 @@ class MobileApiTests(TestCase):
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
     def test_create_from_barcode(self, insert_mock):
-        response = self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
+        response = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/100/1"})
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["entry"]["volume_quantity"], 18)
         self.assertEqual(payload["entry"]["source"], "leitura")
+        self.assertEqual(payload["entry"]["package_code"], "100")
+        self.assertEqual(payload["entry"]["address_code"], "1")
 
         entry = SimulationRomaneioEntry.objects.get()
         self.assertEqual(entry.user_code, "77")
@@ -1196,6 +1288,8 @@ class MobileApiTests(TestCase):
                 "branch_code": "2",
                 "volume_quantity": "9",
                 "romaneio_weight": "812,250",
+                "package_code": "200",
+                "address_code": "2",
             }
         )
 
@@ -1207,25 +1301,43 @@ class MobileApiTests(TestCase):
         entry = SimulationRomaneioEntry.objects.get()
         self.assertEqual(entry.volume_quantity, 9)
         self.assertEqual(entry.romaneio_weight, Decimal("812.250"))
+        self.assertEqual(entry.package_code, "200")
+        self.assertEqual(entry.address_code, "2")
         self.assertIsNone(entry.barcode_payload)
         insert_mock.assert_called_once()
 
     def test_create_requires_user_code(self):
-        response = self._post({"barcode_payload": "1/2/900/18/1250,500"})
+        response = self._post({"barcode_payload": "1/2/18/1250,500/100/1"})
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["status"], "error")
+        self.assertFalse(SimulationRomaneioEntry.objects.exists())
+
+    def test_create_requires_package_code_on_manual_fields(self):
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "address_code": "2",
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("código do pallet", response.json()["message"])
         self.assertFalse(SimulationRomaneioEntry.objects.exists())
 
     def test_create_rejects_unreadable_barcode(self):
         response = self._post({"user_code": "77", "barcode_payload": "somente-um-campo"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("5 ou 8 campos", response.json()["message"])
+        self.assertIn("6 campos", response.json()["message"])
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", return_value="Oracle fora do ar")
     def test_create_reports_sync_error_with_entry(self, insert_mock):
-        response = self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
+        response = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/100/1"})
 
         self.assertEqual(response.status_code, 502)
         payload = response.json()
@@ -1243,8 +1355,8 @@ class MobileApiTests(TestCase):
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
     def test_list_filters_by_user_code(self, insert_mock):
-        self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
-        self._post({"user_code": "88", "barcode_payload": "1/2/901/20/1300,000"})
+        self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/301/3"})
+        self._post({"user_code": "88", "barcode_payload": "1/2/20/1300,000/302/4"})
 
         response = self.client.get(reverse("mobile_api_romaneio_list"), {"user_code": "77"})
 
@@ -1262,7 +1374,7 @@ class MobileApiTests(TestCase):
         """
         body = {
             "user_code": "77",
-            "barcode_payload": "1/2/900/18/1250,500",
+            "barcode_payload": "1/2/18/1250,500/100/1",
             "client_reference": "leitura-abc-123",
         }
 
@@ -1283,7 +1395,7 @@ class MobileApiTests(TestCase):
         """Uma tentativa que falhou no Oracle precisa poder ser reenviada."""
         body = {
             "user_code": "77",
-            "barcode_payload": "1/2/900/18/1250,500",
+            "barcode_payload": "1/2/18/1250,500/100/1",
             "client_reference": "leitura-que-falhou",
         }
 
@@ -1293,12 +1405,37 @@ class MobileApiTests(TestCase):
         self.assertEqual(insert_mock.call_count, 2)
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_rejects_same_package_twice_even_without_client_reference(self, insert_mock):
+        """Regra de negócio central: a embalagem é a chave, não o client_reference.
+
+        Sem `client_reference` (como manda a tela web) o mecanismo de reenvio
+        idempotente nem entra em ação — quem barra a segunda leitura do mesmo
+        pallet é a checagem por `package_code`, e vale mesmo com outra matrícula.
+        """
+        first = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/9088/1"})
+        self.assertEqual(first.status_code, 200)
+
+        second = self._post({"user_code": "88", "barcode_payload": "1/2/18/1250,500/9088/1"})
+        self.assertEqual(second.status_code, 409)
+        payload = second.json()
+        self.assertEqual(payload["status"], "duplicate_package")
+        self.assertIn("9088", payload["message"])
+        self.assertIn("77", payload["message"])
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 2)
+        self.assertEqual(
+            SimulationRomaneioEntry.objects.order_by("-id").first().sync_status,
+            SimulationRomaneioEntry.SYNC_DUPLICATE,
+        )
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
     def test_entries_without_client_reference_are_never_deduplicated(self, insert_mock):
-        """A tela web não manda o identificador: dois lançamentos iguais são dois."""
-        body = {"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"}
+        """A tela web não manda o identificador: dois pallets diferentes são dois lançamentos."""
+        first = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/401/1"})
+        second = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/402/1"})
 
-        self.assertEqual(self._post(body).status_code, 200)
-        self.assertEqual(self._post(body).status_code, 200)
-
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
         self.assertEqual(SimulationRomaneioEntry.objects.count(), 2)
         self.assertEqual(insert_mock.call_count, 2)

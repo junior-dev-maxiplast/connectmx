@@ -17,10 +17,13 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .models import SimulationRomaneioEntry
 from .views import (
+    ROMANEIO_ADDRESS_CODE_MAX_DIGITS,
+    ROMANEIO_PACKAGE_CODE_MAX_DIGITS,
     _extract_romaneio_payload,
     _parse_romaneio_date,
     _parse_romaneio_decimal,
     _parse_romaneio_int,
+    _parse_romaneio_numeric_code,
     _parse_romaneio_time,
     _simulation_oracle_config,
     _submit_romaneio_entry,
@@ -67,6 +70,8 @@ def _serialize_entry(entry):
         "generated_time": entry.generated_time.strftime("%H:%M"),
         "volume_quantity": entry.volume_quantity,
         "romaneio_weight": str(entry.romaneio_weight),
+        "package_code": entry.package_code,
+        "address_code": entry.address_code,
         "sync_status": entry.sync_status,
         "sync_status_label": entry.get_sync_status_display(),
         "sync_message": entry.sync_message or "",
@@ -104,8 +109,11 @@ def mobile_romaneio_create(request):
 
     Aceita os dois caminhos da tela web em um único corpo: se vier
     `barcode_payload`, os campos saem da leitura; senão, empresa, filial,
-    volumes e peso vêm preenchidos à mão. Data e hora são opcionais e caem no
-    horário do servidor, como na leitura contínua da web.
+    volumes, peso, código do pallet e endereçamento vêm preenchidos à mão.
+    Data e hora são opcionais e caem no horário do servidor, como na leitura
+    contínua da web. Em qualquer um dos dois caminhos, `_submit_romaneio_entry`
+    recusa a gravação se o `package_code` já tiver uma leitura de sucesso —
+    cada embalagem só entra uma vez.
     """
     key_error = _require_app_key(request)
     if key_error:
@@ -160,7 +168,7 @@ def mobile_romaneio_create(request):
                     "status": "error",
                     "message": (
                         "Não foi possível interpretar a leitura. "
-                        "Verifique se o código traz 5 ou 8 campos do romaneio."
+                        "Verifique se o código traz os 6 campos do romaneio."
                     ),
                 },
                 status=400,
@@ -169,11 +177,15 @@ def mobile_romaneio_create(request):
         branch_code = mapped["branch_code"]
         volume_quantity = mapped["volume_quantity"]
         romaneio_weight = mapped["romaneio_weight"]
+        package_code = mapped["package_code"]
+        address_code = mapped["address_code"]
     else:
         company_code = str(payload.get("company_code") or "").strip()
         branch_code = str(payload.get("branch_code") or "").strip()
         volume_quantity = _parse_romaneio_int(payload.get("volume_quantity"))
         romaneio_weight = _parse_romaneio_decimal(payload.get("romaneio_weight"))
+        package_code = _parse_romaneio_numeric_code(payload.get("package_code"), ROMANEIO_PACKAGE_CODE_MAX_DIGITS)
+        address_code = _parse_romaneio_numeric_code(payload.get("address_code"), ROMANEIO_ADDRESS_CODE_MAX_DIGITS)
 
     read_now = timezone.localtime()
     generated_date = _parse_romaneio_date(payload.get("generated_date")) or read_now.date()
@@ -197,6 +209,16 @@ def mobile_romaneio_create(request):
             {"status": "error", "message": "Informe um peso de romaneio válido."},
             status=400,
         )
+    if not package_code:
+        return JsonResponse(
+            {"status": "error", "message": "Informe um código do pallet numérico (até 9 dígitos)."},
+            status=400,
+        )
+    if not address_code:
+        return JsonResponse(
+            {"status": "error", "message": "Informe um endereçamento numérico (até 6 dígitos)."},
+            status=400,
+        )
 
     entry, error = _submit_romaneio_entry(
         company_code=company_code,
@@ -206,11 +228,20 @@ def mobile_romaneio_create(request):
         generated_time=generated_time,
         volume_quantity=volume_quantity,
         romaneio_weight=romaneio_weight,
+        package_code=package_code,
+        address_code=address_code,
         barcode_payload=barcode_payload or None,
         client_reference=client_reference,
     )
 
     if error:
+        if entry.sync_status == SimulationRomaneioEntry.SYNC_DUPLICATE:
+            # Recusa definitiva de negócio, não falha de infraestrutura: o app
+            # trata como "blocked" (não retenta sozinho) e mostra o motivo.
+            return JsonResponse(
+                {"status": "duplicate_package", "message": error, "entry": _serialize_entry(entry)},
+                status=409,
+            )
         # O registro ficou no banco local com sync_status=erro. Devolvemos 502
         # para o app tratar como "não gravou no ERP", mas com a entrada junto
         # para a pessoa ver o que foi tentado.
