@@ -37,14 +37,16 @@
 
         <div class="tl-btn-row">
             <button type="button" class="tl-btn is-sm is-primary" data-tl-model-edit="{{ card.model.id }}">Editar</button>
-            {% if card.truck_count %}
-            <button type="button" class="tl-btn is-sm" disabled title="Troque o modelo dos caminhões antes de excluir.">Excluir</button>
+            {% if card.delete_blockers %}
+            <button type="button" class="tl-btn is-sm is-blocked" disabled
+                    title="Não dá para excluir: {{ card.delete_blockers|join:'; ' }}. Troque o modelo desses caminhões antes.">Excluir</button>
             {% else %}
-            <form method="POST" action="{% url 'tires_model_delete' %}" data-tl-guard data-tl-confirm="Excluir o modelo “{{ card.model.name }}”?">
-                {% csrf_token %}
-                <input type="hidden" name="model_id" value="{{ card.model.id }}">
-                <button type="submit" class="tl-btn is-sm is-danger" data-tl-busy="Removendo...">Excluir</button>
-            </form>
+            <button type="button" class="tl-btn is-sm is-danger" data-tl-confirm-delete
+                    data-action="{% url 'tires_model_delete' %}"
+                    data-kind="Modelo de caminhão"
+                    data-target="{{ card.model.name }}"
+                    data-warning="Nenhum caminhão usa este modelo, então nada é perdido além do desenho de {{ card.summary.axle_count }} eixo{{ card.summary.axle_count|pluralize }} e {{ card.summary.wheel_count }} posições."
+                    data-fields='{"model_id": "{{ card.model.id }}"}'>Excluir</button>
             {% endif %}
         </div>
     </article>
@@ -69,6 +71,8 @@
 {% endblock %}
 
 {% block modals %}
+{% include "hqbooking/tires/_confirm_delete_modal.html" %}
+
 {{ structures|json_script:"tlModelStructures" }}
 {{ default_structure|json_script:"tlDefaultStructure" }}
 

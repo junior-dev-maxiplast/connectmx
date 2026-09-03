@@ -1,0 +1,50 @@
+{% comment %}
+Descarte com comprovação. O modal é único na página: os botões
+`data-tl-discard` só trocam o pneu alvo. Espera `today_iso` no contexto.
+{% endcomment %}
+<div class="tl-overlay is-hidden" id="tlDiscardModalOverlay" data-tl-close="tlDiscardModal"></div>
+<div class="tl-modal is-hidden" id="tlDiscardModal" role="dialog" aria-modal="true" aria-labelledby="tlDiscardTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlDiscardTitle">Descartar pneu</h3>
+            <p>Registre o motivo e, se possível, a foto do pneu — é o que comprova a baixa depois.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlDiscardModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <div class="tl-modal-facts">
+        <div style="grid-column: span 2;"><span>Pneu</span><strong id="tlDiscardTire">—</strong></div>
+        <div style="grid-column: span 2;"><span>Marca</span><strong id="tlDiscardBrand">—</strong></div>
+    </div>
+
+    <form method="POST" action="{% url 'tires_tire_action' %}" enctype="multipart/form-data" data-tl-guard data-tl-busy="Descartando...">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="discard">
+        <input type="hidden" name="tire_id" id="tlDiscardTireId">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+
+        <div class="tl-form-grid">
+            <div class="tl-field">
+                <label for="tlDiscardDate">Data do descarte</label>
+                <input class="tl-input" id="tlDiscardDate" name="movement_date" type="date" value="{{ today_iso }}">
+            </div>
+            <div class="tl-field">
+                <label for="tlDiscardPhoto">Foto do pneu</label>
+                <input class="tl-input" id="tlDiscardPhoto" name="photo" type="file" accept="image/*" capture="environment" data-tl-photo="tlDiscardPhotoPreview">
+                <small>JPG, PNG ou WEBP, até 8 MB.</small>
+            </div>
+            <div class="tl-field is-full">
+                <label for="tlDiscardNote">Motivo do descarte</label>
+                <input class="tl-input" id="tlDiscardNote" name="note" type="text" maxlength="220" placeholder="Ex.: bolha na lateral, sulco abaixo do limite legal">
+            </div>
+            <div class="tl-field is-full">
+                <div class="tl-photo-preview" id="tlDiscardPhotoPreview"><img alt="Prévia da foto do descarte"></div>
+            </div>
+        </div>
+
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlDiscardModal">Cancelar</button>
+            <button type="submit" class="tl-btn is-danger">Confirmar descarte</button>
+        </div>
+    </form>
+</div>

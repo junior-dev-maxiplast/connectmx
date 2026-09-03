@@ -9,6 +9,7 @@ import json
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Count
 from django.utils import timezone
 
 from ..models import (
@@ -23,7 +24,15 @@ from ..models import (
 
 MAX_RETREADS = 3
 MAX_BATCH_SIZE = 500
-HEAT_MAX_DAYS = 180
+
+# O mapa do caminhao colore a posicao pela vida ja gasta do pneu: novo, e
+# depois um degrau a cada recape, ate o limite.
+RECAP_HEAT_LABELS = {
+    0: "Novo",
+    1: "1o recape",
+    2: "2o recape",
+    3: "3o recape",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -60,6 +69,70 @@ def parse_decimal(raw_value):
         return Decimal(raw_value)
     except (InvalidOperation, ValueError):
         return None
+
+
+def clean_text(raw_value, max_length=None):
+    """Colapsa espacos e corta no tamanho do campo."""
+    text = " ".join(str(raw_value or "").split())
+    if max_length:
+        text = text[:max_length]
+    return text
+
+
+def parse_groove_depth(raw_value):
+    """Sulco em milimetros. Aceita '12', '12,5' e '12.5 mm'."""
+    text = str(raw_value or "").lower().replace("mm", "").strip()
+    value = parse_decimal(text)
+    if value is None:
+        return None
+    if value < 0 or value > Decimal("99.9"):
+        return None
+    return value.quantize(Decimal("0.1"))
+
+
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
+PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+
+
+def validate_movement_photo(uploaded):
+    """Confere tipo e tamanho da foto anexada. Devolve erro ou None."""
+    if not uploaded:
+        return None
+    name = str(getattr(uploaded, "name", "") or "").lower()
+    if not name.endswith(PHOTO_EXTENSIONS):
+        return "Anexe uma imagem (JPG, PNG, WEBP ou HEIC)."
+    if getattr(uploaded, "size", 0) > MAX_PHOTO_BYTES:
+        return "A foto precisa ter no maximo 8 MB."
+    return None
+
+
+def read_tire_specs(post):
+    """Le DOT, medida, modelo e sulco de um POST e valida os obrigatorios.
+
+    Devolve (specs, erro). DOT e sulco sao exigidos porque sao eles que
+    identificam o lote de fabricacao e dizem quando o pneu precisa sair de
+    operacao — sem os dois o cadastro nao serve para acompanhar desgaste.
+    """
+    dot_code = clean_text(post.get("dot_code"), 20)
+    if not dot_code:
+        return None, "Informe o DOT do pneu."
+
+    groove_raw = (post.get("groove_depth_mm") or "").strip()
+    if not groove_raw:
+        return None, "Informe a medida do sulco do pneu."
+    groove_depth_mm = parse_groove_depth(groove_raw)
+    if groove_depth_mm is None:
+        return None, "Informe uma medida de sulco valida, em milimetros."
+
+    return (
+        {
+            "dot_code": dot_code,
+            "size_spec": clean_text(post.get("size_spec"), 40) or None,
+            "tire_model": clean_text(post.get("tire_model"), 80) or None,
+            "groove_depth_mm": groove_depth_mm,
+        },
+        None,
+    )
 
 
 def parse_batch_serials(raw_value):
@@ -232,8 +305,9 @@ def log_movement(
     odometer_km=None,
     movement_cost=None,
     note=None,
+    photo=None,
 ):
-    TireMovement.objects.create(
+    return TireMovement.objects.create(
         tire=tire,
         movement_type=movement_type,
         truck=truck,
@@ -243,6 +317,7 @@ def log_movement(
         odometer_km=odometer_km,
         movement_cost=movement_cost,
         note=note or None,
+        photo=photo or None,
     )
 
 
@@ -344,6 +419,25 @@ def known_brands():
     return sorted(seen.values(), key=str.lower)
 
 
+def _known_values(field):
+    """Valores ja usados num campo livre, uma entrada por grafia canonica."""
+    seen = {}
+    for value in Tire.objects.values_list(field, flat=True):
+        cleaned = " ".join(str(value or "").split())
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen[key] = cleaned
+    return sorted(seen.values(), key=str.lower)
+
+
+def known_tire_models():
+    return _known_values("tire_model")
+
+
+def known_sizes():
+    return _known_values("size_spec")
+
+
 def normalize_brand(raw_value):
     """Reaproveita a grafia já cadastrada quando a marca só difere no caixa.
 
@@ -375,7 +469,15 @@ def existing_serials(serials):
     return sorted(taken)
 
 
-def update_tire_identity(tire, serial_number, brand, purchase_value=None, registered_on=None, note=None):
+def update_tire_identity(
+    tire,
+    serial_number,
+    brand,
+    purchase_value=None,
+    registered_on=None,
+    note=None,
+    specs=None,
+):
     """Corrige os dados cadastrais de um pneu sem tocar no histórico.
 
     Devolve uma mensagem de erro ou None. A posição ativa guarda uma cópia do
@@ -399,9 +501,13 @@ def update_tire_identity(tire, serial_number, brand, purchase_value=None, regist
     tire.purchase_value = purchase_value
     tire.registered_on = registered_on or tire.registered_on
     tire.notes = note
-    tire.save(
-        update_fields=["serial_number", "brand", "purchase_value", "registered_on", "notes", "updated_at"]
-    )
+
+    fields = ["serial_number", "brand", "purchase_value", "registered_on", "notes", "updated_at"]
+    if specs:
+        for key, value in specs.items():
+            setattr(tire, key, value)
+            fields.append(key)
+    tire.save(update_fields=fields)
 
     TruckTireChange.objects.filter(tire=tire).update(tire_code=serial, tire_brand=brand)
 
@@ -423,11 +529,13 @@ def register_tire(
     note=None,
     recap_count=0,
     retread_total=None,
+    specs=None,
 ):
     """Cadastra um pneu no estoque.
 
     `recap_count` e `retread_total` existem para pneus que já vinham rodando
     antes do sistema: um pneu usado não começa a vida com zero recapes.
+    `specs` traz DOT, medida, modelo e sulco, validados por `read_tire_specs`.
     """
     recap_count = max(0, min(int(recap_count or 0), MAX_RETREADS))
     tire = Tire.objects.create(
@@ -439,6 +547,7 @@ def register_tire(
         total_retread_cost=retread_total or Decimal("0"),
         registered_on=registered_on or timezone.localdate(),
         notes=note,
+        **(specs or {}),
     )
     log_movement(tire, TireMovement.TYPE_REGISTER, movement_date=registered_on, note=note)
     return tire
@@ -456,6 +565,7 @@ def initial_load_on_slot(
     installed_on=None,
     odometer_km=None,
     note=None,
+    specs=None,
 ):
     """Carga inicial: pneu que já estava rodando no veículo antes do sistema.
 
@@ -492,6 +602,7 @@ def initial_load_on_slot(
         note=baseline,
         recap_count=recap_count,
         retread_total=retread_total,
+        specs=specs,
     )
     install_on_slot(
         truck,
@@ -567,7 +678,16 @@ def return_from_retread(tire, movement_date=None, odometer_km=None, movement_cos
     )
 
 
-def discard_tire(tire, movement_date=None, odometer_km=None, note=None, truck=None, tire_number=None, position_label=None):
+def discard_tire(
+    tire,
+    movement_date=None,
+    odometer_km=None,
+    note=None,
+    truck=None,
+    tire_number=None,
+    position_label=None,
+    photo=None,
+):
     tire.status = Tire.STATUS_DISCARDED
     tire.current_truck = None
     tire.current_tire_number = None
@@ -592,6 +712,7 @@ def discard_tire(tire, movement_date=None, odometer_km=None, note=None, truck=No
         movement_date=movement_date,
         odometer_km=odometer_km,
         note=note,
+        photo=photo,
     )
 
 
@@ -641,6 +762,7 @@ def resolve_tire_for_install(
     new_tire_purchase_value=None,
     registered_on=None,
     note=None,
+    specs=None,
 ):
     """Devolve (pneu, erro) para instalação vinda do estoque ou de cadastro novo."""
     if action_mode == "install_stock":
@@ -664,6 +786,7 @@ def resolve_tire_for_install(
             registered_on=registered_on,
             purchase_value=new_tire_purchase_value,
             note=note,
+            specs=specs,
         ), None
 
     if tire.status == Tire.STATUS_DISCARDED:
@@ -840,6 +963,57 @@ def install_on_slot(truck, tire_number, position_label, tire, changed_on=None, o
 # --------------------------------------------------------------------------- #
 
 
+def recap_filter_options():
+    """Faixas do filtro de recapes: uma por degrau, do novo ao limite."""
+    return [
+        {"key": str(level), "level": level, "label": RECAP_HEAT_LABELS[level]}
+        for level in sorted(RECAP_HEAT_LABELS)
+    ]
+
+
+def parse_recap_level(raw_value):
+    """Nível de recape vindo da URL, ou None quando o filtro está desligado."""
+    raw_value = str(raw_value or "").strip()
+    if not raw_value.isdigit():
+        return None
+    level = int(raw_value)
+    return level if 0 <= level <= MAX_RETREADS else None
+
+
+def filter_by_recap_level(queryset, level):
+    """Aplica o filtro de recapes. O topo é `>=` para não perder dado antigo
+    que porventura tenha passado do limite."""
+    if level is None:
+        return queryset
+    if level >= MAX_RETREADS:
+        return queryset.filter(recap_count__gte=MAX_RETREADS)
+    return queryset.filter(recap_count=level)
+
+
+def _grouped_totals(queryset, field):
+    """`{valor: total}` agrupando por um campo.
+
+    O `order_by()` vazio é obrigatório: a ordenação padrão do modelo entraria
+    no GROUP BY e devolveria uma linha por pneu em vez de uma por grupo.
+    """
+    rows = queryset.order_by().values(field).annotate(total=Count("id"))
+    return {row[field]: row["total"] for row in rows}
+
+
+def count_by_status(queryset):
+    """Quantos pneus por status, para os contadores dos filtros."""
+    return _grouped_totals(queryset, "status")
+
+
+def count_by_recap_level(queryset):
+    """Quantos pneus por nível de recape, com o topo agrupado no limite."""
+    counts = {level: 0 for level in RECAP_HEAT_LABELS}
+    for value, total in _grouped_totals(queryset, "recap_count").items():
+        level = min(int(value or 0), MAX_RETREADS)
+        counts[level] = counts.get(level, 0) + total
+    return counts
+
+
 def inventory_summary():
     rows = list(Tire.objects.only("status", "purchase_value", "total_retread_cost", "recap_count"))
     summary = {
@@ -890,28 +1064,104 @@ def enrich_slots(truck, rows, spare_slots, today=None):
 
     def enrich(slot):
         change = assignments.get(slot["tire_number"])
+        tire = change.tire if change and change.tire_id else None
         slot["change"] = change
         slot["last_metrics"] = last_metrics.get(slot["tire_number"])
         slot["tire_id"] = change.tire_id if change and change.tire_id else ""
         slot["display_code"] = change.tire_code if change and change.tire_code else slot["tire_code"]
         slot["display_brand"] = change.tire_brand if change and change.tire_brand else "—"
-        slot["display_status"] = change.tire.get_status_display() if change and change.tire_id else "Vazia"
-        slot["display_recap_count"] = change.tire.recap_count if change and change.tire_id else 0
-        slot["is_filled"] = bool(change and change.tire_id)
+        slot["display_status"] = tire.get_status_display() if tire else "Vazia"
+        slot["display_recap_count"] = tire.recap_count if tire else 0
+        slot["display_dot"] = (tire.dot_code if tire else None) or "—"
+        slot["display_size"] = (tire.size_spec if tire else None) or "—"
+        slot["display_model"] = (tire.tire_model if tire else None) or "—"
+        slot["display_groove"] = tire.groove_depth_mm if tire else None
+        slot["is_filled"] = bool(tire)
 
         age_days = None
-        heat = None
         if change and change.changed_on:
             age_days = max((today - change.changed_on).days, 0)
-            heat = min(age_days / HEAT_MAX_DAYS, 1.0)
         slot["tire_age_days"] = age_days
-        slot["tire_heat_css"] = f"{heat:.4f}" if heat is not None else None
+
+        # O mapa de calor conta recapes, nao rodagem: e o numero de recapes que
+        # diz quanta vida o pneu ainda tem antes do descarte.
+        level = min(int(tire.recap_count or 0), MAX_RETREADS) if tire else None
+        slot["tire_heat_level"] = level
+        slot["tire_heat_label"] = RECAP_HEAT_LABELS.get(level) if level is not None else None
         return slot
 
     for row in rows:
         row["left_slots"] = [enrich(slot) for slot in row["left_slots"]]
         row["right_slots"] = [enrich(slot) for slot in row["right_slots"]]
     return rows, [enrich(slot) for slot in spare_slots]
+
+
+def heat_legend():
+    """Legenda do mapa de calor: um degrau por recape."""
+    return [
+        {"level": level, "label": RECAP_HEAT_LABELS[level]}
+        for level in sorted(RECAP_HEAT_LABELS)
+    ]
+
+
+def tire_tracks_for_truck(truck, tones=None, limit_per_tire=40):
+    """Movimentações agrupadas por pneu, para os filtros da tela do caminhão.
+
+    Entram todos os pneus que já passaram por este caminhão, e de cada um a
+    vida inteira — inclusive o que aconteceu fora do veículo (recapagem,
+    estoque, descarte) — porque é isso que explica o estado atual da posição.
+    """
+    tones = tones or {}
+
+    assignments = {
+        row.tire_id: row
+        for row in TruckTireChange.objects.filter(truck=truck, tire__isnull=False)
+    }
+    tire_ids = set(assignments)
+    tire_ids.update(
+        TireMovement.objects.filter(truck=truck)
+        .exclude(tire__isnull=True)
+        .values_list("tire_id", flat=True)
+        .distinct()
+    )
+    if not tire_ids:
+        return []
+
+    grouped = {}
+    for movement in (
+        TireMovement.objects.select_related("tire", "truck")
+        .filter(tire_id__in=tire_ids)
+        .order_by("-created_at", "-id")
+    ):
+        rows = grouped.setdefault(movement.tire_id, [])
+        if len(rows) < limit_per_tire:
+            rows.append(
+                {
+                    "movement": movement,
+                    "tone": tones.get(movement.movement_type, "is-neutral"),
+                    "is_here": movement.truck_id == truck.id,
+                }
+            )
+
+    tracks = []
+    for tire in Tire.objects.filter(pk__in=tire_ids).order_by("serial_number", "id"):
+        row = assignments.get(tire.id)
+        level = min(int(tire.recap_count or 0), MAX_RETREADS)
+        tracks.append(
+            {
+                "tire": tire,
+                "is_here": bool(row),
+                "tire_number": row.tire_number if row else None,
+                "position_label": tire.current_slot_label if row else None,
+                "heat_level": level,
+                "heat_label": RECAP_HEAT_LABELS[level],
+                "movements": grouped.get(tire.id, []),
+            }
+        )
+
+    # Quem está no caminhão agora vem primeiro, na ordem das posições.
+    tracks.sort(key=lambda item: (not item["is_here"], item["tire_number"] or 0, item["tire"].serial_number))
+    return tracks
 
 
 def fleet_overview(search=None, model_id=None):
@@ -965,3 +1215,110 @@ def trucks_per_model():
         if truck.model_template_id:
             counts[truck.model_template_id] = counts.get(truck.model_template_id, 0) + 1
     return counts
+
+
+# --------------------------------------------------------------------------- #
+# Exclusão definitiva
+# --------------------------------------------------------------------------- #
+#
+# Excluir apaga a linha do banco, diferente de descartar (que preserva o pneu
+# como histórico). Só é liberado para um cadastro que nunca foi usado: qualquer
+# vínculo vira um "impedimento" mostrado ao usuário, em vez de um erro seco.
+
+
+def _plural(count, singular, plural):
+    return f"{count} {singular if count == 1 else plural}"
+
+
+def tire_delete_blockers(tire, counters=None):
+    """Motivos que impedem excluir um pneu do cadastro. Vazio = pode excluir.
+
+    `counters` permite reaproveitar contagens já feitas em lote pela listagem
+    do estoque, evitando uma consulta por linha da tabela.
+    """
+    if counters is None:
+        counters = _delete_counters_for([tire]).get(tire.id, {})
+
+    blockers = []
+    if tire.status == Tire.STATUS_INSTALLED or tire.current_truck_id:
+        where = tire.current_truck.identifier if tire.current_truck_id else "um caminhão"
+        blockers.append(f"está instalado em {where}")
+    elif counters.get("slots"):
+        blockers.append("ainda ocupa uma posição de caminhão")
+
+    if tire.status == Tire.STATUS_RETREADING:
+        blockers.append("está em recapagem")
+    if tire.status == Tire.STATUS_DISCARDED:
+        blockers.append("já foi descartado e o registro da baixa se perderia")
+
+    history = counters.get("history") or 0
+    if history:
+        blockers.append(_plural(history, "ciclo no histórico de trocas", "ciclos no histórico de trocas"))
+
+    movements = counters.get("movements") or 0
+    if movements:
+        blockers.append(_plural(movements, "movimentação registrada", "movimentações registradas"))
+
+    return blockers
+
+
+def _delete_counters_for(tires):
+    """Contagens de vínculo de vários pneus de uma vez.
+
+    O cadastro em si (`TYPE_REGISTER`) não conta: ele nasce junto com o pneu e
+    some junto com ele.
+    """
+    tires = list(tires)
+    ids = [tire.id for tire in tires]
+    serials = {tire.id: (tire.serial_number or "").strip().lower() for tire in tires}
+    counters = {tire_id: {"slots": 0, "history": 0, "movements": 0} for tire_id in ids}
+    if not ids:
+        return counters
+
+    for tire_id in TruckTireChange.objects.filter(tire_id__in=ids).values_list("tire_id", flat=True):
+        counters[tire_id]["slots"] += 1
+
+    for tire_id in (
+        TireMovement.objects.filter(tire_id__in=ids)
+        .exclude(movement_type=TireMovement.TYPE_REGISTER)
+        .values_list("tire_id", flat=True)
+    ):
+        counters[tire_id]["movements"] += 1
+
+    for tire_id in (
+        TruckTireChangeHistory.objects.filter(tire_id__in=ids)
+        .exclude(tire_id__isnull=True)
+        .values_list("tire_id", flat=True)
+    ):
+        counters[tire_id]["history"] += 1
+
+    # O histórico também aponta para o pneu que saiu apenas pelo número, sem
+    # chave estrangeira — esse vínculo conta do mesmo jeito.
+    by_serial = {serial: tire_id for tire_id, serial in serials.items() if serial}
+    if by_serial:
+        for code in (
+            TruckTireChangeHistory.objects.filter(previous_tire_code__isnull=False)
+            .values_list("previous_tire_code", flat=True)
+            .iterator(chunk_size=1000)
+        ):
+            tire_id = by_serial.get(str(code or "").strip().lower())
+            if tire_id:
+                counters[tire_id]["history"] += 1
+
+    return counters
+
+
+def tire_delete_map(tires):
+    """`{id do pneu: lista de impedimentos}` para uma listagem inteira."""
+    tires = list(tires)
+    counters = _delete_counters_for(tires)
+    return {tire.id: tire_delete_blockers(tire, counters.get(tire.id, {})) for tire in tires}
+
+
+def model_delete_blockers(template, truck_count=None):
+    """Motivos que impedem excluir um modelo de caminhão."""
+    if truck_count is None:
+        truck_count = Truck.objects.filter(model_template=template).count()
+    if not truck_count:
+        return []
+    return [_plural(truck_count, "caminhão usa este modelo", "caminhões usam este modelo")]

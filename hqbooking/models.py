@@ -142,7 +142,13 @@ class Tire(models.Model):
     ]
 
     brand = models.CharField(max_length=80)
+    tire_model = models.CharField(max_length=80, blank=True, null=True)
     serial_number = models.CharField(max_length=40, unique=True)
+    # DOT e sulco descrevem o pneu fisico: o primeiro identifica o lote de
+    # fabricacao, o segundo e a medida que decide quando ele sai de operacao.
+    dot_code = models.CharField(max_length=20, blank=True, null=True)
+    size_spec = models.CharField(max_length=40, blank=True, null=True)
+    groove_depth_mm = models.DecimalField(max_digits=5, decimal_places=1, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_STOCK, db_index=True)
     recap_count = models.PositiveSmallIntegerField(default=0)
     purchase_value = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
@@ -276,6 +282,9 @@ class TireMovement(models.Model):
     odometer_km = models.PositiveIntegerField(blank=True, null=True)
     movement_cost = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     note = models.CharField(max_length=220, blank=True, null=True)
+    # Comprovacao visual do movimento (hoje usada no descarte, para registrar o
+    # estado do pneu que justificou a baixa).
+    photo = models.ImageField(upload_to="tires/movements/%Y/%m/", blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

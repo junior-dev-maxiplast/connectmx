@@ -28,7 +28,9 @@
     <article class="tl-block">
         <div class="tl-block-head">
             <h2>Mapa de posições</h2>
-            <span class="tl-heat-legend"><i></i>recente → antigo</span>
+            <span class="tl-heat-legend">
+                {% for level in heat_levels %}<span><i class="is-recap-{{ level.level }}"></i>{{ level.label }}</span>{% endfor %}
+            </span>
         </div>
 
         <div class="tl-map" data-tl-map data-today="{{ today_iso }}">
@@ -59,9 +61,10 @@
             {% for slot in spare_slots %}
             <button
                 type="button"
-                class="tl-spare {% if slot.is_filled %}is-filled{% endif %}"
+                class="tl-spare {% if slot.is_filled %}is-filled{% endif %}{% if slot.tire_heat_level != None %} is-recap-{{ slot.tire_heat_level }}{% endif %}"
                 data-tl-slot
                 data-tire-number="{{ slot.tire_number }}"
+                data-tire-id="{{ slot.tire_id }}"
                 data-has-tire="{% if slot.is_filled %}1{% else %}0{% endif %}"
                 data-is-spare="1"
                 data-position-label="{{ slot.position_label }}"
@@ -69,6 +72,10 @@
                 data-tire-brand="{{ slot.display_brand }}"
                 data-tire-status="{{ slot.display_status }}"
                 data-tire-recap="{{ slot.display_recap_count }}"
+                data-tire-dot="{{ slot.display_dot }}"
+                data-tire-size="{{ slot.display_size }}"
+                data-tire-model="{{ slot.display_model }}"
+                data-tire-groove="{{ slot.display_groove|default_if_none:'' }}"
                 data-date="{% if slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
                 data-km="{{ slot.change.odometer_km|default_if_none:'' }}"
                 data-tire-age-days="{{ slot.tire_age_days|default_if_none:'' }}"
@@ -129,6 +136,75 @@
         </article>
     </aside>
 </section>
+
+<section class="tl-block" data-tl-tire-tracks>
+    <div class="tl-block-head">
+        <h2>Movimentações por pneu</h2>
+        <span>Clique num pneu para ver só a vida dele</span>
+    </div>
+
+    {% if tire_tracks %}
+    <div class="tl-tire-filters">
+        <button type="button" class="tl-tire-chip is-all is-active" data-tl-track-filter="">
+            Todos <b>{{ tire_tracks|length }}</b>
+        </button>
+        {% for track in tire_tracks %}
+        <button type="button" class="tl-tire-chip is-recap-{{ track.heat_level }}" data-tl-track-filter="{{ track.tire.id }}"
+                title="{{ track.heat_label }}{% if track.position_label %} · {{ track.position_label }}{% endif %}">
+            <i></i>{{ track.tire.serial_number }} <b>{{ track.movements|length }}</b>
+        </button>
+        {% endfor %}
+    </div>
+
+    <div style="margin-top: 12px;">
+        {% for track in tire_tracks %}
+        <div class="tl-tire-track" data-tl-track="{{ track.tire.id }}">
+            <div class="tl-tire-track-head">
+                <div>
+                    <strong><a href="{% url 'tires_tire' track.tire.id %}">{{ track.tire.serial_number }}</a></strong>
+                    <small> · {{ track.tire.brand }}{% if track.tire.tire_model %} {{ track.tire.tire_model }}{% endif %}</small>
+                </div>
+                <small>
+                    {% if track.is_here %}Nesta posição: <b>{{ track.position_label|default:track.tire_number }}</b>{% else %}{{ track.tire.get_status_display }}{% endif %}
+                    · {{ track.heat_label }}
+                </small>
+            </div>
+            <div class="tl-tire-specs">
+                <span>DOT <b>{{ track.tire.dot_code|default:"—" }}</b></span>
+                <span>Medida <b>{{ track.tire.size_spec|default:"—" }}</b></span>
+                <span>Modelo <b>{{ track.tire.tire_model|default:"—" }}</b></span>
+                <span>Sulco <b>{% if track.tire.groove_depth_mm != None %}{{ track.tire.groove_depth_mm|floatformat:1 }} mm{% else %}—{% endif %}</b></span>
+            </div>
+            <div class="tl-list">
+                {% for row in track.movements %}
+                <div>
+                    <span class="tl-list-dot {{ row.tone }}"></span>
+                    <span class="tl-list-body">
+                        <strong>{{ row.movement.get_movement_type_display }}</strong>
+                        <small>
+                            {% if row.movement.truck_id %}{{ row.movement.truck.identifier }} · {{ row.movement.position_label|default:"—" }}{% else %}{{ row.movement.position_label|default:"Estoque" }}{% endif %}
+                            {% if row.movement.odometer_km != None %} · {{ row.movement.odometer_km }} km{% endif %}
+                            {% if row.movement.note %} · {{ row.movement.note }}{% endif %}
+                        </small>
+                    </span>
+                    {% if row.movement.photo %}
+                    <a class="tl-photo-link" href="{{ row.movement.photo.url }}" target="_blank" rel="noopener" title="Foto do registro">
+                        <img class="tl-photo-thumb" src="{{ row.movement.photo.url }}" alt="Foto do movimento">
+                    </a>
+                    {% endif %}
+                    <span class="tl-list-meta">{{ row.movement.movement_date|default:row.movement.created_at|date:"d/m/y" }}</span>
+                </div>
+                {% empty %}
+                <div class="tl-empty-inline">Sem movimentações registradas para este pneu.</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="tl-empty-inline" style="margin-top: 10px;">Nenhum pneu passou por este caminhão ainda.</div>
+    {% endif %}
+</section>
 {% endblock %}
 
 {% block modals %}
@@ -136,6 +212,12 @@
 
 <datalist id="tlBrandOptions">
     {% for brand in brands %}<option value="{{ brand }}"></option>{% endfor %}
+</datalist>
+<datalist id="tlModelOptions">
+    {% for item in tire_models %}<option value="{{ item }}"></option>{% endfor %}
+</datalist>
+<datalist id="tlSizeOptions">
+    {% for item in tire_sizes %}<option value="{{ item }}"></option>{% endfor %}
 </datalist>
 
 <div class="tl-overlay is-hidden" id="tlSlotModalOverlay" data-tl-close="tlSlotModal"></div>
@@ -155,11 +237,17 @@
         <div><span>Recapes</span><strong id="tlSlotRecap">—</strong></div>
     </div>
     <div class="tl-modal-facts">
+        <div><span>DOT</span><strong id="tlSlotDot">—</strong></div>
+        <div><span>Medida</span><strong id="tlSlotSize">—</strong></div>
+        <div><span>Modelo</span><strong id="tlSlotModel">—</strong></div>
+        <div><span>Sulco</span><strong id="tlSlotGroove">—</strong></div>
+    </div>
+    <div class="tl-modal-facts">
         <div style="grid-column: span 2;"><span>Rodagem do último ciclo</span><strong id="tlSlotRun">Sem registro</strong></div>
         <div style="grid-column: span 2;"><span>Tempo na posição</span><strong id="tlSlotAge">Sem registro</strong></div>
     </div>
 
-    <form method="POST" action="{% url 'tires_slot_action' truck.id %}" data-tl-guard data-tl-busy="Registrando...">
+    <form method="POST" action="{% url 'tires_slot_action' truck.id %}" enctype="multipart/form-data" data-tl-guard data-tl-busy="Registrando...">
         {% csrf_token %}
         <input type="hidden" id="tlSlotNumber" name="tire_number">
 
@@ -217,6 +305,32 @@
                 <small data-tl-when="initial_load">Se não souber, pode deixar em branco.</small>
             </div>
 
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewDot">DOT <b style="color: var(--tl-danger);">*</b></label>
+                <input class="tl-input" id="tlNewDot" name="dot_code" type="text" maxlength="20" placeholder="Ex.: 3ND9 KRTX 2224" autocomplete="off" data-tl-required-when="create_and_install initial_load">
+                <small>Código de fabricação gravado na lateral.</small>
+            </div>
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewGroove">Sulco (mm) <b style="color: var(--tl-danger);">*</b></label>
+                <input class="tl-input" id="tlNewGroove" name="groove_depth_mm" type="text" inputmode="decimal" placeholder="Ex.: 14,5" data-tl-required-when="create_and_install initial_load">
+                <small>Profundidade medida na entrada.</small>
+            </div>
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewSize">Tamanho / medida</label>
+                <input class="tl-input" id="tlNewSize" name="size_spec" type="text" maxlength="40" list="tlSizeOptions" placeholder="Ex.: 295/80R22.5" autocomplete="off">
+            </div>
+            <div class="tl-field" data-tl-when="create_and_install initial_load">
+                <label for="tlNewModel">Modelo do pneu</label>
+                <input class="tl-input" id="tlNewModel" name="tire_model" type="text" maxlength="80" list="tlModelOptions" placeholder="Ex.: XZA2 Energy" autocomplete="off">
+            </div>
+
+            <div class="tl-field is-full" data-tl-when="discard_current">
+                <label for="tlSlotPhoto">Foto do pneu descartado</label>
+                <input class="tl-input" id="tlSlotPhoto" name="photo" type="file" accept="image/*" capture="environment" data-tl-photo="tlSlotPhotoPreview">
+                <small>Fica anexada ao descarte como comprovação do motivo.</small>
+                <div class="tl-photo-preview" id="tlSlotPhotoPreview"><img alt="Prévia da foto"></div>
+            </div>
+
             <div class="tl-field" data-tl-when="initial_load">
                 <label for="tlInitialRecaps">Recapes já realizados</label>
                 <select class="tl-input" id="tlInitialRecaps" name="initial_recap_count">
@@ -245,6 +359,7 @@
             <div class="tl-field is-full">
                 <label for="tlSlotNote">Observação</label>
                 <input class="tl-input" id="tlSlotNote" name="note" type="text" maxlength="180" placeholder="Ex.: desgaste irregular, reserva do veículo">
+                <small data-tl-when="discard_current">No descarte, descreva aqui o motivo da baixa.</small>
             </div>
         </div>
 

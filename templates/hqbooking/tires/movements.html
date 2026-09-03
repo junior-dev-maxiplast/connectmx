@@ -71,6 +71,7 @@
                     <th class="is-num">KM</th>
                     <th class="is-num">Custo</th>
                     <th>Observação</th>
+                    <th>Foto</th>
                 </tr>
             </thead>
             <tbody>
@@ -89,6 +90,13 @@
                     <td class="is-num">{{ movement.odometer_km|default_if_none:"—" }}</td>
                     <td class="is-num">{% if movement.movement_cost %}R$ {{ movement.movement_cost|floatformat:2 }}{% else %}—{% endif %}</td>
                     <td>{{ movement.note|default:"—" }}</td>
+                    <td>
+                        {% if movement.photo %}
+                        <a href="{{ movement.photo.url }}" target="_blank" rel="noopener" title="Abrir foto">
+                            <img class="tl-photo-thumb" src="{{ movement.photo.url }}" alt="Foto do movimento">
+                        </a>
+                        {% else %}—{% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>

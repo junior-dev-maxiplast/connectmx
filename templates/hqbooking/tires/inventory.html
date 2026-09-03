@@ -30,18 +30,33 @@
         </div>
         <div class="tl-btn-row">
             {% if active_status %}<input type="hidden" name="status" value="{{ active_status }}">{% endif %}
+            {% if active_recaps %}<input type="hidden" name="recapes" value="{{ active_recaps }}">{% endif %}
             <button type="submit" class="tl-btn is-primary">Filtrar</button>
-            {% if search or active_status %}<a class="tl-btn is-ghost" href="{% url 'tires_inventory' %}">Limpar</a>{% endif %}
+            {% if search or active_status or active_recaps %}<a class="tl-btn is-ghost" href="{% url 'tires_inventory' %}">Limpar</a>{% endif %}
         </div>
     </form>
 
-    <div class="tl-filters" style="margin-top: 12px;">
-        {% for filter in filters %}
-        <a class="tl-filter {% if filter.key == active_status %}is-active{% endif %}"
-           href="?{% if filter.key %}status={{ filter.key }}&{% endif %}{% if search %}q={{ search }}{% endif %}">
-            {{ filter.label }} <b>{{ filter.count }}</b>
-        </a>
-        {% endfor %}
+    <div class="tl-filter-row">
+        <span class="tl-filter-label">Situação</span>
+        <div class="tl-filters">
+            {% for filter in filters %}
+            <a class="tl-filter {% if filter.key == active_status %}is-active{% endif %}" href="{{ filter.url }}">
+                {{ filter.label }} <b>{{ filter.count }}</b>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="tl-filter-row">
+        <span class="tl-filter-label">Recapes</span>
+        <div class="tl-filters">
+            {% for filter in recap_filters %}
+            <a class="tl-filter {% if filter.level != None %}is-recap-{{ filter.level }}{% endif %} {% if filter.key == active_recaps %}is-active{% endif %}"
+               href="{{ filter.url }}">
+                {% if filter.level != None %}<i></i>{% endif %}{{ filter.label }} <b>{{ filter.count }}</b>
+            </a>
+            {% endfor %}
+        </div>
     </div>
 </section>
 
@@ -58,6 +73,7 @@
                     <th>Pneu</th>
                     <th>Status</th>
                     <th>Recapes</th>
+                    <th class="is-num">Sulco</th>
                     <th>Localização</th>
                     <th class="is-num">Valor</th>
                     <th class="is-actions">Ações</th>
@@ -69,7 +85,7 @@
                     <td>
                         <a class="tl-cell-title" href="{% url 'tires_tire' tire.id %}">
                             <strong>{{ tire.serial_number }}</strong>
-                            <small>{{ tire.brand }}{% if tire.registered_on %} · desde {{ tire.registered_on|date:"d/m/Y" }}{% endif %}</small>
+                            <small>{{ tire.brand }}{% if tire.tire_model %} {{ tire.tire_model }}{% endif %}{% if tire.size_spec %} · {{ tire.size_spec }}{% endif %}{% if tire.dot_code %} · DOT {{ tire.dot_code }}{% endif %}</small>
                         </a>
                     </td>
                     <td><span class="tl-badge {% for key, tone in status_tones.items %}{% if key == tire.status %}{{ tone }}{% endif %}{% endfor %}">{{ tire.get_status_display }}</span></td>
@@ -80,6 +96,7 @@
                             <i class="{% if tire.recap_count >= 3 %}is-on{% endif %}"></i>
                         </span>
                     </td>
+                    <td class="is-num">{% if tire.groove_depth_mm != None %}{{ tire.groove_depth_mm|floatformat:1 }} mm{% else %}—{% endif %}</td>
                     <td>{% if tire.current_truck %}<a href="{% url 'tires_truck' tire.current_truck_id %}">{{ tire.current_truck.identifier }} · {{ tire.current_slot_label|default:"—" }}</a>{% else %}—{% endif %}</td>
                     <td class="is-num">{% if tire.purchase_value %}R$ {{ tire.purchase_value|floatformat:2 }}{% else %}—{% endif %}</td>
                     <td class="is-actions">
@@ -95,12 +112,21 @@
                         <button type="button" class="tl-btn is-sm is-primary" data-tl-open="tlReturnModal{{ tire.id }}">Retornar</button>
                         {% endif %}
                         {% if tire.status != "installed" and tire.status != "discarded" %}
-                        <form method="POST" action="{% url 'tires_tire_action' %}" data-tl-guard data-tl-confirm="Descartar o pneu {{ tire.serial_number }}?">
-                            {% csrf_token %}
-                            <input type="hidden" name="tire_id" value="{{ tire.id }}">
-                            <input type="hidden" name="action" value="discard">
-                            <button type="submit" class="tl-btn is-sm is-danger" data-tl-busy="...">Descartar</button>
-                        </form>
+                        <button type="button" class="tl-btn is-sm is-danger" data-tl-discard
+                                data-tire-id="{{ tire.id }}"
+                                data-tire-serial="{{ tire.serial_number }}"
+                                data-tire-brand="{{ tire.brand }}">Descartar</button>
+                        {% endif %}
+                        {% if tire.delete_blockers %}
+                        <button type="button" class="tl-btn is-sm is-blocked" disabled
+                                title="Não dá para excluir: {{ tire.delete_blockers|join:'; ' }}.">Excluir</button>
+                        {% else %}
+                        <button type="button" class="tl-btn is-sm is-danger" data-tl-confirm-delete
+                                data-action="{% url 'tires_tire_action' %}"
+                                data-kind="Pneu"
+                                data-target="{{ tire.serial_number }} · {{ tire.brand }}"
+                                data-warning="Este pneu nunca foi instalado e não tem movimentação além do cadastro, então nada de histórico se perde. Para um pneu que já rodou, use Descartar."
+                                data-fields='{"tire_id": "{{ tire.id }}", "action": "delete_permanently", "next": "{% url 'tires_inventory' %}"}'>Excluir</button>
                         {% endif %}
                         <a class="tl-btn is-sm is-ghost" href="{% url 'tires_tire' tire.id %}">Ficha</a>
                     </td>
@@ -124,6 +150,12 @@
 {% block modals %}
 <datalist id="tlBrandOptions">
     {% for brand in brands %}<option value="{{ brand }}"></option>{% endfor %}
+</datalist>
+<datalist id="tlModelOptions">
+    {% for item in tire_models %}<option value="{{ item }}"></option>{% endfor %}
+</datalist>
+<datalist id="tlSizeOptions">
+    {% for item in tire_sizes %}<option value="{{ item }}"></option>{% endfor %}
 </datalist>
 
 <div class="tl-overlay is-hidden" id="tlTireCreateModalOverlay" data-tl-close="tlTireCreateModal"></div>
@@ -190,6 +222,24 @@
                 <small>Escolha uma marca já usada para não duplicar a grafia.</small>
             </div>
             <div class="tl-field">
+                <label for="tlTireModel">Modelo do pneu</label>
+                <input class="tl-input" id="tlTireModel" name="tire_model" type="text" maxlength="80" list="tlModelOptions" placeholder="Ex.: XZA2 Energy" autocomplete="off">
+            </div>
+            <div class="tl-field">
+                <label for="tlTireDot">DOT <b style="color: var(--tl-danger);">*</b></label>
+                <input class="tl-input" id="tlTireDot" name="dot_code" type="text" maxlength="20" placeholder="Ex.: 3ND9 KRTX 2224" autocomplete="off" required>
+                <small>Código de fabricação gravado na lateral do pneu.</small>
+            </div>
+            <div class="tl-field">
+                <label for="tlTireSize">Tamanho / medida</label>
+                <input class="tl-input" id="tlTireSize" name="size_spec" type="text" maxlength="40" list="tlSizeOptions" placeholder="Ex.: 295/80R22.5" autocomplete="off">
+            </div>
+            <div class="tl-field">
+                <label for="tlTireGroove">Medida do sulco (mm) <b style="color: var(--tl-danger);">*</b></label>
+                <input class="tl-input" id="tlTireGroove" name="groove_depth_mm" type="text" inputmode="decimal" placeholder="Ex.: 14,5" required>
+                <small>Profundidade medida na entrada do pneu.</small>
+            </div>
+            <div class="tl-field">
                 <label for="tlTireValue">Valor unitário</label>
                 <input class="tl-input" id="tlTireValue" name="purchase_value" type="text" inputmode="decimal" placeholder="Ex.: 1250,00">
                 <small>Por pneu, não o total da nota.</small>
@@ -238,6 +288,9 @@
         </div>
     </form>
 </div>
+
+{% include "hqbooking/tires/_discard_modal.html" %}
+{% include "hqbooking/tires/_confirm_delete_modal.html" %}
 
 {% for tire in tires %}{% if tire.status == "retreading" %}
 <div class="tl-overlay is-hidden" id="tlReturnModal{{ tire.id }}Overlay" data-tl-close="tlReturnModal{{ tire.id }}"></div>
