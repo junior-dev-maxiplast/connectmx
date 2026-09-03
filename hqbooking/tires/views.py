@@ -16,6 +16,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
 
 from ..models import (
@@ -329,6 +330,8 @@ def truck_detail(request, truck_id):
         for movement in TireMovement.objects.select_related("tire").filter(truck=truck).order_by("-created_at", "-id")[:12]
     ]
 
+    tire_tracks = services.tire_tracks_for_truck(truck, MOVEMENT_TONES)
+
     return render(
         request,
         "hqbooking/tires/truck_detail.html",
@@ -344,8 +347,12 @@ def truck_detail(request, truck_id):
             occupancy_pct=int(round((filled / capacity) * 100)) if capacity else 0,
             stock_tires=list(Tire.objects.filter(status=Tire.STATUS_STOCK).order_by("brand", "serial_number")),
             movements=movements,
+            tire_tracks=tire_tracks,
             transfer_targets=transfer_targets,
             brands=services.known_brands(),
+            tire_models=services.known_tire_models(),
+            tire_sizes=services.known_sizes(),
+            heat_levels=services.heat_legend(),
         ),
     )
 
@@ -443,6 +450,11 @@ def slot_action(request, truck_id):
                 messages.success(request, "Pneu enviado para recapagem.")
                 return redirect(detail_url)
 
+            photo = request.FILES.get("photo")
+            photo_error = services.validate_movement_photo(photo)
+            if photo_error:
+                messages.error(request, photo_error)
+                return redirect(detail_url)
             services.discard_tire(
                 current_tire,
                 movement_date=changed_on,
@@ -451,6 +463,7 @@ def slot_action(request, truck_id):
                 truck=truck,
                 tire_number=tire_number,
                 position_label=position_label,
+                photo=photo,
             )
             current_row.delete()
             messages.success(request, "Pneu descartado.")
@@ -496,6 +509,15 @@ def slot_action(request, truck_id):
             messages.error(request, "Informe um valor válido para o novo pneu.")
             return redirect(detail_url)
 
+        # Só os modos que criam um pneu exigem a ficha física; instalar do
+        # estoque reaproveita o cadastro que já passou por essa validação.
+        specs = None
+        if action_mode in {"create_and_install", "initial_load"}:
+            specs, specs_error = services.read_tire_specs(request.POST)
+            if specs_error:
+                messages.error(request, specs_error)
+                return redirect(detail_url)
+
         if action_mode == "initial_load":
             if current_row:
                 messages.error(request, "Esta posição já tem um pneu. A carga inicial só vale para posições vazias.")
@@ -519,6 +541,7 @@ def slot_action(request, truck_id):
                 installed_on=changed_on,
                 odometer_km=odometer_km,
                 note=note,
+                specs=specs,
             )
             if error:
                 messages.error(request, error)
@@ -535,6 +558,7 @@ def slot_action(request, truck_id):
             new_tire_purchase_value=purchase_value,
             registered_on=changed_on,
             note=note,
+            specs=specs,
         )
         if error:
             messages.error(request, error)
@@ -612,37 +636,103 @@ def slot_swap(request, truck_id):
 # --------------------------------------------------------------------------- #
 
 
+def _inventory_url(status=None, recaps=None, search=None):
+    """Link de um filtro do estoque preservando os outros já aplicados."""
+    params = {}
+    if status:
+        params["status"] = status
+    if recaps is not None:
+        params["recapes"] = str(recaps)
+    if search:
+        params["q"] = search
+    base = reverse("tires_inventory")
+    return f"{base}?{urlencode(params)}" if params else base
+
+
 def inventory(request):
     status = (request.GET.get("status") or "").strip().lower()
+    if status not in dict(Tire.STATUS_CHOICES):
+        status = ""
     search = (request.GET.get("q") or "").strip()
+    recap_level = services.parse_recap_level(request.GET.get("recapes"))
 
-    queryset = Tire.objects.select_related("current_truck").order_by("serial_number", "id")
-    if status in dict(Tire.STATUS_CHOICES):
-        queryset = queryset.filter(status=status)
+    base = Tire.objects.select_related("current_truck").order_by("serial_number", "id")
     if search:
-        queryset = queryset.filter(Q(serial_number__icontains=search) | Q(brand__icontains=search))
+        base = base.filter(Q(serial_number__icontains=search) | Q(brand__icontains=search))
 
-    summary = services.inventory_summary()
+    by_status = base.filter(status=status) if status else base
+    by_recaps = services.filter_by_recap_level(base, recap_level)
+    queryset = services.filter_by_recap_level(by_status, recap_level)
+
+    tires = list(queryset[:400])
+    blockers = services.tire_delete_map(tires)
+    for tire in tires:
+        tire.delete_blockers = blockers.get(tire.id, [])
+
+    # Cada linha de filtro conta sobre o resultado dos OUTROS filtros, então o
+    # número do botão é sempre quantas linhas ele traz se for clicado.
+    status_counts = services.count_by_status(by_recaps)
+    recap_counts = services.count_by_recap_level(by_status)
+
     filters = [
-        {"key": "", "label": "Todos", "count": summary["total"]},
-        {"key": Tire.STATUS_STOCK, "label": "Estoque", "count": summary["stock"]},
-        {"key": Tire.STATUS_INSTALLED, "label": "Instalados", "count": summary["installed"]},
-        {"key": Tire.STATUS_RETREADING, "label": "Recapagem", "count": summary["retreading"]},
-        {"key": Tire.STATUS_DISCARDED, "label": "Descartados", "count": summary["discarded"]},
+        {
+            "key": "",
+            "label": "Todos",
+            "count": sum(status_counts.values()),
+            "url": _inventory_url(status=None, recaps=recap_level, search=search),
+        }
     ]
+    for key, label in [
+        (Tire.STATUS_STOCK, "Estoque"),
+        (Tire.STATUS_INSTALLED, "Instalados"),
+        (Tire.STATUS_RETREADING, "Recapagem"),
+        (Tire.STATUS_DISCARDED, "Descartados"),
+    ]:
+        filters.append(
+            {
+                "key": key,
+                "label": label,
+                "count": status_counts.get(key, 0),
+                "url": _inventory_url(status=key, recaps=recap_level, search=search),
+            }
+        )
+
+    recap_filters = [
+        {
+            "key": "",
+            "level": None,
+            "label": "Qualquer recape",
+            "count": sum(recap_counts.values()),
+            "url": _inventory_url(status=status, recaps=None, search=search),
+        }
+    ]
+    for option in services.recap_filter_options():
+        recap_filters.append(
+            {
+                "key": option["key"],
+                "level": option["level"],
+                "label": option["label"],
+                "count": recap_counts.get(option["level"], 0),
+                "url": _inventory_url(status=status, recaps=option["level"], search=search),
+            }
+        )
 
     return render(
         request,
         "hqbooking/tires/inventory.html",
         _shell(
             "inventory",
-            summary=summary,
+            summary=services.inventory_summary(),
             filters=filters,
+            recap_filters=recap_filters,
             active_status=status,
+            active_recaps="" if recap_level is None else str(recap_level),
             search=search,
-            tires=list(queryset[:400]),
+            tires=tires,
             status_tones=STATUS_TONES,
             brands=services.known_brands(),
+            tire_models=services.known_tire_models(),
+            tire_sizes=services.known_sizes(),
         ),
     )
 
@@ -695,7 +785,10 @@ def tire_detail(request, tire_id):
             total_cost=total_cost,
             cost_per_km=(total_cost / total_run_km) if total_run_km else None,
             retread_slots=range(services.MAX_RETREADS),
+            delete_blockers=services.tire_delete_blockers(tire),
             brands=services.known_brands(),
+            tire_models=services.known_tire_models(),
+            tire_sizes=services.known_sizes(),
         ),
     )
 
@@ -712,6 +805,11 @@ def tire_edit(request, tire_id):
         messages.error(request, "Informe um valor válido para o pneu.")
         return redirect(detail_url)
 
+    specs, specs_error = services.read_tire_specs(request.POST)
+    if specs_error:
+        messages.error(request, specs_error)
+        return redirect(detail_url)
+
     error = services.update_tire_identity(
         tire,
         serial_number=request.POST.get("serial_number"),
@@ -719,6 +817,7 @@ def tire_edit(request, tire_id):
         purchase_value=purchase_value,
         registered_on=services.parse_date(request.POST.get("registered_on")),
         note=(request.POST.get("note") or "").strip() or None,
+        specs=specs,
     )
     if error:
         messages.error(request, error)
@@ -748,6 +847,11 @@ def tire_create(request):
     retread_total = services.parse_decimal(retread_total_raw)
     if retread_total_raw and retread_total is None:
         messages.error(request, "Informe um valor válido para o gasto com recapes.")
+        return redirect(redirect_url)
+
+    specs, specs_error = services.read_tire_specs(request.POST)
+    if specs_error:
+        messages.error(request, specs_error)
         return redirect(redirect_url)
 
     # Pneus usados entram com o histórico que já têm, não zerados.
@@ -801,6 +905,7 @@ def tire_create(request):
             note=note,
             recap_count=recap_count,
             retread_total=retread_total,
+            specs=specs,
         )
         created.append(serial)
 
@@ -882,16 +987,29 @@ def tire_action(request):
         elif tire.status == Tire.STATUS_DISCARDED:
             messages.info(request, "Este pneu já está descartado.")
         else:
-            services.discard_tire(tire, movement_date=movement_date, note=note)
-            messages.success(request, "Pneu descartado.")
+            # A foto e a observação ficam no próprio movimento de descarte: é
+            # ali que se comprova depois o motivo da baixa.
+            photo = request.FILES.get("photo")
+            photo_error = services.validate_movement_photo(photo)
+            if photo_error:
+                messages.error(request, photo_error)
+                return redirect(redirect_url)
+            services.discard_tire(tire, movement_date=movement_date, note=note, photo=photo)
+            messages.success(
+                request,
+                "Pneu descartado com foto anexada." if photo else "Pneu descartado.",
+            )
         return redirect(redirect_url)
 
     if action == "delete_permanently":
-        if tire.status == Tire.STATUS_INSTALLED or tire.current_truck_id:
-            messages.error(request, "Remova o pneu do caminhão antes de excluir.")
-            return redirect(redirect_url)
-        if TruckTireChange.objects.filter(tire=tire).exists():
-            messages.error(request, "Este pneu ainda está vinculado a uma posição ativa.")
+        # Exclusão só vale para cadastro sem vínculo: se o pneu já rodou, o
+        # caminho é descartar, que preserva a história dele.
+        blockers = services.tire_delete_blockers(tire)
+        if blockers:
+            messages.error(
+                request,
+                f"Não é possível excluir o pneu {tire.serial_number}: {'; '.join(blockers)}.",
+            )
             return redirect(redirect_url)
 
         label = tire.serial_number
@@ -921,6 +1039,9 @@ def model_list(request):
                 "model": template,
                 "summary": services.summarize_structure(structure),
                 "truck_count": truck_counts.get(template.id, 0),
+                "delete_blockers": services.model_delete_blockers(
+                    template, truck_counts.get(template.id, 0)
+                ),
             }
         )
 
@@ -984,12 +1105,18 @@ def model_delete(request):
         messages.error(request, "Modelo não encontrado.")
         return redirect("tires_models")
 
-    if Truck.objects.filter(model_template=template).exists():
-        messages.error(request, "Existem caminhões usando este modelo. Troque o modelo deles antes de excluir.")
+    blockers = services.model_delete_blockers(template)
+    if blockers:
+        messages.error(
+            request,
+            f"Não é possível excluir o modelo “{template.name}”: {'; '.join(blockers)}. "
+            "Troque o modelo desses caminhões antes de excluir.",
+        )
         return redirect("tires_models")
 
+    name = template.name
     template.delete()
-    messages.success(request, "Modelo removido.")
+    messages.success(request, f"Modelo “{name}” excluído.")
     return redirect("tires_models")
 
 

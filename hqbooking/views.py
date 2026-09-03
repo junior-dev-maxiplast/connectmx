@@ -999,6 +999,7 @@ def _submit_romaneio_entry(
     volume_quantity,
     romaneio_weight,
     barcode_payload=None,
+    client_reference="",
 ):
     entry = SimulationRomaneioEntry.objects.create(
         company_code=company_code,
@@ -1010,6 +1011,7 @@ def _submit_romaneio_entry(
         volume_quantity=volume_quantity,
         romaneio_weight=romaneio_weight,
         barcode_payload=barcode_payload,
+        client_reference=client_reference,
         sync_status=SimulationRomaneioEntry.SYNC_PENDING,
     )
 

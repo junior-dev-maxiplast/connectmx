@@ -1145,3 +1145,160 @@ class LogisticsRomaneioTests(TestCase):
         self.assertEqual(response.status_code, 400)
         payload = response.json()
         self.assertEqual(payload["status"], "error")
+
+
+class MobileApiTests(TestCase):
+    """API consumida pelo app Expo em `connectmx-mobile/`."""
+
+    @staticmethod
+    def _mock_oracle_insert_success(entry):
+        entry.sequence_record = "512"
+        return None
+
+    def _post(self, payload, **extra):
+        return self.client.post(
+            reverse("mobile_api_romaneio_create"),
+            data=json.dumps(payload),
+            content_type="application/json",
+            **extra,
+        )
+
+    def test_ping_reports_service(self):
+        response = self.client.get(reverse("mobile_api_ping"))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["app"], "connectmx-mobile")
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_barcode(self, insert_mock):
+        response = self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["entry"]["volume_quantity"], 18)
+        self.assertEqual(payload["entry"]["source"], "leitura")
+
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.user_code, "77")
+        self.assertEqual(entry.romaneio_weight, Decimal("1250.500"))
+        self.assertEqual(entry.sync_status, SimulationRomaneioEntry.SYNC_SUCCESS)
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_manual_fields(self, insert_mock):
+        """Caminho secundário do app: sem leitura, os campos vêm digitados."""
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+            }
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["entry"]["source"], "manual")
+
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.volume_quantity, 9)
+        self.assertEqual(entry.romaneio_weight, Decimal("812.250"))
+        self.assertIsNone(entry.barcode_payload)
+        insert_mock.assert_called_once()
+
+    def test_create_requires_user_code(self):
+        response = self._post({"barcode_payload": "1/2/900/18/1250,500"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "error")
+        self.assertFalse(SimulationRomaneioEntry.objects.exists())
+
+    def test_create_rejects_unreadable_barcode(self):
+        response = self._post({"user_code": "77", "barcode_payload": "somente-um-campo"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("5 ou 8 campos", response.json()["message"])
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", return_value="Oracle fora do ar")
+    def test_create_reports_sync_error_with_entry(self, insert_mock):
+        response = self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
+
+        self.assertEqual(response.status_code, 502)
+        payload = response.json()
+        self.assertEqual(payload["status"], "sync_error")
+        self.assertEqual(payload["entry"]["sync_status"], SimulationRomaneioEntry.SYNC_ERROR)
+        insert_mock.assert_called_once()
+
+    @patch.dict("os.environ", {"CONNECTMX_MOBILE_API_KEY": "chave-secreta"})
+    def test_key_is_required_when_configured(self):
+        self.assertEqual(self._post({"user_code": "77"}).status_code, 401)
+
+        response = self.client.get(reverse("mobile_api_ping"), HTTP_X_CONNECTMX_KEY="chave-secreta")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["requires_key"])
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_list_filters_by_user_code(self, insert_mock):
+        self._post({"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"})
+        self._post({"user_code": "88", "barcode_payload": "1/2/901/20/1300,000"})
+
+        response = self.client.get(reverse("mobile_api_romaneio_list"), {"user_code": "77"})
+
+        self.assertEqual(response.status_code, 200)
+        entries = response.json()["entries"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["user_code"], "77")
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_client_reference_makes_resend_idempotent(self, insert_mock):
+        """O reenvio automático do app não pode dobrar a contagem de pallets.
+
+        Quando o INSERT deu certo mas a resposta não chegou ao celular, a fila
+        local tenta de novo com o mesmo `client_reference`.
+        """
+        body = {
+            "user_code": "77",
+            "barcode_payload": "1/2/900/18/1250,500",
+            "client_reference": "leitura-abc-123",
+        }
+
+        first = self._post(body)
+        self.assertEqual(first.status_code, 200)
+        self.assertNotIn("duplicate", first.json())
+
+        second = self._post(body)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.json()["duplicate"])
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 1)
+        # A segunda chamada nem chega a tocar no Oracle.
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", return_value="Oracle fora do ar")
+    def test_failed_entry_does_not_block_a_later_resend(self, insert_mock):
+        """Uma tentativa que falhou no Oracle precisa poder ser reenviada."""
+        body = {
+            "user_code": "77",
+            "barcode_payload": "1/2/900/18/1250,500",
+            "client_reference": "leitura-que-falhou",
+        }
+
+        self.assertEqual(self._post(body).status_code, 502)
+        # Sem sucesso registrado, o reenvio tenta de novo em vez de dar duplicado.
+        self.assertEqual(self._post(body).status_code, 502)
+        self.assertEqual(insert_mock.call_count, 2)
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_entries_without_client_reference_are_never_deduplicated(self, insert_mock):
+        """A tela web não manda o identificador: dois lançamentos iguais são dois."""
+        body = {"user_code": "77", "barcode_payload": "1/2/900/18/1250,500"}
+
+        self.assertEqual(self._post(body).status_code, 200)
+        self.assertEqual(self._post(body).status_code, 200)
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 2)
+        self.assertEqual(insert_mock.call_count, 2)

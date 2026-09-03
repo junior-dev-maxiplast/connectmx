@@ -1,9 +1,10 @@
 {% comment %}Botão de uma posição do caminhão. Espera a variável `slot` no contexto.{% endcomment %}
 <button
     type="button"
-    class="tl-wheel {% if slot.is_filled %}is-filled{% endif %}"
+    class="tl-wheel {% if slot.is_filled %}is-filled{% endif %}{% if slot.tire_heat_level != None %} is-recap-{{ slot.tire_heat_level }}{% endif %}"
     data-tl-slot
     data-tire-number="{{ slot.tire_number }}"
+    data-tire-id="{{ slot.tire_id }}"
     data-has-tire="{% if slot.is_filled %}1{% else %}0{% endif %}"
     data-is-spare="0"
     data-position-label="{{ slot.position_label }}"
@@ -11,13 +12,16 @@
     data-tire-brand="{{ slot.display_brand }}"
     data-tire-status="{{ slot.display_status }}"
     data-tire-recap="{{ slot.display_recap_count }}"
+    data-tire-dot="{{ slot.display_dot }}"
+    data-tire-size="{{ slot.display_size }}"
+    data-tire-model="{{ slot.display_model }}"
+    data-tire-groove="{{ slot.display_groove|default_if_none:'' }}"
     data-date="{% if slot.change.changed_on %}{{ slot.change.changed_on|date:'Y-m-d' }}{% endif %}"
     data-km="{{ slot.change.odometer_km|default_if_none:'' }}"
     data-tire-age-days="{{ slot.tire_age_days|default_if_none:'' }}"
     data-last-run-days="{{ slot.last_metrics.run_days|default_if_none:'' }}"
     data-last-run-km="{{ slot.last_metrics.run_km|default_if_none:'' }}"
-    {% if slot.tire_heat_css %}style="--tl-heat: {{ slot.tire_heat_css }};"{% endif %}
-    title="{{ slot.position_label }} · {{ slot.display_code }}"
+    title="{{ slot.position_label }} · {{ slot.display_code }}{% if slot.tire_heat_label %} · {{ slot.tire_heat_label }}{% endif %}"
 >
     <span>{{ slot.display_code }}</span>
 </button>

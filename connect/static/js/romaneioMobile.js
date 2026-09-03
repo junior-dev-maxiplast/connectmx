@@ -214,7 +214,14 @@
                 audio: false
             });
         } catch (error) {
-            setScannerStatus("Não foi possível abrir a câmera (" + (error && error.name ? error.name : "erro") + ").");
+            // Fechar em vez de deixar a tela preta: o motivo fica no passo 2.
+            closeScanner();
+            setStep("ler");
+            if (els.cameraAlert) {
+                els.cameraAlert.hidden = false;
+                els.cameraAlert.textContent = cameraErrorMessage(error);
+            }
+            showToast("Não foi possível abrir a câmera.", true);
             return;
         }
 
@@ -264,14 +271,17 @@
     /* ----------------------------------------------------- tela de leitura -- */
 
     function openScanner() {
+        // Sem câmera disponível a tela de leitura seria só um retângulo preto:
+        // melhor não abrir e deixar o motivo à vista no passo anterior.
+        if (!supportsCamera()) {
+            showCameraAlert();
+            showToast("Câmera indisponível neste acesso.", true);
+            return;
+        }
         currentScan = null;
         els.scanner.classList.add("is-open");
         document.body.style.overflow = "hidden";
-        if (supportsCamera()) {
-            startCamera();
-        } else {
-            setScannerStatus(cameraUnavailableMessage());
-        }
+        startCamera();
     }
 
     function closeScanner() {
@@ -287,9 +297,31 @@
 
     function cameraUnavailableMessage() {
         if (!window.isSecureContext) {
-            return "A câmera só abre em https:// ou localhost. Nesta conexão o navegador bloqueia o acesso.";
+            return "O navegador bloqueia a câmera em páginas http://. Para ler o pallet, "
+                + "abra o ConnectMX por https:// — o endereço atual é " + window.location.origin + ".";
         }
         return "Este navegador não decodifica código de barras. Use o Chrome ou o Edge no Android.";
+    }
+
+    function cameraErrorMessage(error) {
+        var name = (error && error.name) || "";
+        if (name === "NotAllowedError" || name === "SecurityError") {
+            return "A permissão de câmera foi negada para este site. Libere em Configurações do "
+                + "navegador → Configurações do site → Câmera e tente de novo.";
+        }
+        if (name === "NotFoundError" || name === "OverconstrainedError") {
+            return "Nenhuma câmera traseira foi encontrada neste aparelho.";
+        }
+        if (name === "NotReadableError") {
+            return "A câmera está ocupada por outro aplicativo. Feche-o e tente de novo.";
+        }
+        return "Não foi possível abrir a câmera" + (name ? " (" + name + ")" : "") + ".";
+    }
+
+    function showCameraAlert() {
+        if (!els.cameraAlert) return;
+        els.cameraAlert.hidden = false;
+        els.cameraAlert.textContent = cameraUnavailableMessage();
     }
 
     /* ---------------------------------------------------------------- save -- */
@@ -420,10 +452,7 @@
     });
 
     // Avisar antes do clique: o botão "Ler Pallet" não tem como funcionar aqui.
-    if (els.cameraAlert && !supportsCamera()) {
-        els.cameraAlert.hidden = false;
-        els.cameraAlert.textContent = cameraUnavailableMessage();
-    }
+    if (!supportsCamera()) showCameraAlert();
 
     restoreMatricula();
     setStep("matricula");

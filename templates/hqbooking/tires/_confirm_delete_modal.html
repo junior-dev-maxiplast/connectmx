@@ -1,0 +1,34 @@
+{% comment %}
+Confirmação de exclusão definitiva. É um modal só por página: os botões
+`data-tl-confirm-delete` dizem para onde postar (`data-action`), o que mostrar
+(`data-kind`, `data-target`, `data-warning`) e quais campos enviar
+(`data-fields`, um JSON de nome/valor).
+{% endcomment %}
+<div class="tl-overlay is-hidden" id="tlConfirmModalOverlay" data-tl-close="tlConfirmModal"></div>
+<div class="tl-modal is-hidden" id="tlConfirmModal" role="dialog" aria-modal="true" aria-labelledby="tlConfirmTitle">
+    <div class="tl-modal-head">
+        <div>
+            <h3 id="tlConfirmTitle">Excluir registro</h3>
+            <p>A exclusão apaga o cadastro do banco e não pode ser desfeita.</p>
+        </div>
+        <button type="button" class="tl-modal-close" data-tl-close="tlConfirmModal" aria-label="Fechar">&times;</button>
+    </div>
+
+    <div class="tl-modal-facts">
+        <div style="grid-column: span 4;">
+            <span id="tlConfirmKind">Registro</span>
+            <strong id="tlConfirmTarget">—</strong>
+        </div>
+    </div>
+
+    <p class="tl-confirm-warning" id="tlConfirmWarning"></p>
+
+    <form method="POST" id="tlConfirmForm" data-tl-guard data-tl-busy="Excluindo...">
+        {% csrf_token %}
+        <div id="tlConfirmFields"></div>
+        <div class="tl-modal-actions">
+            <button type="button" class="tl-btn is-ghost" data-tl-close="tlConfirmModal">Manter registro</button>
+            <button type="submit" class="tl-btn is-danger">Excluir definitivamente</button>
+        </div>
+    </form>
+</div>

@@ -90,6 +90,12 @@ class SimulationRomaneioEntry(models.Model):
     volume_quantity = models.PositiveIntegerField()
     romaneio_weight = models.DecimalField(max_digits=14, decimal_places=3)
     barcode_payload = models.TextField(blank=True, null=True)
+    # Identificador gerado pelo ConnectMX Mobile para cada leitura da fila local.
+    # Existe porque o app reenvia sozinho quando a rede volta: se a resposta do
+    # INSERT se perder no caminho, o retry chegaria como um romaneio novo e
+    # dobraria a contagem de pallets. Com ele o servidor reconhece a repetição e
+    # devolve o registro que já gravou. Vazio nos lançamentos feitos pela web.
+    client_reference = models.CharField(max_length=64, blank=True, default="", db_index=True)
     sync_status = models.CharField(max_length=10, choices=SYNC_STATUS_CHOICES, default=SYNC_PENDING)
     sync_message = models.CharField(max_length=255, blank=True, null=True)
     synced_at = models.DateTimeField(blank=True, null=True)
@@ -136,7 +142,13 @@ class Tire(models.Model):
     ]
 
     brand = models.CharField(max_length=80)
+    tire_model = models.CharField(max_length=80, blank=True, null=True)
     serial_number = models.CharField(max_length=40, unique=True)
+    # DOT e sulco descrevem o pneu fisico: o primeiro identifica o lote de
+    # fabricacao, o segundo e a medida que decide quando ele sai de operacao.
+    dot_code = models.CharField(max_length=20, blank=True, null=True)
+    size_spec = models.CharField(max_length=40, blank=True, null=True)
+    groove_depth_mm = models.DecimalField(max_digits=5, decimal_places=1, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_STOCK, db_index=True)
     recap_count = models.PositiveSmallIntegerField(default=0)
     purchase_value = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
@@ -270,6 +282,9 @@ class TireMovement(models.Model):
     odometer_km = models.PositiveIntegerField(blank=True, null=True)
     movement_cost = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     note = models.CharField(max_length=220, blank=True, null=True)
+    # Comprovacao visual do movimento (hoje usada no descarte, para registrar o
+    # estado do pneu que justificou a baixa).
+    photo = models.ImageField(upload_to="tires/movements/%Y/%m/", blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

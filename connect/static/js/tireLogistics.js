@@ -160,6 +160,13 @@
                 group.classList.toggle("is-hidden", modes.indexOf(mode) === -1);
             });
 
+            /* DOT e sulco são obrigatórios, mas só nos modos que criam pneu:
+               deixá-los `required` escondidos travaria o envio das outras ações. */
+            $$("[data-tl-required-when]").forEach(function (field) {
+                var modes = (field.getAttribute("data-tl-required-when") || "").split(/\s+/);
+                field.required = modes.indexOf(mode) > -1;
+            });
+
             /* Na carga inicial a data e o KM não são "de hoje": são o ponto de
                partida do pneu, então a ajuda contextual aparece. */
             var isInitial = mode === "initial_load";
@@ -200,6 +207,10 @@
             setFact("tlSlotBrand", hasTire ? data.tireBrand : "—");
             setFact("tlSlotStatus", hasTire ? data.tireStatus : "Vazia");
             setFact("tlSlotRecap", hasTire ? data.tireRecap + "/3" : "—");
+            setFact("tlSlotDot", hasTire ? data.tireDot : "—");
+            setFact("tlSlotSize", hasTire ? data.tireSize : "—");
+            setFact("tlSlotModel", hasTire ? data.tireModel : "—");
+            setFact("tlSlotGroove", hasTire && data.tireGroove ? data.tireGroove + " mm" : "—");
             setFact(
                 "tlSlotRun",
                 data.lastRunKm || data.lastRunDays
@@ -219,6 +230,10 @@
             if (kmField) kmField.value = data.km || "";
             var noteField = $("#tlSlotNote");
             if (noteField) noteField.value = "";
+            var photoField = $("#tlSlotPhoto");
+            if (photoField) photoField.value = "";
+            var photoPreview = $("#tlSlotPhotoPreview");
+            if (photoPreview) photoPreview.classList.remove("is-on");
 
             $$("#tlSlotAction option").forEach(function (option) {
                 if (option === spareOption) {
@@ -754,6 +769,159 @@
         render();
     }
 
+    /* ------------------------------------------------------ foto anexada -- */
+
+    function initPhotoInputs() {
+        $$("[data-tl-photo]").forEach(function (input) {
+            var preview = document.getElementById(input.getAttribute("data-tl-photo"));
+            var image = preview ? $("img", preview) : null;
+            if (!preview || !image) return;
+
+            input.addEventListener("change", function () {
+                var file = input.files && input.files[0];
+                if (image.src.indexOf("blob:") === 0) URL.revokeObjectURL(image.src);
+                if (!file) {
+                    preview.classList.remove("is-on");
+                    image.removeAttribute("src");
+                    return;
+                }
+                image.src = URL.createObjectURL(file);
+                preview.classList.add("is-on");
+            });
+        });
+    }
+
+    /* --------------------------------------------------- descarte de pneu -- */
+
+    function initDiscardModal() {
+        var modal = $("#tlDiscardModal");
+        if (!modal) return;
+
+        var idField = $("#tlDiscardTireId");
+        var noteField = $("#tlDiscardNote");
+        var photoField = $("#tlDiscardPhoto");
+        var preview = $("#tlDiscardPhotoPreview");
+
+        document.addEventListener("click", function (event) {
+            var trigger = event.target.closest("[data-tl-discard]");
+            if (!trigger) return;
+            event.preventDefault();
+
+            if (idField) idField.value = trigger.getAttribute("data-tire-id") || "";
+            var tireNode = $("#tlDiscardTire");
+            if (tireNode) tireNode.textContent = trigger.getAttribute("data-tire-serial") || "—";
+            var brandNode = $("#tlDiscardBrand");
+            if (brandNode) brandNode.textContent = trigger.getAttribute("data-tire-brand") || "—";
+
+            /* O modal é único na página: limpar aqui evita levar o motivo e a
+               foto de um pneu para o descarte do próximo. */
+            if (noteField) noteField.value = "";
+            if (photoField) photoField.value = "";
+            if (preview) preview.classList.remove("is-on");
+
+            openModal("tlDiscardModal");
+        });
+    }
+
+    /* ------------------------------------------ movimentações por pneu -- */
+
+    function initTireTracks() {
+        var panel = $("[data-tl-tire-tracks]");
+        if (!panel) return;
+
+        var chips = $$("[data-tl-track-filter]", panel);
+        var tracks = $$("[data-tl-track]", panel);
+        if (!chips.length) return;
+
+        function apply(tireId) {
+            chips.forEach(function (chip) {
+                chip.classList.toggle("is-active", chip.getAttribute("data-tl-track-filter") === tireId);
+            });
+            tracks.forEach(function (track) {
+                var mine = track.getAttribute("data-tl-track");
+                track.classList.toggle("is-hidden", !!tireId && mine !== tireId);
+            });
+            /* O filtro também acende a posição no mapa, para ligar a lista ao
+               desenho do caminhão. */
+            $$("[data-tl-slot]").forEach(function (slot) {
+                slot.classList.toggle("is-highlighted", !!tireId && slot.dataset.tireId === tireId);
+            });
+        }
+
+        chips.forEach(function (chip) {
+            chip.addEventListener("click", function () {
+                var value = chip.getAttribute("data-tl-track-filter") || "";
+                /* Clicar de novo no pneu já filtrado volta para "Todos". */
+                apply(chip.classList.contains("is-active") ? "" : value);
+            });
+        });
+
+        /* Clicar numa posição do mapa filtra a lista pelo pneu daquela posição. */
+        $$("[data-tl-slot]").forEach(function (slot) {
+            slot.addEventListener("click", function () {
+                var tireId = slot.dataset.tireId;
+                if (tireId) apply(tireId);
+            });
+        });
+    }
+
+    /* -------------------------------------------- confirmar exclusao -- */
+
+    function initConfirmDelete() {
+        var modal = $("#tlConfirmModal");
+        if (!modal) return;
+
+        var form = $("#tlConfirmForm");
+        var fieldsBox = $("#tlConfirmFields");
+        var warningNode = $("#tlConfirmWarning");
+
+        document.addEventListener("click", function (event) {
+            var trigger = event.target.closest("[data-tl-confirm-delete]");
+            if (!trigger) return;
+            event.preventDefault();
+
+            form.setAttribute("action", trigger.getAttribute("data-action") || "");
+
+            var kindNode = $("#tlConfirmKind");
+            if (kindNode) kindNode.textContent = trigger.getAttribute("data-kind") || "Registro";
+            var targetNode = $("#tlConfirmTarget");
+            if (targetNode) targetNode.textContent = trigger.getAttribute("data-target") || "—";
+
+            var warning = trigger.getAttribute("data-warning") || "";
+            if (warningNode) {
+                warningNode.textContent = warning;
+                warningNode.hidden = !warning;
+            }
+
+            /* Os campos do POST vêm do botão. Montados como nós, nunca como
+               HTML, para que um número de série com aspas não escape daqui. */
+            fieldsBox.textContent = "";
+            var payload = {};
+            try {
+                payload = JSON.parse(trigger.getAttribute("data-fields") || "{}") || {};
+            } catch (error) {
+                payload = {};
+            }
+            Object.keys(payload).forEach(function (name) {
+                var input = document.createElement("input");
+                input.type = "hidden";
+                input.name = name;
+                input.value = payload[name] == null ? "" : String(payload[name]);
+                fieldsBox.appendChild(input);
+            });
+
+            /* O guard trava o form depois do primeiro envio; como o modal é
+               reaproveitado, ele volta a aceitar envio a cada abertura. */
+            form.dataset.tlSubmitting = "";
+            $$('button[type="submit"]', form).forEach(function (button) {
+                button.disabled = false;
+                if (button.dataset.tlLabel) button.textContent = button.dataset.tlLabel;
+            });
+
+            openModal("tlConfirmModal");
+        });
+    }
+
     /* ------------------------------------------------------------- boot -- */
 
     document.addEventListener("DOMContentLoaded", function () {
@@ -763,6 +931,10 @@
         initTruckMap();
         initModelEditor();
         initBatchForm();
+        initPhotoInputs();
+        initDiscardModal();
+        initTireTracks();
+        initConfirmDelete();
     });
 
     window.TireLogistics = { openModal: openModal, closeModal: closeModal };
