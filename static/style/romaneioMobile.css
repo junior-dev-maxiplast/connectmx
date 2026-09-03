@@ -1,0 +1,177 @@
+/* ==========================================================================
+   Contagem de pallets — leitura pela câmera do celular.
+
+   Um passo por tela, cada tela com um único ponto de atenção: título grande em
+   cima, o dado que importa no meio, a ação primária ancorada embaixo, na área
+   do polegar. Herda as variáveis de theme.css; escopo próprio em .rmb.
+   ========================================================================== */
+
+.rmb {
+    --rmb-accent: #00bf63;
+    --rmb-accent-strong: #04a957;
+    --rmb-accent-soft: rgba(0, 191, 99, .12);
+    --rmb-accent-deep: #0f7b4b;
+    --rmb-accent-glow: 0 12px 28px rgba(0, 191, 99, .28);
+    --rmb-danger: #d5495e;
+    --rmb-warning: #a9691a;
+    --rmb-warning-soft: rgba(214, 145, 40, .16);
+    --rmb-hairline: rgba(28, 34, 66, .09);
+    --rmb-radius: 18px;
+    --rmb-radius-sm: 14px;
+
+    margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    color: var(--page-text);
+    background: var(--page-bg);
+    font-family: "Open Sans", "Segoe UI", sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+}
+
+/* Brilho de acento atrás do conteúdo: dá profundidade sem pesar a tela. */
+.rmb::before {
+    content: "";
+    position: fixed;
+    inset: -30% -30% auto -30%;
+    height: 70vh;
+    background: radial-gradient(60% 60% at 50% 0%, var(--rmb-accent-soft), transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+html[data-theme="dark"] .rmb {
+    --rmb-accent-deep: #6ee0a5;
+    --rmb-accent-glow: 0 12px 30px rgba(0, 191, 99, .22);
+    --rmb-danger: #ff8a9d;
+    --rmb-warning: #e8b45c;
+    --rmb-hairline: rgba(255, 255, 255, .12);
+}
+
+.rmb * { box-sizing: border-box; }
+
+/* ---------------------------------------------------------------- topbar -- */
+
+.rmb-topbar { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 14px 20px 0; }
+.rmb-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--muted-text); }
+.rmb-topbar .theme-toggle { margin-left: auto; }
+
+/* ----------------------------------------------------------------- shell -- */
+
+.rmb-shell { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 480px; margin: 0 auto; padding: 18px 20px calc(20px + env(safe-area-inset-bottom)); }
+
+/* Trilha de progresso: orienta sem ocupar espaço. */
+.rmb-progress { display: flex; gap: 5px; margin-bottom: 26px; }
+.rmb-progress i { flex: 1; height: 3px; border-radius: 999px; background: var(--rmb-hairline); transition: background-color .3s ease; }
+.rmb-shell[data-step="matricula"] .rmb-progress i:nth-child(1),
+.rmb-shell[data-step="ler"] .rmb-progress i:nth-child(-n+2),
+.rmb-shell[data-step="conferencia"] .rmb-progress i { background: var(--rmb-accent); }
+
+/* Um passo por tela: só o bloco do passo atual fica visível. */
+.rmb-step { display: none; flex: 1; flex-direction: column; }
+.rmb-shell[data-step="matricula"] .rmb-step-matricula,
+.rmb-shell[data-step="ler"] .rmb-step-ler,
+.rmb-shell[data-step="conferencia"] .rmb-step-conferencia { display: flex; animation: rmb-enter .32s cubic-bezier(.22, .8, .3, 1) both; }
+
+@keyframes rmb-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+.rmb-body { flex: 1; }
+.rmb-body.is-centered { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.rmb-footer { display: grid; gap: 4px; padding-top: 20px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .rmb-shell[data-step] .rmb-step { animation: none; }
+}
+
+/* ------------------------------------------------------------ tipografia -- */
+
+.rmb-kicker { margin: 0 0 8px; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--rmb-accent-deep); }
+.rmb-title { margin: 0; font-size: 27px; font-weight: 800; line-height: 1.15; letter-spacing: -.02em; color: var(--title-text); }
+.rmb-lede { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--muted-text); max-width: 30ch; }
+.rmb-body.is-centered .rmb-lede { margin-inline: auto; }
+
+/* --------------------------------------------------------------- passo 1 -- */
+
+.rmb-display-input { width: 100%; margin-top: 30px; padding: 18px 20px; border: 1px solid var(--rmb-hairline); border-radius: var(--rmb-radius); background: var(--surface-1); color: var(--title-text); font-family: inherit; font-size: 38px; font-weight: 800; letter-spacing: .06em; text-align: center; font-variant-numeric: tabular-nums; box-shadow: var(--surface-shadow); transition: border-color .18s ease, box-shadow .18s ease; }
+.rmb-display-input::placeholder { color: var(--muted-text); opacity: .32; letter-spacing: .12em; }
+.rmb-display-input:focus { outline: none; border-color: var(--rmb-accent); box-shadow: 0 0 0 4px var(--rmb-accent-soft); }
+
+/* --------------------------------------------------------------- passo 2 -- */
+
+.rmb-target { position: relative; width: 168px; height: 168px; margin: 34px 0 30px; display: grid; place-items: center; border-radius: 50%; color: var(--rmb-accent-deep); background: var(--rmb-accent-soft); }
+.rmb-target::before { content: ""; position: absolute; width: 210px; height: 210px; border-radius: 50%; border: 1px solid var(--rmb-accent); opacity: .18; }
+.rmb-target svg { width: 68px; height: 68px; }
+
+.rmb-pill { display: inline-flex; align-items: center; gap: 7px; margin-top: 18px; padding: 7px 14px; border-radius: 999px; background: var(--surface-1); border: 1px solid var(--rmb-hairline); font-size: 11px; font-weight: 600; color: var(--muted-text); }
+.rmb-pill strong { font-size: 13px; font-weight: 800; color: var(--title-text); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------- passo 3 -- */
+
+/* O volume é a contagem do pallet: é ele que a pessoa precisa reconhecer de
+   relance, então ganha o bloco inteiro. O resto confirma o contexto. */
+.rmb-hero { margin-top: 22px; padding: 26px 22px; border-radius: var(--rmb-radius); background: linear-gradient(150deg, var(--rmb-accent), var(--rmb-accent-strong)); color: #fff; text-align: center; box-shadow: var(--rmb-accent-glow); }
+.rmb-hero-value { display: block; font-size: 66px; font-weight: 800; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; word-break: break-all; }
+.rmb-hero-label { display: block; margin-top: 8px; font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; opacity: .85; }
+
+.rmb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.rmb-tile { padding: 13px 15px; border-radius: var(--rmb-radius-sm); background: var(--surface-1); border: 1px solid var(--rmb-hairline); }
+.rmb-tile span { display: block; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-text); }
+.rmb-tile strong { display: block; margin-top: 5px; font-size: 17px; font-weight: 800; color: var(--title-text); font-variant-numeric: tabular-nums; word-break: break-all; }
+.rmb-tile.is-wide { grid-column: 1 / -1; }
+
+/* --------------------------------------------------------------- botões -- */
+
+.rmb-button { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; padding: 14px 20px; border: 1px solid transparent; border-radius: var(--rmb-radius); background: var(--rmb-accent); color: #fff; font-family: inherit; font-size: 15px; font-weight: 800; letter-spacing: .01em; cursor: pointer; transition: transform .14s ease, filter .16s ease, opacity .16s ease; -webkit-tap-highlight-color: transparent; }
+.rmb-button:active { transform: scale(.985); filter: brightness(.94); }
+.rmb-button[disabled] { opacity: .38; cursor: not-allowed; }
+.rmb-button.is-hero { min-height: 62px; font-size: 16px; box-shadow: var(--rmb-accent-glow); }
+.rmb-button.is-hero[disabled] { box-shadow: none; }
+.rmb-button.is-ghost { background: transparent; border-color: var(--rmb-hairline); color: var(--page-text); }
+.rmb-button.is-text { min-height: 48px; background: transparent; color: var(--muted-text); font-size: 13px; font-weight: 700; box-shadow: none; }
+.rmb-button.is-text.is-danger { color: var(--rmb-danger); }
+
+/* ------------------------------------------------------- tela de leitura -- */
+
+.rmb-scanner { position: fixed; inset: 0; z-index: 90; display: none; flex-direction: column; background: #05070f; color: #fff; }
+.rmb-scanner.is-open { display: flex; }
+
+.rmb-scanner-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
+.rmb-scanner-stage video { width: 100%; height: 100%; object-fit: cover; }
+
+/* Moldura por cantos: marca a área de leitura sem tapar o código. */
+.rmb-frame { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(80vw, 330px); height: min(36vh, 180px); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .55); border-radius: 20px; }
+.rmb-frame i { position: absolute; width: 30px; height: 30px; border: 3px solid #fff; }
+.rmb-frame i:nth-child(1) { top: -1px; left: -1px; border-right: 0; border-bottom: 0; border-radius: 14px 0 0 0; }
+.rmb-frame i:nth-child(2) { top: -1px; right: -1px; border-left: 0; border-bottom: 0; border-radius: 0 14px 0 0; }
+.rmb-frame i:nth-child(3) { bottom: -1px; right: -1px; border-left: 0; border-top: 0; border-radius: 0 0 14px 0; }
+.rmb-frame i:nth-child(4) { bottom: -1px; left: -1px; border-right: 0; border-top: 0; border-radius: 0 0 0 14px; }
+.rmb-laser { position: absolute; left: 12px; right: 12px; top: 50%; height: 2px; border-radius: 999px; background: linear-gradient(90deg, transparent, var(--rmb-accent), transparent); box-shadow: 0 0 14px rgba(0, 191, 99, .8); animation: rmb-sweep 2.2s ease-in-out infinite; }
+@keyframes rmb-sweep { 0%, 100% { transform: translateY(-46px); } 50% { transform: translateY(46px); } }
+@media (prefers-reduced-motion: reduce) { .rmb-laser { animation: none; } }
+
+.rmb-scanner-foot { padding: 18px 20px calc(20px + env(safe-area-inset-bottom)); display: grid; gap: 12px; background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55) 40%); }
+.rmb-scanner-status { margin: 0; min-height: 38px; font-size: 13px; line-height: 1.45; text-align: center; color: rgba(255, 255, 255, .86); }
+.rmb-scanner-foot .rmb-button.is-ghost { border-color: rgba(255, 255, 255, .3); color: #fff; }
+
+/* ---------------------------------------------------------------- avisos -- */
+
+.rmb-alert { margin: 18px 0 0; padding: 12px 15px; border-radius: var(--rmb-radius-sm); background: var(--rmb-warning-soft); color: var(--rmb-warning); font-size: 12px; line-height: 1.5; text-align: left; }
+
+.rmb-toast { position: fixed; left: 16px; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 120; padding: 15px 18px; border-radius: var(--rmb-radius-sm); background: #12213a; color: #fff; font-size: 13px; font-weight: 700; line-height: 1.4; box-shadow: 0 16px 36px rgba(0, 0, 0, .32); opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .22s ease, transform .22s ease; }
+.rmb-toast.is-visible { opacity: 1; transform: none; }
+.rmb-toast::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 9px; border-radius: 50%; background: var(--rmb-accent); vertical-align: middle; }
+.rmb-toast.is-error::before { background: var(--rmb-danger); }
+
+/* Telas curtas (celular pequeno com o teclado aberto): encolhe o respiro. */
+@media (max-height: 680px) {
+    .rmb-title { font-size: 23px; }
+    .rmb-display-input { margin-top: 20px; font-size: 32px; }
+    .rmb-target { width: 128px; height: 128px; margin: 22px 0 20px; }
+    .rmb-target::before { width: 160px; height: 160px; }
+    .rmb-target svg { width: 54px; height: 54px; }
+    .rmb-hero { padding: 20px; }
+    .rmb-hero-value { font-size: 54px; }
+}
