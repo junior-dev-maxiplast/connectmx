@@ -72,6 +72,21 @@ class LunchReservation(models.Model):
 
 
 class SimulationRomaneioEntry(models.Model):
+    # Estágios da contagem de embalagens. O número é o que vai para USU_TIPREG
+    # na USU_TCONROM, e é escolhido na tela inicial do app: o mesmo pallet passa
+    # pelos quatro ao longo do fluxo do galpão, então o estágio faz parte da
+    # identidade da leitura, não é um detalhe de apresentação.
+    STAGE_SEPARAR = 1
+    STAGE_GUARDAR = 2
+    STAGE_PALETIZAR = 3
+    STAGE_CARREGAR = 4
+    RECORD_TYPE_CHOICES = [
+        (STAGE_SEPARAR, "Separar"),
+        (STAGE_GUARDAR, "Guardar"),
+        (STAGE_PALETIZAR, "Paletizar"),
+        (STAGE_CARREGAR, "Carregar"),
+    ]
+
     SYNC_PENDING = "pending"
     SYNC_SUCCESS = "success"
     SYNC_ERROR = "error"
@@ -104,6 +119,14 @@ class SimulationRomaneioEntry(models.Model):
     # USU_CODEND: endereçamento que veio na etiqueta. NUMBER(6) no Oracle,
     # mesma normalização do package_code.
     address_code = models.CharField(max_length=40, blank=True, default="")
+    # USU_TIPREG: em que etapa da contagem esta leitura foi feita. Nulo só nos
+    # lançamentos anteriores aos estágios — daí para frente é sempre preenchido.
+    record_type = models.PositiveSmallIntegerField(
+        choices=RECORD_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     barcode_payload = models.TextField(blank=True, null=True)
     # Identificador gerado pelo ConnectMX Mobile para cada leitura da fila local.
     # Existe porque o app reenvia sozinho quando a rede volta: se a resposta do
@@ -126,10 +149,15 @@ class SimulationRomaneioEntry(models.Model):
             # nesse caso; a segunda esbarra no IntegrityError e é convertida em
             # SYNC_DUPLICATE por quem chamou. Vazio fica de fora: lançamentos
             # antigos sem `package_code` não podem colidir entre si.
+            #
+            # O estágio entra na chave porque o mesmo pallet é lido de novo a
+            # cada etapa: separado, guardado, paletizado e carregado são quatro
+            # contagens legítimas da mesma embalagem. Sem ele, a leitura do
+            # segundo estágio seria recusada como recontagem.
             models.UniqueConstraint(
-                fields=["package_code"],
+                fields=["package_code", "record_type"],
                 condition=models.Q(sync_status="success") & ~models.Q(package_code=""),
-                name="uq_romaneio_package_success",
+                name="uq_romaneio_package_stage_success",
             ),
         ]
 
