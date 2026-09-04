@@ -24,7 +24,9 @@ from .views import (
     _parse_romaneio_decimal,
     _parse_romaneio_int,
     _parse_romaneio_numeric_code,
+    _parse_romaneio_record_type,
     _parse_romaneio_time,
+    _romaneio_record_type_label,
     _simulation_oracle_config,
     _submit_romaneio_entry,
 )
@@ -72,6 +74,8 @@ def _serialize_entry(entry):
         "romaneio_weight": str(entry.romaneio_weight),
         "package_code": entry.package_code,
         "address_code": entry.address_code,
+        "record_type": entry.record_type,
+        "record_type_label": _romaneio_record_type_label(entry.record_type),
         "sync_status": entry.sync_status,
         "sync_status_label": entry.get_sync_status_display(),
         "sync_message": entry.sync_message or "",
@@ -112,8 +116,8 @@ def mobile_romaneio_create(request):
     volumes, peso, código do pallet e endereçamento vêm preenchidos à mão.
     Data e hora são opcionais e caem no horário do servidor, como na leitura
     contínua da web. Em qualquer um dos dois caminhos, `_submit_romaneio_entry`
-    recusa a gravação se o `package_code` já tiver uma leitura de sucesso —
-    cada embalagem só entra uma vez.
+    recusa a gravação se o mesmo `package_code` já tiver uma leitura de sucesso
+    na mesma etapa — cada embalagem entra uma vez por estágio da contagem.
     """
     key_error = _require_app_key(request)
     if key_error:
@@ -157,6 +161,21 @@ def mobile_romaneio_create(request):
                     "entry": _serialize_entry(existing),
                 }
             )
+
+    # A etapa da contagem não vem no código de barras: é o botão que a pessoa
+    # tocou na tela inicial. Vale igual para leitura e digitação, porque é ela
+    # que decide se este pallet já foi contado *nesta* etapa.
+    record_type = _parse_romaneio_record_type(payload.get("record_type"))
+    if record_type is None:
+        return JsonResponse(
+            {
+                "status": "error",
+                "message": (
+                    "Informe a etapa da contagem: 1 separar, 2 guardar, 3 paletizar ou 4 carregar."
+                ),
+            },
+            status=400,
+        )
 
     barcode_payload = str(payload.get("barcode_payload") or "").strip()
 
@@ -230,6 +249,7 @@ def mobile_romaneio_create(request):
         romaneio_weight=romaneio_weight,
         package_code=package_code,
         address_code=address_code,
+        record_type=record_type,
         barcode_payload=barcode_payload or None,
         client_reference=client_reference,
     )

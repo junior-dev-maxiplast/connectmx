@@ -1,6 +1,8 @@
 import json
+import re
 from decimal import Decimal
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -15,6 +17,7 @@ from .models import (
     TruckTireChange,
     TruckTireChangeHistory,
 )
+from .views import _extract_romaneio_payload, _insert_simulation_romaneio_oracle
 
 
 def _sample_structure():
@@ -990,8 +993,11 @@ class LogisticsRomaneioTests(TestCase):
         response = self.client.get(reverse("logistics_romaneio_mobile"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Matrícula")
-        self.assertContains(response, "Ler Pallet")
         self.assertContains(response, "Salvar Leitura")
+        # A câmera abre por um dos quatro estágios: não existe botão de leitura
+        # sem etapa, porque o registro sairia sem classificação no ERP.
+        for etapa in ("Separar", "Guardar", "Paletizar", "Carregar"):
+            self.assertContains(response, etapa)
         # A tela grava pela mesma rota de envio rápido usada pelo leitor de mesa.
         self.assertContains(response, reverse("logistics_romaneio_quick_submit"))
 
@@ -1071,6 +1077,7 @@ class LogisticsRomaneioTests(TestCase):
                 "romaneio_weight": "1540,250",
                 "package_code": "9001",
                 "address_code": "103",
+                "record_type": "1",
             },
             follow=True,
         )
@@ -1101,6 +1108,7 @@ class LogisticsRomaneioTests(TestCase):
                 "romaneio_weight": "1540,250",
                 "package_code": "9002",
                 "address_code": "104",
+                "record_type": "2",
             },
             follow=True,
         )
@@ -1138,6 +1146,7 @@ class LogisticsRomaneioTests(TestCase):
                 {
                     "barcode_payload": "1/2/8/1540,250/9010/201",
                     "user_code": "9001",
+                    "record_type": 1,
                 }
             ),
             content_type="application/json",
@@ -1177,14 +1186,14 @@ class LogisticsRomaneioTests(TestCase):
         """Regra de negócio: cada embalagem só entra uma vez, não importa a matrícula."""
         first = self.client.post(
             reverse("logistics_romaneio_quick_submit"),
-            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9001"}),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9001", "record_type": 1}),
             content_type="application/json",
         )
         self.assertEqual(first.status_code, 200)
 
         second = self.client.post(
             reverse("logistics_romaneio_quick_submit"),
-            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9002"}),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/9088/101", "user_code": "9002", "record_type": 1}),
             content_type="application/json",
         )
 
@@ -1206,7 +1215,7 @@ class LogisticsRomaneioTests(TestCase):
         antes de chegar perto do INSERT, não estourar lá com ORA-01722."""
         response = self.client.post(
             reverse("logistics_romaneio_quick_submit"),
-            data=json.dumps({"barcode_payload": "1/2/8/1540,250/PLT-04521/101", "user_code": "9001"}),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/PLT-04521/101", "user_code": "9001", "record_type": 1}),
             content_type="application/json",
         )
 
@@ -1220,7 +1229,7 @@ class LogisticsRomaneioTests(TestCase):
         zero à esquerda) — a checagem de duplicidade precisa enxergar isso também."""
         first = self.client.post(
             reverse("logistics_romaneio_quick_submit"),
-            data=json.dumps({"barcode_payload": "1/2/8/1540,250/004521/101", "user_code": "9001"}),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/004521/101", "user_code": "9001", "record_type": 1}),
             content_type="application/json",
         )
         self.assertEqual(first.status_code, 200)
@@ -1228,7 +1237,7 @@ class LogisticsRomaneioTests(TestCase):
 
         second = self.client.post(
             reverse("logistics_romaneio_quick_submit"),
-            data=json.dumps({"barcode_payload": "1/2/8/1540,250/4521/101", "user_code": "9002"}),
+            data=json.dumps({"barcode_payload": "1/2/8/1540,250/4521/101", "user_code": "9002", "record_type": 1}),
             content_type="application/json",
         )
 
@@ -1246,9 +1255,14 @@ class MobileApiTests(TestCase):
         return None
 
     def _post(self, payload, **extra):
+        # A etapa da contagem é obrigatória em todo envio. Os testes que não
+        # estão medindo essa regra herdam "separar" daqui, para o corpo de cada
+        # um continuar mostrando só o que aquele teste realmente exercita; quem
+        # precisa de outra etapa (ou de nenhuma) sobrescreve no próprio payload.
+        body = {"record_type": SimulationRomaneioEntry.STAGE_SEPARAR, **payload}
         return self.client.post(
             reverse("mobile_api_romaneio_create"),
-            data=json.dumps(payload),
+            data=json.dumps(body),
             content_type="application/json",
             **extra,
         )
@@ -1439,3 +1453,436 @@ class MobileApiTests(TestCase):
         self.assertEqual(second.status_code, 200)
         self.assertEqual(SimulationRomaneioEntry.objects.count(), 2)
         self.assertEqual(insert_mock.call_count, 2)
+
+
+class RomaneioStageTests(TestCase):
+    """Os quatro estágios da contagem (USU_TIPREG).
+
+    O que estes testes protegem é uma regra que não é óbvia lendo o código: a
+    mesma embalagem é contada quatro vezes ao longo do fluxo do galpão, então
+    "pallet repetido" só é erro dentro da mesma etapa.
+    """
+
+    @staticmethod
+    def _oracle_ok(entry):
+        entry.sequence_record = "900"
+        return None
+
+    def _post(self, payload):
+        body = {"user_code": "77", **payload}
+        return self.client.post(
+            reverse("mobile_api_romaneio_create"),
+            data=json.dumps(body),
+            content_type="application/json",
+        )
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_mesmo_pallet_avanca_pelas_quatro_etapas(self, insert_mock):
+        """O caso que motivou a mudança: separar, guardar, paletizar e carregar
+        o MESMO pallet são quatro contagens legítimas, não três duplicidades."""
+        for etapa in (1, 2, 3, 4):
+            response = self._post(
+                {"barcode_payload": "1/2/18/1250,500/5500/103", "record_type": etapa}
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                msg=f"a etapa {etapa} do mesmo pallet foi recusada",
+            )
+            self.assertEqual(response.json()["entry"]["record_type"], etapa)
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 4)
+        self.assertEqual(insert_mock.call_count, 4)
+        self.assertEqual(
+            sorted(SimulationRomaneioEntry.objects.values_list("record_type", flat=True)),
+            [1, 2, 3, 4],
+        )
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_recontagem_na_mesma_etapa_continua_recusada(self, insert_mock):
+        """Avançar de etapa é esperado; reler na mesma etapa segue sendo erro."""
+        primeira = self._post({"barcode_payload": "1/2/18/1250,500/5501/103", "record_type": 2})
+        self.assertEqual(primeira.status_code, 200)
+
+        segunda = self._post({"barcode_payload": "1/2/18/1250,500/5501/103", "record_type": 2})
+        self.assertEqual(segunda.status_code, 409)
+        self.assertEqual(segunda.json()["status"], "duplicate_package")
+        # A mensagem diz em que etapa o pallet já entrou: sem isso, quem está no
+        # galpão não sabe se deve seguir para a próxima ou avisar o supervisor.
+        self.assertIn("Guardar", segunda.json()["message"])
+        self.assertEqual(insert_mock.call_count, 1)
+
+    def test_envio_sem_etapa_e_recusado(self):
+        response = self._post({"barcode_payload": "1/2/18/1250,500/5502/103"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("etapa", response.json()["message"].lower())
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 0)
+
+    def test_etapa_fora_das_quatro_e_recusada(self):
+        for invalida in (0, 5, 99, -1, "separar", "", None):
+            with self.subTest(record_type=invalida):
+                response = self._post(
+                    {"barcode_payload": "1/2/18/1250,500/5503/103", "record_type": invalida}
+                )
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 0)
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_etapa_tambem_vale_para_o_lancamento_digitado(self, insert_mock):
+        """A tela Manual do app manda os campos na mão, mas a etapa é a mesma regra."""
+        response = self._post(
+            {
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "package_code": "5504",
+                "address_code": "77",
+                "record_type": 4,
+            }
+        )
+        self.assertEqual(response.status_code, 200)
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.record_type, 4)
+        self.assertIsNone(entry.barcode_payload)
+
+    def test_insert_no_oracle_leva_a_coluna_usu_tipreg(self):
+        """A etapa precisa chegar ao ERP, não só ao banco local."""
+        entry = SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="2",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=8,
+            romaneio_weight=Decimal("1540.250"),
+            package_code="5505",
+            address_code="103",
+            record_type=3,
+        )
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [41]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNone(erro)
+        sql, parametros = cursor.execute.call_args[0]
+        self.assertIn("USU_TIPREG", sql)
+        self.assertIn(":tipo_registro", sql)
+        self.assertEqual(parametros["tipo_registro"], 3)
+        # A sequência continua saindo do MAX da tabela, como antes.
+        self.assertEqual(parametros["sequencia_registro"], 42)
+
+    def test_coluna_ausente_no_oracle_vira_instrucao_legivel(self):
+        """Enquanto USU_TIPREG não existir, o erro precisa dizer o que fazer."""
+        entry = SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="2",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=8,
+            romaneio_weight=Decimal("1540.250"),
+            package_code="5506",
+            address_code="103",
+            record_type=1,
+        )
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]
+        cursor.execute.side_effect = [
+            None,  # o SELECT da sequência passa
+            Exception('ORA-00904: "USU_TIPREG": identificador invalido'),
+        ]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNotNone(erro)
+        self.assertIn("USU_TIPREG", erro)
+        self.assertIn("ALTER TABLE", erro)
+        self.assertNotIn("ORA-00904", erro)
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_cada_etapa_pode_ser_de_um_colaborador_diferente(self, insert_mock):
+        """O pallet atravessa o galpão trocando de mãos.
+
+        Quem separa raramente é quem carrega. Como a recusa de recontagem olha
+        o par pallet+etapa e não a matrícula, um colaborador nunca bloqueia o
+        outro — e cada linha guarda quem fez aquela etapa, que é o que torna o
+        histórico útil para saber onde o pallet parou e com quem.
+        """
+        equipe = {1: "1001", 2: "1002", 3: "1003", 4: "1004"}
+        for etapa, matricula in equipe.items():
+            response = self.client.post(
+                reverse("mobile_api_romaneio_create"),
+                data=json.dumps(
+                    {
+                        "user_code": matricula,
+                        "record_type": etapa,
+                        "barcode_payload": "1/2/18/1250,500/6100/103",
+                    }
+                ),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200, msg=f"etapa {etapa} recusada")
+
+        historico = list(
+            SimulationRomaneioEntry.objects.filter(package_code="6100")
+            .order_by("record_type")
+            .values_list("record_type", "user_code")
+        )
+        self.assertEqual(historico, [(1, "1001"), (2, "1002"), (3, "1003"), (4, "1004")])
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_historico_do_pallet_guarda_quando_cada_etapa_aconteceu(self, insert_mock):
+        """As quatro linhas são eventos, não versões de um mesmo registro.
+
+        Nenhuma sobrescreve a anterior: o que interessa é justamente poder
+        dizer que o pallet foi separado às 9h e carregado às 15h.
+        """
+        for etapa in (1, 2, 3, 4):
+            self._post({"barcode_payload": "1/2/18/1250,500/6200/103", "record_type": etapa})
+
+        linhas = SimulationRomaneioEntry.objects.filter(package_code="6200")
+        self.assertEqual(linhas.count(), 4)
+        # Cada etapa guarda o próprio instante e a própria leitura.
+        self.assertEqual(
+            linhas.filter(sync_status=SimulationRomaneioEntry.SYNC_SUCCESS).count(), 4
+        )
+        for linha in linhas:
+            self.assertIsNotNone(linha.generated_date)
+            self.assertIsNotNone(linha.generated_time)
+            self.assertIsNotNone(linha.synced_at)
+
+    def test_sequencia_conta_eventos_do_proprio_pallet(self):
+        """O SELECT que decide o USU_SEQCON precisa filtrar pela embalagem.
+
+        Sem o filtro por USU_NUMEMB o número vira um contador corrido da filial
+        e o pallet 5500 receberia 41, 87, 102 e 155 em vez de 1, 2, 3 e 4 — a
+        chave primária continuaria válida, mas o número deixaria de dizer
+        quantas etapas aquela embalagem já cumpriu.
+        """
+        entry = SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="2",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=8,
+            romaneio_weight=Decimal("1540.250"),
+            package_code="6300",
+            address_code="103",
+            record_type=2,
+        )
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [1]  # o pallet já tinha o evento 1
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNone(erro)
+
+        sql_do_select, parametros_do_select = cursor.execute.call_args_list[0][0]
+        self.assertIn("MAX(USU_SEQCON)", sql_do_select)
+        self.assertIn("USU_NUMEMB", sql_do_select)
+        self.assertEqual(parametros_do_select["embalagem"], 6300)
+
+        _sql_do_insert, parametros_do_insert = cursor.execute.call_args_list[1][0]
+        self.assertEqual(parametros_do_insert["sequencia_registro"], 2)
+        self.assertEqual(entry.sequence_record, "2")
+
+    def test_primeiro_evento_de_um_pallet_novo_comeca_em_um(self):
+        entry = SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="2",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=8,
+            romaneio_weight=Decimal("1540.250"),
+            package_code="6301",
+            address_code="103",
+            record_type=1,
+        )
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]  # NVL devolve 0 quando não há linhas
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            self.assertIsNone(_insert_simulation_romaneio_oracle(entry))
+
+        self.assertEqual(entry.sequence_record, "1")
+
+    def _entry_para_oracle(self, package_code, record_type=1):
+        return SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="2",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=8,
+            romaneio_weight=Decimal("1540.250"),
+            package_code=package_code,
+            address_code="103",
+            record_type=record_type,
+        )
+
+    def test_colisao_de_sequencia_e_refeita_com_o_numero_recalculado(self):
+        """Duas leituras do mesmo pallet no mesmo instante não podem travar uma.
+
+        O MAX+1 é lido antes de gravar, então dois envios simultâneos do mesmo
+        pallet podem escolher o mesmo número e o segundo bate na chave primária.
+        Como o app trata erro do servidor como recusa definitiva, sem esta
+        repetição a leitura ficaria parada esperando alguém decidir — por uma
+        colisão que some ao reler o MAX.
+        """
+        entry = self._entry_para_oracle("6400", record_type=3)
+
+        cursor = MagicMock()
+        # O MAX sobe entre uma tentativa e outra: o envio concorrente gravou.
+        cursor.fetchone.side_effect = [[1], [2]]
+        cursor.execute.side_effect = [
+            None,  # SELECT do MAX
+            Exception("ORA-00001: unique constraint (SAPIENS.CP_USU_TCONROM) violated"),
+            None,  # SELECT do MAX de novo
+            None,  # INSERT aceito
+        ]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNone(erro)
+        self.assertEqual(entry.sequence_record, "3", "a segunda tentativa precisa usar o MAX novo")
+        self.assertEqual(cursor.execute.call_count, 4)
+        conexao.commit.assert_called_once()
+
+    def test_erro_que_nao_e_colisao_falha_na_primeira(self):
+        """Repetir um erro real só atrasaria a resposta para quem está no galpão."""
+        entry = self._entry_para_oracle("6401")
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]
+        cursor.execute.side_effect = [
+            None,  # SELECT do MAX
+            Exception("ORA-12899: value too large for column"),
+        ]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNotNone(erro)
+        self.assertIn("ORA-12899", erro)
+        self.assertEqual(cursor.execute.call_count, 2)
+        conexao.commit.assert_not_called()
+
+    def test_colisao_insistente_desiste_e_reporta(self):
+        """Se o número continua colidindo, a resposta precisa sair mesmo assim."""
+        entry = self._entry_para_oracle("6402")
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [5]
+        cursor.execute.side_effect = [
+            None,
+            Exception("ORA-00001: unique constraint violated"),
+            None,
+            Exception("ORA-00001: unique constraint violated"),
+            None,
+            Exception("ORA-00001: unique constraint violated"),
+        ]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNotNone(erro)
+        self.assertIn("ORA-00001", erro)
+        self.assertEqual(cursor.execute.call_count, 6, "três tentativas, não mais")
+        conexao.commit.assert_not_called()
+
+    # Payload real, copiado de uma etiqueta de produção em 03/09/2026. Fica
+    # aqui porque um exemplo inventado não prova nada sobre o que a impressora
+    # emite: o peso vem com PONTO decimal ("187.100" são 187,1 kg, não 187 mil),
+    # e é justamente a leitura que um parser brasileiro erra com facilidade.
+    PAYLOAD_REAL = "1/2/6/187.100/428595/16"
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_payload_real_de_producao_e_aceito(self, insert_mock):
+        response = self._post({"barcode_payload": self.PAYLOAD_REAL, "record_type": 1})
+
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.company_code, "1")
+        self.assertEqual(entry.branch_code, "2")
+        self.assertEqual(entry.volume_quantity, 6)
+        self.assertEqual(entry.package_code, "428595")
+        self.assertEqual(entry.address_code, "16")
+        self.assertEqual(entry.record_type, 1)
+
+    def test_peso_com_ponto_decimal_nao_vira_milhar(self):
+        """187.100 são 187,1 kg — seis volumes não pesam 187 toneladas.
+
+        O ponto aqui é separador decimal, não de milhar. Se alguém "corrigir" o
+        parser para tratar ponto como milhar, este teste cai — e cairia também a
+        conferência de peso do galpão inteiro, com erro de mil vezes.
+        """
+        mapeado = _extract_romaneio_payload(self.PAYLOAD_REAL)
+        self.assertEqual(mapeado["romaneio_weight"], Decimal("187.100"))
+        self.assertLess(mapeado["romaneio_weight"], Decimal("1000"))
+
+    def test_o_qr_entra_pelo_mesmo_caminho_do_codigo_de_barras(self):
+        """Simbologia não muda nada: o servidor recebe texto, não imagem.
+
+        O app manda `barcode_payload` venha de onde vier, então o que garante o
+        QR funcionando é o payload ser o mesmo — e é isso que este teste fixa.
+        """
+        self.assertEqual(
+            _extract_romaneio_payload(self.PAYLOAD_REAL),
+            _extract_romaneio_payload(self.PAYLOAD_REAL.replace("/", "|")),
+        )
+
+    def test_estagios_do_app_batem_com_o_servidor(self):
+        """`src/stages.ts` é uma cópia da lista daqui, e cópia sai de sincronia.
+
+        O app decide o número que vai para USU_TIPREG a partir do arquivo dele.
+        Se alguém renomear uma etapa só de um lado, os dois continuam
+        funcionando — e o ERP passa a receber rótulo e número discordantes.
+        """
+        arquivo = (
+            Path(__file__).resolve().parent.parent.parent
+            / "connectmx-mobile"
+            / "src"
+            / "stages.ts"
+        )
+        if not arquivo.exists():
+            self.skipTest("app Expo nao esta ao lado deste repositorio")
+
+        encontrados = re.findall(
+            r"\{\s*id:\s*(\d+),\s*label:\s*'([^']+)'",
+            arquivo.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            [(int(numero), rotulo) for numero, rotulo in encontrados],
+            list(SimulationRomaneioEntry.RECORD_TYPE_CHOICES),
+        )

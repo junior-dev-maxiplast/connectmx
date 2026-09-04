@@ -57,12 +57,21 @@
                     </svg>
                 </div>
 
-                <p class="rmb-lede">Aponte a câmera para o código de barras do romaneio.</p>
+                <p class="rmb-lede">Escolha a etapa da contagem para abrir a câmera.</p>
                 <span class="rmb-pill">Matrícula <strong id="rmbMatriculaEcho">—</strong></span>
                 <p class="rmb-alert" id="rmbCameraAlert" hidden></p>
             </div>
             <div class="rmb-footer">
-                <button type="button" class="rmb-button is-hero" id="rmbScanButton">Ler Pallet</button>
+                <!-- A etapa não vem na etiqueta: o mesmo pallet é contado ao
+                     separar, guardar, paletizar e carregar. Por isso o botão de
+                     abrir a câmera é um por etapa — não há caminho para a
+                     leitura que deixe esse dado em branco. -->
+                <div class="rmb-stages" role="group" aria-label="Etapa da contagem">
+                    <button type="button" class="rmb-stage" data-rmb-stage="1"><b>1</b><span>Separar</span></button>
+                    <button type="button" class="rmb-stage" data-rmb-stage="2"><b>2</b><span>Guardar</span></button>
+                    <button type="button" class="rmb-stage" data-rmb-stage="3"><b>3</b><span>Paletizar</span></button>
+                    <button type="button" class="rmb-stage" data-rmb-stage="4"><b>4</b><span>Carregar</span></button>
+                </div>
                 <button type="button" class="rmb-button is-text" data-rmb-back-matricula>Trocar matrícula</button>
             </div>
         </section>

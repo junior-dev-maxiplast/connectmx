@@ -133,6 +133,14 @@ html[data-theme="dark"] .rmb {
 .rmb-button.is-text { min-height: 48px; background: transparent; color: var(--muted-text); font-size: 13px; font-weight: 700; box-shadow: none; }
 .rmb-button.is-text.is-danger { color: var(--rmb-danger); }
 
+/* Etapas da contagem: quatro alvos grandes, dois por linha. O tamanho é
+   proposital — quem opera está de luva, em pé, com o celular numa mão só. */
+.rmb-stages { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.rmb-stage { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 76px; padding: 12px 10px; border: 1px solid var(--rmb-hairline); border-radius: var(--rmb-radius); background: var(--rmb-surface, transparent); color: var(--page-text); font-family: inherit; cursor: pointer; transition: transform .14s ease, border-color .16s ease, background .16s ease; -webkit-tap-highlight-color: transparent; }
+.rmb-stage:active { transform: scale(.98); border-color: var(--rmb-accent); }
+.rmb-stage b { font-size: 20px; font-weight: 800; color: var(--rmb-accent); line-height: 1; }
+.rmb-stage span { font-size: 13.5px; font-weight: 700; letter-spacing: .01em; }
+
 /* ------------------------------------------------------- tela de leitura -- */
 
 .rmb-scanner { position: fixed; inset: 0; z-index: 90; display: none; flex-direction: column; background: #05070f; color: #fff; }

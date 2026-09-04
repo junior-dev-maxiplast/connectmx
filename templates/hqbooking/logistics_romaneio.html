@@ -129,6 +129,15 @@
                                 autocomplete="off"
                             >
                         </div>
+                        <div class="hq-field">
+                            <label class="hq-label" for="continuousRecordType">Etapa da contagem</label>
+                            <select class="hq-input" id="continuousRecordType">
+                                <option value="">Selecione a etapa</option>
+                                {% for value, label in record_type_choices %}
+                                <option value="{{ value }}">{{ value }} — {{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                         <div class="romaneio-batch-actions">
                             <button type="button" id="continuousReaderToggle" class="hq-button romaneio-batch-button" onclick="toggleContinuousReader()">
                                 Ativar leitura contínua
@@ -238,6 +247,15 @@
                         <input class="hq-input" id="user_code" name="user_code" type="text" maxlength="40" value="{{ form_values.user_code }}" required>
                     </div>
                     <div class="hq-field">
+                        <label class="hq-label" for="record_type">Etapa da contagem</label>
+                        <select class="hq-input" id="record_type" name="record_type" required>
+                            <option value="">Selecione a etapa</option>
+                            {% for value, label in record_type_choices %}
+                            <option value="{{ value }}"{% if form_values.record_type == value|stringformat:"s" %} selected{% endif %}>{{ value }} — {{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="hq-field">
                         <label class="hq-label" for="package_code">Código do pallet</label>
                         <input class="hq-input" id="package_code" name="package_code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" value="{{ form_values.package_code }}" placeholder="Ex.: 4521" required>
                     </div>
@@ -301,6 +319,7 @@
                                 <th>Filial</th>
                                 <th>Sequência</th>
                                 <th>Matrícula</th>
+                                <th>Etapa</th>
                                 <th>Pallet</th>
                                 <th>Endereço</th>
                                 <th>Geração</th>
@@ -318,6 +337,7 @@
                                 <td>{{ row.branch_code }}</td>
                                 <td>{{ row.sequence_record }}</td>
                                 <td>{{ row.user_code }}</td>
+                                <td>{{ row.get_record_type_display|default:"-" }}</td>
                                 <td>{{ row.package_code|default:"-" }}</td>
                                 <td>{{ row.address_code|default:"-" }}</td>
                                 <td>{{ row.generated_date|date:"d/m/Y" }} {{ row.generated_time|time:"H:i:s" }}</td>
@@ -332,7 +352,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="12">Nenhuma leitura registrada até o momento.</td>
+                                <td colspan="13">Nenhuma leitura registrada até o momento.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -586,6 +606,12 @@
 
         function getContinuousReaderCapture() {
             return document.getElementById("continuousReaderCapture");
+        }
+
+        function getContinuousRecordType() {
+            // A etapa é escolhida uma vez e vale para toda a fila de leituras:
+            // no fluxo contínuo a pessoa varre vários pallets da mesma etapa.
+            return String(document.getElementById("continuousRecordType")?.value || "").trim();
         }
 
         function getContinuousUserCode() {
@@ -881,7 +907,7 @@
             const body = document.getElementById("romaneioHistoryBody");
             if (!body || !entry) return;
 
-            const emptyRow = body.querySelector("tr td[colspan='12']");
+            const emptyRow = body.querySelector("tr td[colspan='13']");
             if (emptyRow) {
                 emptyRow.parentElement.remove();
             }
@@ -893,6 +919,7 @@
                 <td>${escapeHtml(entry.branch_code || "")}</td>
                 <td>${escapeHtml(entry.sequence_record || "-")}</td>
                 <td>${escapeHtml(entry.user_code || "")}</td>
+                <td>${escapeHtml(entry.record_type_label || "-")}</td>
                 <td>${escapeHtml(entry.package_code || "-")}</td>
                 <td>${escapeHtml(entry.address_code || "-")}</td>
                 <td>${escapeHtml(entry.generated_date || "")} ${escapeHtml(entry.generated_time || "")}</td>
@@ -942,6 +969,12 @@
                 document.getElementById("continuousUserCode")?.focus();
                 return;
             }
+            const recordType = getContinuousRecordType();
+            if (!recordType) {
+                setContinuousReaderState("error", "Escolha a etapa da contagem antes de enviar a fila.");
+                document.getElementById("continuousRecordType")?.focus();
+                return;
+            }
 
             continuousReaderProcessing = true;
             nextItem.status = "processing";
@@ -959,6 +992,7 @@
                     body: JSON.stringify({
                         barcode_payload: nextItem.payload,
                         user_code: userCode,
+                        record_type: recordType,
                     }),
                 });
                 const data = await response.json();
