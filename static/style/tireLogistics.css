@@ -17,6 +17,12 @@
     --tl-soft-2: rgba(28, 34, 66, .08);
     --tl-radius: 10px;
 
+    /* Mapa de calor do caminhao: um degrau por recape. */
+    --tl-recap-0: #1d2333;
+    --tl-recap-1: #00a557;
+    --tl-recap-2: #e0a516;
+    --tl-recap-3: #d5324c;
+
     margin: 0;
     min-height: 100vh;
     color: var(--page-text);
@@ -27,6 +33,12 @@
 }
 
 html[data-theme="dark"] .tirelog {
+    /* No escuro o preto some no fundo: o "novo" vira um grafite claro, que
+       continua sendo o tom neutro ao lado do verde/amarelo/vermelho. */
+    --tl-recap-0: #9aa3bd;
+    --tl-recap-1: #4bd08a;
+    --tl-recap-2: #ecc164;
+    --tl-recap-3: #ff7f93;
     --tl-accent-deep: #6ee0a5;
     --tl-info: #8fb0ff;
     --tl-warning: #e8b45c;
@@ -171,6 +183,20 @@ html[data-theme="dark"] .tirelog {
 .tl-filter:hover { border-color: rgba(0, 191, 99, .38); color: var(--title-text); }
 .tl-filter.is-active { border-color: rgba(0, 191, 99, .5); background: var(--tl-accent-soft); color: var(--tl-accent-deep); }
 
+/* Linha de filtro rotulada, para separar situação de recapes. */
+.tl-filter-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.tl-filter-label { flex: 0 0 62px; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-text); }
+.tl-filter-row .tl-filters { flex: 1 1 auto; }
+
+/* O ponto do filtro usa a mesma cor do mapa de calor do caminhão. */
+.tl-filter > i { width: 8px; height: 8px; border-radius: 999px; background: var(--tl-recap, var(--tl-soft-2)); }
+.tl-filter.is-recap-0 { --tl-recap: var(--tl-recap-0); }
+.tl-filter.is-recap-1 { --tl-recap: var(--tl-recap-1); }
+.tl-filter.is-recap-2 { --tl-recap: var(--tl-recap-2); }
+.tl-filter.is-recap-3 { --tl-recap: var(--tl-recap-3); }
+.tl-filter[class*="is-recap-"]:hover { border-color: color-mix(in srgb, var(--tl-recap) 55%, transparent); }
+.tl-filter[class*="is-recap-"].is-active { border-color: color-mix(in srgb, var(--tl-recap) 60%, transparent); background: color-mix(in srgb, var(--tl-recap) 12%, var(--surface-1)); color: var(--title-text); }
+
 /* --------------------------------------------------------------- controles -- */
 
 .tl-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 8px; border: 1px solid var(--surface-border); background: var(--surface-1); color: var(--title-text); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: filter .15s ease, border-color .15s ease, background-color .15s ease; }
@@ -254,7 +280,16 @@ html[data-theme="dark"] .tirelog {
 .tl-wheel::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3px; background: var(--tl-soft-2); }
 .tl-wheel:hover { border-color: rgba(0, 191, 99, .5); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(28, 34, 66, .12); }
 .tl-wheel.is-filled { color: var(--title-text); border-color: rgba(0, 191, 99, .35); }
-.tl-wheel.is-filled::after { background: color-mix(in srgb, var(--tl-accent) calc(100% - var(--tl-heat, 0) * 100%), var(--tl-danger)); }
+.tl-wheel.is-filled::after { background: var(--tl-soft-2); }
+
+/* Cor da posicao = quantos recapes o pneu ja levou. */
+.tl-wheel.is-recap-0 { --tl-recap: var(--tl-recap-0); }
+.tl-wheel.is-recap-1 { --tl-recap: var(--tl-recap-1); }
+.tl-wheel.is-recap-2 { --tl-recap: var(--tl-recap-2); }
+.tl-wheel.is-recap-3 { --tl-recap: var(--tl-recap-3); }
+.tl-wheel.is-filled[class*="is-recap-"] { border-color: color-mix(in srgb, var(--tl-recap) 55%, transparent); background: color-mix(in srgb, var(--tl-recap) 12%, var(--surface-1)); }
+.tl-wheel.is-filled[class*="is-recap-"]::after { height: 5px; background: var(--tl-recap); }
+.tl-wheel.is-highlighted { border-color: var(--tl-recap, var(--tl-accent)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tl-recap, var(--tl-accent)) 28%, transparent); }
 .tl-wheel.is-dragging { opacity: .45; }
 .tl-wheel.is-drop-target { border-color: var(--tl-accent); box-shadow: 0 0 0 3px var(--tl-accent-soft); }
 .tl-wheel.is-pulsing { animation: tl-pulse 1.6s ease-out 1; }
@@ -268,8 +303,47 @@ html[data-theme="dark"] .tirelog {
 .tl-spare small { font-size: 9.5px; color: var(--muted-text); }
 .tl-spare.is-filled { border-style: solid; border-color: rgba(0, 191, 99, .32); }
 
-.tl-heat-legend { display: flex; align-items: center; gap: 7px; font-size: 9px; color: var(--muted-text); }
-.tl-heat-legend i { width: 62px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, var(--tl-accent), var(--tl-warning), var(--tl-danger)); }
+.tl-heat-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: 9px; color: var(--muted-text); }
+.tl-heat-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tl-heat-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--tl-recap-0); }
+.tl-heat-legend i.is-recap-1 { background: var(--tl-recap-1); }
+.tl-heat-legend i.is-recap-2 { background: var(--tl-recap-2); }
+.tl-heat-legend i.is-recap-3 { background: var(--tl-recap-3); }
+
+/* --------------------------------------------------- pneus do caminhao -- */
+
+.tl-tire-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-tire-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--surface-border); background: var(--surface-1); color: var(--muted-text); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; transition: border-color .16s ease, color .16s ease, background-color .16s ease; }
+.tl-tire-chip:hover { border-color: color-mix(in srgb, var(--tl-recap, var(--tl-accent)) 55%, transparent); color: var(--title-text); }
+.tl-tire-chip i { width: 8px; height: 8px; border-radius: 999px; background: var(--tl-recap, var(--tl-soft-2)); }
+.tl-tire-chip b { font-weight: 700; color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.tl-tire-chip.is-active { color: var(--title-text); border-color: color-mix(in srgb, var(--tl-recap, var(--tl-accent)) 60%, transparent); background: color-mix(in srgb, var(--tl-recap, var(--tl-accent)) 12%, var(--surface-1)); }
+.tl-tire-chip.is-recap-0 { --tl-recap: var(--tl-recap-0); }
+.tl-tire-chip.is-recap-1 { --tl-recap: var(--tl-recap-1); }
+.tl-tire-chip.is-recap-2 { --tl-recap: var(--tl-recap-2); }
+.tl-tire-chip.is-recap-3 { --tl-recap: var(--tl-recap-3); }
+.tl-tire-chip.is-all { --tl-recap: var(--tl-accent); }
+
+.tl-tire-track { display: grid; gap: 8px; padding: 11px 0 0; border-top: 1px solid var(--surface-border); }
+.tl-tire-track + .tl-tire-track { margin-top: 11px; }
+.tl-tire-track-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.tl-tire-track-head strong { font-size: 12px; color: var(--title-text); }
+.tl-tire-track-head small { font-size: 9.5px; color: var(--muted-text); }
+.tl-tire-specs { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 9.5px; color: var(--muted-text); }
+.tl-tire-specs b { color: var(--title-text); font-weight: 700; }
+
+/* ------------------------------------------------------------ foto anexa -- */
+
+.tl-photo-preview { display: none; margin-top: 7px; }
+.tl-photo-preview.is-on { display: block; }
+.tl-photo-preview img { max-height: 150px; border-radius: 8px; border: 1px solid var(--surface-border); }
+.tl-photo-link { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; color: var(--tl-accent-deep); }
+.tl-photo-thumb { width: 34px; height: 34px; object-fit: cover; border-radius: 6px; border: 1px solid var(--surface-border); }
+
+/* --------------------------------------------------- confirmar exclusao -- */
+
+.tl-confirm-warning { margin: 10px 0 0; padding: 9px 11px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--tl-danger) 35%, transparent); background: var(--tl-danger-soft); font-size: 10.5px; line-height: 1.45; color: var(--title-text); }
+.tl-btn.is-blocked { cursor: not-allowed; opacity: .55; }
 
 /* --------------------------------------------------------- editor modelo -- */
 
