@@ -38,7 +38,7 @@ NAV_GROUPS = [
         "items": [
             ("queueUserPage", "Minha fila", "tarefas minhas"),
             ("queueMainPage", "Fila geral", "tarefas equipe"),
-            ("portalPendingDemandsPage", "Entrada de chamados", "pendentes triagem", "admin"),
+            ("portalPendingDemandsPage", "Entrada de chamados", "pendentes triagem chamados fila", "atendente"),
             ("portalDemandPage", "Portal de chamados", "solicitante abrir chamado"),
             ("queueConcludedPage", "Tarefas concluídas", "finalizadas historico"),
             ("myAgendaPage", "Minha agenda", "compromissos"),
@@ -125,6 +125,11 @@ def _is_admin(user):
     )
 
 
+def _is_support_attendant(user):
+    """Quem trabalha a fila de chamados. Admin entra junto por herança."""
+    return bool(getattr(user, "is_support_attendant", False) or _is_admin(user))
+
+
 def _build_item(entry, user):
     """Resolve um item do catálogo, ou None se ele não se aplica ao usuário."""
     url_name, label = entry[0], entry[1]
@@ -133,6 +138,9 @@ def _build_item(entry, user):
     icon = entry[4] if len(entry) > 4 else None
 
     if requires == "admin" and not _is_admin(user):
+        return None
+
+    if requires == "atendente" and not _is_support_attendant(user):
         return None
 
     try:

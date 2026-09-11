@@ -102,6 +102,7 @@
                                 <td>
                                     <div class="cx-badge-list">
                                         {% if row.user.is_system_admin %}<span class="cx-badge is-success">Admin</span>{% endif %}
+                                        {% if row.user.is_support_attendant %}<span class="cx-badge">Atendente TI</span>{% endif %}
                                         {% if row.user.can_access_internal %}
                                             <span class="cx-badge">Interno</span>
                                         {% else %}
@@ -136,6 +137,7 @@
                                         data-is-representative="{% if row.user.is_representative %}1{% else %}0{% endif %}"
                                         data-representative-code="{{ row.user.representative_code|default:'' }}"
                                         data-is-admin="{% if row.user.is_system_admin %}1{% else %}0{% endif %}"
+                                        data-is-attendant="{% if row.user.is_support_attendant %}1{% else %}0{% endif %}"
                                         data-can-internal="{% if row.user.can_access_internal %}1{% else %}0{% endif %}"
                                         data-dashboards="{{ row.dashboard_slugs|join:"," }}"
                                         data-ai-limit="{% if row.user.dashes_ai_daily_limit != None %}{{ row.user.dashes_ai_daily_limit }}{% endif %}"
@@ -193,6 +195,7 @@
                                     {% if row.user.is_system_admin %}<span class="cx-badge is-success">Admin</span>
                                     {% elif not row.user.can_access_internal %}<span class="cx-badge is-warning">Só Dashes</span>
                                     {% else %}<span class="cx-badge">Interno</span>{% endif %}
+                                    {% if row.user.is_support_attendant %}<span class="cx-badge">Atendente TI</span>{% endif %}
                                 </td>
                                 <td>
                                     {% if row.user.last_access_at %}
@@ -426,6 +429,7 @@
             document.getElementById("edit_representative_code").value = data.representativeCode || "";
             document.getElementById("edit_email").value = data.email || "";
             document.getElementById("edit_is_system_admin").checked = (data.isAdmin || "") === "1";
+            document.getElementById("edit_is_support_attendant").checked = (data.isAttendant || "") === "1";
             document.getElementById("edit_can_access_internal").checked = (data.canInternal || "") === "1";
             document.getElementById("edit_dashes_ai_daily_limit").value = data.aiLimit || "";
             document.getElementById("edit_password").value = "";

@@ -23,6 +23,8 @@
                     <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
                     <span>{{ demand.created_at|date:"d/m/Y H:i" }}</span>
                     <span>Solicitante: {{ demand.requester_display }}</span>
+                    {% if demand.requester_sector %}<span>Setor: {{ demand.requester_sector.name }}</span>{% endif %}
+                    {% if demand.reopen_count %}<span class="support-chip is-waiting">Reaberta {{ demand.reopen_count }}x</span>{% endif %}
                 </div>
                 <div class="support-thread-quick-actions">
                     <a href="#conversation" class="support-btn support-btn-secondary">Ver conversa</a>
@@ -111,7 +113,7 @@
                     </div>
                 {% endif %}
             </article>
-            <article class="support-thread-sla-card">
+            <article class="support-thread-sla-card {{ demand.sla_first_response.css }}">
                 <span class="support-kicker">Primeira resposta</span>
                 <strong>{{ demand.sla_first_response.status }}</strong>
                 <p>{{ demand.sla_first_response.hint }}</p>
@@ -119,7 +121,7 @@
                     <span>Limite: {{ demand.first_response_due_display }}</span>
                 </div>
             </article>
-            <article class="support-thread-sla-card">
+            <article class="support-thread-sla-card {{ demand.sla_resolution.css }}">
                 <span class="support-kicker">Resolu&ccedil;&atilde;o</span>
                 <strong>{{ demand.sla_resolution.status }}</strong>
                 <p>{{ demand.sla_resolution.hint }}</p>
@@ -153,7 +155,13 @@
             <div class="support-banner is-success">Demanda transferida com sucesso.</div>
         {% endif %}
 
-        {% if workflow_state == "completed" %}
+        {% if workflow_state == "waiting" %}
+            <div class="support-banner is-info">Demanda marcada como aguardando o solicitante. O prazo de SLA fica pausado at&eacute; a resposta chegar.</div>
+        {% elif workflow_state == "resumed" %}
+            <div class="support-banner is-success">Atendimento retomado. O prazo de SLA voltou a correr, j&aacute; descontado o tempo de espera.</div>
+        {% elif workflow_state == "reopened" %}
+            <div class="support-banner is-info">Demanda reaberta. Ela voltou para a fila com um novo prazo de resolu&ccedil;&atilde;o.</div>
+        {% elif workflow_state == "completed" %}
             <div class="support-banner is-success">Demanda conclu&iacute;da com sucesso.</div>
         {% elif workflow_state == "cancelled" %}
             <div class="support-banner is-success">Demanda cancelada com sucesso.</div>
@@ -305,7 +313,7 @@
                     </div>
                 </div>
 
-                {% if can_transfer_here or can_manage_workflow %}
+                {% if can_transfer_here or can_manage_workflow or can_reopen_here %}
                     <div id="management" class="support-thread-management-grid">
                         {% if can_transfer_here %}
                             <div class="support-thread-management-card">
@@ -341,6 +349,22 @@
                                     <span class="support-meta-pill">Pr&oacute;xima a&ccedil;&atilde;o: {{ demand.next_action_label }}</span>
                                 </div>
                                 <div class="support-thread-workflow-actions">
+                                    {% if can_wait_here %}
+                                        <form method="POST" class="support-thread-workflow-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_type" value="workflow">
+                                            <input type="hidden" name="workflow_action" value="wait">
+                                            <button type="submit" class="support-btn support-btn-secondary" data-confirm="Marcar como aguardando o solicitante? O SLA fica pausado.">Aguardar solicitante</button>
+                                        </form>
+                                    {% endif %}
+                                    {% if can_resume_here %}
+                                        <form method="POST" class="support-thread-workflow-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="form_type" value="workflow">
+                                            <input type="hidden" name="workflow_action" value="resume">
+                                            <button type="submit" class="support-btn support-btn-secondary">Retomar atendimento</button>
+                                        </form>
+                                    {% endif %}
                                     <form method="POST" class="support-thread-workflow-form">
                                         {% csrf_token %}
                                         <input type="hidden" name="form_type" value="workflow">
@@ -354,6 +378,27 @@
                                         <button type="submit" class="support-btn support-btn-soft-danger" data-confirm="Cancelar esta demanda agora?">Cancelar demanda</button>
                                     </form>
                                 </div>
+                            </div>
+                        {% endif %}
+
+                        {% if can_reopen_here %}
+                            <div class="support-thread-management-card">
+                                <div class="support-thread-management-copy">
+                                    <strong>Reabrir demanda</strong>
+                                    <span>Use se o problema voltou ou se a solu&ccedil;&atilde;o entregue n&atilde;o resolveu. A demanda volta para a fila com um novo prazo de resolu&ccedil;&atilde;o.</span>
+                                </div>
+                                <form method="POST" class="support-form support-thread-workflow-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="form_type" value="workflow">
+                                    <input type="hidden" name="workflow_action" value="reopen">
+                                    <div class="support-field">
+                                        <label for="portalReopenReason">Por que precisa voltar?</label>
+                                        <textarea id="portalReopenReason" name="reopen_reason" rows="2" placeholder="Ex.: a impressora voltou a falhar hoje de manh&atilde;."></textarea>
+                                    </div>
+                                    <div class="support-form-actions support-form-actions-start">
+                                        <button type="submit" class="support-btn support-btn-secondary">Reabrir demanda</button>
+                                    </div>
+                                </form>
                             </div>
                         {% endif %}
                     </div>

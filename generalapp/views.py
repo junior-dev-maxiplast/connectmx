@@ -173,6 +173,7 @@ def createUser(request):
                     user.is_representative = is_representative
                     user.representative_code = representative_code if is_representative else None
                     user.is_system_admin = is_system_admin
+                    user.is_support_attendant = request.POST.get("is_support_attendant") == "on"
                     user.can_access_internal = request.POST.get("can_access_internal") == "on"
                     user.dashes_ai_daily_limit = _parse_ai_daily_limit(request.POST.get("dashes_ai_daily_limit"))
                     if password:
@@ -212,6 +213,7 @@ def createUser(request):
                         is_representative=is_representative,
                         representative_code=representative_code if is_representative else None,
                         is_system_admin=is_system_admin,
+                        is_support_attendant=request.POST.get("is_support_attendant") == "on",
                         can_access_internal=request.POST.get("can_access_internal") == "on",
                         dashes_ai_daily_limit=_parse_ai_daily_limit(request.POST.get("dashes_ai_daily_limit")),
                         password=password,

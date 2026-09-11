@@ -1,5 +1,14 @@
 {% load static %}
-<header class="support-topbar">
+{% comment %}
+Barra do portal. Dois modos:
+
+- padrão: navegação do solicitante (início, abrir, minhas demandas) mais o que
+  pertence a quem atende (entrada de chamados, painel interno);
+- foco (`portal_topbar_focus`): a abertura de chamado, onde a navegação sai de
+  cena para não competir com o formulário e não dar saída acidental no meio do
+  preenchimento.
+{% endcomment %}
+<header class="support-topbar{% if portal_topbar_focus %} is-focus{% endif %}">
     <div class="support-brand">
         <img src="{% static 'assets/cmx.png' %}" alt="ConnectMX" class="support-brand-mark">
         <div>
@@ -17,18 +26,27 @@
             </label>
             <span class="theme-icon" aria-hidden="true">&#9790;</span>
         </div>
-        <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'home' %} is-active{% endif %}">Início</a>
-        {% if can_request_portal %}
-            <a href="{% url 'portalDemandCreatePage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'create' %} is-active{% endif %}">Abrir demanda</a>
+
+        {% if portal_topbar_focus %}
+            <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary support-topbar-back">
+                <span aria-hidden="true">&#8592;</span> Voltar ao portal
+            </a>
+        {% else %}
+            <a href="{% url 'portalDemandPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'home' %} is-active{% endif %}">Início</a>
+            {% if can_request_portal %}
+                <a href="{% url 'portalDemandCreatePage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'create' %} is-active{% endif %}">Abrir demanda</a>
+            {% endif %}
+            <a href="{% url 'portalMyDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'my-demands' %} is-active{% endif %}">Minhas demandas</a>
+            {% if can_manage_portal %}
+                <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'pending' %} is-active{% endif %}">Entrada de chamados</a>
+            {% endif %}
+            {% if can_open_internal_panel %}
+                <a href="{% url 'index' %}" class="support-btn support-btn-secondary">Painel interno</a>
+            {% endif %}
+            <form method="POST" action="{% url 'logoutPage' %}">
+                {% csrf_token %}
+                <button type="submit" class="support-btn">Sair</button>
+            </form>
         {% endif %}
-        <a href="{% url 'portalMyDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'my-demands' %} is-active{% endif %}">Minhas demandas</a>
-        {% if can_manage_portal %}
-            <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'pending' %} is-active{% endif %}">Demandas pendentes</a>
-        {% endif %}
-        <a href="{% url 'index' %}" class="support-btn support-btn-secondary">Painel interno</a>
-        <form method="POST" action="{% url 'logoutPage' %}">
-            {% csrf_token %}
-            <button type="submit" class="support-btn">Sair</button>
-        </form>
     </div>
 </header>

@@ -54,10 +54,10 @@
                         <strong>Minhas demandas</strong>
                         <span>Ver andamento, conversar com o atendente e enviar feedback ap&oacute;s a conclus&atilde;o.</span>
                     </a>
-                    {% if request.user.is_system_admin or request.user.is_superuser %}
+                    {% if can_manage_portal %}
                         <a href="{% url 'portalPendingDemandsPage' %}" class="support-home-action-card">
-                            <strong>Triagem do portal</strong>
-                            <span>Assumir rapidamente novas demandas abertas por usu&aacute;rios.</span>
+                            <strong>Entrada de chamados</strong>
+                            <span>Assumir, responder e concluir os chamados abertos pelos solicitantes.</span>
                         </a>
                     {% endif %}
                 </div>

@@ -35,6 +35,8 @@ from .models import (
     PortalCannedResponse,
     PortalDemandCustomField,
     PortalDemandCustomFieldOption,
+    PortalRequesterAccount,
+    PortalRequesterCollaborator,
 )
 from decimal import Decimal
 
@@ -695,9 +697,29 @@ class PortalDemandForm(forms.ModelForm):
             "task_type": TaskTypeSelect(attrs={"class": "queue-select"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, can_open_on_behalf=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.portal_custom_fields = []
+        self.can_open_on_behalf = bool(can_open_on_behalf)
+        if self.can_open_on_behalf:
+            # Metade dos chamados de TI chega por telefone ou no balcão. Sem
+            # isto o atendente abre no próprio nome e o histórico do solicitante
+            # fica vazio.
+            self.fields["on_behalf_of"] = forms.ModelChoiceField(
+                queryset=(
+                    PortalRequesterCollaborator.objects.filter(
+                        is_active=True,
+                        sector__is_active=True,
+                        portal_account__is_active=True,
+                    )
+                    .select_related("sector", "portal_account", "portal_account__user")
+                    .order_by("full_name", "id")
+                ),
+                required=False,
+                label="Abrir em nome de",
+                empty_label="Eu mesmo",
+                widget=forms.Select(attrs={"class": "queue-select"}),
+            )
         self.fields["task_group"].required = False
         self.fields["task_type"].required = False
         self.fields["task_group"].queryset = TaskGroup.objects.all().order_by("name")
@@ -773,6 +795,27 @@ class PortalDemandForm(forms.ModelForm):
                 }
             ),
         )
+
+    def resolve_requester(self, default_user):
+        """Quem assina o chamado e de qual setor ele veio.
+
+        Retorna (usuario, setor). O setor é gravado como snapshot na demanda
+        porque o cadastro do colaborador pode mudar de área depois, e a triagem
+        precisa saber de onde o chamado saiu.
+        """
+        collaborator = None
+        if self.can_open_on_behalf:
+            collaborator = self.cleaned_data.get("on_behalf_of")
+
+        if collaborator is not None:
+            account = getattr(collaborator, "portal_account", None)
+            target_user = getattr(account, "user", None)
+            if target_user is not None:
+                return target_user, collaborator.sector
+
+        account = PortalRequesterAccount.objects.select_related("collaborator__sector").filter(user=default_user).first()
+        sector = getattr(getattr(account, "collaborator", None), "sector", None)
+        return default_user, sector
 
     def get_dynamic_fields(self):
         rows = []
@@ -936,9 +979,7 @@ class PortalDemandTransferForm(forms.Form):
 
     def __init__(self, *args, demand=None, **kwargs):
         super().__init__(*args, **kwargs)
-        queryset = User.objects.filter(is_active=True).filter(Q(is_system_admin=True) | Q(is_superuser=True)).order_by(
-            "nameUser", "username", "id"
-        )
+        queryset = User.support_attendants()
         current_attendant_id = getattr(demand, "assigned_to_id", None)
         if current_attendant_id:
             queryset = queryset.exclude(pk=current_attendant_id)
@@ -1060,7 +1101,7 @@ class PortalDemandReplyForm(forms.Form):
         self.can_manage = bool(
             user
             and getattr(user, "is_authenticated", False)
-            and (getattr(user, "is_system_admin", False) or getattr(user, "is_superuser", False))
+            and getattr(user, "is_support_staff", False)
         )
 
         queryset = PortalCannedResponse.objects.filter(is_active=True).select_related("task_group", "task_type")
