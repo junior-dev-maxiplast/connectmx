@@ -18,6 +18,10 @@
         "qr_code", "data_matrix", "pdf417", "aztec"
     ];
 
+    // Etapas da contagem, gravadas em USU_TIPREG. Espelham
+    // `SimulationRomaneioEntry.RECORD_TYPE_CHOICES` no servidor.
+    var STAGE_LABELS = { 1: "Separar", 2: "Guardar", 3: "Paletizar", 4: "Carregar" };
+
     var shell = document.querySelector("[data-rmb-shell]");
     if (!shell) return;
 
@@ -27,7 +31,7 @@
         matricula: document.getElementById("rmbMatricula"),
         matriculaNext: document.getElementById("rmbMatriculaNext"),
         matriculaEcho: document.getElementById("rmbMatriculaEcho"),
-        scanButton: document.getElementById("rmbScanButton"),
+        stageButtons: Array.prototype.slice.call(document.querySelectorAll("[data-rmb-stage]")),
         cameraAlert: document.getElementById("rmbCameraAlert"),
         scanner: document.getElementById("rmbScanner"),
         video: document.getElementById("rmbVideo"),
@@ -43,6 +47,8 @@
     var scanning = false;
     var saving = false;
     var currentScan = null;
+    // Vale da escolha do botão até a leitura ser salva ou cancelada.
+    var currentStage = null;
     var toastTimer = null;
 
     /* ------------------------------------------------------------ helpers -- */
@@ -146,6 +152,9 @@
 
         var grid = document.createElement("div");
         grid.className = "rmb-grid";
+        // A etapa vem primeiro por ser o único dado que não saiu da etiqueta:
+        // é o que a pessoa ainda pode ter escolhido errado.
+        grid.appendChild(buildTile("Etapa", STAGE_LABELS[currentStage] || "—"));
         grid.appendChild(buildTile("Empresa", scan.company));
         grid.appendChild(buildTile("Filial", scan.branch));
         grid.appendChild(buildTile("Código do pallet", scan.packageCode, true));
@@ -333,6 +342,11 @@
 
     async function saveScan() {
         if (saving || !currentScan) return;
+        if (!currentStage) {
+            showToast("Escolha a etapa da contagem antes de salvar.", true);
+            setStep("ler");
+            return;
+        }
         var matricula = getMatricula();
         if (!matricula) {
             showToast("Informe a matrícula antes de salvar.", true);
@@ -357,7 +371,8 @@
                 },
                 body: JSON.stringify({
                     barcode_payload: currentScan.payload,
-                    user_code: matricula
+                    user_code: matricula,
+                    record_type: currentStage
                 })
             });
             var data = await response.json();
@@ -426,7 +441,14 @@
     }
 
     if (els.matriculaNext) els.matriculaNext.addEventListener("click", confirmMatricula);
-    if (els.scanButton) els.scanButton.addEventListener("click", openScanner);
+    els.stageButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            var stage = parseInt(button.dataset.rmbStage, 10);
+            if (!STAGE_LABELS[stage]) return;
+            currentStage = stage;
+            openScanner();
+        });
+    });
     if (els.saveButton) els.saveButton.addEventListener("click", saveScan);
 
     document.querySelectorAll("[data-rmb-back-matricula]").forEach(function (node) {
