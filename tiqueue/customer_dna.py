@@ -293,6 +293,40 @@ def _oracle_connection_safe():
     raise RuntimeError(f"Nao foi possivel conectar ao ERP Senior: {primary_error}")
 
 
+def _oracle_connection_vetor_safe():
+    """Mesma base do ERP Senior (host/porta/serviço), com o usuário "vetor" —
+    a credencial que dá acesso ao cadastro de funcionários (`R034FUN`), que
+    não é o mesmo usuário (`ERP_DB_USER`/`sapiens`) usado pelas demais
+    consultas deste módulo."""
+    host = os.getenv("ERP_DB_HOST", "192.168.30.2")
+    port = int(os.getenv("ERP_DB_PORT", "1521"))
+    service_name = os.getenv("ERP_DB_NAME", "dbprod")
+    user = os.getenv("ERP_DB_VETOR_USER", "vetor")
+    password = os.getenv("ERP_DB_VETOR_PASSWORD", "vetor")
+    driver_errors = {}
+
+    for driver_name in ("oracledb", "cx_Oracle"):
+        try:
+            if driver_name == "oracledb":
+                import oracledb as oracle_driver
+            else:
+                import cx_Oracle as oracle_driver
+            dsn = oracle_driver.makedsn(host, port, service_name=service_name)
+            return oracle_driver.connect(user=user, password=password, dsn=dsn)
+        except Exception as exc:
+            driver_errors[driver_name] = str(exc)
+
+    primary_error = driver_errors.get("oracledb") or driver_errors.get("cx_Oracle") or "driver Oracle nao encontrado"
+    fallback_error = driver_errors.get("cx_Oracle")
+    if fallback_error and fallback_error != primary_error:
+        raise RuntimeError(
+            "Nao foi possivel conectar ao ERP Senior (usuario vetor). "
+            f"oracledb: {primary_error}. "
+            f"Fallback cx_Oracle: {fallback_error}."
+        )
+    raise RuntimeError(f"Nao foi possivel conectar ao ERP Senior (usuario vetor): {primary_error}")
+
+
 def _query(sql, params):
     connection = _oracle_connection_safe()
     cursor = None

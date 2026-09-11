@@ -157,8 +157,20 @@ from .travel_bi import (
     list_carriers,
     TRAVEL_BI_SYSTEM_PROMPT,
 )
+from .romaneio_bi import (
+    load_romaneio_dashboard,
+    build_romaneio_ai_payload,
+    compute_deep_analytics as compute_romaneio_deep_analytics,
+    romaneio_dashboard_fingerprint,
+    list_branches as list_romaneio_branches,
+    list_matriculas as list_romaneio_matriculas,
+    ROMANEIO_BI_SYSTEM_PROMPT,
+)
+from .romaneio_bi_pdf import build_romaneio_bi_pdf
 from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
-from .models import CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot
+from .models import (
+    CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
+)
 from .models import Dashboard, DashboardAccess
 from .ai_config import (
     ALLOWED_REASONING_EFFORTS,
@@ -2206,6 +2218,273 @@ def travelBiExportPdf(request):
     return response
 
 
+# ----------------------------------------------------------- BI de Romaneios --
+
+def _romaneio_bi_scope_from_source(source):
+    return (
+        (source.get("periodo") or "12").strip(),
+        (source.get("filial") or "all").strip(),
+        (source.get("estagio") or "all").strip(),
+        (source.get("matricula") or "all").strip(),
+    )
+
+
+def _romaneio_bi_scope_query(period_key, branch_key, stage_key, matricula_key):
+    return "?" + urllib_parse.urlencode(
+        {"periodo": period_key, "filial": branch_key, "estagio": stage_key, "matricula": matricula_key}
+    )
+
+
+def _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key):
+    """Snapshot do recorte. Filial, etapa e matrícula entram na chave junto com o período."""
+    return RomaneioBiInsightSnapshot.objects.filter(
+        period_key=period_key, branch_key=branch_key, stage_key=stage_key, matricula_key=matricula_key
+    ).first()
+
+
+@_dashes_access_required("romaneios")
+def dashesRomaneioBiPage(request):
+    """Painel de romaneios: produtividade da contagem de pallets por matrícula."""
+    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_romaneio_dashboard(period_key, branch_key, stage_key, matricula_key)
+        scope = dashboard["scope"]
+        # O recorte volta normalizado: filial/etapa/matrícula inexistente na
+        # querystring cai para "todas", e a chave do snapshot precisa ser a
+        # mesma que a tela mostra.
+        period_key = scope["period"]["key"]
+        branch_key = scope["branch"]["key"]
+        stage_key = scope["stage"]["key"]
+        matricula_key = scope["matricula"]["key"]
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
+
+    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
+    # A análise guardada pode ser de números antigos: comparar a impressão do
+    # recorte avisa que ela envelheceu, em vez de exibir conclusão vencida.
+    stale = bool(
+        snapshot and dashboard and snapshot.source_fingerprint != romaneio_dashboard_fingerprint(dashboard)
+    )
+
+    return render(
+        request,
+        "tiqueue/romaneio_bi.html",
+        {
+            "dashboard": dashboard,
+            "data_error": data_error,
+            "insight_snapshot": snapshot,
+            "insight_stale": stale,
+            "dashes_mode": True,
+            "active_dash": "romaneios",
+            "dashes_menu": allowed_dashboards(request.user),
+            "romaneio_page_url": reverse("dashesRomaneioBiPage"),
+            "romaneio_prepare_url": reverse("romaneioBiPrepareInsights"),
+            "romaneio_ai_url": reverse("romaneioBiRequestAiInsights"),
+            "romaneio_payload_url": reverse("romaneioBiInsightPayloadApi"),
+            "romaneio_pdf_url": reverse("romaneioBiExportPdf"),
+            "romaneio_scope_query": _romaneio_bi_scope_query(period_key, branch_key, stage_key, matricula_key),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+        },
+    )
+
+
+@login_required
+@require_POST
+def romaneioBiPrepareInsights(request):
+    """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
+    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.POST)
+
+    try:
+        branches = list_romaneio_branches()
+        matriculas = list_romaneio_matriculas()
+        dashboard = load_romaneio_dashboard(
+            period_key, branch_key, stage_key, matricula_key,
+            branches_available=branches, matriculas_available=matriculas,
+        )
+        scope = dashboard["scope"]
+        # Os cruzamentos pesados so rodam aqui, no pedido explicito: e isso que
+        # separa o painel de abertura rapida das analises processadas.
+        deep = compute_romaneio_deep_analytics(
+            scope["period"]["key"], scope["branch"]["key"], scope["stage"]["key"], scope["matricula"]["key"]
+        )
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Nao foi possivel consultar o ERP Senior: {exc}"},
+            status=503,
+        )
+
+    fingerprint = romaneio_dashboard_fingerprint(dashboard)
+    snapshot, created = RomaneioBiInsightSnapshot.objects.update_or_create(
+        period_key=scope["period"]["key"],
+        branch_key=scope["branch"]["key"],
+        stage_key=scope["stage"]["key"],
+        matricula_key=scope["matricula"]["key"],
+        defaults={
+            "scope_label": (
+                f"{scope['period']['full_label']} - {scope['branch']['label']}"
+                f" - {scope['stage']['label']} - {scope['matricula']['label']}"
+            ),
+            "source_fingerprint": fingerprint,
+            "metrics": {
+                "volume": dashboard["metrics"],
+                "by_stage": dashboard["by_stage"],
+                "by_branch": dashboard["by_branch"],
+                "deep": deep,
+            },
+            "ai_payload": build_romaneio_ai_payload(dashboard, fingerprint, deep=deep),
+            "status": RomaneioBiInsightSnapshot.STATUS_PREPARED,
+            "ai_response": {},
+            "ai_error": None,
+            "created_by": request.user,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "created": created,
+            "snapshot_id": snapshot.id,
+            "message": "Indicadores calculados e payload preparado.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def romaneioBiRequestAiInsights(request):
+    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.POST)
+
+    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
+            status=409,
+        )
+
+    # Mesma cota diaria dos demais paineis do Dashes: o teto e por usuario, nao por painel.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
+            status=409,
+        )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    snapshot.status = RomaneioBiInsightSnapshot.STATUS_PROCESSING
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
+
+    try:
+        ai_result = generate_customer_insights(
+            snapshot.ai_payload,
+            runtime_config=runtime_config,
+            system_prompt=ROMANEIO_BI_SYSTEM_PROMPT,
+        )
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = RomaneioBiInsightSnapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    usage = ai_result["usage"]
+    snapshot.status = RomaneioBiInsightSnapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
+
+
+@login_required
+@require_GET
+def romaneioBiInsightPayloadApi(request):
+    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
+    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "scope": snapshot.scope_label,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "model": snapshot.ai_model,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+@login_required
+@require_GET
+def romaneioBiExportPdf(request):
+    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
+    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return HttpResponse(
+            "Gere os indicadores deste recorte antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
+        # analise de um filtro com os numeros de outro.
+        dashboard = load_romaneio_dashboard(
+            snapshot.period_key, snapshot.branch_key, snapshot.stage_key, snapshot.matricula_key,
+        )
+    except Exception as exc:
+        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
+
+    pdf_bytes = build_romaneio_bi_pdf(dashboard, snapshot)
+    filename = f"connectmx-bi-romaneios-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 
 def projectCalendarPage(request):
     _sync_service_notifications()
@@ -2252,6 +2531,11 @@ def _portal_status_meta(status):
             "css": "is-assumed",
             "color": "#4d77d9",
         },
+        PortalDemand.STATUS_WAITING: {
+            "label": "Aguardando solicitante",
+            "css": "is-waiting",
+            "color": "#7d6bb5",
+        },
         PortalDemand.STATUS_COMPLETED: {
             "label": "Concluída",
             "css": "is-completed",
@@ -2273,7 +2557,20 @@ def _portal_status_meta(status):
     )
 
 
-def _portal_can_manage(user):
+def _portal_can_attend(user):
+    """Quem trabalha a fila de TI: atendente cadastrado ou admin do sistema.
+
+    Separado de _portal_can_configure de proposito. Atender um chamado e
+    configurar o portal eram a mesma permissao, o que obrigava a promover
+    qualquer atendente a administrador do ConnectMX inteiro.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(getattr(user, "is_support_staff", False))
+
+
+def _portal_can_configure(user):
+    """Quem mexe na configuracao do portal: campos, SLA, respostas e cadastros."""
     return bool(getattr(user, "is_authenticated", False) and _is_system_admin(user))
 
 
@@ -2292,12 +2589,61 @@ def _portal_requester_account_record(user):
     return account
 
 
+def _portal_topbar_context(user, active, label, focus=False):
+    """Barra do portal montada por papel.
+
+    O solicitante enxerga só o que é dele: abrir, acompanhar e sair. A entrada
+    de chamados e o atalho para o ConnectMX interno pertencem a quem atende —
+    quem só existe no portal não tem o que fazer no painel interno. Na abertura
+    a barra entra em modo foco, para a navegação não competir com o formulário.
+    """
+    can_attend = _portal_can_attend(user)
+    has_requester_record = _portal_requester_account_record(user) is not None
+    return {
+        "can_manage_portal": can_attend,
+        "can_request_portal": _portal_can_open_new_demands(user),
+        "can_open_internal_panel": bool(
+            getattr(user, "can_access_internal", False) and (can_attend or not has_requester_record)
+        ),
+        "portal_page_label": label,
+        "portal_nav_active": active,
+        "portal_topbar_focus": bool(focus),
+    }
+
+
+def _portal_requester_profile(user):
+    """Identidade de quem abre: colaborador, setor e contato do cadastro.
+
+    O cadastro é o porteiro do portal, então ele já sabe quem é a pessoa. Mostrar
+    isso na abertura confirma que o chamado sai do cadastro certo e entrega ao
+    atendente o dado que ele procura primeiro.
+    """
+    account = _portal_requester_account_record(user)
+    collaborator = getattr(account, "collaborator", None)
+    sector = getattr(collaborator, "sector", None)
+    display_name = (
+        getattr(collaborator, "full_name", "")
+        or getattr(user, "nameUser", "")
+        or getattr(user, "username", "")
+        or "Usuário"
+    )
+    return {
+        "name": display_name,
+        "initials": "".join(part[0] for part in display_name.split()[:2]).upper() or "US",
+        "sector": getattr(sector, "name", "") or "",
+        "role_title": getattr(collaborator, "role_title", "") or "",
+        "phone": getattr(collaborator, "phone", "") or "",
+        "registration_code": getattr(collaborator, "registration_code", "") or "",
+        "has_record": collaborator is not None,
+    }
+
+
 def _portal_requester_access_feature_enabled():
     return PortalRequesterAccount.objects.exists()
 
 
 def _portal_can_open_new_demands(user):
-    if _portal_can_manage(user):
+    if _portal_can_attend(user):
         return True
     account = _portal_requester_account_record(user)
     if account:
@@ -2321,7 +2667,7 @@ def _portal_pending_feedback_demands(user):
     """
     if not getattr(user, "is_authenticated", False):
         return []
-    if _portal_can_manage(user):
+    if _portal_can_attend(user):
         return []
     return list(
         PortalDemand.objects.filter(
@@ -2384,15 +2730,6 @@ def _portal_scope_ids(task_group=None, task_type=None):
     group = task_group or getattr(task_type, "group", None)
     return getattr(group, "id", None), getattr(task_type, "id", None)
 
-
-def _portal_format_minutes(total_minutes):
-    total_minutes = int(total_minutes or 0)
-    hours, minutes = divmod(total_minutes, 60)
-    if hours and minutes:
-        return f"{hours}h {minutes:02d}min"
-    if hours:
-        return f"{hours}h"
-    return f"{minutes}min"
 
 
 def _portal_relative_time_display(moment):
@@ -2507,7 +2844,7 @@ def _portal_apply_sla_policy(demand, policy=None, save=False):
     return matched_policy
 
 
-def _portal_sla_metric(label, due_at, completed_at=None):
+def _portal_sla_metric(label, due_at, completed_at=None, paused=False):
     local_due = timezone.localtime(due_at) if due_at else None
     local_completed = timezone.localtime(completed_at) if completed_at else None
     if not local_due:
@@ -2529,6 +2866,17 @@ def _portal_sla_metric(label, due_at, completed_at=None):
                 f"Concluído em {local_completed.strftime('%d/%m/%Y %H:%M')}"
                 if within
                 else f"Concluído com atraso de {_portal_format_minutes(abs(delta_minutes))}"
+            ),
+        }
+
+    if paused:
+        return {
+            "label": label,
+            "status": "Pausado",
+            "css": "is-waiting",
+            "hint": (
+                f"Prazo parado em {local_due.strftime('%d/%m/%Y %H:%M')}, "
+                "à espera do retorno do solicitante."
             ),
         }
 
@@ -2555,6 +2903,7 @@ def _portal_metric_chip_css(metric_css):
         "is-danger": "is-cancelled",
         "is-info": "is-assumed",
         "is-neutral": "is-soft-neutral",
+        "is-waiting": "is-waiting",
     }
     return mapping.get(metric_css or "", "is-pending")
 
@@ -2572,6 +2921,15 @@ def _portal_triage_meta(demand):
         userQueue.PRIORITY_MEDIUM: 15,
         userQueue.PRIORITY_LOW: 0,
     }
+    # Enquanto a demanda espera o solicitante o prazo está congelado: ela não
+    # pode subir para crítica nem disparar alerta de SLA vencido.
+    if getattr(demand, "status", "") == PortalDemand.STATUS_WAITING:
+        return {
+            "label": "Pausada",
+            "css": "is-waiting",
+            "score": priority_rank.get(getattr(demand, "priority_level", ""), 0),
+            "hint": "Aguardando retorno do solicitante, com o prazo de SLA pausado.",
+        }
     if not due_at:
         return {
             "label": "Normal",
@@ -2662,7 +3020,7 @@ def _portal_pending_summary_data(pending_demands):
 
 def _portal_admin_operational_overview():
     open_demands = list(
-        PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+        PortalDemand.objects.filter(status__in=PortalDemand.OPEN_STATUSES)
         .select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
         .order_by("created_at", "id")
     )
@@ -2783,7 +3141,7 @@ def _portal_duplicate_suggestions(user, title, description):
 
     matches = (
         PortalDemand.objects.filter(requester=user)
-        .exclude(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED])
+        .exclude(status__in=PortalDemand.CLOSED_STATUSES)
         .filter(lookup)
         .select_related("task_group", "task_type")
         .order_by("-created_at", "-id")[:12]
@@ -2811,7 +3169,7 @@ def _portal_duplicate_suggestions(user, title, description):
 def _portal_can_access_demand(user, demand):
     if not getattr(user, "is_authenticated", False):
         return False
-    return bool(_portal_can_manage(user) or getattr(demand, "requester_id", None) == getattr(user, "id", None))
+    return bool(_portal_can_attend(user) or getattr(demand, "requester_id", None) == getattr(user, "id", None))
 
 
 def _portal_can_reply_to_demand(user, demand):
@@ -2833,11 +3191,11 @@ def _portal_can_leave_feedback(user, demand):
 def _portal_actor_role(user, demand):
     if getattr(demand, "requester_id", None) == getattr(user, "id", None):
         return PortalDemandMessage.ROLE_REQUESTER
-    return PortalDemandMessage.ROLE_ATTENDANT if _portal_can_manage(user) else PortalDemandMessage.ROLE_REQUESTER
+    return PortalDemandMessage.ROLE_ATTENDANT if _portal_can_attend(user) else PortalDemandMessage.ROLE_REQUESTER
 
 
 def _portal_filter_private_activity_for_user(user, demand):
-    if _portal_can_manage(user):
+    if _portal_can_attend(user):
         return
     demand.thread_messages = [message for message in getattr(demand, "thread_messages", []) if not getattr(message, "is_internal", False)]
     demand.activity_logs = [
@@ -2860,7 +3218,7 @@ def _portal_ai_routing_token():
 
 
 def _portal_ai_request_authorized(request):
-    if _portal_can_manage(getattr(request, "user", None)):
+    if _portal_can_configure(getattr(request, "user", None)):
         return True, "session"
 
     expected_token = _portal_ai_routing_token()
@@ -3134,9 +3492,7 @@ def _format_portal_work_minutes(total_minutes):
 
 
 def _portal_attendants_queryset():
-    return User.objects.filter(is_active=True).filter(Q(is_system_admin=True) | Q(is_superuser=True)).order_by(
-        "nameUser", "username", "id"
-    )
+    return User.support_attendants()
 
 
 def _portal_log_event(
@@ -3248,12 +3604,18 @@ def _decorate_portal_demands(demands):
             },
         )
         demand.requester_display = _queue_collaborator_display_name(demand.requester)
+        demand.requester_sector_display = getattr(getattr(demand, "requester_sector", None), "name", "") or "-"
         demand.assigned_display = _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to else "-"
         demand.feedback_rating_label = feedback_map.get(demand.feedback_rating or 0, "-")
         demand.detail_url = demand.get_absolute_url()
         demand.sla_preview = _portal_build_sla_preview(getattr(demand, "sla_policy", None))
-        demand.sla_first_response = _portal_sla_metric("Primeira resposta", demand.first_response_due_at, demand.first_response_at)
-        demand.sla_resolution = _portal_sla_metric("Resolução", demand.resolution_due_at, demand.completed_at)
+        sla_paused = demand.status == PortalDemand.STATUS_WAITING
+        demand.sla_first_response = _portal_sla_metric(
+            "Primeira resposta", demand.first_response_due_at, demand.first_response_at, paused=sla_paused
+        )
+        demand.sla_resolution = _portal_sla_metric(
+            "Resolução", demand.resolution_due_at, demand.completed_at, paused=sla_paused
+        )
         demand.sla_first_response_chip_css = _portal_metric_chip_css(demand.sla_first_response.get("css"))
         demand.sla_resolution_chip_css = _portal_metric_chip_css(demand.sla_resolution.get("css"))
         demand.first_response_due_display = _portal_due_display(demand.first_response_due_at)
@@ -3263,7 +3625,11 @@ def _decorate_portal_demands(demands):
         demand.triage_css = demand.triage_meta["css"]
         demand.triage_score = demand.triage_meta["score"]
         demand.triage_hint = demand.triage_meta["hint"]
-        if demand.status == PortalDemand.STATUS_PENDING:
+        if demand.status == PortalDemand.STATUS_WAITING:
+            demand.sla_next_label = "SLA pausado"
+            demand.sla_next_display = demand.resolution_due_display
+            demand.sla_next_hint = "Prazo parado desde que a demanda passou a aguardar o solicitante."
+        elif demand.status == PortalDemand.STATUS_PENDING:
             demand.sla_next_label = "Primeira resposta"
             demand.sla_next_display = demand.first_response_due_display
             demand.sla_next_hint = demand.sla_first_response.get("hint")
@@ -3295,6 +3661,10 @@ def _decorate_portal_demands(demands):
             demand.next_action_label = "Conversa em andamento"
             demand.next_action_css = "is-assumed"
             demand.next_action_hint = "A solicitação segue em atendimento."
+        elif demand.status == PortalDemand.STATUS_WAITING:
+            demand.next_action_label = "Aguardando o solicitante"
+            demand.next_action_css = "is-waiting"
+            demand.next_action_hint = "O SLA está pausado até o solicitante responder."
         elif demand.status == PortalDemand.STATUS_COMPLETED and not demand.has_feedback:
             demand.next_action_label = "Aguardando feedback"
             demand.next_action_css = "is-pending"
@@ -3432,6 +3802,7 @@ def _portal_requester_demands(user):
 def _portal_counts_from_demands(demands):
     pending = sum(1 for row in demands if row.status == PortalDemand.STATUS_PENDING)
     assumed = sum(1 for row in demands if row.status == PortalDemand.STATUS_ASSUMED)
+    waiting = sum(1 for row in demands if row.status == PortalDemand.STATUS_WAITING)
     completed = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED)
     awaiting_feedback = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED and not row.has_feedback)
     feedback_values = [row.feedback_rating for row in demands if row.feedback_rating]
@@ -3440,8 +3811,11 @@ def _portal_counts_from_demands(demands):
         "total": len(demands),
         "pending": pending,
         "assumed": assumed,
+        "waiting": waiting,
         "completed": completed,
-        "active": pending + assumed,
+        # "Aguardando você" continua contando como demanda ativa do solicitante:
+        # ela ainda não terminou, só está esperando resposta dele.
+        "active": pending + assumed + waiting,
         "awaiting_feedback": awaiting_feedback,
         "feedback_avg": feedback_avg,
         "feedback_avg_display": f"{feedback_avg:.1f}/5" if feedback_avg else "-",
@@ -3466,7 +3840,7 @@ def _portal_dashboard_context(user):
     feedback_avg = aggregates.get("feedback_avg")
     feedback_avg_display = f"{feedback_avg:.1f}/5" if feedback_avg else "-"
     last_demand = base_queryset.order_by("-created_at", "-id").only("created_at").first()
-    admin_pending = PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if _portal_can_manage(user) else None
+    admin_pending = PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if _portal_can_attend(user) else None
 
     dashboard_cards = [
         {
@@ -3644,10 +4018,7 @@ def portalDemandPage(request):
         {
             "access_denied_message": access_denied_message,
             "pending_feedback": pending_feedback,
-            "can_manage_portal": _portal_can_manage(request.user),
-            "can_request_portal": can_request_portal,
-            "portal_page_label": "Portal de Chamados",
-            "portal_nav_active": "home",
+            **_portal_topbar_context(request.user, "home", "Portal de Chamados"),
             **dashboard_context,
         },
     )
@@ -3681,14 +4052,21 @@ def portalDemandCreatePage(request):
     if _portal_pending_feedback_demands(request.user):
         return redirect(f"{reverse('portalMyDemandsPage')}?feedback_required=1")
 
-    form = PortalDemandForm(request.POST or None, request.FILES or None)
+    can_open_on_behalf = _portal_can_attend(request.user)
+    form = PortalDemandForm(
+        request.POST or None,
+        request.FILES or None,
+        can_open_on_behalf=can_open_on_behalf,
+    )
     dashboard_context = _portal_dashboard_context(request.user)
 
     if request.method == "POST" and form.is_valid():
         request_base_url = request.build_absolute_uri("/").rstrip("/")
+        requester_user, requester_sector = form.resolve_requester(request.user)
         with transaction.atomic():
             demand = form.save(commit=False)
-            demand.requester = request.user
+            demand.requester = requester_user
+            demand.requester_sector = requester_sector
             demand.status = PortalDemand.STATUS_PENDING
             demand.priority_level = form.cleaned_data.get("priority_level") or userQueue.PRIORITY_MEDIUM
             demand.save()
@@ -3718,10 +4096,9 @@ def portalDemandCreatePage(request):
             "priority_options": _portal_priority_options(),
             "task_groups": list(TaskGroup.objects.order_by("name")),
             "initial_sla_preview": _portal_build_sla_preview(None),
-            "can_manage_portal": _portal_can_manage(request.user),
-            "can_request_portal": True,
-            "portal_page_label": "Nova Demanda",
-            "portal_nav_active": "create",
+            "requester_profile": _portal_requester_profile(request.user),
+            "can_open_on_behalf": can_open_on_behalf,
+            **_portal_topbar_context(request.user, "create", "Nova Demanda", focus=True),
             **dashboard_context,
         },
     )
@@ -3833,7 +4210,7 @@ def portalDemandAiRoutingApplyApi(request, demand_id):
             pk=demand_id,
         )
 
-        if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+        if demand.status in set(PortalDemand.CLOSED_STATUSES):
             return JsonResponse({"status": "error", "message": "A demanda já está encerrada."}, status=400)
 
         previous_snapshot = {
@@ -3938,10 +4315,7 @@ def portalMyDemandsPage(request):
             "feedback_required": feedback_required,
             "success_message": success_message,
             "access_denied_message": access_denied_message,
-            "can_manage_portal": _portal_can_manage(request.user),
-            "can_request_portal": _portal_can_open_new_demands(request.user),
-            "portal_page_label": "Minhas Demandas",
-            "portal_nav_active": "my-demands",
+            **_portal_topbar_context(request.user, "my-demands", "Minhas Demandas"),
         },
     )
 
@@ -3980,7 +4354,7 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                     return redirect(f"{demand.get_absolute_url()}?feedback=1#feedback")
         elif form_type == "transfer":
             transfer_form = PortalDemandTransferForm(request.POST or None, demand=demand)
-            if not _portal_can_manage(request.user):
+            if not _portal_can_attend(request.user):
                 transfer_form.add_error(None, "Somente atendentes administradores podem transferir demandas.")
             elif transfer_form.is_valid():
                 with transaction.atomic():
@@ -3997,13 +4371,19 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                     return redirect(f"{locked_demand.get_absolute_url()}?transferred=1#management")
                 transfer_form.add_error(None, transfer_error or "Nao foi possivel transferir a demanda.")
         elif form_type == "workflow":
-            if not _portal_can_manage(request.user):
-                workflow_error_message = "Somente atendentes administradores podem alterar o ciclo de vida da demanda."
+            workflow_action = (request.POST.get("workflow_action") or "").strip().lower()
+            # Reabrir é a única ação de ciclo de vida que o solicitante também
+            # controla: é ele quem sabe se o problema voltou.
+            is_requester = getattr(demand, "requester_id", None) == getattr(request.user, "id", None)
+            allowed = _portal_can_attend(request.user) or (workflow_action == "reopen" and is_requester)
+            if not allowed:
+                workflow_error_message = "Somente atendentes podem alterar o ciclo de vida da demanda."
             else:
-                workflow_action = (request.POST.get("workflow_action") or "").strip().lower()
                 with transaction.atomic():
                     locked_demand = get_object_or_404(
-                        PortalDemand.objects.select_for_update().select_related("assigned_to", "linked_queue_item"),
+                        PortalDemand.objects.select_for_update().select_related(
+                            "assigned_to", "linked_queue_item", "sla_policy"
+                        ),
                         pk=demand.pk,
                     )
                     if workflow_action == "complete":
@@ -4014,8 +4394,24 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                         changed, workflow_error_message = _cancel_portal_demand(locked_demand, request.user)
                         if changed:
                             return redirect(f"{locked_demand.get_absolute_url()}?workflow=cancelled#conversation")
+                    elif workflow_action == "wait":
+                        changed, workflow_error_message = _wait_portal_demand(locked_demand, request.user)
+                        if changed:
+                            return redirect(f"{locked_demand.get_absolute_url()}?workflow=waiting#conversation")
+                    elif workflow_action == "resume":
+                        changed, workflow_error_message = _resume_portal_demand(locked_demand, request.user)
+                        if changed:
+                            return redirect(f"{locked_demand.get_absolute_url()}?workflow=resumed#conversation")
+                    elif workflow_action == "reopen":
+                        changed, workflow_error_message = _reopen_portal_demand(
+                            locked_demand,
+                            request.user,
+                            reason=(request.POST.get("reopen_reason") or "").strip() or None,
+                        )
+                        if changed:
+                            return redirect(f"{locked_demand.get_absolute_url()}?workflow=reopened#conversation")
                     else:
-                        workflow_error_message = "Acao de workflow invalida."
+                        workflow_error_message = "Ação de workflow inválida."
         else:
             reply_form = PortalDemandReplyForm(request.POST or None, request.FILES or None, demand=demand, user=request.user)
             if reply_form.is_valid():
@@ -4024,7 +4420,7 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                 else:
                     if (
                         (reply_form.cleaned_data.get("work_started_at") or reply_form.cleaned_data.get("work_ended_at"))
-                        and not _portal_can_manage(request.user)
+                        and not _portal_can_attend(request.user)
                     ):
                         reply_form.add_error(None, "Somente atendentes podem registrar apontamentos de tempo.")
                     else:
@@ -4039,7 +4435,7 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                                 author_name=_queue_collaborator_display_name(request.user),
                                 author_role=_portal_actor_role(request.user, locked_demand),
                                 canned_response=reply_form.cleaned_data.get("canned_response"),
-                                is_internal=bool(reply_form.cleaned_data.get("is_internal") and _portal_can_manage(request.user)),
+                                is_internal=bool(reply_form.cleaned_data.get("is_internal") and _portal_can_attend(request.user)),
                                 message=reply_form.cleaned_data.get("message") or None,
                                 work_started_at=reply_form.cleaned_data.get("work_started_at"),
                                 work_ended_at=reply_form.cleaned_data.get("work_ended_at"),
@@ -4051,6 +4447,14 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                             ):
                                 locked_demand.first_response_at = timezone.now()
                                 locked_demand.save(update_fields=["first_response_at", "updated_at"])
+                            # Resposta do solicitante devolve a bola para o TI:
+                            # o chamado sai da espera sozinho e o SLA volta a
+                            # correr, como em qualquer helpdesk.
+                            if (
+                                message.author_role == PortalDemandMessage.ROLE_REQUESTER
+                                and locked_demand.status == PortalDemand.STATUS_WAITING
+                            ):
+                                _resume_portal_demand(locked_demand, request.user, by_requester=True)
                             _create_portal_attachments(
                                 locked_demand,
                                 request.FILES.getlist("attachments"),
@@ -4075,7 +4479,7 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
     _decorate_portal_demands([demand])
     _decorate_portal_messages(demand)
     _decorate_portal_logs(demand)
-    if _portal_can_manage(request.user):
+    if _portal_can_attend(request.user):
         _sync_portal_critical_notifications()
     reply_canned_responses = list(reply_form.fields["canned_response"].queryset) if "canned_response" in reply_form.fields else []
     quick_canned_responses = _portal_ranked_canned_suggestions(demand, reply_canned_responses, limit=5) if reply_canned_responses else []
@@ -4093,18 +4497,24 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             "transfer_success": transfer_success,
             "workflow_state": workflow_state,
             "workflow_error_message": workflow_error_message,
-            "can_manage_portal": _portal_can_manage(request.user),
-            "can_request_portal": _portal_can_open_new_demands(request.user),
+            **_portal_topbar_context(request.user, "my-demands", "Conversa da Demanda"),
             "can_reply": _portal_can_reply_to_demand(request.user, demand),
             "can_leave_feedback": _portal_can_leave_feedback(request.user, demand),
-            "can_assume_here": _portal_can_manage(request.user) and demand.status == PortalDemand.STATUS_PENDING,
-            "can_transfer_here": _portal_can_manage(request.user) and demand.status not in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED},
-            "can_manage_workflow": _portal_can_manage(request.user) and demand.status in {PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED},
+            "can_assume_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_PENDING,
+            "can_transfer_here": _portal_can_attend(request.user) and demand.status not in set(PortalDemand.CLOSED_STATUSES),
+            "can_manage_workflow": _portal_can_attend(request.user) and demand.status in set(PortalDemand.OPEN_STATUSES),
+            "can_wait_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_ASSUMED,
+            "can_resume_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_WAITING,
+            "can_reopen_here": (
+                demand.status == PortalDemand.STATUS_COMPLETED
+                and (
+                    _portal_can_attend(request.user)
+                    or getattr(demand, "requester_id", None) == getattr(request.user, "id", None)
+                )
+            ),
             "reply_canned_responses": reply_canned_responses,
             "quick_canned_responses": quick_canned_responses,
             "reply_canned_response_value": reply_form["canned_response"].value() if "canned_response" in reply_form.fields else "",
-            "portal_page_label": "Conversa da Demanda",
-            "portal_nav_active": "my-demands",
         },
     )
 
@@ -4114,176 +4524,25 @@ def portalDemandCodeDetailPage(request, demand_code):
     return portalDemandDetailPage(request, demand_code=demand_code)
 
 
-@login_required
-def portalPendingDemandsPage(request):
-    can_manage = _portal_can_manage(request.user)
-    access_denied_message = None if can_manage else "Você não possui acesso a este módulo."
-    field_created_flag = False
-    option_created_flag = False
-    sla_created_flag = False
-    canned_created_flag = False
+def _portal_admin_base_context(request, active_key, page_title, requires="configure"):
+    """Contexto comum das telas internas do portal.
 
-    pending_demands = []
-    portal_custom_fields = []
-    portal_custom_field_rows = []
-    custom_field_form = PortalDemandCustomFieldCreateForm(prefix="portal_field")
-    custom_option_forms = {}
-    sla_form = PortalDemandSlaPolicyForm(prefix="portal_sla")
-    canned_response_form = PortalCannedResponseForm(prefix="portal_canned")
-    sla_policies = []
-    canned_responses = []
-
-    if request.method == "POST" and can_manage:
-        form_type = (request.POST.get("form_type") or "").strip()
-        if form_type == "create_custom_field":
-            custom_field_form = PortalDemandCustomFieldCreateForm(request.POST, prefix="portal_field")
-            if custom_field_form.is_valid():
-                next_sort = (
-                    PortalDemandCustomField.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0
-                ) + 1
-                definition = PortalDemandCustomField.objects.create(
-                    label=custom_field_form.cleaned_data["label"],
-                    field_type=custom_field_form.cleaned_data["field_type"],
-                    placeholder=custom_field_form.cleaned_data["placeholder"] or None,
-                    help_text=custom_field_form.cleaned_data["help_text"] or None,
-                    is_required=custom_field_form.cleaned_data["is_required"],
-                    sort_order=next_sort,
-                    created_by=request.user,
-                )
-                definition.task_groups.set(custom_field_form.cleaned_data["task_groups"])
-                definition.task_types.set(custom_field_form.cleaned_data["task_types"])
-                if definition.field_type == PortalDemandCustomField.FIELD_SELECT:
-                    option_label = custom_field_form.cleaned_data["initial_option_label"]
-                    PortalDemandCustomFieldOption.objects.create(
-                        field=definition,
-                        value=_portal_field_option_value(definition, option_label),
-                        label=option_label,
-                        sort_order=1,
-                    )
-                return redirect(f"{reverse('portalPendingDemandsPage')}?field_created=1")
-        elif form_type == "create_custom_option":
-            field_id = (request.POST.get("field_id") or "").strip()
-            target_field = get_object_or_404(
-                PortalDemandCustomField.objects.filter(is_active=True),
-                pk=field_id,
-                field_type=PortalDemandCustomField.FIELD_SELECT,
-            )
-            option_form = PortalDemandCustomFieldOptionForm(request.POST, prefix=f"portal_option_{target_field.id}")
-            custom_option_forms[target_field.id] = option_form
-            if option_form.is_valid():
-                next_sort = (
-                    PortalDemandCustomFieldOption.objects.filter(field=target_field).aggregate(max_sort=models.Max("sort_order")).get("max_sort")
-                    or 0
-                ) + 1
-                option_label = option_form.cleaned_data["label"]
-                PortalDemandCustomFieldOption.objects.create(
-                    field=target_field,
-                    value=_portal_field_option_value(target_field, option_label),
-                    label=option_label,
-                    sort_order=next_sort,
-                )
-                return redirect(f"{reverse('portalPendingDemandsPage')}?option_created=1")
-        elif form_type == "create_sla_policy":
-            sla_form = PortalDemandSlaPolicyForm(request.POST, prefix="portal_sla")
-            if sla_form.is_valid():
-                next_sort = (PortalDemandSlaPolicy.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
-                policy = sla_form.save(commit=False)
-                policy.sort_order = next_sort
-                policy.save()
-                return redirect(f"{reverse('portalPendingDemandsPage')}?sla_created=1")
-        elif form_type == "create_canned_response":
-            canned_response_form = PortalCannedResponseForm(request.POST, prefix="portal_canned")
-            if canned_response_form.is_valid():
-                next_sort = (PortalCannedResponse.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
-                canned = canned_response_form.save(commit=False)
-                canned.sort_order = next_sort
-                canned.created_by = request.user
-                canned.save()
-                return redirect(f"{reverse('portalPendingDemandsPage')}?canned_created=1")
-
-    if can_manage:
-        pending_demands = list(
-            PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING)
-            .select_related("requester", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
-            .prefetch_related(
-                Prefetch(
-                    "custom_values",
-                    queryset=PortalDemandCustomValue.objects.select_related("field").order_by("field__sort_order", "field__id", "id"),
-                    to_attr="prefetched_custom_values",
-                )
-            )
-            .order_by("created_at", "id")
-        )
-        _decorate_portal_demands(pending_demands)
-        portal_custom_fields = _portal_custom_fields()
-        for definition in portal_custom_fields:
-            if definition.id not in custom_option_forms:
-                custom_option_forms[definition.id] = PortalDemandCustomFieldOptionForm(prefix=f"portal_option_{definition.id}")
-            portal_custom_field_rows.append(
-                {
-                    "field": definition,
-                    "option_form": custom_option_forms[definition.id],
-                }
-            )
-        sla_policies = list(
-            PortalDemandSlaPolicy.objects.select_related("task_group", "task_type", "default_attendant").order_by("sort_order", "id")
-        )
-        priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
-        for policy in sla_policies:
-            policy.priority_display = (
-                priority_map.get(policy.priority_level or "", {}).get("label")
-                if policy.priority_level
-                else "Todas as prioridades"
-            )
-            policy.default_attendant_display = (
-                _queue_collaborator_display_name(policy.default_attendant) if policy.default_attendant_id else "-"
-            )
-        canned_responses = list(
-            PortalCannedResponse.objects.select_related("task_group", "task_type", "created_by").order_by("sort_order", "title", "id")
-        )
-        field_created_flag = request.GET.get("field_created") == "1"
-        option_created_flag = request.GET.get("option_created") == "1"
-        sla_created_flag = request.GET.get("sla_created") == "1"
-        canned_created_flag = request.GET.get("canned_created") == "1"
-
-    summary = {
-        "pending": PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if can_manage else 0,
-        "custom_fields": len(portal_custom_fields),
-        "sla_policies": len(sla_policies),
-        "canned_responses": len(canned_responses),
-    }
-
-    return render(
-        request,
-        "tiqueue/portal_pending_demands.html",
-        {
-            "can_manage": can_manage,
-            "access_denied_message": access_denied_message,
-            "pending_demands": pending_demands,
-            "summary": summary,
-            "assumed_flag": request.GET.get("assumed") == "1",
-            "bulk_assumed_flag": request.GET.get("bulk_assumed") == "1",
-            "field_created_flag": field_created_flag,
-            "option_created_flag": option_created_flag,
-            "sla_created_flag": sla_created_flag,
-            "canned_created_flag": canned_created_flag,
-            "portal_custom_fields": portal_custom_fields,
-            "portal_custom_field_rows": portal_custom_field_rows,
-            "custom_field_form": custom_field_form,
-            "custom_option_forms": custom_option_forms,
-            "sla_form": sla_form,
-            "canned_response_form": canned_response_form,
-            "sla_policies": sla_policies,
-            "canned_responses": canned_responses,
-        },
+    `requires` diz qual permissao a tela exige: a entrada de chamados e de quem
+    atende, as telas de configuracao continuam restritas ao administrador.
+    """
+    can_attend = _portal_can_attend(request.user)
+    can_configure = _portal_can_configure(request.user)
+    can_manage = can_attend if requires == "attend" else can_configure
+    denied_message = (
+        "Você não possui acesso a este módulo."
+        if requires == "attend"
+        else "Somente administradores do sistema podem alterar a configuração do portal."
     )
-
-
-def _portal_admin_base_context(request, active_key, page_title):
-    can_manage = _portal_can_manage(request.user)
     return {
         "can_manage": can_manage,
-        "access_denied_message": None if can_manage else "Você não possui acesso a este módulo.",
+        "can_attend": can_attend,
+        "can_configure": can_configure,
+        "access_denied_message": None if can_manage else denied_message,
         "summary": {
             "pending": PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if can_manage else 0,
             "custom_fields": PortalDemandCustomField.objects.filter(is_active=True).count() if can_manage else 0,
@@ -4541,25 +4800,33 @@ def portalRequesterAdminPage(request):
 
 
 def _portal_ticket_list_context(request):
-    valid_views = {"abertos", "meus", "nao_atribuidos", "resolvidos", "todos"}
+    valid_views = {"abertos", "meus", "nao_atribuidos", "aguardando", "resolvidos", "todos"}
     view = (request.GET.get("view") or "abertos").strip()
     if view not in valid_views:
         view = "abertos"
 
     base_qs = PortalDemand.objects.select_related(
-        "requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant"
+        "requester",
+        "assigned_to",
+        "task_group",
+        "task_type",
+        "requester_sector",
+        "sla_policy",
+        "sla_policy__default_attendant",
     )
 
     if view == "meus":
         qs = base_qs.filter(assigned_to=request.user)
     elif view == "nao_atribuidos":
         qs = base_qs.filter(status=PortalDemand.STATUS_PENDING)
+    elif view == "aguardando":
+        qs = base_qs.filter(status=PortalDemand.STATUS_WAITING)
     elif view == "resolvidos":
-        qs = base_qs.filter(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED])
+        qs = base_qs.filter(status__in=PortalDemand.CLOSED_STATUSES)
     elif view == "todos":
         qs = base_qs.all()
     else:
-        qs = base_qs.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+        qs = base_qs.filter(status__in=PortalDemand.OPEN_STATUSES)
 
     priority = (request.GET.get("priority") or "").strip()
     if priority:
@@ -4569,6 +4836,12 @@ def _portal_ticket_list_context(request):
     if group_id.isdigit():
         qs = qs.filter(task_group_id=int(group_id))
 
+    sector_id = (request.GET.get("sector") or "").strip()
+    if sector_id.isdigit():
+        qs = qs.filter(requester_sector_id=int(sector_id))
+    else:
+        sector_id = ""
+
     search = (request.GET.get("q") or "").strip()
     if search:
         qs = qs.filter(Q(title__icontains=search) | Q(access_code__icontains=search) | Q(requester__nameUser__icontains=search))
@@ -4576,6 +4849,7 @@ def _portal_ticket_list_context(request):
     sla_filter = (request.GET.get("sla") or "").strip()
     if sla_filter in {"vencido", "hoje"}:
         now = timezone.now()
+        qs = qs.exclude(status=PortalDemand.STATUS_WAITING)
         if sla_filter == "vencido":
             qs = qs.filter(
                 Q(first_response_at__isnull=True, first_response_due_at__lt=now)
@@ -4598,10 +4872,11 @@ def _portal_ticket_list_context(request):
     _decorate_portal_demands(tickets)
 
     view_counts = {
-        "abertos": base_qs.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED]).count(),
+        "abertos": base_qs.filter(status__in=PortalDemand.OPEN_STATUSES).count(),
         "meus": base_qs.filter(assigned_to=request.user).count(),
         "nao_atribuidos": base_qs.filter(status=PortalDemand.STATUS_PENDING).count(),
-        "resolvidos": base_qs.filter(status__in=[PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED]).count(),
+        "aguardando": base_qs.filter(status=PortalDemand.STATUS_WAITING).count(),
+        "resolvidos": base_qs.filter(status__in=PortalDemand.CLOSED_STATUSES).count(),
         "todos": base_qs.count(),
     }
 
@@ -4613,6 +4888,7 @@ def _portal_ticket_list_context(request):
         "abertos": "abertos",
         "meus": "atribuídos a você",
         "nao_atribuidos": "não atribuídos",
+        "aguardando": "aguardando o solicitante",
         "resolvidos": "resolvidos",
         "todos": "no total",
     }
@@ -4625,9 +4901,11 @@ def _portal_ticket_list_context(request):
         "view_counts": view_counts,
         "priority_filter": priority,
         "group_filter": group_id,
+        "sector_filter": sector_id,
         "search_query": search,
         "sla_filter": sla_filter,
         "groups": list(TaskGroup.objects.order_by("name")),
+        "sectors": list(PortalRequesterSector.objects.filter(is_active=True).order_by("name")),
         "base_querystring": base_querystring,
     }
 
@@ -4648,14 +4926,17 @@ def _portal_format_minutes(total_minutes):
 def _portal_ticket_header_stats():
     now = timezone.now()
     today = timezone.localdate()
-    open_qs = PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+    open_qs = PortalDemand.objects.filter(status__in=PortalDemand.OPEN_STATUSES)
+    # Demanda parada aguardando o solicitante tem o relógio pausado: contá-la
+    # como vencida inflaria o painel com atraso que não é do TI.
+    running_qs = open_qs.exclude(status=PortalDemand.STATUS_WAITING)
 
-    breached = open_qs.filter(
+    breached = running_qs.filter(
         Q(first_response_at__isnull=True, first_response_due_at__lt=now)
         | Q(completed_at__isnull=True, resolution_due_at__lt=now)
     ).count()
 
-    due_today = open_qs.filter(
+    due_today = running_qs.filter(
         Q(first_response_at__isnull=True, first_response_due_at__date=today)
         | Q(completed_at__isnull=True, resolution_due_at__date=today)
     ).count()
@@ -4727,7 +5008,7 @@ def _portal_canned_responses():
 
 def _portal_refresh_open_demands_sla():
     open_demands = (
-        PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+        PortalDemand.objects.filter(status__in=PortalDemand.OPEN_STATUSES)
         .select_related("task_group", "task_type", "sla_policy")
         .order_by("id")
     )
@@ -4768,7 +5049,7 @@ def _resolve_system_notifications_by_prefix(prefix, active_keys=None):
 def _sync_portal_critical_notifications(open_demands=None):
     if open_demands is None:
         open_demands = list(
-            PortalDemand.objects.filter(status__in=[PortalDemand.STATUS_PENDING, PortalDemand.STATUS_ASSUMED])
+            PortalDemand.objects.filter(status__in=PortalDemand.OPEN_STATUSES)
             .select_related("requester", "assigned_to", "task_group", "task_type", "sla_policy", "sla_policy__default_attendant")
             .order_by("created_at", "id")
         )
@@ -4804,7 +5085,7 @@ def _sync_portal_critical_notifications(open_demands=None):
 
 @login_required
 def portalPendingDemandsPage(request):
-    context = _portal_admin_base_context(request, "pending", "Entrada de Chamados")
+    context = _portal_admin_base_context(request, "pending", "Entrada de Chamados", requires="attend")
     if context["can_manage"]:
         _sync_portal_critical_notifications()
         context.update(_portal_ticket_list_context(request))
@@ -4901,55 +5182,6 @@ def portalDemandFieldsConfigPage(request):
         }
     )
     return render(request, "tiqueue/portal_pending_fields.html", context)
-
-
-@login_required
-def portalDemandSlaConfigPage(request):
-    context = _portal_admin_base_context(request, "sla", "Políticas de SLA do Portal")
-    sla_form = PortalDemandSlaPolicyForm(prefix="portal_sla")
-
-    if request.method == "POST" and context["can_manage"]:
-        sla_form = PortalDemandSlaPolicyForm(request.POST, prefix="portal_sla")
-        if sla_form.is_valid():
-            next_sort = (PortalDemandSlaPolicy.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
-            policy = sla_form.save(commit=False)
-            policy.sort_order = next_sort
-            policy.save()
-            return redirect(f"{reverse('portalDemandSlaConfigPage')}?sla_created=1")
-
-    context.update(
-        {
-            "sla_form": sla_form,
-            "sla_policies": _portal_sla_policies() if context["can_manage"] else [],
-            "sla_created_flag": request.GET.get("sla_created") == "1",
-        }
-    )
-    return render(request, "tiqueue/portal_pending_sla.html", context)
-
-
-@login_required
-def portalDemandResponsesConfigPage(request):
-    context = _portal_admin_base_context(request, "responses", "Respostas Prontas do Portal")
-    canned_response_form = PortalCannedResponseForm(prefix="portal_canned")
-
-    if request.method == "POST" and context["can_manage"]:
-        canned_response_form = PortalCannedResponseForm(request.POST, prefix="portal_canned")
-        if canned_response_form.is_valid():
-            next_sort = (PortalCannedResponse.objects.aggregate(max_sort=models.Max("sort_order")).get("max_sort") or 0) + 1
-            canned = canned_response_form.save(commit=False)
-            canned.sort_order = next_sort
-            canned.created_by = request.user
-            canned.save()
-            return redirect(f"{reverse('portalDemandResponsesConfigPage')}?canned_created=1")
-
-    context.update(
-        {
-            "canned_response_form": canned_response_form,
-            "canned_responses": _portal_canned_responses() if context["can_manage"] else [],
-            "canned_created_flag": request.GET.get("canned_created") == "1",
-        }
-    )
-    return render(request, "tiqueue/portal_pending_responses.html", context)
 
 
 @login_required
@@ -5085,7 +5317,7 @@ def _assume_portal_demand(demand, owner_user):
 
 
 def _transfer_portal_demand(demand, target_user, actor_user):
-    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+    if demand.status in set(PortalDemand.CLOSED_STATUSES):
         return False, "Somente demandas ativas podem ser transferidas."
 
     previous_attendant = demand.assigned_to
@@ -5160,18 +5392,162 @@ def _portal_remove_linked_queue_item(queue_item):
     queue_item.delete()
 
 
+def _portal_resume_sla_from_waiting(demand):
+    """Devolve ao SLA o tempo em que a bola esteve com o solicitante.
+
+    Sem isto o prazo continua correndo enquanto o atendimento esta parado
+    esperando resposta do usuario, e toda demanda que depende de retorno acaba
+    marcada como vencida sem que o TI tenha atrasado nada.
+    """
+    if not demand.waiting_since:
+        return 0
+
+    paused_minutes = max(int((timezone.now() - demand.waiting_since).total_seconds() // 60), 0)
+    if paused_minutes:
+        demand.sla_paused_minutes = int(demand.sla_paused_minutes or 0) + paused_minutes
+        pause = timedelta(minutes=paused_minutes)
+        # Só empurra o prazo que ainda está valendo: primeira resposta já dada
+        # ou demanda já concluída não têm mais meta a cumprir.
+        if demand.first_response_due_at and not demand.first_response_at:
+            demand.first_response_due_at = demand.first_response_due_at + pause
+        if demand.resolution_due_at and not demand.completed_at:
+            demand.resolution_due_at = demand.resolution_due_at + pause
+    demand.waiting_since = None
+    return paused_minutes
+
+
+def _wait_portal_demand(demand, actor_user):
+    if demand.status != PortalDemand.STATUS_ASSUMED:
+        return False, "Somente demandas em atendimento podem ficar aguardando o solicitante."
+
+    demand.status = PortalDemand.STATUS_WAITING
+    demand.waiting_since = timezone.now()
+    demand.save(update_fields=["status", "waiting_since", "updated_at"])
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_WAITING,
+        actor=actor_user,
+        summary=f"Aguardando retorno do solicitante, marcado por {_queue_collaborator_display_name(actor_user)}.",
+        details="O prazo de SLA fica pausado enquanto a demanda espera resposta.",
+        to_attendant=demand.assigned_to if demand.assigned_to_id else None,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
+def _resume_portal_demand(demand, actor_user, by_requester=False):
+    if demand.status != PortalDemand.STATUS_WAITING:
+        return False, "A demanda não está aguardando retorno do solicitante."
+
+    paused_minutes = _portal_resume_sla_from_waiting(demand)
+    demand.status = PortalDemand.STATUS_ASSUMED
+    demand.save(
+        update_fields=[
+            "status",
+            "waiting_since",
+            "sla_paused_minutes",
+            "first_response_due_at",
+            "resolution_due_at",
+            "updated_at",
+        ]
+    )
+    if by_requester:
+        summary = "Solicitante respondeu e a demanda voltou para atendimento."
+    else:
+        summary = f"Atendimento retomado por {_queue_collaborator_display_name(actor_user)}."
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_RESUMED,
+        actor=actor_user,
+        summary=summary,
+        details=(
+            f"SLA pausado por {_portal_format_minutes(paused_minutes)} nesta espera."
+            if paused_minutes
+            else None
+        ),
+        to_attendant=demand.assigned_to if demand.assigned_to_id else None,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
+def _reopen_portal_demand(demand, actor_user, reason=None):
+    """Traz de volta uma demanda concluída, com prazo de resolução novo.
+
+    Concluir arquiva o item da fila pessoal do atendente, então reabrir precisa
+    recriá-lo, senão o chamado volta a existir no portal sem aparecer para
+    ninguém trabalhar.
+    """
+    if demand.status != PortalDemand.STATUS_COMPLETED:
+        return False, "Somente demandas concluídas podem ser reabertas."
+
+    owner = demand.assigned_to
+    demand.completed_at = None
+    demand.reopened_at = timezone.now()
+    demand.reopen_count = int(demand.reopen_count or 0) + 1
+    demand.waiting_since = None
+
+    if owner is not None:
+        demand.status = PortalDemand.STATUS_ASSUMED
+        if demand.linked_queue_item_id is None:
+            demand.linked_queue_item = _create_queue_item_from_portal_demand(demand, owner)
+    else:
+        demand.status = PortalDemand.STATUS_PENDING
+
+    # A meta de resolução recomeça agora: o prazo original já foi cumprido na
+    # conclusão anterior e mantê-lo deixaria a demanda nascendo vencida.
+    policy = demand.sla_policy
+    if policy and policy.resolution_minutes:
+        demand.resolution_due_at = demand.reopened_at + timedelta(minutes=int(policy.resolution_minutes))
+
+    demand.save(
+        update_fields=[
+            "status",
+            "completed_at",
+            "reopened_at",
+            "reopen_count",
+            "waiting_since",
+            "linked_queue_item",
+            "resolution_due_at",
+            "updated_at",
+        ]
+    )
+    _portal_log_event(
+        demand,
+        PortalDemandLog.EVENT_REOPENED,
+        actor=actor_user,
+        summary=f"Demanda reaberta por {_queue_collaborator_display_name(actor_user)}.",
+        details=reason or None,
+        to_attendant=owner if owner is not None else None,
+    )
+    _sync_portal_critical_notifications()
+    return True, None
+
+
 def _complete_portal_demand(demand, actor_user):
-    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+    if demand.status in set(PortalDemand.CLOSED_STATUSES):
         return False, "Somente demandas ativas podem ser concluídas."
 
     queue_item = demand.linked_queue_item
     if queue_item is not None:
         _portal_archive_linked_queue_item(queue_item)
 
+    _portal_resume_sla_from_waiting(demand)
     demand.status = PortalDemand.STATUS_COMPLETED
     demand.completed_at = timezone.now()
     demand.linked_queue_item = None
-    demand.save(update_fields=["status", "completed_at", "linked_queue_item", "updated_at"])
+    demand.save(
+        update_fields=[
+            "status",
+            "completed_at",
+            "linked_queue_item",
+            "waiting_since",
+            "sla_paused_minutes",
+            "first_response_due_at",
+            "resolution_due_at",
+            "updated_at",
+        ]
+    )
     _portal_log_event(
         demand,
         PortalDemandLog.EVENT_COMPLETED,
@@ -5184,17 +5560,18 @@ def _complete_portal_demand(demand, actor_user):
 
 
 def _cancel_portal_demand(demand, actor_user):
-    if demand.status in {PortalDemand.STATUS_COMPLETED, PortalDemand.STATUS_CANCELLED}:
+    if demand.status in set(PortalDemand.CLOSED_STATUSES):
         return False, "Somente demandas ativas podem ser canceladas."
 
     queue_item = demand.linked_queue_item
     if queue_item is not None:
         _portal_remove_linked_queue_item(queue_item)
 
+    demand.waiting_since = None
     demand.status = PortalDemand.STATUS_CANCELLED
     demand.linked_queue_item = None
     demand.completed_at = None
-    demand.save(update_fields=["status", "linked_queue_item", "completed_at", "updated_at"])
+    demand.save(update_fields=["status", "linked_queue_item", "completed_at", "waiting_since", "updated_at"])
     _portal_log_event(
         demand,
         PortalDemandLog.EVENT_CANCELLED,
@@ -5209,7 +5586,7 @@ def _cancel_portal_demand(demand, actor_user):
 @login_required
 @require_POST
 def portalDemandAssume(request, demand_id):
-    if not _is_system_admin(request.user):
+    if not _portal_can_attend(request.user):
         return redirect(f"{reverse('portalPendingDemandsPage')}?denied=1")
 
     with transaction.atomic():
@@ -5230,7 +5607,7 @@ def portalDemandAssume(request, demand_id):
 @login_required
 @require_POST
 def portalDemandBulkAssume(request):
-    if not _is_system_admin(request.user):
+    if not _portal_can_attend(request.user):
         return redirect(f"{reverse('portalPendingDemandsPage')}?denied=1")
 
     raw_ids = []

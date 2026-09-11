@@ -10,6 +10,11 @@ para o estado inicial do acesso interno (o modal de edição preenche via JS).
         <input id="{{ prefix }}_is_system_admin" type="checkbox" name="is_system_admin">
         <span>Administrador do sistema</span>
     </label>
+    <label class="cx-check" for="{{ prefix }}_is_support_attendant">
+        <input id="{{ prefix }}_is_support_attendant" type="checkbox" name="is_support_attendant">
+        <span>Atendente da fila de TI</span>
+    </label>
+    <p class="cx-hint">Atendente assume, responde e conclui chamados do portal sem precisar ser administrador do sistema.</p>
     <label class="cx-check" for="{{ prefix }}_can_access_internal">
         <input id="{{ prefix }}_can_access_internal" type="checkbox" name="can_access_internal" {% if internal_checked %}checked{% endif %}>
         <span>ConnectMX interno</span>

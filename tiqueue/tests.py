@@ -1562,8 +1562,14 @@ class PortalDemandFlowTests(TestCase):
         response = self.client.get(reverse("portalPendingDemandsPage"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Urg&ecirc;ncia: Critica", html=False)
-        self.assertContains(response, "Maior urg&ecirc;ncia", html=False)
+        # A entrada de chamados foi reconstruída em agosto/2026: a urgência
+        # aparece agora no KPI de SLA vencido e na linha do chamado, não mais
+        # em um rótulo "Urgência: ..." no topo da página.
+        self.assertEqual(response.context["header_stats"]["breached"], 1)
+        listed = response.context["tickets"]
+        self.assertEqual([row.id for row in listed], [demand.id])
+        self.assertEqual(listed[0].triage_label, "Critica")
+        self.assertContains(response, "SLA vencido", html=False)
 
     def test_admin_can_update_sla_policy_and_refresh_open_demand_deadlines(self):
         policy = PortalDemandSlaPolicy.objects.create(

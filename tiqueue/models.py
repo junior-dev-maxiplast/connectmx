@@ -568,14 +568,20 @@ class PortalRequesterAccount(models.Model):
 class PortalDemand(models.Model):
     STATUS_PENDING = "pending"
     STATUS_ASSUMED = "assumed"
+    STATUS_WAITING = "waiting_requester"
     STATUS_COMPLETED = "completed"
     STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pendente"),
         (STATUS_ASSUMED, "Em atendimento"),
+        (STATUS_WAITING, "Aguardando solicitante"),
         (STATUS_COMPLETED, "Concluída"),
         (STATUS_CANCELLED, "Cancelada"),
     ]
+    # Status em que o chamado ainda consome a fila do atendente.
+    OPEN_STATUSES = [STATUS_PENDING, STATUS_ASSUMED, STATUS_WAITING]
+    # Status em que o ciclo ja terminou.
+    CLOSED_STATUSES = [STATUS_COMPLETED, STATUS_CANCELLED]
     FEEDBACK_CHOICES = [
         (1, "Muito insatisfeito"),
         (2, "Insatisfeito"),
@@ -612,12 +618,29 @@ class PortalDemand(models.Model):
         blank=True,
         related_name="demands",
     )
-    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    # Setor do solicitante no momento da abertura. E snapshot de proposito: o
+    # cadastro pode mudar de setor depois, e a triagem/BI precisa saber de onde
+    # o chamado veio, nao de onde a pessoa esta hoje.
+    requester_sector = models.ForeignKey(
+        "PortalRequesterSector",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="demands",
+    )
     first_response_due_at = models.DateTimeField(blank=True, null=True)
     first_response_at = models.DateTimeField(blank=True, null=True)
     resolution_due_at = models.DateTimeField(blank=True, null=True)
     assumed_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
+    # Relogio da pausa por "aguardando solicitante". waiting_since marca quando a
+    # bola passou para o usuario; ao voltar, o tempo parado entra no acumulado e
+    # os prazos de SLA sao empurrados pelo mesmo tanto.
+    waiting_since = models.DateTimeField(blank=True, null=True)
+    sla_paused_minutes = models.PositiveIntegerField(default=0)
+    reopened_at = models.DateTimeField(blank=True, null=True)
+    reopen_count = models.PositiveIntegerField(default=0)
     feedback_rating = models.PositiveSmallIntegerField(blank=True, null=True, choices=FEEDBACK_CHOICES)
     feedback_comment = models.TextField(blank=True, null=True)
     feedback_submitted_at = models.DateTimeField(blank=True, null=True)
@@ -670,6 +693,22 @@ class PortalDemand(models.Model):
             userQueue.default_field_option_map(userQueue.FIELD_PRIORITY).get(self.priority_level or "", {}).get("color")
             or "#61688c"
         )
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN_STATUSES
+
+    @property
+    def is_closed(self):
+        return self.status in self.CLOSED_STATUSES
+
+    @property
+    def is_waiting_requester(self):
+        return self.status == self.STATUS_WAITING
+
+    @property
+    def was_reopened(self):
+        return bool(self.reopen_count)
 
     @property
     def has_feedback(self):
@@ -777,14 +816,20 @@ class PortalDemandLog(models.Model):
     EVENT_ASSUMED = "assumed"
     EVENT_TRANSFERRED = "transferred"
     EVENT_WORKLOG = "worklog"
+    EVENT_WAITING = "waiting"
+    EVENT_RESUMED = "resumed"
     EVENT_COMPLETED = "completed"
+    EVENT_REOPENED = "reopened"
     EVENT_CANCELLED = "cancelled"
     EVENT_AI_ROUTED = "ai_routed"
     EVENT_CHOICES = [
         (EVENT_ASSUMED, "Assunção"),
         (EVENT_TRANSFERRED, "Transferência"),
         (EVENT_WORKLOG, "Apontamento"),
+        (EVENT_WAITING, "Aguardando solicitante"),
+        (EVENT_RESUMED, "Retomada"),
         (EVENT_COMPLETED, "Conclusão"),
+        (EVENT_REOPENED, "Reabertura"),
         (EVENT_CANCELLED, "Cancelamento"),
         (EVENT_AI_ROUTED, "Roteamento IA"),
     ]
@@ -1876,3 +1921,60 @@ class TravelBiInsightSnapshot(models.Model):
 
     def __str__(self):
         return f"Viagens {self.scope_label or self.period_key}"
+
+
+class RomaneioBiInsightSnapshot(models.Model):
+    """Análise de IA do BI de Romaneios, por recorte de período, filial, etapa e matrícula.
+
+    Espelha o ItBiInsightSnapshot e o TravelBiInsightSnapshot, mas com escopo
+    próprio: aqui o recorte tem quatro eixos porque a etapa (USU_TIPREG) e o
+    colaborador (USU_CODMAT) são filtros tão relevantes quanto o período.
+    """
+
+    STATUS_PREPARED = "prepared"
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PREPARED, "Preparado"),
+        (STATUS_PROCESSING, "Processando na IA"),
+        (STATUS_COMPLETED, "Concluído"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    period_key = models.CharField(max_length=20)
+    branch_key = models.CharField(max_length=20, default="all")
+    stage_key = models.CharField(max_length=8, default="all")
+    matricula_key = models.CharField(max_length=20, default="all")
+    scope_label = models.CharField(max_length=160, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
+    source_fingerprint = models.CharField(max_length=64, db_index=True)
+    metrics = models.JSONField(default=dict)
+    ai_payload = models.JSONField(default=dict)
+    ai_response = models.JSONField(default=dict, blank=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_response_id = models.CharField(max_length=120, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    ai_requested_at = models.DateTimeField(blank=True, null=True)
+    ai_completed_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="romaneio_bi_insight_snapshots",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["period_key", "branch_key", "stage_key", "matricula_key"],
+                name="unique_romaneio_bi_insight_scope",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Romaneios {self.scope_label or self.period_key}"

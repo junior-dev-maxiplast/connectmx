@@ -11,6 +11,10 @@ class User(AbstractUser):
     is_representative = models.BooleanField(default=False)
     representative_code = models.CharField(max_length=30, blank=True, null=True, db_index=True)
     is_system_admin = models.BooleanField(default=False)
+    # Atendente da fila de TI. Separado de is_system_admin de proposito: quem
+    # atende chamado nao precisa administrar o ConnectMX inteiro, e quem
+    # administra o sistema nem sempre atende.
+    is_support_attendant = models.BooleanField(default=False)
     # Contas exclusivas do Dashes entram com isto desmarcado: autenticam
     # normalmente, mas o middleware não as deixa abrir o ConnectMX interno.
     can_access_internal = models.BooleanField(default=True)
@@ -23,6 +27,29 @@ class User(AbstractUser):
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['userId', 'email']
+
+    @property
+    def is_support_staff(self):
+        """Este usuário atende a fila de TI (atendente marcado ou admin)."""
+        return bool(self.is_support_attendant or self.is_system_admin or self.is_superuser)
+
+    @staticmethod
+    def support_attendants():
+        """Quem pode atender a fila de TI, na ordem em que aparece nas listas.
+
+        Fica aqui para existir uma definição só: a mesma regra alimenta a
+        checagem de permissão e o seletor de transferência, e quando estavam
+        duplicadas o atendente aparecia na fila mas não na lista de destino.
+        """
+        return (
+            User.objects.filter(is_active=True)
+            .filter(
+                models.Q(is_support_attendant=True)
+                | models.Q(is_system_admin=True)
+                | models.Q(is_superuser=True)
+            )
+            .order_by("nameUser", "username", "id")
+        )
 
 
 class DashesAiUsage(models.Model):

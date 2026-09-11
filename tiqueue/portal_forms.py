@@ -76,7 +76,7 @@ class PortalDemandReplyForm(forms.Form):
         self.can_manage = bool(
             user
             and getattr(user, "is_authenticated", False)
-            and (getattr(user, "is_system_admin", False) or getattr(user, "is_superuser", False))
+            and getattr(user, "is_support_staff", False)
         )
 
         queryset = PortalCannedResponse.objects.filter(is_active=True).select_related("task_group", "task_type")
@@ -366,11 +366,7 @@ class PortalDemandSlaPolicyForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["task_group"].queryset = TaskGroup.objects.order_by("name")
         self.fields["task_type"].queryset = TaskType.objects.select_related("group").order_by("group__name", "name")
-        self.fields["default_attendant"].queryset = (
-            User.objects.filter(is_active=True)
-            .filter(Q(is_system_admin=True) | Q(is_superuser=True))
-            .order_by("nameUser", "username", "id")
-        )
+        self.fields["default_attendant"].queryset = User.support_attendants()
 
     def clean_name(self):
         return (self.cleaned_data.get("name") or "").strip()

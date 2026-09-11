@@ -68,6 +68,10 @@
                     <strong>{{ counts.assumed }}</strong>
                 </div>
                 <div class="support-page-mini-metric">
+                    <span>Aguardando voc&ecirc;</span>
+                    <strong>{{ counts.waiting }}</strong>
+                </div>
+                <div class="support-page-mini-metric">
                     <span>Aguardando feedback</span>
                     <strong>{{ counts.awaiting_feedback }}</strong>
                 </div>
@@ -94,6 +98,7 @@
                             <option value="">Todos os status</option>
                             <option value="pending">Pendentes</option>
                             <option value="assumed">Em atendimento</option>
+                            <option value="waiting_requester">Aguardando voc&ecirc;</option>
                             <option value="completed">Conclu&iacute;das</option>
                             <option value="cancelled">Canceladas</option>
                         </select>

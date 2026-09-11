@@ -82,6 +82,7 @@
                     <a href="?view=abertos" class="ticket-tab{% if current_view == 'abertos' %} is-active{% endif %}">Abertos<span>{{ view_counts.abertos }}</span></a>
                     <a href="?view=meus" class="ticket-tab{% if current_view == 'meus' %} is-active{% endif %}">Meus chamados<span>{{ view_counts.meus }}</span></a>
                     <a href="?view=nao_atribuidos" class="ticket-tab{% if current_view == 'nao_atribuidos' %} is-active{% endif %}">N&atilde;o atribu&iacute;dos<span>{{ view_counts.nao_atribuidos }}</span></a>
+                    <a href="?view=aguardando" class="ticket-tab{% if current_view == 'aguardando' %} is-active{% endif %}">Aguardando solicitante<span>{{ view_counts.aguardando }}</span></a>
                     <a href="?view=resolvidos" class="ticket-tab{% if current_view == 'resolvidos' %} is-active{% endif %}">Resolvidos<span>{{ view_counts.resolvidos }}</span></a>
                     <a href="?view=todos" class="ticket-tab{% if current_view == 'todos' %} is-active{% endif %}">Todos<span>{{ view_counts.todos }}</span></a>
                 </nav>
@@ -104,6 +105,12 @@
                             <option value="">Grupo</option>
                             {% for g in groups %}
                                 <option value="{{ g.id }}" {% if group_filter == g.id|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="sector" class="queue-select ticket-select" onchange="document.getElementById('ticketFilterForm').submit()">
+                            <option value="">Setor solicitante</option>
+                            {% for sector in sectors %}
+                                <option value="{{ sector.id }}" {% if sector_filter == sector.id|stringformat:"s" %}selected{% endif %}>{{ sector.name }}</option>
                             {% endfor %}
                         </select>
                         <noscript><button type="submit" class="queue-secondary-btn">Filtrar</button></noscript>
@@ -159,7 +166,10 @@
                                             <a href="{{ ticket.detail_url }}" class="ticket-protocol" onclick="event.stopPropagation()">{{ ticket.protocol }}</a>
                                             <span class="ticket-subject">{{ ticket.title }}</span>
                                         </td>
-                                        <td class="ticket-col-person" title="{{ ticket.requester_display }}">{{ ticket.requester_display }}</td>
+                                        <td class="ticket-col-person" title="{{ ticket.requester_display }}">
+                                            {{ ticket.requester_display }}
+                                            {% if ticket.requester_sector_display != "-" %}<span class="ticket-person-sector">{{ ticket.requester_sector_display }}</span>{% endif %}
+                                        </td>
                                         <td class="ticket-col-person">
                                             {% if ticket.assigned_to %}
                                                 <span title="{{ ticket.assigned_display }}">{{ ticket.assigned_display }}</span>
@@ -171,7 +181,9 @@
                                         <td class="ticket-col-date">{{ ticket.opened_since_display }}</td>
                                         <td class="ticket-col-date">{{ ticket.updated_since_display }}</td>
                                         <td class="ticket-col-sla">
-                                            {% if ticket.status == "pending" or ticket.status == "assumed" %}
+                                            {% if ticket.status == "waiting_requester" %}
+                                                <span class="support-chip support-chip-sm is-waiting" title="Prazo pausado enquanto aguarda o solicitante">Pausado</span>
+                                            {% elif ticket.status == "pending" or ticket.status == "assumed" %}
                                                 <span class="support-chip support-chip-sm {% if ticket.sla_next_label == "Primeira resposta" %}{{ ticket.sla_first_response_chip_css }}{% else %}{{ ticket.sla_resolution_chip_css }}{% endif %}">{{ ticket.sla_next_display }}</span>
                                             {% else %}
                                                 <span class="ticket-muted">&mdash;</span>

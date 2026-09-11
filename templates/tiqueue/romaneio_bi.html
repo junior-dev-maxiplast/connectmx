@@ -1,0 +1,437 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | BI de Romaneios</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <script src="{% static '/js/dashesFetch.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    <link rel="stylesheet" href="{% static '/style/romaneioBi.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="romaneiobi">
+    {% include 'partials/dashes_sidebar.html' %}
+
+    <main class="bi-page">
+        <header class="bi-topbar">
+            <div>
+                <span class="bi-kicker">Logística · Contagem de pallets</span>
+                <h1>BI de Romaneios</h1>
+            </div>
+
+            {% if dashboard %}
+            <div class="bi-filters">
+                <div class="bi-filter-group">
+                    <span>Período</span>
+                    {% for choice in dashboard.scope.period_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.period.key %} is-active{% endif %}"
+                           href="{{ romaneio_page_url }}?periodo={{ choice.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ dashboard.scope.stage.key }}&matricula={{ dashboard.scope.matricula.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Filial</span>
+                    {% for choice in dashboard.scope.branch_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.branch.key %} is-active{% endif %}"
+                           href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ choice.key }}&estagio={{ dashboard.scope.stage.key }}&matricula={{ dashboard.scope.matricula.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Etapa</span>
+                    {% for choice in dashboard.scope.stage_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.stage.key %} is-active{% endif %}"
+                           href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ choice.key }}&matricula={{ dashboard.scope.matricula.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="bi-ai-actions">
+                <form id="biIndicatorForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="estagio" value="{{ dashboard.scope.stage.key }}">
+                    <input type="hidden" name="matricula" value="{{ dashboard.scope.matricula.key }}">
+                    <button type="submit" class="bi-btn" id="biIndicatorButton">
+                        <span>▦</span>{% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
+                    </button>
+                </form>
+                <form id="biAiForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="estagio" value="{{ dashboard.scope.stage.key }}">
+                    <input type="hidden" name="matricula" value="{{ dashboard.scope.matricula.key }}">
+                    <button type="submit" class="bi-btn is-ai{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="biAiButton"
+                            {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                        <span>✦</span>{% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
+                    </button>
+                </form>
+                {% if insight_snapshot %}
+                    <a class="bi-btn" href="{{ romaneio_payload_url }}{{ romaneio_scope_query }}" target="_blank" rel="noopener">JSON IA</a>
+                    <a class="bi-btn is-pdf" href="{{ romaneio_pdf_url }}{{ romaneio_scope_query }}"
+                       title="{% if insight_snapshot.ai_response %}Baixar relatório com a análise da IA{% else %}Baixar relatório dos indicadores (sem análise da IA){% endif %}">PDF{% if not insight_snapshot.ai_response %} dos indicadores{% else %} completo{% endif %}</a>
+                {% endif %}
+                {% if dna_ai_quota.limit != None %}
+                    <span class="bi-quota{% if dna_ai_quota.blocked %} is-blocked{% endif %}" title="Análises de IA usadas hoje">IA {{ dna_ai_quota.used }}/{{ dna_ai_quota.limit }}</span>
+                {% endif %}
+            </div>
+            <div class="bi-filters" style="margin-top: 2px;">
+                <div class="bi-filter-group">
+                    <span>Colaborador</span>
+                    <a class="bi-filter{% if dashboard.scope.matricula.key == 'all' %} is-active{% endif %}"
+                       href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ dashboard.scope.stage.key }}&matricula=all">Todos</a>
+                    {% for choice in dashboard.scope.matricula_choices %}
+                        {% if choice.key != 'all' %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.matricula.key %} is-active{% endif %}"
+                           href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ dashboard.scope.stage.key }}&matricula={{ choice.key }}">{{ choice.label }}</a>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="bi-status"><i></i> ERP Senior · USU_TCONROM</div>
+            {% endif %}
+        </header>
+
+        {% if data_error %}
+            <section class="bi-shell">
+                <div class="bi-empty">
+                    <strong>Não foi possível carregar os indicadores</strong>
+                    <span>{{ data_error }}</span>
+                </div>
+            </section>
+        {% endif %}
+
+        {% if dashboard %}
+        <div class="bi-shell">
+            {% if insight_snapshot.ai_response %}
+            <section class="bi-panel bi-ai">
+                <div class="bi-panel-head">
+                    <h2>Análise da IA</h2>
+                    <span>{{ insight_snapshot.scope_label }} · {{ insight_snapshot.ai_model|default:"-" }} · {{ insight_snapshot.ai_total_tokens }} tokens</span>
+                </div>
+
+                {% if insight_stale %}
+                <p class="bi-stale">Os números mudaram desde esta análise. Gere os indicadores e peça uma nova para atualizar as conclusões.</p>
+                {% endif %}
+
+                <div class="bi-ai-head">
+                    <span class="bi-health is-{{ insight_snapshot.ai_response.health }}">{{ insight_snapshot.ai_response.health|title }}</span>
+                    <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                </div>
+
+                <div class="bi-grid is-2" style="margin-top: 13px;">
+                    <div class="bi-callout is-red"><span>Principal risco</span><strong>{{ insight_snapshot.ai_response.principal_risk }}</strong></div>
+                    <div class="bi-callout is-green"><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></div>
+                </div>
+
+                <div class="bi-ai-cards">
+                    {% for item in insight_snapshot.ai_response.insights %}
+                    <article class="bi-ai-card is-{{ item.type }}">
+                        <div class="bi-ai-card-head">
+                            <strong>{{ item.title }}</strong>
+                            <span class="bi-tag">{{ item.confidence }}</span>
+                        </div>
+                        <p>{{ item.summary }}</p>
+                        {% if item.evidence %}
+                        <div class="bi-evidence">
+                            {% for evidence in item.evidence %}<span>{{ evidence }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="bi-action"><b>Ação:</b> {{ item.recommended_action }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                {% if insight_snapshot.ai_response.recommended_actions %}
+                <div class="bi-actions-list">
+                    <span>Plano recomendado</span>
+                    <ol>{% for action in insight_snapshot.ai_response.recommended_actions %}<li>{{ action }}</li>{% endfor %}</ol>
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
+
+            {% if insight_snapshot.metrics.deep %}
+            {% with deep=insight_snapshot.metrics.deep %}
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Funil de conclusão do pallet</h2>
+                        <span>{{ deep.funnel.total_display }} pallets no recorte</span>
+                    </div>
+                    <div class="bi-split">
+                        <div><span>Concluíram</span><strong class="is-green">{{ deep.funnel.completed_pct }}%</strong><small>{{ deep.funnel.completed_display }} chegaram a Carregar</small></div>
+                        <div><span>Tempo médio de ciclo</span><strong>{{ deep.funnel.lead_time_display }}</strong><small>de Separar a Carregar · base de {{ deep.funnel.lead_time_base }}</small></div>
+                    </div>
+                    <div class="bi-bars">
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Parou em Separar</strong><span>{{ deep.funnel.stopped_stage_1 }} · {{ deep.funnel.stopped_stage_1_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-stage-1" style="width: {{ deep.funnel.stopped_stage_1_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Parou até Guardar</strong><span>{{ deep.funnel.stopped_stage_2 }} · {{ deep.funnel.stopped_stage_2_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-stage-2" style="width: {{ deep.funnel.stopped_stage_2_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Parou até Paletizar</strong><span>{{ deep.funnel.stopped_stage_3 }} · {{ deep.funnel.stopped_stage_3_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-stage-3" style="width: {{ deep.funnel.stopped_stage_3_pct }}%"></i></div>
+                        </div>
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>Chegou a Carregar</strong><span>{{ deep.funnel.reached_stage_4 }} · {{ deep.funnel.reached_stage_4_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-stage-4" style="width: {{ deep.funnel.reached_stage_4_pct }}%"></i></div>
+                        </div>
+                    </div>
+                    <p class="bi-note">Conta etapas distintas por pallet (empresa + filial + embalagem), não a ordem em que ocorreram.</p>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Mais dias trabalhados</h2>
+                        <span>top 10 do recorte</span>
+                    </div>
+                    <div class="bi-bars">
+                        {% for item in deep.top_workdays %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{% if item.nome %}{{ item.nome }}{% else %}Matrícula {{ item.matricula }}{% endif %}</strong><span>{% if item.nome %}Matrícula {{ item.matricula }} · {% endif %}{{ item.days }} dia(s) · {{ item.records_display }} registros</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+            {% endwith %}
+            {% elif insight_snapshot.ai_error %}
+            <section class="bi-panel bi-ai-empty">
+                <strong>A última análise falhou</strong>
+                <em>{{ insight_snapshot.ai_error }}</em>
+            </section>
+            {% endif %}
+
+            <section class="bi-kpis">
+                <div class="bi-kpi is-blue">
+                    <span>Registros</span>
+                    <strong>{{ dashboard.metrics.records_display }}</strong>
+                    <small>em {{ dashboard.scope.period.full_label|lower }}</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Volumes</span>
+                    <strong>{{ dashboard.metrics.volumes_display }}</strong>
+                    <small>soma de volumes no recorte</small>
+                </div>
+                <div class="bi-kpi is-amber">
+                    <span>Peso total</span>
+                    <strong>{{ dashboard.metrics.weight_display }}</strong>
+                    <small>soma de peso no recorte</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>Colaboradores</span>
+                    <strong>{{ dashboard.metrics.employees_display }}</strong>
+                    <small>matrículas distintas no recorte</small>
+                </div>
+                <div class="bi-kpi is-blue">
+                    <span>Pallets distintos</span>
+                    <strong>{{ dashboard.metrics.pallets_display }}</strong>
+                    <small>embalagens com pelo menos 1 registro</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Registros por colaborador</span>
+                    <strong>{{ dashboard.metrics.records_per_employee_display }}</strong>
+                    <small>média do recorte</small>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>Sem peso informado</span>
+                    <strong>{{ dashboard.metrics.missing_weight_pct }}%</strong>
+                    <small>{{ dashboard.metrics.missing_weight }} registro(s) com peso zerado ou ausente</small>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>Sem volume informado</span>
+                    <strong>{{ dashboard.metrics.missing_volume_pct }}%</strong>
+                    <small>{{ dashboard.metrics.missing_volume }} registro(s) com volume zerado ou ausente</small>
+                </div>
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Registros {{ dashboard.scope.series_label }}, por etapa</h2>
+                    <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.branch.label }}</span>
+                </div>
+                {% if dashboard.series %}
+                <div class="bi-chart">
+                    {% for item in dashboard.series %}
+                    <div title="{{ item.label }}: {{ item.total }} registro(s)">
+                        <div class="bi-chart-bars is-stack" style="height: {{ item.height_pct }}%">
+                            <i class="is-stage-4" style="height: {{ item.stage_shares.4 }}%" title="Carregar: {{ item.stages.4 }}"></i>
+                            <i class="is-stage-3" style="height: {{ item.stage_shares.3 }}%" title="Paletizar: {{ item.stages.3 }}"></i>
+                            <i class="is-stage-2" style="height: {{ item.stage_shares.2 }}%" title="Guardar: {{ item.stages.2 }}"></i>
+                            <i class="is-stage-1" style="height: {{ item.stage_shares.1 }}%" title="Separar: {{ item.stages.1 }}"></i>
+                            {% if item.stages.outro %}<i class="is-stage-outro" style="height: {{ item.stage_shares.outro }}%" title="Outro: {{ item.stages.outro }}"></i>{% endif %}
+                        </div>
+                        <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="bi-legend">
+                    <span><i class="is-stage-1"></i> Separar</span>
+                    <span><i class="is-stage-2"></i> Guardar</span>
+                    <span><i class="is-stage-3"></i> Paletizar</span>
+                    <span><i class="is-stage-4"></i> Carregar</span>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem registros no período selecionado.</div>
+                {% endif %}
+            </section>
+
+            <div class="bi-grid is-2">
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Distribuição por etapa</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.by_stage %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-stage-{{ item.code|default:'outro' }}" style="width: {{ item.share_pct }}%"></i></div>
+                            <small class="bi-bar-sub">{{ item.peso_display }}</small>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head"><h2>Distribuição por filial</h2></div>
+                    <div class="bi-bars">
+                        {% for item in dashboard.by_branch %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
+                        </div>
+                        {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
+                    </div>
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Ranking de colaboradores</h2>
+                    <span>{{ dashboard.ranking_total_employees }} matrícula(s) no recorte{% if dashboard.ranking_total_employees > dashboard.ranking|length %} · exibindo as {{ dashboard.ranking|length }} primeiras{% endif %}</span>
+                </div>
+                {% if dashboard.ranking %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Matrícula</th><th class="is-num">Registros</th><th class="is-num">Participação</th>
+                                <th class="is-num">Volumes</th><th class="is-num">Peso</th>
+                                <th class="is-num">Dias trabalhados</th><th class="is-num">Pallets</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.ranking %}
+                            <tr>
+                                <td>
+                                    <div class="bi-cell">
+                                        {% if item.nome %}
+                                        <strong>{{ item.nome }}</strong>
+                                        <small>Matrícula {{ item.matricula }} · <a href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ dashboard.scope.stage.key }}&matricula={{ item.matricula }}">ver só este colaborador</a></small>
+                                        {% else %}
+                                        <strong>Matrícula {{ item.matricula }}</strong>
+                                        <small><a href="{{ romaneio_page_url }}?periodo={{ dashboard.scope.period.key }}&filial={{ dashboard.scope.branch.key }}&estagio={{ dashboard.scope.stage.key }}&matricula={{ item.matricula }}">ver só este colaborador</a></small>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td class="is-num">{{ item.registros_display }}</td>
+                                <td class="is-num">{{ item.share_pct }}%</td>
+                                <td class="is-num">{{ item.volumes_display }}</td>
+                                <td class="is-num">{{ item.peso_display }}</td>
+                                <td class="is-num">{{ item.dias_trabalhados }}</td>
+                                <td class="is-num">{{ item.pallets }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem registros no recorte selecionado.</div>
+                {% endif %}
+            </section>
+        </div>
+        {% endif %}
+    </main>
+
+    <div class="bi-limit-overlay" id="biLimitOverlay" hidden>
+        <div class="bi-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="biLimitTitle">
+            <div class="bi-limit-icon" aria-hidden="true">!</div>
+            <h2 id="biLimitTitle">Limite diário de análises atingido</h2>
+            <p id="biLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+            <p class="bi-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="bi-limit-close" id="biLimitClose">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var prepareUrl = "{{ romaneio_prepare_url }}";
+        var aiUrl = "{{ romaneio_ai_url }}";
+        var overlay = document.getElementById('biLimitOverlay');
+        var closeButton = document.getElementById('biLimitClose');
+
+        function showLimit(message) {
+            if (!overlay) { return window.alert(message); }
+            if (message) { document.getElementById('biLimitText').textContent = message; }
+            overlay.hidden = false;
+        }
+        if (closeButton) { closeButton.addEventListener('click', function () { overlay.hidden = true; }); }
+        if (overlay) {
+            overlay.addEventListener('click', function (event) { if (event.target === overlay) { overlay.hidden = true; } });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay && !overlay.hidden) { overlay.hidden = true; }
+        });
+
+        function wire(formId, buttonId, url, loadingLabel) {
+            var form = document.getElementById(formId);
+            var button = document.getElementById(buttonId);
+            if (!form || !button) { return; }
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                // Quem ja estourou a cota nem dispara a requisicao.
+                if (button.dataset.aiBlocked === '1') { return showLimit(); }
+                var original = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="bi-spinner"></span> ' + loadingLabel;
+                fetch(url, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(function (response) {
+                    return window.dashesReadJson(response).then(function (payload) {
+                        return { response: response, payload: payload };
+                    });
+                }).then(function (result) {
+                    var payload = result.payload;
+                    if (payload.code === 'ai_daily_limit') {
+                        button.disabled = false;
+                        button.innerHTML = original;
+                        button.dataset.aiBlocked = '1';
+                        return showLimit(payload.message);
+                    }
+                    if (!result.response.ok || payload.status !== 'ok') {
+                        throw new Error(payload.message || 'Falha ao executar a solicitação.');
+                    }
+                    window.location.reload();
+                }).catch(function (error) {
+                    button.disabled = false;
+                    button.innerHTML = original;
+                    window.alert(error.message);
+                });
+            });
+        }
+
+        wire('biIndicatorForm', 'biIndicatorButton', prepareUrl, 'Calculando...');
+        wire('biAiForm', 'biAiButton', aiUrl, 'Analisando...');
+    })();
+    </script>
+</body>
+</html>

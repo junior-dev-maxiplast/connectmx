@@ -26,10 +26,15 @@
             </div>
             <div class="newticket-head-meta">
                 <div class="newticket-requester">
-                    <span class="newticket-avatar" aria-hidden="true">{{ request.user.nameUser|default:request.user.username|slice:":2"|upper }}</span>
+                    <span class="newticket-avatar" aria-hidden="true">{{ requester_profile.initials }}</span>
                     <div>
                         <small>Abrindo como</small>
-                        <strong>{{ request.user.nameUser|default:request.user.username }}</strong>
+                        <strong>{{ requester_profile.name }}</strong>
+                        {% if requester_profile.sector %}
+                            <span class="newticket-requester-meta">
+                                {{ requester_profile.sector }}{% if requester_profile.role_title %} &middot; {{ requester_profile.role_title }}{% endif %}{% if requester_profile.phone %} &middot; ramal {{ requester_profile.phone }}{% endif %}
+                            </span>
+                        {% endif %}
                     </div>
                 </div>
                 <div id="portalDraftStatus" class="newticket-draft-pill">Pronto para preencher</div>
@@ -46,6 +51,24 @@
 
             <div class="newticket-layout">
                 <div class="newticket-main">
+
+                    {% if can_open_on_behalf %}
+                        <section class="newticket-step is-attendant-only">
+                            <div class="newticket-step-head">
+                                <span class="newticket-step-num">&#9679;</span>
+                                <div>
+                                    <h2>Para quem &eacute; este chamado?</h2>
+                                    <p>Voc&ecirc; atende a fila, ent&atilde;o pode registrar em nome de quem ligou ou passou no balc&atilde;o.</p>
+                                </div>
+                            </div>
+                            <div class="newticket-field">
+                                <label for="{{ form.on_behalf_of.id_for_label }}">{{ form.on_behalf_of.label }}</label>
+                                {{ form.on_behalf_of }}
+                                <small class="newticket-help">Deixe em &ldquo;Eu mesmo&rdquo; para abrir no seu pr&oacute;prio nome. O hist&oacute;rico e a avalia&ccedil;&atilde;o ficam com quem voc&ecirc; escolher aqui.</small>
+                                {% if form.on_behalf_of.errors %}<div class="newticket-error">{{ form.on_behalf_of.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </section>
+                    {% endif %}
 
                     <section class="newticket-step" id="newticketStepCategory">
                         <div class="newticket-step-head">
