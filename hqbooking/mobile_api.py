@@ -72,6 +72,7 @@ def _serialize_entry(entry):
         "generated_time": entry.generated_time.strftime("%H:%M"),
         "volume_quantity": entry.volume_quantity,
         "romaneio_weight": str(entry.romaneio_weight),
+        "romaneio_meters": str(entry.romaneio_meters) if entry.romaneio_meters is not None else "",
         "package_code": entry.package_code,
         "address_code": entry.address_code,
         "record_type": entry.record_type,
@@ -113,8 +114,8 @@ def mobile_romaneio_create(request):
 
     Aceita os dois caminhos da tela web em um único corpo: se vier
     `barcode_payload`, os campos saem da leitura; senão, empresa, filial,
-    volumes, peso, código do pallet e endereçamento vêm preenchidos à mão.
-    Data e hora são opcionais e caem no horário do servidor, como na leitura
+    volumes, peso, metragem, código do pallet e endereçamento vêm preenchidos
+    à mão. Data e hora são opcionais e caem no horário do servidor, como na leitura
     contínua da web. Em qualquer um dos dois caminhos, `_submit_romaneio_entry`
     recusa a gravação se o mesmo `package_code` já tiver uma leitura de sucesso
     na mesma etapa — cada embalagem entra uma vez por estágio da contagem.
@@ -171,7 +172,8 @@ def mobile_romaneio_create(request):
             {
                 "status": "error",
                 "message": (
-                    "Informe a etapa da contagem: 1 separar, 2 guardar, 3 paletizar ou 4 carregar."
+                    "Informe a etapa da contagem: 1 separar, 2 guardar, 3 paletizar, "
+                    "4 carregar ou 5 contagem de estoque."
                 ),
             },
             status=400,
@@ -187,7 +189,7 @@ def mobile_romaneio_create(request):
                     "status": "error",
                     "message": (
                         "Não foi possível interpretar a leitura. "
-                        "Verifique se o código traz os 6 campos do romaneio."
+                        "Verifique se o código traz os 6 campos do romaneio, ou 7 com a metragem."
                     ),
                 },
                 status=400,
@@ -198,6 +200,7 @@ def mobile_romaneio_create(request):
         romaneio_weight = mapped["romaneio_weight"]
         package_code = mapped["package_code"]
         address_code = mapped["address_code"]
+        romaneio_meters = mapped["romaneio_meters"]
     else:
         company_code = str(payload.get("company_code") or "").strip()
         branch_code = str(payload.get("branch_code") or "").strip()
@@ -205,6 +208,10 @@ def mobile_romaneio_create(request):
         romaneio_weight = _parse_romaneio_decimal(payload.get("romaneio_weight"))
         package_code = _parse_romaneio_numeric_code(payload.get("package_code"), ROMANEIO_PACKAGE_CODE_MAX_DIGITS)
         address_code = _parse_romaneio_numeric_code(payload.get("address_code"), ROMANEIO_ADDRESS_CODE_MAX_DIGITS)
+        # Digitação manual: a pessoa já entra com decimal normal (vírgula ou
+        # ponto), igual ao peso — o formato cru da etiqueta (ponto como milhar)
+        # é só para a leitura da câmera.
+        romaneio_meters = _parse_romaneio_decimal(payload.get("romaneio_meters"))
 
     read_now = timezone.localtime()
     generated_date = _parse_romaneio_date(payload.get("generated_date")) or read_now.date()
@@ -228,6 +235,16 @@ def mobile_romaneio_create(request):
             {"status": "error", "message": "Informe um peso de romaneio válido."},
             status=400,
         )
+    # A metragem é nula nas leituras de etiqueta antiga (6 campos, sem o
+    # sétimo) e em qualquer lançamento manual que não a preencha — ao
+    # contrário do peso, ela ainda não é obrigatória para o servidor aceitar o
+    # romaneio. O app pede o campo na tela Manual, mas quem decide se isso
+    # basta é o Oracle, não esta rota.
+    if payload.get("romaneio_meters") not in (None, "") and romaneio_meters is None:
+        return JsonResponse(
+            {"status": "error", "message": "Informe uma metragem de romaneio válida."},
+            status=400,
+        )
     if not package_code:
         return JsonResponse(
             {"status": "error", "message": "Informe um código do pallet numérico (até 9 dígitos)."},
@@ -249,6 +266,7 @@ def mobile_romaneio_create(request):
         romaneio_weight=romaneio_weight,
         package_code=package_code,
         address_code=address_code,
+        romaneio_meters=romaneio_meters,
         record_type=record_type,
         barcode_payload=barcode_payload or None,
         client_reference=client_reference,
