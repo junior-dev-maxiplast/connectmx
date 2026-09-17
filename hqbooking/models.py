@@ -80,11 +80,18 @@ class SimulationRomaneioEntry(models.Model):
     STAGE_GUARDAR = 2
     STAGE_PALETIZAR = 3
     STAGE_CARREGAR = 4
+    # Quinto estágio, à parte do fluxo sequencial separar → carregar: uma
+    # contagem de conferência de estoque, que pode acontecer a qualquer
+    # momento e independente dos outros quatro. Mesma regra de duplicidade dos
+    # outros (par pallet + estágio), só que aqui o "estágio" não é uma etapa
+    # do fluxo, é o próprio motivo da contagem.
+    STAGE_CONTAGEM_ESTOQUE = 5
     RECORD_TYPE_CHOICES = [
         (STAGE_SEPARAR, "Separar"),
         (STAGE_GUARDAR, "Guardar"),
         (STAGE_PALETIZAR, "Paletizar"),
         (STAGE_CARREGAR, "Carregar"),
+        (STAGE_CONTAGEM_ESTOQUE, "Contagem de Estoque"),
     ]
 
     SYNC_PENDING = "pending"
@@ -119,6 +126,13 @@ class SimulationRomaneioEntry(models.Model):
     # USU_CODEND: endereçamento que veio na etiqueta. NUMBER(6) no Oracle,
     # mesma normalização do package_code.
     address_code = models.CharField(max_length=40, blank=True, default="")
+    # USU_MtsRom: metros do romaneio. Chega como o sétimo e último campo da
+    # etiqueta a partir de set/2026, e é nulo quando a etiqueta é a antiga, de
+    # seis campos — que continua circulando no galpão e continua sendo aceita.
+    # A coluna existe na USU_TCONROM como NUMBER(11,2), então o limite real de
+    # inteiros é 9 dígitos, menor que o `max_digits` daqui; a folga não
+    # incomoda porque metragem de romaneio não chega perto disso.
+    romaneio_meters = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     # USU_TIPREG: em que etapa da contagem esta leitura foi feita. Nulo só nos
     # lançamentos anteriores aos estágios — daí para frente é sempre preenchido.
     record_type = models.PositiveSmallIntegerField(

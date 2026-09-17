@@ -91,8 +91,15 @@
     /* -------------------------------------------------- leitura do payload -- */
 
     // Mesmas regras do servidor (_split_romaneio_payload / _map_romaneio_payload):
-    // o código traz 6 campos separados por quebra de linha, tab, / , | ou ; —
-    // Empresa/Filial/Volumes/Peso/Código do pallet/Endereçamento.
+    // Empresa/Filial/Volumes/Peso/Código do pallet/Endereçamento e, desde
+    // set/2026, Metros do romaneio como sétimo e último campo. Separadores
+    // aceitos: quebra de linha, tab, / , | ou ; .
+    //
+    // Os dois tamanhos valem: há romaneio impresso antes da mudança ainda
+    // circulando no galpão, e etiqueta nova saindo da impressora. Sem aceitar
+    // os dois, um dos lotes simplesmente não entra.
+    var CAMPOS = 6;
+    var CAMPOS_COM_METROS = 7;
     function splitPayload(payload) {
         var source = String(payload || "").trim();
         if (!source) return [];
@@ -101,22 +108,38 @@
             var parts = source.split(splitters[i]).map(function (item) {
                 return item.trim();
             }).filter(Boolean);
-            if (parts.length === 6) return parts;
+            if (parts.length === CAMPOS || parts.length === CAMPOS_COM_METROS) return parts;
         }
         return [];
     }
 
     function mapPayload(payload) {
         var parts = splitPayload(payload);
-        if (parts.length !== 6) return null;
+        if (parts.length !== CAMPOS && parts.length !== CAMPOS_COM_METROS) return null;
         return {
             company: parts[0],
             branch: parts[1],
             volumes: parts[2],
             weight: parts[3],
             packageCode: parts[4],
-            addressCode: parts[5]
+            addressCode: parts[5],
+            // Vazio na etiqueta antiga. Quem grava é o servidor, a partir do
+            // payload cru; aqui a metragem serve só para a conferência mostrar
+            // o que foi lido — inclusive para a pessoa notar quando veio sem.
+            meters: parts.length === CAMPOS_COM_METROS ? decodeMeters(parts[6]) : ""
         };
+    }
+
+    // A metragem vem sem vírgula e o ponto pode ser milhar: as duas últimas
+    // casas são sempre a fração. "30.757.00" são 30757,00 m. Espelha
+    // `_parse_romaneio_scanned_meters` no servidor e `decodeScannedMeters` no app.
+    function decodeMeters(raw) {
+        var digits = String(raw || "").replace(/[^\d]/g, "");
+        if (!digits) return "";
+        var whole = digits.slice(0, -2) || "0";
+        var fraction = digits.slice(-2);
+        while (fraction.length < 2) fraction = "0" + fraction;
+        return whole + "," + fraction;
     }
 
     function buildTile(label, value, wide) {
@@ -160,6 +183,7 @@
         grid.appendChild(buildTile("Código do pallet", scan.packageCode, true));
         grid.appendChild(buildTile("Endereçamento", scan.addressCode));
         grid.appendChild(buildTile("Peso", scan.weight));
+        grid.appendChild(buildTile("Metragem", scan.meters));
         els.readout.appendChild(grid);
     }
 
@@ -180,7 +204,8 @@
             packageCode: mapped.packageCode,
             addressCode: mapped.addressCode,
             volumes: mapped.volumes,
-            weight: mapped.weight
+            weight: mapped.weight,
+            meters: mapped.meters
         };
         vibrate(70);
         closeScanner();

@@ -833,13 +833,40 @@ def _parse_romaneio_decimal(raw_value):
         return None
 
 
+# USU_MtsRom: metros do romaneio. Chega como o sétimo e último campo da
+# etiqueta, sem vírgula — só dígitos e ponto. Ao contrário do peso, aqui o
+# ponto PODE ser separador de milhar: as duas últimas casas são sempre a
+# fração, e qualquer ponto antes delas some. "30.757.00" tem 30.757 (= 30757)
+# inteiros e ",00" de fração: 30757,00 m. É a regra que o pessoal do galpão
+# descreveu a partir da etiqueta real; não confundir com `_parse_romaneio_decimal`,
+# que é para peso (e para a digitação manual da própria metragem) e trata
+# ponto como decimal direto.
+def _parse_romaneio_scanned_meters(raw_value):
+    raw_text = str(raw_value or "").strip()
+    if not raw_text or not re.fullmatch(r"[0-9.]+", raw_text):
+        return None
+    digits = raw_text.replace(".", "")
+    if not digits:
+        return None
+    whole = digits[:-2] or "0"
+    fraction = digits[-2:].rjust(2, "0")
+    try:
+        return Decimal(f"{whole}.{fraction}")
+    except (InvalidOperation, ValueError):
+        return None
+
+
 # Formato atual da etiqueta: Empresa/Filial/Quantidade de volumes/Peso/
-# Código do pallet/Endereçamento — 6 campos, nesta ordem, separados por quebra
-# de linha, tab, `/`, `|` ou `;`. Matrícula, etapa e sequência não vêm no
+# Código do pallet/Endereçamento/Metros do romaneio — 7 campos, nesta ordem,
+# separados por quebra de linha, tab, `/`, `|` ou `;`. O sétimo campo (metros)
+# é novo a partir de set/2026; etiquetas mais antigas, sem ele, ainda têm só
+# 6 campos e continuam sendo aceitas — pode haver estoque impresso antes da
+# mudança circulando no galpão. Matrícula, etapa e sequência não vêm no
 # código: a matrícula é digitada no aparelho, a etapa é o botão tocado na tela
 # inicial, e a sequência é o número do evento daquele pallet, calculado no
 # Oracle no momento do envio (`_next_simulation_romaneio_sequence`).
 ROMANEIO_PAYLOAD_FIELD_COUNT = 6
+ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS = 7
 
 
 def _split_romaneio_payload(raw_payload):
@@ -848,15 +875,19 @@ def _split_romaneio_payload(raw_payload):
         return []
 
     splitters = [r"\r?\n", r"\t", r"/", r"\|", r";"]
+    tamanhos_aceitos = (ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS, ROMANEIO_PAYLOAD_FIELD_COUNT)
     for splitter in splitters:
         parts = [item.strip() for item in re.split(splitter, source) if item.strip()]
-        if len(parts) == ROMANEIO_PAYLOAD_FIELD_COUNT:
+        if len(parts) in tamanhos_aceitos:
             return parts
     return []
 
 
 def _map_romaneio_payload(parts):
-    if not isinstance(parts, list) or len(parts) != ROMANEIO_PAYLOAD_FIELD_COUNT:
+    if not isinstance(parts, list) or len(parts) not in (
+        ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS,
+        ROMANEIO_PAYLOAD_FIELD_COUNT,
+    ):
         return None
     return {
         "company_code": parts[0],
@@ -865,6 +896,7 @@ def _map_romaneio_payload(parts):
         "romaneio_weight": parts[3],
         "package_code": parts[4],
         "address_code": parts[5],
+        "romaneio_meters": parts[6] if len(parts) == ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS else None,
     }
 
 
@@ -881,6 +913,11 @@ def _extract_romaneio_payload(raw_payload):
         "romaneio_weight": _parse_romaneio_decimal(mapped["romaneio_weight"]),
         "package_code": _parse_romaneio_numeric_code(mapped["package_code"], ROMANEIO_PACKAGE_CODE_MAX_DIGITS),
         "address_code": _parse_romaneio_numeric_code(mapped["address_code"], ROMANEIO_ADDRESS_CODE_MAX_DIGITS),
+        "romaneio_meters": (
+            _parse_romaneio_scanned_meters(mapped["romaneio_meters"])
+            if mapped["romaneio_meters"] is not None
+            else None
+        ),
     }
 
 
@@ -982,7 +1019,8 @@ ROMANEIO_INSERT_SQL = """
         USU_PESROM,
         USU_NUMEMB,
         USU_CODEND,
-        USU_TIPREG
+        USU_TIPREG,
+        USU_MtsRom
     ) VALUES (
         :empresa,
         :filial,
@@ -994,7 +1032,8 @@ ROMANEIO_INSERT_SQL = """
         :peso_romaneio,
         :codigo_embalagem,
         :endereco,
-        :tipo_registro
+        :tipo_registro,
+        :metros_romaneio
     )
 """
 
@@ -1022,8 +1061,11 @@ def _insert_simulation_romaneio_oracle(entry):
         # `_parse_romaneio_numeric_code`, então o cast é seguro.
         "codigo_embalagem": int(entry.package_code) if str(entry.package_code).isdigit() else entry.package_code,
         "endereco": int(entry.address_code) if str(entry.address_code).isdigit() else entry.address_code,
-        # USU_TIPREG: 1 separar, 2 guardar, 3 paletizar, 4 carregar.
+        # USU_TIPREG: 1 separar, 2 guardar, 3 paletizar, 4 carregar, 5 contagem de estoque.
         "tipo_registro": entry.record_type,
+        # USU_MtsRom: metros do romaneio. Nulo nos lançamentos anteriores ao
+        # campo (etiqueta antiga, ou origem que ainda não o envia).
+        "metros_romaneio": Decimal(entry.romaneio_meters) if entry.romaneio_meters is not None else None,
     }
 
     last_error = None
@@ -1088,9 +1130,16 @@ def _insert_simulation_romaneio_oracle(entry):
     if last_error and "ORA-00904" in last_error and "TIPREG" in last_error.upper():
         return (
             "A coluna USU_TIPREG ainda não existe na USU_TCONROM. Ela guarda a etapa da "
-            "contagem (1 separar, 2 guardar, 3 paletizar, 4 carregar) e precisa ser criada "
-            "no Oracle antes de o app enviar: "
+            "contagem (1 separar, 2 guardar, 3 paletizar, 4 carregar, 5 contagem de estoque) "
+            "e precisa ser criada no Oracle antes de o app enviar: "
             "ALTER TABLE SAPIENS.USU_TCONROM ADD (USU_TIPREG NUMBER(1))."
+        )
+
+    if last_error and "ORA-00904" in last_error and "MTSROM" in last_error.upper():
+        return (
+            "A coluna USU_MtsRom ainda não existe na USU_TCONROM. Ela guarda os metros do "
+            "romaneio (novo último campo da etiqueta) e precisa ser criada no Oracle antes de "
+            "o app enviar: ALTER TABLE SAPIENS.USU_TCONROM ADD (USU_MtsRom NUMBER(12,2))."
         )
 
     return (
@@ -1149,6 +1198,7 @@ def _submit_romaneio_entry(
     record_type,
     package_code="",
     address_code="",
+    romaneio_meters=None,
     barcode_payload=None,
     client_reference="",
 ):
@@ -1173,6 +1223,7 @@ def _submit_romaneio_entry(
             romaneio_weight=romaneio_weight,
             package_code=package_code,
             address_code=address_code,
+            romaneio_meters=romaneio_meters,
             record_type=record_type,
             barcode_payload=barcode_payload,
             client_reference=client_reference,
@@ -1192,6 +1243,7 @@ def _submit_romaneio_entry(
         romaneio_weight=romaneio_weight,
         package_code=package_code,
         address_code=address_code,
+        romaneio_meters=romaneio_meters,
         record_type=record_type,
         barcode_payload=barcode_payload,
         client_reference=client_reference,
@@ -1483,7 +1535,7 @@ def logistics_romaneio_quick_submit(request):
         return JsonResponse(
             {
                 "status": "error",
-                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou os 6 campos do romaneio.",
+                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou os 6 campos do romaneio, ou 7 com a metragem.",
             },
             status=400,
         )

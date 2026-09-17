@@ -556,7 +556,7 @@
                 if (applied) {
                     setBarcodeReaderState("success");
                 } else {
-                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os 6 campos do romaneio automaticamente.");
+                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os campos do romaneio automaticamente (são 6, ou 7 com a metragem).");
                 }
             }, 900);
         }
@@ -1143,11 +1143,24 @@
             if (timeField) timeField.value = `${hh}:${mi}:${ss}`;
         }
 
-        // Formato atual da etiqueta: Empresa/Filial/Volumes/Peso/Código do
-        // pallet/Endereçamento — 6 campos, espelhando `_map_romaneio_payload`
-        // em `hqbooking/views.py`. Matrícula e sequência não vêm no código.
+        // Formato da etiqueta: Empresa/Filial/Volumes/Peso/Código do pallet/
+        // Endereçamento e, desde set/2026, Metros do romaneio como sétimo e
+        // último campo. Espelha `_map_romaneio_payload` em `hqbooking/views.py`.
+        // Matrícula e sequência não vêm no código.
+        //
+        // Os dois tamanhos são aceitos: há romaneio impresso antes da mudança
+        // ainda circulando no galpão, e etiqueta nova saindo da impressora.
+        // Esta tela não tem campo de metragem, então o sétimo valor é lido e
+        // descartado no preenchimento — o que importa aqui é a leitura de 7
+        // campos deixar de ser recusada, como era antes desta mudança.
+        const ROMANEIO_CAMPOS = 6;
+        const ROMANEIO_CAMPOS_COM_METROS = 7;
+
         function mapRomaneioValues(values) {
-            if (!Array.isArray(values) || values.length !== 6) return null;
+            if (!Array.isArray(values)) return null;
+            if (values.length !== ROMANEIO_CAMPOS && values.length !== ROMANEIO_CAMPOS_COM_METROS) {
+                return null;
+            }
             return {
                 company: values[0],
                 branch: values[1],
@@ -1155,6 +1168,7 @@
                 weight: values[3],
                 packageCode: values[4],
                 addressCode: values[5],
+                meters: values.length === ROMANEIO_CAMPOS_COM_METROS ? values[6] : "",
             };
         }
 
@@ -1164,7 +1178,9 @@
             const splitters = [/\r?\n/, /\t/, /\//, /\|/, /;/];
             for (const splitter of splitters) {
                 const parts = source.split(splitter).map((item) => item.trim()).filter(Boolean);
-                if (parts.length === 6) return parts;
+                if (parts.length === ROMANEIO_CAMPOS || parts.length === ROMANEIO_CAMPOS_COM_METROS) {
+                    return parts;
+                }
             }
             return [];
         }
@@ -1175,7 +1191,7 @@
             const mappedValues = mapRomaneioValues(values);
             if (!mappedValues) {
                 if (showAlert) {
-                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou os 6 dados do romaneio.");
+                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou os 6 dados do romaneio, ou 7 com a metragem.");
                 }
                 return false;
             }

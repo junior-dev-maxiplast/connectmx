@@ -17,7 +17,11 @@ from .models import (
     TruckTireChange,
     TruckTireChangeHistory,
 )
-from .views import _extract_romaneio_payload, _insert_simulation_romaneio_oracle
+from .views import (
+    _extract_romaneio_payload,
+    _insert_simulation_romaneio_oracle,
+    _parse_romaneio_scanned_meters,
+)
 
 
 def _sample_structure():
@@ -1318,7 +1322,79 @@ class MobileApiTests(TestCase):
         self.assertEqual(entry.package_code, "200")
         self.assertEqual(entry.address_code, "2")
         self.assertIsNone(entry.barcode_payload)
+        self.assertIsNone(entry.romaneio_meters)
         insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_barcode_with_meters(self, insert_mock):
+        """Etiqueta atual: sétimo campo é a metragem, sem vírgula.
+
+        "30.757.00" tem os dois últimos dígitos como fração e o ponto anterior
+        como milhar — 30757,00 m. O peso ("384.400") não muda de regra: ponto
+        continua sendo decimal direto, 384,4 kg.
+        """
+        response = self._post(
+            {"user_code": "77", "barcode_payload": "1/1/27/384.400/430680/16/30.757.00"}
+        )
+
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        payload = response.json()
+        self.assertEqual(payload["entry"]["romaneio_meters"], "30757.00")
+
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.romaneio_weight, Decimal("384.4"))
+        self.assertEqual(entry.romaneio_meters, Decimal("30757.00"))
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_barcode_sem_metragem_etiqueta_antiga(self, insert_mock):
+        """Etiqueta com só 6 campos (impressa antes da mudança) continua entrando."""
+        response = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/100/1"})
+
+        self.assertEqual(response.status_code, 200)
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertIsNone(entry.romaneio_meters)
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_manual_fields_with_meters(self, insert_mock):
+        """Lançamento manual: metragem digitada com vírgula, igual ao peso."""
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "romaneio_meters": "30757,00",
+                "package_code": "200",
+                "address_code": "2",
+            }
+        )
+
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.romaneio_meters, Decimal("30757.00"))
+        insert_mock.assert_called_once()
+
+    def test_create_from_manual_fields_rejects_invalid_meters(self):
+        """Metragem digitada errada é recusada antes de gastar uma ida ao Oracle."""
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "romaneio_meters": "não é número",
+                "package_code": "200",
+                "address_code": "2",
+            }
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["status"], "error")
+        self.assertFalse(SimulationRomaneioEntry.objects.exists())
 
     def test_create_requires_user_code(self):
         response = self._post({"barcode_payload": "1/2/18/1250,500/100/1"})
@@ -1347,7 +1423,64 @@ class MobileApiTests(TestCase):
         response = self._post({"user_code": "77", "barcode_payload": "somente-um-campo"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("6 campos", response.json()["message"])
+        self.assertIn("campos do romaneio", response.json()["message"])
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_manual_fields_com_metragem_vazia(self, insert_mock):
+        """É exatamente o que a tela Manual do app manda quando o campo fica em branco.
+
+        O romaneio antigo não traz metragem impressa, e é justamente nele que a
+        digitação é a única saída — exigir o campo aqui impediria o lançamento
+        do caso que mais precisa dele. String vazia vira nulo, não erro.
+        """
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "romaneio_meters": "",
+                "package_code": "201",
+                "address_code": "2",
+            }
+        )
+
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertIsNone(entry.romaneio_meters)
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_manual_fields_sem_a_chave_de_metragem(self, insert_mock):
+        """Origem que nem manda o campo (integração antiga) também precisa passar."""
+        response = self._post(
+            {
+                "user_code": "77",
+                "company_code": "1",
+                "branch_code": "2",
+                "volume_quantity": "9",
+                "romaneio_weight": "812,250",
+                "package_code": "202",
+                "address_code": "2",
+            }
+        )
+
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        self.assertIsNone(SimulationRomaneioEntry.objects.get().romaneio_meters)
+
+    def test_mensagem_de_leitura_ilegivel_cita_os_dois_tamanhos(self):
+        """A mensagem tem de valer para quem tem etiqueta antiga.
+
+        Dizer "os 7 campos" mandava conferir um campo que a etiqueta legítima
+        de 6 nunca teve — e o motivo real da recusa ficava escondido.
+        """
+        response = self._post({"user_code": "77", "barcode_payload": "somente-um-campo"})
+
+        self.assertEqual(response.status_code, 400)
+        mensagem = response.json()["message"]
+        self.assertIn("6", mensagem)
+        self.assertIn("7", mensagem)
+        self.assertNotIn("os 7 campos do romaneio", mensagem)
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", return_value="Oracle fora do ar")
     def test_create_reports_sync_error_with_entry(self, insert_mock):
@@ -1518,14 +1651,54 @@ class RomaneioStageTests(TestCase):
         self.assertIn("etapa", response.json()["message"].lower())
         self.assertEqual(SimulationRomaneioEntry.objects.count(), 0)
 
-    def test_etapa_fora_das_quatro_e_recusada(self):
-        for invalida in (0, 5, 99, -1, "separar", "", None):
+    def test_etapa_fora_das_cinco_e_recusada(self):
+        for invalida in (0, 6, 99, -1, "separar", "", None):
             with self.subTest(record_type=invalida):
                 response = self._post(
                     {"barcode_payload": "1/2/18/1250,500/5503/103", "record_type": invalida}
                 )
                 self.assertEqual(response.status_code, 400)
         self.assertEqual(SimulationRomaneioEntry.objects.count(), 0)
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_contagem_de_estoque_funciona_como_as_outras_etapas(self, insert_mock):
+        """Quinto estágio, mesma rota e mesma regra — só o número muda."""
+        response = self._post(
+            {"barcode_payload": "1/2/18/1250,500/5507/103", "record_type": 5}
+        )
+        self.assertEqual(response.status_code, 200, msg=response.content.decode("utf-8"))
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.record_type, 5)
+        self.assertEqual(response.json()["entry"]["record_type_label"], "Contagem de Estoque")
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_contagem_de_estoque_recusa_recontagem_do_mesmo_pallet(self, insert_mock):
+        """Mesma regra de duplicidade das outras quatro: pallet + etapa é a chave."""
+        primeira = self._post({"barcode_payload": "1/2/18/1250,500/5508/103", "record_type": 5})
+        self.assertEqual(primeira.status_code, 200)
+
+        segunda = self._post({"barcode_payload": "1/2/18/1250,500/5508/103", "record_type": 5})
+        self.assertEqual(segunda.status_code, 409)
+        self.assertEqual(segunda.json()["status"], "duplicate_package")
+        self.assertIn("Contagem de Estoque", segunda.json()["message"])
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
+    def test_contagem_de_estoque_nao_conflita_com_as_outras_etapas(self, insert_mock):
+        """É uma conferência à parte: não atrapalha nem é atrapalhada pelo fluxo normal."""
+        for etapa in (1, 2, 3, 4, 5):
+            response = self._post(
+                {"barcode_payload": "1/2/18/1250,500/5509/103", "record_type": etapa}
+            )
+            self.assertEqual(
+                response.status_code,
+                200,
+                msg=f"a etapa {etapa} do mesmo pallet foi recusada",
+            )
+
+        self.assertEqual(SimulationRomaneioEntry.objects.count(), 5)
+        self.assertEqual(insert_mock.call_count, 5)
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_oracle_ok.__func__)
     def test_etapa_tambem_vale_para_o_lancamento_digitado(self, insert_mock):
@@ -1886,3 +2059,114 @@ class RomaneioStageTests(TestCase):
             [(int(numero), rotulo) for numero, rotulo in encontrados],
             list(SimulationRomaneioEntry.RECORD_TYPE_CHOICES),
         )
+
+
+class RomaneioMetersTests(TestCase):
+    """USU_MtsRom: metros do romaneio, sétimo campo da etiqueta a partir de set/2026."""
+
+    # Etiqueta de exemplo repassada junto com o pedido da mudança: empresa 1,
+    # filial 1, 27 volumes, 384,4 kg, pallet 430680, endereço 16 e 30757,00 m.
+    PAYLOAD_COM_METROS = "1/1/27/384.400/430680/16/30.757.00"
+
+    def test_decodifica_ponto_como_milhar_e_duas_ultimas_casas_como_decimal(self):
+        self.assertEqual(_parse_romaneio_scanned_meters("30.757.00"), Decimal("30757.00"))
+
+    def test_decodifica_sem_ponto_de_milhar(self):
+        self.assertEqual(_parse_romaneio_scanned_meters("100"), Decimal("1.00"))
+
+    def test_decodifica_valor_com_um_digito(self):
+        self.assertEqual(_parse_romaneio_scanned_meters("5"), Decimal("0.05"))
+
+    def test_rejeita_valor_vazio(self):
+        self.assertIsNone(_parse_romaneio_scanned_meters(""))
+        self.assertIsNone(_parse_romaneio_scanned_meters(None))
+
+    def test_rejeita_caractere_nao_numerico(self):
+        """Vírgula, letra ou qualquer coisa fora dígito/ponto invalida o campo."""
+        self.assertIsNone(_parse_romaneio_scanned_meters("30757,00"))
+        self.assertIsNone(_parse_romaneio_scanned_meters("30.757,00"))
+        self.assertIsNone(_parse_romaneio_scanned_meters("abc"))
+
+    def test_extract_romaneio_payload_le_o_setimo_campo(self):
+        mapeado = _extract_romaneio_payload(self.PAYLOAD_COM_METROS)
+        self.assertEqual(mapeado["romaneio_meters"], Decimal("30757.00"))
+        # O peso não muda de regra por causa do campo novo: ponto continua
+        # decimal direto, não vira milhar.
+        self.assertEqual(mapeado["romaneio_weight"], Decimal("384.4"))
+
+    def test_extract_romaneio_payload_aceita_etiqueta_antiga_sem_metros(self):
+        """Etiqueta com só 6 campos (impressa antes da mudança) ainda funciona."""
+        mapeado = _extract_romaneio_payload("1/2/6/187.100/428595/16")
+        self.assertIsNotNone(mapeado)
+        self.assertIsNone(mapeado["romaneio_meters"])
+        self.assertEqual(mapeado["romaneio_weight"], Decimal("187.100"))
+
+    def _entry_para_oracle(self, package_code, romaneio_meters=None):
+        return SimulationRomaneioEntry.objects.create(
+            company_code="1",
+            branch_code="1",
+            sequence_record="",
+            user_code="77",
+            generated_date=timezone.localdate(),
+            generated_time=timezone.localtime().time().replace(microsecond=0),
+            volume_quantity=27,
+            romaneio_weight=Decimal("384.4"),
+            package_code=package_code,
+            address_code="16",
+            record_type=1,
+            romaneio_meters=romaneio_meters,
+        )
+
+    def test_insert_no_oracle_leva_a_coluna_usu_mtsrom(self):
+        entry = self._entry_para_oracle("430680", romaneio_meters=Decimal("30757.00"))
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNone(erro)
+        sql, parametros = cursor.execute.call_args[0]
+        self.assertIn("USU_MtsRom", sql)
+        self.assertIn(":metros_romaneio", sql)
+        self.assertEqual(parametros["metros_romaneio"], Decimal("30757.00"))
+
+    def test_insert_no_oracle_aceita_metros_nulo(self):
+        """Etiqueta antiga (ou lançamento manual sem o campo): segue sem travar."""
+        entry = self._entry_para_oracle("430681", romaneio_meters=None)
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNone(erro)
+        _sql, parametros = cursor.execute.call_args[0]
+        self.assertIsNone(parametros["metros_romaneio"])
+
+    def test_coluna_ausente_no_oracle_vira_instrucao_legivel(self):
+        """Enquanto USU_MtsRom não existir, o erro precisa dizer o que fazer."""
+        entry = self._entry_para_oracle("430682", romaneio_meters=Decimal("30757.00"))
+
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [0]
+        cursor.execute.side_effect = [
+            None,  # o SELECT da sequência passa
+            Exception('ORA-00904: "USU_MTSROM": identificador invalido'),
+        ]
+        conexao = MagicMock()
+        conexao.cursor.return_value = cursor
+
+        with patch("hqbooking.views._connect_simulation_oracle", return_value=(conexao, "oracledb")):
+            erro = _insert_simulation_romaneio_oracle(entry)
+
+        self.assertIsNotNone(erro)
+        self.assertIn("USU_MtsRom", erro)
+        self.assertIn("ALTER TABLE", erro)
+        self.assertNotIn("ORA-00904", erro)
