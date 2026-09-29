@@ -74,6 +74,12 @@ body {
 .dna-result-info small, .dna-search-message { color: var(--dna-muted); font-size: 10px; }
 .dna-search-message { padding: 16px; text-align: center; }
 
+.dna-period-switch { flex-wrap: wrap; row-gap: 4px; }
+.dna-period-empty { margin-top: 10px; padding: 14px 17px; border-color: rgba(239, 182, 63, .32) !important; background: linear-gradient(145deg, rgba(56, 42, 14, .55), rgba(18, 27, 34, .98)) !important; }
+.dna-period-empty strong { color: var(--dna-amber); font-size: 11px; }
+.dna-period-empty p { margin: 6px 0 0; color: var(--dna-muted); font-size: 10px; }
+.dna-intelligence-period-note { display: block; margin-top: 8px; color: var(--dna-muted); font-size: 9px; font-style: italic; }
+
 .dna-ai-alert { margin-top: 10px; padding: 17px 19px; border-color: rgba(235, 91, 91, .34) !important; background: linear-gradient(145deg, rgba(65, 24, 31, .82), rgba(18, 27, 34, .98)) !important; }
 .dna-ai-alert strong { color: #ffb1b1; font-size: 12px; }
 .dna-ai-alert p { margin: 7px 0; color: #d6b3b6; font-size: 10px; }

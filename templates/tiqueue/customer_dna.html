@@ -7,6 +7,7 @@
     <title>ConnectMX | DNA de Cliente</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <script src="{% static '/js/dashesFetch.js' %}"></script>
+    <script src="{% static '/js/dashesToast.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
     <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=7">
@@ -80,13 +81,14 @@
                     <strong>{% if dna_view_mode == 'group' %}Grupo econ&ocirc;mico{% else %}Cliente individual{% endif %}</strong>
                 </div>
                 <nav class="dna-scope-switch" aria-label="Modo de visualiza&ccedil;&atilde;o do DNA">
-                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}"{% if dna_view_mode != 'group' %} class="is-active"{% endif %}>Cliente</a>
-                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view=group"{% if dna_view_mode == 'group' %} class="is-active"{% endif %}>Grupo econ&ocirc;mico</a>
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&periodo={{ dashboard.period.key }}"{% if dna_view_mode != 'group' %} class="is-active"{% endif %}>Cliente</a>
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view=group&periodo={{ dashboard.period.key }}"{% if dna_view_mode == 'group' %} class="is-active"{% endif %}>Grupo econ&ocirc;mico</a>
                 </nav>
                 {% if dna_view_mode == 'group' %}
                     <form method="get" class="dna-group-filter">
                         <input type="hidden" name="cliente" value="{{ customer_id }}">
                         <input type="hidden" name="view" value="group">
+                        <input type="hidden" name="periodo" value="{{ dashboard.period.key }}">
                         <label for="dnaGroupMember">Unidade do grupo</label>
                         <select id="dnaGroupMember" name="unidade" onchange="this.form.submit()">
                             <option value="">Todas as {{ dashboard.group.members_count }} unidades - raiz CNPJ {{ dashboard.group.root_display }}</option>
@@ -96,6 +98,18 @@
                         </select>
                     </form>
                 {% endif %}
+            </section>
+
+            <section class="dna-scope-panel dna-panel">
+                <div class="dna-scope-copy">
+                    <span>Per&iacute;odo</span>
+                    <strong>{{ dashboard.period.full_label }}</strong>
+                </div>
+                <nav class="dna-scope-switch dna-period-switch" aria-label="Per&iacute;odo do DNA">
+                    {% for choice in dashboard.period.choices %}
+                        <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view={{ dna_view_mode }}&unidade={{ dna_member_customer_id|default:'' }}&periodo={{ choice.key }}"{% if choice.key == dashboard.period.key %} class="is-active"{% endif %}>{{ choice.label }}</a>
+                    {% endfor %}
+                </nav>
             </section>
         {% endif %}
 
@@ -134,6 +148,13 @@
                     <small>Desde {{ dashboard.relationship.since }}</small>
                 </div>
             </section>
+
+            {% if dashboard.metrics.orders == 0 %}
+                <section class="dna-panel dna-period-empty">
+                    <strong>Nenhum faturamento encontrado no per&iacute;odo selecionado.</strong>
+                    <p>O cliente tem hist&oacute;rico fora deste recorte. Ajuste o filtro de per&iacute;odo acima ou escolha &ldquo;Tudo&rdquo; para ver o hist&oacute;rico completo.</p>
+                </section>
+            {% endif %}
 
             <section class="dna-metrics">
                 <article class="dna-metric dna-panel tone-green">
@@ -180,6 +201,9 @@
                             <p>Os indicadores foram calculados, mas a geração dos insights OpenAI encontrou um erro.</p>
                         {% else %}
                             <p>Indicadores determinísticos preparados; o envio à IA ocorrerá somente sob comando.</p>
+                        {% endif %}
+                        {% if dashboard.period.key != 'all' %}
+                            <small class="dna-intelligence-period-note">Esta an&aacute;lise usa sempre o hist&oacute;rico completo do cliente, independente do filtro de per&iacute;odo selecionado acima ({{ dashboard.period.full_label }}).</small>
                         {% endif %}
                     </div>
                     <div class="dna-snapshot-meta">
@@ -340,7 +364,7 @@
             <section class="dna-chart-grid">
                 <article class="dna-panel dna-chart-card">
                     <div class="dna-panel-heading">
-                        <div><span>Evolução do faturamento</span><small>Receita anual (R$)</small></div>
+                        <div><span>Evolução do faturamento</span><small>Receita {% if dashboard.period.granularity == 'day' %}di&aacute;ria{% elif dashboard.period.granularity == 'month' %}mensal{% else %}anual{% endif %} (R$)</small></div>
                         <strong>{{ dashboard.metrics.revenue }}</strong>
                     </div>
                     <div class="dna-chart" data-chart="revenue" aria-label="Gráfico de evolução do faturamento"></div>
@@ -354,7 +378,7 @@
                 </article>
                 <article class="dna-panel dna-chart-card">
                     <div class="dna-panel-heading">
-                        <div><span>Frequência de pedidos</span><small>Pedidos únicos por ano</small></div>
+                        <div><span>Frequência de pedidos</span><small>Pedidos únicos por {% if dashboard.period.granularity == 'day' %}dia{% elif dashboard.period.granularity == 'month' %}mês{% else %}ano{% endif %}</small></div>
                         <strong class="purple">{{ dashboard.metrics.orders }}</strong>
                     </div>
                     <div class="dna-chart" data-chart="orders" aria-label="Gráfico de frequência de pedidos"></div>
@@ -481,7 +505,7 @@
                 </article>
             </section>
 
-            {{ dashboard.yearly|json_script:"dna-yearly-data" }}
+            {{ dashboard.series|json_script:"dna-series-data" }}
         {% endif %}
     </main>
 
@@ -552,7 +576,7 @@
                     } catch (error) {
                         button.disabled = false;
                         button.innerHTML = originalLabel;
-                        window.alert(error.message);
+                        window.dashesToast(error.message, 'error');
                         window.location.href = `${page.dataset.pageUrl}?${currentQuery.toString()}`;
                     }
                 });
@@ -621,9 +645,9 @@
                 if (event.key === 'Escape') results.hidden = true;
             });
 
-            const dataNode = document.getElementById('dna-yearly-data');
+            const dataNode = document.getElementById('dna-series-data');
             if (!dataNode) return;
-            const yearly = JSON.parse(dataNode.textContent);
+            const series = JSON.parse(dataNode.textContent);
             const formats = {
                 revenue: (value) => `R$ ${Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`,
                 weight: (value) => `${Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)} kg`,
@@ -633,12 +657,12 @@
 
             document.querySelectorAll('[data-chart]').forEach((container) => {
                 const key = container.dataset.chart;
-                const values = yearly.map((row) => Number(row[key] || 0));
+                const values = series.map((row) => Number(row[key] || 0));
                 const width = 680;
                 const height = 220;
                 const padding = { top: 22, right: 22, bottom: 34, left: 22 };
                 const max = Math.max(...values, 1);
-                const x = (index) => padding.left + (yearly.length === 1 ? (width - padding.left - padding.right) / 2 : index * (width - padding.left - padding.right) / (yearly.length - 1));
+                const x = (index) => padding.left + (series.length === 1 ? (width - padding.left - padding.right) / 2 : index * (width - padding.left - padding.right) / (series.length - 1));
                 const y = (value) => height - padding.bottom - (value / max) * (height - padding.top - padding.bottom);
                 const points = values.map((value, index) => `${x(index)},${y(value)}`).join(' ');
                 const areaPoints = `${padding.left},${height - padding.bottom} ${points} ${x(values.length - 1)},${height - padding.bottom}`;
@@ -655,10 +679,14 @@
                 area.setAttribute('points', areaPoints); area.setAttribute('fill', colors[key]); area.setAttribute('class', 'dna-chart-area'); svg.appendChild(area);
                 const polyline = document.createElementNS(svg.namespaceURI, 'polyline');
                 polyline.setAttribute('points', points); polyline.setAttribute('fill', 'none'); polyline.setAttribute('stroke', colors[key]); polyline.setAttribute('class', 'dna-chart-line'); svg.appendChild(polyline);
-                yearly.forEach((row, index) => {
+                series.forEach((row, index) => {
                     const dot = document.createElementNS(svg.namespaceURI, 'circle');
                     dot.setAttribute('cx', x(index)); dot.setAttribute('cy', y(values[index])); dot.setAttribute('r', 5); dot.setAttribute('fill', colors[key]); dot.setAttribute('class', 'dna-chart-dot');
                     const title = document.createElementNS(svg.namespaceURI, 'title'); title.textContent = `${row.label}: ${formats[key](values[index])}`; dot.appendChild(title); svg.appendChild(dot);
+                    // Serie mensal/diaria pode ter dezenas de pontos: so os
+                    // marcados como `tick` (mark_series_ticks, no backend)
+                    // ganham rotulo no eixo, senao o texto vira um borrao.
+                    if (row.tick === false) return;
                     const label = document.createElementNS(svg.namespaceURI, 'text');
                     label.setAttribute('x', x(index)); label.setAttribute('y', height - 9); label.setAttribute('text-anchor', 'middle'); label.setAttribute('class', 'dna-chart-label'); label.textContent = row.label; svg.appendChild(label);
                 });

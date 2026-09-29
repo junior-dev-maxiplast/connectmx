@@ -167,6 +167,7 @@ from .romaneio_bi import (
     ROMANEIO_BI_SYSTEM_PROMPT,
 )
 from .romaneio_bi_pdf import build_romaneio_bi_pdf
+from .bi_periods import period_choices
 from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
 from .models import (
     CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
@@ -1603,10 +1604,11 @@ def dashesCustomerDnaPage(request):
         customer_id = 10832
 
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
+    period_key = (request.GET.get("periodo") or "all").strip()
     dashboard = None
     data_error = None
     try:
-        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id)
+        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id, period_key)
         if dashboard and not dashboard["group"]["is_group_view"]:
             view_mode, member_customer_id = "individual", None
         if dashboard is None:
@@ -1623,6 +1625,11 @@ def dashesCustomerDnaPage(request):
             "customer_id": customer_id,
             "dna_view_mode": view_mode,
             "dna_member_customer_id": member_customer_id,
+            # Usados pelo filtro de periodo mesmo na tela de erro (dashboard
+            # None), para o usuario poder tentar outro recorte sem digitar a
+            # URL na mao.
+            "dna_period_key": period_key,
+            "dna_period_choices": period_choices(),
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
             "dashes_mode": True,
@@ -1653,10 +1660,11 @@ def customerDnaPage(request):
         customer_id = 10832
 
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
+    period_key = (request.GET.get("periodo") or "all").strip()
     dashboard = None
     data_error = None
     try:
-        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id)
+        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id, period_key)
         if dashboard and not dashboard["group"]["is_group_view"]:
             view_mode, member_customer_id = "individual", None
         if dashboard is None:
@@ -1674,6 +1682,8 @@ def customerDnaPage(request):
             "customer_id": customer_id,
             "dna_view_mode": view_mode,
             "dna_member_customer_id": member_customer_id,
+            "dna_period_key": period_key,
+            "dna_period_choices": period_choices(),
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
             "dna_search_url": reverse("customerDnaSearchApi"),
