@@ -279,11 +279,16 @@ def build_customer_dna_pdf(dashboard, snapshot):
     for title, values in comparison_specs:
         story.extend([styled_table(comparison_rows(title, values), [68 * mm, 36 * mm, 36 * mm, 36 * mm], header=True, repeat_rows=1), Spacer(1, 6)])
 
-    story.extend([Paragraph("Evolucao anual", styles["DnaSection"])])
-    yearly_rows = [[paragraph("Ano", "DnaTableHead"), paragraph("Faturamento", "DnaTableHead"), paragraph("Volume (kg)", "DnaTableHead"), paragraph("Pedidos", "DnaTableHead")]]
-    for row in dashboard.get("yearly") or []:
-        yearly_rows.append([paragraph(row.get("label"), "DnaBodySmall"), paragraph(f"R$ {row.get('revenue', 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "DnaBodySmall"), paragraph(f"{row.get('weight', 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "DnaBodySmall"), paragraph(row.get("orders"), "DnaBodySmall")])
-    story.extend([styled_table(yearly_rows, [28 * mm, 58 * mm, 52 * mm, 38 * mm], header=True, repeat_rows=1), Spacer(1, 8)])
+    series_granularity = (dashboard.get("period") or {}).get("granularity")
+    series_section_title, series_column_label = {
+        "day": ("Evolucao diaria", "Dia"),
+        "month": ("Evolucao mensal", "Mes"),
+    }.get(series_granularity, ("Evolucao anual", "Ano"))
+    story.extend([Paragraph(series_section_title, styles["DnaSection"])])
+    series_rows = [[paragraph(series_column_label, "DnaTableHead"), paragraph("Faturamento", "DnaTableHead"), paragraph("Volume (kg)", "DnaTableHead"), paragraph("Pedidos", "DnaTableHead")]]
+    for row in dashboard.get("series") or []:
+        series_rows.append([paragraph(row.get("label"), "DnaBodySmall"), paragraph(f"R$ {row.get('revenue', 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "DnaBodySmall"), paragraph(f"{row.get('weight', 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."), "DnaBodySmall"), paragraph(row.get("orders"), "DnaBodySmall")])
+    story.extend([styled_table(series_rows, [28 * mm, 58 * mm, 52 * mm, 38 * mm], header=True, repeat_rows=1), Spacer(1, 8)])
 
     product_rows = [[paragraph("Produto", "DnaTableHead"), paragraph("Faturamento", "DnaTableHead"), paragraph("Volume", "DnaTableHead"), paragraph("Participacao", "DnaTableHead")]]
     for product in dashboard.get("products") or []:

@@ -1,9 +1,12 @@
 import os
+import calendar
 import hashlib
 import json
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
+
+from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
 
 
 CUSTOMER_DNA_SQL = """
@@ -654,29 +657,104 @@ def _build_operational_data(complaint_rows, return_rows, cliche_rows, total_reve
     }
 
 
-def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, cliche_rows=None, scope=None):
-    if not rows:
+def _add_months(value, delta):
+    """Mesma semantica do ADD_MONTHS do Oracle: mesmo dia do mes de destino,
+    ou o ultimo dia valido quando o mes de destino for mais curto."""
+    total = value.year * 12 + (value.month - 1) + delta
+    year, month = divmod(total, 12)
+    month += 1
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(value.day, last_day))
+
+
+def _filter_rows_by_period(rows, period, date_field):
+    """Filtra linhas pelo periodo resolvido em `resolve_period`: mes fechado
+    (start/end), janela movel (months, de hoje para tras) ou sem filtro
+    ("all"). Mesma semantica de `_scope_sql` do BI de Romaneio, so que em
+    Python porque aqui os dados ja vieram inteiros do Oracle."""
+    if period.get("key") == "all":
+        return rows
+    start = period.get("start")
+    end = period.get("end")
+    if start and end:
+        return [
+            row for row in rows
+            if _date_value(row.get(date_field)) and start <= _date_value(row.get(date_field)) < end
+        ]
+    months = period.get("months")
+    if months:
+        cutoff = _add_months(date.today(), -months)
+        return [
+            row for row in rows
+            if _date_value(row.get(date_field)) and _date_value(row.get(date_field)) >= cutoff
+        ]
+    return rows
+
+
+def _build_series(rows, period):
+    """Serie de faturamento/volume/pedidos para os graficos de evolucao.
+
+    Com periodo "Tudo" (ou nenhum periodo informado), agrupa por ano -- o
+    historico pode cobrir varios anos e ano e a leitura certa nesse caso. Com
+    um recorte de periodo, agrupa pela granularidade daquele recorte (dia ou
+    mes), igual ao BI de Romaneio.
+    """
+    granularity = "year" if period.get("key") == "all" else period["granularity"]
+    buckets = defaultdict(lambda: {"revenue": Decimal("0"), "weight": Decimal("0"), "orders": set()})
+    for row in rows:
+        generation_date = _date_value(row.get("data_geracao"))
+        if not generation_date:
+            continue
+        if granularity == "year":
+            key = str(generation_date.year)
+        elif granularity == "month":
+            key = generation_date.strftime("%Y-%m")
+        else:
+            key = generation_date.isoformat()
+        bucket = buckets[key]
+        bucket["revenue"] += _number(row.get("valor_bruto_faturado"))
+        bucket["weight"] += _number(row.get("peso_bruto_faturado"))
+        bucket["orders"].add(str(row.get("pedido")))
+
+    series = [
+        {
+            "label": key if granularity == "year" else series_label(key, granularity),
+            "revenue": float(buckets[key]["revenue"]),
+            "weight": float(buckets[key]["weight"]),
+            "orders": len(buckets[key]["orders"]),
+        }
+        for key in sorted(buckets)
+    ]
+    mark_series_ticks(series)
+    return series, granularity
+
+
+def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, cliche_rows=None, scope=None, period=None, identity_rows=None):
+    # `identity_rows` (historico completo, sem filtro de periodo) so entra em
+    # jogo quando `rows` (ja filtrado pelo periodo escolhido) vier vazio: sem
+    # isso, filtrar por "1 mes" um cliente que nao compra todo mes derrubava a
+    # tela inteira na mensagem generica de "cliente nao encontrado".
+    identity_source = rows or identity_rows or []
+    if not identity_source:
         return None
 
-    first = rows[0]
+    period = period or resolve_period("all")
+    first = identity_source[0]
     total_revenue = sum((_number(row["valor_bruto_faturado"]) for row in rows), Decimal("0"))
     total_weight = sum((_number(row["peso_bruto_faturado"]) for row in rows), Decimal("0"))
     total_quantity = sum((_number(row["quantidade_faturada"]) for row in rows), Decimal("0"))
     invoices = {str(row["nota_fiscal"]) for row in rows if row["nota_fiscal"] is not None}
 
-    yearly = defaultdict(lambda: {"revenue": Decimal("0"), "weight": Decimal("0"), "orders": set()})
     product_totals = defaultdict(lambda: {"revenue": Decimal("0"), "weight": Decimal("0"), "quantity": Decimal("0")})
     orders = {}
     payment_conditions = defaultdict(int)
     representatives = defaultdict(int)
+    dated_dates = []
 
     for row in rows:
         generation_date = _date_value(row["data_geracao"])
         if generation_date:
-            bucket = yearly[generation_date.year]
-            bucket["revenue"] += _number(row["valor_bruto_faturado"])
-            bucket["weight"] += _number(row["peso_bruto_faturado"])
-            bucket["orders"].add(str(row["pedido"]))
+            dated_dates.append(generation_date)
 
         product_name = row["descricao_produto"] or f"Produto {row['codigo_produto']}"
         product = product_totals[product_name]
@@ -703,17 +781,7 @@ def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, c
         if row["representante_completo_pedido"]:
             representatives[row["representante_completo_pedido"]] += 1
 
-    yearly_rows = []
-    for year in sorted(yearly):
-        values = yearly[year]
-        yearly_rows.append(
-            {
-                "label": str(year),
-                "revenue": float(values["revenue"]),
-                "weight": float(values["weight"]),
-                "orders": len(values["orders"]),
-            }
-        )
+    series_rows, series_granularity = _build_series(rows, period)
 
     product_rows = []
     sorted_products = sorted(product_totals.items(), key=lambda item: item[1]["revenue"], reverse=True)
@@ -749,6 +817,10 @@ def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, c
     relationship_months = (relationship_days % 365) // 30
     average_ticket = total_revenue / len(orders) if orders else Decimal("0")
     average_value_kg = total_revenue / total_weight if total_weight else Decimal("0")
+    # Meses reais entre a primeira e a ultima data com faturamento no recorte:
+    # antes disso assumia "1 ano = 1 ponto da serie anual", o que so fazia
+    # sentido quando a serie era sempre agrupada por ano.
+    span_months = (_month_index(max(dated_dates)) - _month_index(min(dated_dates)) + 1) if dated_dates else 1
     top_payment = max(payment_conditions, key=payment_conditions.get) if payment_conditions else "Não informado"
     top_representative = max(representatives, key=representatives.get) if representatives else "Não informado"
     operational = _build_operational_data(
@@ -802,12 +874,20 @@ def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, c
         },
         "profile": {
             "main_product": product_rows[0]["name"] if product_rows else "Não informado",
-            "frequency": round(len(orders) / max(1, len(yearly_rows) * 12), 1),
+            "frequency": round(len(orders) / max(1, span_months), 1),
             "average_ticket": _format_money(average_ticket, compact=True),
             "payment_condition": top_payment,
             "products_count": len(product_totals),
         },
-        "yearly": yearly_rows,
+        "period": {
+            "key": period["key"],
+            "label": period["label"],
+            "range_label": period["range_label"],
+            "full_label": period["full_label"],
+            "granularity": series_granularity,
+            "choices": period_choices(),
+        },
+        "series": series_rows,
         "products": product_rows,
         "orders": order_rows,
         "operational": operational,
@@ -1731,14 +1811,20 @@ def prepare_customer_insights(customer_id, view_mode="individual", member_custom
     }
 
 
-def load_customer_dna(customer_id, view_mode="individual", member_customer_id=None):
+def load_customer_dna(customer_id, view_mode="individual", member_customer_id=None, period_key=None):
     scope = _resolve_customer_scope(customer_id, view_mode, member_customer_id)
     sources = _load_customer_sources(scope["customer_codes"])
+    # Default local "all" (nao o "12" padrao do bi_periods): quem nao mexe no
+    # filtro -- inclusive o PDF, que nunca passa period_key -- continua vendo
+    # o historico completo, como sempre viu.
+    period = resolve_period(period_key or "all")
     return _build_dashboard(
-        sources["sales"],
+        _filter_rows_by_period(sources["sales"], period, "data_geracao"),
         customer_id,
-        complaint_rows=sources["complaints"],
-        return_rows=sources["returns"],
-        cliche_rows=sources["cliches"],
+        complaint_rows=_filter_rows_by_period(sources["complaints"], period, "data_reclamacao"),
+        return_rows=_filter_rows_by_period(sources["returns"], period, "data_devolucao"),
+        cliche_rows=_filter_rows_by_period(sources["cliches"], period, "data_despache"),
         scope=scope,
+        period=period,
+        identity_rows=sources["sales"],
     )
