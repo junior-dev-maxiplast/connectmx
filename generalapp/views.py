@@ -61,9 +61,20 @@ def index(request):
     return render(request, "tiqueue/index.html")
 
 
+def _post_login_redirect_name(user):
+    """Painel interno para quem atende/administra; Portal de Chamados pro resto.
+
+    Quem não é atendente nem admin é solicitante puro: não tem o que fazer no
+    menu interno, então a tela principal dele já é o Portal.
+    """
+    if getattr(user, "is_support_staff", False):
+        return "index"
+    return "portalDemandPage"
+
+
 def loginPage(request):
     if request.user.is_authenticated:
-        return redirect("index")
+        return redirect(_post_login_redirect_name(request.user))
 
     error_message = None
     success_message = None
@@ -82,7 +93,7 @@ def loginPage(request):
                 require_https=request.is_secure(),
             ):
                 return redirect(redirect_to)
-            return redirect("index")
+            return redirect(_post_login_redirect_name(user))
         error_message = "Login ou senha invalidos."
 
     if request.GET.get("password_reset") == "1":
@@ -101,7 +112,7 @@ def loginPage(request):
 
 def forgotPasswordPage(request):
     if request.user.is_authenticated:
-        return redirect("index")
+        return redirect(_post_login_redirect_name(request.user))
 
     form = ForgotPasswordForm(request.POST or None)
 

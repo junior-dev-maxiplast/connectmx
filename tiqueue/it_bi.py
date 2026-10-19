@@ -37,7 +37,7 @@ ATTENDANT_NAMES = {
     "luiz.vatrin": "Luiz Vatrin",
 }
 
-COMPANY_NAMES = {2: "Magnaplast", 3: "Matriz", 4: "Ráfia", 5: "Serafina"}
+COMPANY_NAMES = {2: "Magnaplast", 3: "Matriz", 4: "Ráfia", 5: "Serafina", 6: "BigBag"}
 COMPANY_DEFAULT = "Diversos"
 
 # Status 6 e 13 ficam de fora, como na consulta original; 5 é "Fechado".
@@ -64,21 +64,41 @@ AGING_BUCKETS = [
 ]
 
 
+def _sm_credentials():
+    """Lê as credenciais do SM do ambiente — sem valor padrão para host/usuário/
+    senha de propósito: já existiu uma senha real commitada aqui como fallback
+    silencioso (quem esquecesse de configurar o .env caía direto na produção
+    sem perceber). Falta alguma e o erro é imediato e nomeado, em vez de
+    conectar num lugar errado ou cair num outro fallback por engano.
+    """
+    missing = [
+        name for name in ("SM_DB_HOST", "SM_DB_USER", "SM_DB_PASSWORD")
+        if not os.getenv(name)
+    ]
+    if missing:
+        raise RuntimeError(
+            "Configuração do SM incompleta — defina no .env: " + ", ".join(missing)
+        )
+    return {
+        "host": os.environ["SM_DB_HOST"],
+        "port": int(os.getenv("SM_DB_PORT", "3306")),
+        "db_name": os.getenv("SM_DB_NAME", "sm"),
+        "user": os.environ["SM_DB_USER"],
+        "password": os.environ["SM_DB_PASSWORD"],
+    }
+
+
 def _sm_connection():
     """Conexão com o banco do SM, tentando os drivers disponíveis na máquina."""
-    host = os.getenv("SM_DB_HOST", "192.168.0.209")
-    port = int(os.getenv("SM_DB_PORT", "3306"))
-    db_name = os.getenv("SM_DB_NAME", "sm")
-    db_user = os.getenv("SM_DB_USER", "sm_viewer")
-    db_pass = os.getenv("SM_DB_PASSWORD", "KcyVbd66h@UnvZ")
+    creds = _sm_credentials()
 
     driver_errors = []
     try:
         import pymysql  # type: ignore
 
         return pymysql.connect(
-            host=host, user=db_user, password=db_pass, database=db_name,
-            port=port, charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor,
+            host=creds["host"], user=creds["user"], password=creds["password"], database=creds["db_name"],
+            port=creds["port"], charset="utf8mb4", cursorclass=pymysql.cursors.DictCursor,
         ), "pymysql"
     except Exception as exc:
         driver_errors.append(f"pymysql: {exc}")
@@ -87,17 +107,36 @@ def _sm_connection():
         import mysql.connector  # type: ignore
 
         return mysql.connector.connect(
-            host=host, user=db_user, password=db_pass, database=db_name, port=port
+            host=creds["host"], user=creds["user"], password=creds["password"],
+            database=creds["db_name"], port=creds["port"],
         ), "mysql-connector"
     except Exception as exc:
         driver_errors.append(f"mysql-connector: {exc}")
 
-    raise RuntimeError("Nao foi possivel conectar no SM. " + " | ".join(driver_errors))
+    try:
+        import MySQLdb  # type: ignore
+
+        return MySQLdb.connect(
+            host=creds["host"], user=creds["user"], passwd=creds["password"], db=creds["db_name"],
+            port=creds["port"], charset="utf8mb4",
+        ), "mysqlclient"
+    except Exception as exc:
+        driver_errors.append(f"mysqlclient/MySQLdb: {exc}")
+
+    raise RuntimeError(
+        "Nao foi possivel conectar no SM. Instale um destes pacotes: "
+        "`pip install pymysql` ou `pip install mysql-connector-python`. "
+        "Detalhes: " + " | ".join(driver_errors)
+    )
 
 
 def _dict_cursor(connection, driver):
     if driver == "mysql-connector":
         return connection.cursor(dictionary=True)
+    if driver == "mysqlclient":
+        import MySQLdb  # type: ignore
+
+        return connection.cursor(MySQLdb.cursors.DictCursor)
     return connection.cursor()
 
 

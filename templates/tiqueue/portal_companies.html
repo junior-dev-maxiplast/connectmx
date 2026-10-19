@@ -1,0 +1,127 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Empresas do Helpdesk</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="support-portal-body support-admin-queue-body">
+    {% include 'partials/sidebar.html' %}
+
+    <div class="queue_main support-admin-page support-admin-queue-page">
+        {% include 'tiqueue/partials/portal_admin_nav.html' %}
+
+        {% if access_denied_message %}
+            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+        {% endif %}
+        {% if company_created_flag %}
+            <div class="support-banner is-success">Empresa cadastrada com sucesso.</div>
+        {% endif %}
+        {% if company_updated_flag %}
+            <div class="support-banner is-success">Empresa atualizada com sucesso.</div>
+        {% endif %}
+        {% if company_toggled_flag %}
+            <div class="support-banner is-success">Status da empresa atualizado com sucesso.</div>
+        {% endif %}
+
+        {% if can_manage %}
+            <section class="queue-dashboard support-pending-dashboard">
+                <article class="queue-dashboard-card support-pending-metric is-highlight">
+                    <span class="queue-dashboard-label">Empresas ativas</span>
+                    <strong class="queue-dashboard-value">{{ summary.active_companies }}/{{ summary.companies }}</strong>
+                </article>
+            </section>
+
+            <section id="portal-company-form" class="support-card support-admin-section">
+                <div class="support-card-head">
+                    <div>
+                        <span class="support-kicker">Parâmetro</span>
+                        <h2>{% if editing_company %}Editar empresa{% else %}Cadastrar empresa{% endif %}</h2>
+                    </div>
+                    {% if editing_company %}
+                        <a href="{% url 'portalCompanyConfigPage' %}#portal-company-form" class="support-btn support-btn-secondary">Cancelar edição</a>
+                    {% endif %}
+                </div>
+
+                <form method="POST" class="support-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="{% if editing_company %}update_company{% else %}create_company{% endif %}">
+                    {% if editing_company %}
+                        <input type="hidden" name="company_id" value="{{ editing_company.id }}">
+                    {% endif %}
+                    <div class="support-form-grid">
+                        <div class="support-field">
+                            <label for="{{ company_form.name.id_for_label }}">{{ company_form.name.label }}</label>
+                            {{ company_form.name }}
+                            {% if company_form.name.errors %}<div class="support-field-error">{{ company_form.name.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <label class="support-inline-checkbox">
+                            {{ company_form.is_active }}
+                            <span>{{ company_form.is_active.label }}</span>
+                        </label>
+                        <div class="support-field support-field-span-2">
+                            <label for="{{ company_form.description.id_for_label }}">{{ company_form.description.label }}</label>
+                            {{ company_form.description }}
+                            {% if company_form.description.errors %}<div class="support-field-error">{{ company_form.description.errors|join:", " }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div class="support-form-actions">
+                        <button type="submit" class="queue-primary-btn">{% if editing_company %}Salvar empresa{% else %}Adicionar empresa{% endif %}</button>
+                    </div>
+                </form>
+            </section>
+
+            {% if companies %}
+                <section class="support-card support-admin-section">
+                    <div class="support-card-head">
+                        <div>
+                            <span class="support-kicker">Estrutura</span>
+                            <h2>Empresas cadastradas</h2>
+                        </div>
+                    </div>
+                    <section class="support-card-list">
+                        {% for company in companies %}
+                            <article class="support-config-card{% if editing_company and editing_company.id == company.id %} is-active-edit{% endif %}">
+                                <div class="support-config-card-head">
+                                    <strong>{{ company.name }}</strong>
+                                    <span class="support-chip {% if company.is_active %}is-completed{% else %}is-cancelled{% endif %}">
+                                        {% if company.is_active %}Ativa{% else %}Inativa{% endif %}
+                                    </span>
+                                </div>
+                                <p>{{ company.description|default:"Sem descrição adicional." }}</p>
+                                {% if company.sm_organization_id %}
+                                    <div class="support-config-card-stats">
+                                        <span>SM: organization_id {{ company.sm_organization_id }}</span>
+                                    </div>
+                                {% endif %}
+                                <div class="support-config-card-actions">
+                                    <a href="{% url 'portalCompanyConfigPage' %}?edit_company={{ company.id }}#portal-company-form" class="support-btn support-btn-secondary">Editar</a>
+                                    <form method="POST" class="support-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="form_type" value="toggle_company">
+                                        <input type="hidden" name="company_id" value="{{ company.id }}">
+                                        <button type="submit" class="support-btn support-btn-secondary">
+                                            {% if company.is_active %}Desativar{% else %}Reativar{% endif %}
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                </section>
+            {% else %}
+                <div class="support-empty compact">
+                    <strong>Nenhuma empresa cadastrada</strong>
+                    <span>Cadastre aqui cada empresa do grupo que vai abrir chamado pelo ConnectMX Helpdesk.</span>
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+</body>
+</html>

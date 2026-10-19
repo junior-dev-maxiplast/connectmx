@@ -10,6 +10,16 @@ class User(AbstractUser):
     id_erp = models.CharField(max_length=50, blank=True, null=True)
     is_representative = models.BooleanField(default=False)
     representative_code = models.CharField(max_length=30, blank=True, null=True, db_index=True)
+    # Empresa do grupo a que este usuario pertence hoje. E o padrao sugerido ao
+    # abrir um chamado no portal (tiqueue.PortalDemand.company copia daqui na
+    # abertura); mudar o usuario de empresa nao reescreve chamados antigos.
+    company = models.ForeignKey(
+        "tiqueue.PortalCompany",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="users",
+    )
     is_system_admin = models.BooleanField(default=False)
     # Atendente da fila de TI. Separado de is_system_admin de proposito: quem
     # atende chamado nao precisa administrar o ConnectMX inteiro, e quem

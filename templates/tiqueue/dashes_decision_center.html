@@ -1,0 +1,503 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Central de Decisão</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <script src="{% static '/js/dashesFetch.js' %}"></script>
+    <script src="{% static '/js/dashesToast.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    <link rel="stylesheet" href="{% static '/style/decisionCenter.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="decisioncenter">
+    {% include 'partials/dashes_sidebar.html' %}
+
+    <main class="dc-page">
+        <header class="dc-topbar">
+            <div>
+                <span class="dc-kicker">Dashes · visão geral</span>
+                <h1>Central de Decisão</h1>
+            </div>
+            <div class="dc-topbar-right">
+                <div class="dc-status"><i></i> Atualizado agora · {{ updated_at|date:"d/m/Y H:i" }}</div>
+                <a class="dc-export-btn" href="{% url 'dashesDecisionCenterExportPdf' %}">Exportar relatório em PDF</a>
+            </div>
+        </header>
+
+        <div class="dc-shell">
+            {% if alerts %}
+            <section class="dc-panel">
+                <div class="dc-panel-head">
+                    <h2>Alertas ativos</h2>
+                    <span>{{ alerts|length }} ponto(s) fora da curva</span>
+                </div>
+                <div class="dc-alerts">
+                    {% for alert in alerts %}
+                    <div class="dc-alert is-{{ alert.severity }}{% if alert.acknowledged_at %} is-seen{% endif %}" data-alert-id="{{ alert.id }}">
+                        <div class="dc-alert-head">
+                            <strong>{{ alert.title }}</strong>
+                            <span class="dc-alert-tag">{{ alert.dashboard.name }}</span>
+                        </div>
+                        <p>{{ alert.message }}</p>
+                        <div class="dc-alert-foot">
+                            <small>{{ alert.scope_label|default:"" }}</small>
+                            {% if alert.acknowledged_at %}
+                            <span class="dc-alert-seen-tag">Ciente em {{ alert.acknowledged_at|date:"d/m H:i" }}</span>
+                            {% else %}
+                            <button type="button" class="dc-ack-btn" data-alert-id="{{ alert.id }}">Estou ciente</button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            <section class="dc-panel">
+                <div class="dc-panel-head">
+                    <h2>Painéis</h2>
+                    <span>{{ dashboards|length }} liberado(s) para você</span>
+                </div>
+                <div class="dc-cards">
+                    {% for dashboard in dashboards %}
+                    <article class="dc-card">
+                        <div class="dc-card-head">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">{{ dashboard.icon_path|safe }}</svg>
+                            <strong>{{ dashboard.name }}</strong>
+                        </div>
+
+                        {% with card=dashboard.center_card %}
+                        {% if dashboard.slug == "customer-dna" %}
+                            <div class="dc-card-kpis">
+                                <div><span>Clientes analisados</span><strong>{{ card.analyzed_count }}</strong></div>
+                                <div><span>Em estado crítico</span><strong class="is-critico">{{ card.health_counts.critico }}</strong></div>
+                            </div>
+                        {% elif card.available %}
+                            <div class="dc-card-kpis">
+                                {% for kpi in card.kpis %}
+                                <div><span>{{ kpi.label }}</span><strong>{{ kpi.value }}</strong></div>
+                                {% endfor %}
+                            </div>
+                            {% if card.sparkline %}
+                            <div class="dc-sparkline" title="Últimos {{ card.sparkline|length }} meses">
+                                {% for point in card.sparkline %}
+                                <i style="height: {{ point.height_pct }}%" title="{{ point.label }}"></i>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% if card.ai_health %}
+                            <div class="dc-health is-{{ card.ai_health }}">
+                                <span class="dc-health-dot"></span>
+                                <div>
+                                    <strong>{{ card.ai_summary }}</strong>
+                                    <small>Análise de {{ card.ai_at|date:"d/m/Y H:i" }}</small>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="dc-card-empty">Nenhuma análise de IA gerada ainda para este painel.</p>
+                            {% endif %}
+                        {% else %}
+                            <p class="dc-card-error">Indisponível agora{% if card.error %} — {{ card.error }}{% endif %}</p>
+                        {% endif %}
+                        {% endwith %}
+
+                        <a class="dc-card-link" href="{% url dashboard.url_name %}">Abrir painel completo →</a>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+
+            {% if qa_sources %}
+            <section class="dc-panel">
+                <div class="dc-panel-head">
+                    <h2>Pergunte aos dados</h2>
+                    <span>uma pergunta objetiva por vez, sobre um painel liberado para você</span>
+                </div>
+
+                <form class="dc-ask-form" id="dcAskForm">
+                    {% csrf_token %}
+                    <select name="source" required>
+                        <option value="">Sobre qual painel?</option>
+                        {% for source in qa_sources %}
+                        <option value="{{ source.slug }}">{{ source.label }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="question" placeholder="Ex.: quantos chamados de TI estão em aberto?" required maxlength="400">
+                    <button type="submit" id="dcAskButton">Perguntar</button>
+                </form>
+                <p class="dc-ask-hint">Responde com base nos últimos 3 meses do painel escolhido — sem filtro de
+                filial, etapa ou colaborador nesta versão.</p>
+
+                <div class="dc-ask-answer" id="dcAskAnswer" hidden>
+                    <span class="dc-ask-confidence" id="dcAskConfidence"></span>
+                    <p id="dcAskAnswerText"></p>
+                </div>
+
+                {% if recent_questions %}
+                <div class="dc-ask-history">
+                    <span class="dc-ask-history-label">Suas perguntas recentes</span>
+                    {% for q in recent_questions %}
+                    <div class="dc-ask-history-item">
+                        <div class="dc-ask-history-head">
+                            <strong>{{ q.question }}</strong>
+                            <small>{{ q.source_label }} · {{ q.created_at|date:"d/m H:i" }}</small>
+                        </div>
+                        {% if q.status == "completed" %}
+                        <p{% if q.data_available == False %} class="dc-card-error"{% endif %}>{{ q.answer }}</p>
+                        {% elif q.status == "error" %}
+                        <p class="dc-card-error">{{ q.ai_error }}</p>
+                        {% else %}
+                        <p class="dc-card-empty">Processando…</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
+
+            <section class="dc-panel" id="acoes-pendentes">
+                <div class="dc-panel-head">
+                    <h2>Ações pendentes</h2>
+                    <span>
+                        vindas de alerta, da análise de IA de cada painel, ou criadas à mão
+                        {% if actions_page.paginator.count %} · <span id="dcActionsTotal">{{ actions_page.paginator.count }}</span> no total{% endif %}
+                    </span>
+                </div>
+                <div class="dc-actions">
+                    {% for action in actions_page %}
+                    <div class="dc-action" data-action-id="{{ action.id }}">
+                        <span class="dc-action-tag">{{ action.dashboard.name }}</span>
+                        <p>{{ action.description }}</p>
+                        <div class="dc-action-controls">
+                            <select class="dc-action-status" data-action-id="{{ action.id }}" data-previous-value="{{ action.status }}">
+                                {% for value, label in action.STATUS_CHOICES %}
+                                <option value="{{ value }}" {% if value == action.status %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if action.assigned_to %}<small>Responsável: {{ action.assigned_to.get_full_name|default:action.assigned_to.username }}</small>{% endif %}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <p class="dc-card-empty">Nenhuma ação pendente.</p>
+                    {% endfor %}
+                </div>
+
+                {% if actions_page.paginator.num_pages > 1 %}
+                <div class="dc-pager">
+                    {% if actions_page.has_previous %}
+                    <a class="dc-pager-btn" href="?page={{ actions_page.previous_page_number }}#acoes-pendentes">‹ Anterior</a>
+                    {% endif %}
+                    {% for n in actions_page.paginator.page_range %}
+                        {% if n == actions_page.number %}
+                        <span class="dc-page-chip is-active">{{ n }}</span>
+                        {% else %}
+                        <a class="dc-page-chip" href="?page={{ n }}#acoes-pendentes">{{ n }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    {% if actions_page.has_next %}
+                    <a class="dc-pager-btn" href="?page={{ actions_page.next_page_number }}#acoes-pendentes">Próxima ›</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <form class="dc-action-form" id="dcActionForm">
+                    {% csrf_token %}
+                    <select name="dashboard_id" required>
+                        <option value="">Painel...</option>
+                        {% for dashboard in dashboards %}
+                        <option value="{{ dashboard.id }}">{{ dashboard.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="description" placeholder="Descreva uma ação..." required maxlength="500">
+                    <button type="submit">Adicionar</button>
+                </form>
+            </section>
+
+            {% if resolved_progress %}
+            <section class="dc-panel">
+                <div class="dc-panel-head">
+                    <h2>Isso realmente melhorou?</h2>
+                    <span>indicador de origem, antes e agora, para ações já concluídas</span>
+                </div>
+                <div class="dc-progress">
+                    {% for action, progress in resolved_progress %}
+                    <div class="dc-progress-item">
+                        <p>{{ action.description }}</p>
+                        <div class="dc-progress-values">
+                            <span>{{ progress.before|floatformat:0 }} → {{ progress.after|floatformat:0 }}</span>
+                            {% if progress.improved == True %}
+                            <em class="is-improved">Melhorou</em>
+                            {% elif progress.improved == False %}
+                            <em class="is-worsened">Piorou</em>
+                            {% else %}
+                            <em class="is-stable">Estável</em>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        </div>
+    </main>
+
+    <div class="bi-limit-overlay" id="biLimitOverlay" hidden>
+        <div class="bi-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="biLimitTitle">
+            <div class="bi-limit-icon" aria-hidden="true">!</div>
+            <h2 id="biLimitTitle">Limite diário de análises atingido</h2>
+            <p id="biLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+            <p class="bi-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="bi-limit-close" id="biLimitClose">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var ackUrlTemplate = "{% url 'dashesAlertAcknowledge' 0 %}";
+        var statusUrlTemplate = "{% url 'dashesActionUpdateStatus' 0 %}";
+        var createUrl = "{% url 'dashesActionCreate' %}";
+        var askUrl = "{% url 'dashesAskDataQuestion' %}";
+        var STATUS_LABELS = [
+            ['pending', 'Pendente'], ['in_progress', 'Em andamento'],
+            ['done', 'Concluída'], ['dismissed', 'Descartada'],
+        ];
+
+        function ackUrl(id) { return ackUrlTemplate.replace('/0/', '/' + id + '/'); }
+        function statusUrl(id) { return statusUrlTemplate.replace('/0/', '/' + id + '/'); }
+        var csrfToken = document.querySelector('#dcActionForm [name=csrfmiddlewaretoken]').value;
+
+        var overlay = document.getElementById('biLimitOverlay');
+        var closeButton = document.getElementById('biLimitClose');
+        function showLimit(message) {
+            if (!overlay) { return window.dashesToast(message, 'error'); }
+            if (message) { document.getElementById('biLimitText').textContent = message; }
+            overlay.hidden = false;
+        }
+        if (closeButton) { closeButton.addEventListener('click', function () { overlay.hidden = true; }); }
+        if (overlay) {
+            overlay.addEventListener('click', function (event) { if (event.target === overlay) { overlay.hidden = true; } });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay && !overlay.hidden) { overlay.hidden = true; }
+        });
+
+        function post(url, formData) {
+            return fetch(url, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            }).then(window.dashesReadJson);
+        }
+
+        function adjustActionsTotal(delta) {
+            var el = document.getElementById('dcActionsTotal');
+            if (!el) { return; }
+            el.textContent = String(Math.max(0, (parseInt(el.textContent, 10) || 0) + delta));
+        }
+
+        function maybeShowEmptyActionsState() {
+            var list = document.querySelector('.dc-actions');
+            if (list && !list.querySelector('.dc-action')) {
+                var empty = document.createElement('p');
+                empty.className = 'dc-card-empty';
+                empty.textContent = 'Nenhuma ação pendente.';
+                list.appendChild(empty);
+            }
+        }
+
+        // Delegação de evento em vez de wire() por elemento: cobre também a
+        // ação inserida depois de "Adicionar", sem precisar religar nada.
+        document.addEventListener('click', function (event) {
+            var button = event.target.closest('.dc-ack-btn');
+            if (!button) { return; }
+            var formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            button.disabled = true;
+            button.innerHTML = '<span class="bi-spinner"></span>';
+            post(ackUrl(button.dataset.alertId), formData).then(function () {
+                // Sem reload: reconhecer um alerta não muda mais nada na
+                // tela (nenhuma contagem, nenhuma outra seção depende disso).
+                var alertEl = button.closest('.dc-alert');
+                var foot = button.parentElement;
+                button.remove();
+                var tag = document.createElement('span');
+                tag.className = 'dc-alert-seen-tag';
+                tag.textContent = 'Ciente agora';
+                foot.appendChild(tag);
+                if (alertEl) { alertEl.classList.add('is-seen'); }
+                window.dashesToast('Alerta marcado como ciente.', 'success');
+            }).catch(function (error) {
+                button.disabled = false;
+                button.innerHTML = 'Estou ciente';
+                window.dashesToast(error.message, 'error');
+            });
+        });
+
+        document.addEventListener('change', function (event) {
+            var select = event.target.closest('.dc-action-status');
+            if (!select) { return; }
+            var formData = new FormData();
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            formData.append('status', select.value);
+            var row = select.closest('.dc-action');
+            var previousValue = select.dataset.previousValue || 'pending';
+            select.disabled = true;
+            post(statusUrl(select.dataset.actionId), formData).then(function () {
+                var leavesTheList = select.value === 'done' || select.value === 'dismissed';
+                if (leavesTheList && row) {
+                    // Concluída/Descartada some da lista de pendentes de
+                    // verdade no servidor - a animação só antecipa o que a
+                    // próxima visita já mostraria.
+                    row.classList.add('is-removing');
+                    adjustActionsTotal(-1);
+                    row.addEventListener('transitionend', function () {
+                        row.remove();
+                        maybeShowEmptyActionsState();
+                    }, { once: true });
+                } else if (row) {
+                    select.disabled = false;
+                    select.dataset.previousValue = select.value;
+                    row.classList.add('is-flashed');
+                    setTimeout(function () { row.classList.remove('is-flashed'); }, 900);
+                }
+                window.dashesToast('Status atualizado.', 'success');
+            }).catch(function (error) {
+                select.disabled = false;
+                select.value = previousValue;
+                window.dashesToast(error.message, 'error');
+            });
+        });
+
+        function buildActionRow(action) {
+            var row = document.createElement('div');
+            row.className = 'dc-action is-entering';
+            row.dataset.actionId = action.id;
+
+            var tag = document.createElement('span');
+            tag.className = 'dc-action-tag';
+            tag.textContent = action.dashboard_name;
+
+            var description = document.createElement('p');
+            description.textContent = action.description;
+
+            var controls = document.createElement('div');
+            controls.className = 'dc-action-controls';
+            var select = document.createElement('select');
+            select.className = 'dc-action-status';
+            select.dataset.actionId = action.id;
+            select.dataset.previousValue = 'pending';
+            STATUS_LABELS.forEach(function (pair) {
+                var option = document.createElement('option');
+                option.value = pair[0];
+                option.textContent = pair[1];
+                if (pair[0] === 'pending') { option.selected = true; }
+                select.appendChild(option);
+            });
+            controls.appendChild(select);
+
+            row.append(tag, description, controls);
+            return row;
+        }
+
+        var actionForm = document.getElementById('dcActionForm');
+        if (actionForm) {
+            actionForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var button = actionForm.querySelector('button');
+                button.disabled = true;
+                post(createUrl, new FormData(actionForm)).then(function (payload) {
+                    var list = document.querySelector('.dc-actions');
+                    var emptyState = list.querySelector('.dc-card-empty');
+                    if (emptyState) { emptyState.remove(); }
+                    var row = buildActionRow(payload.action);
+                    list.insertBefore(row, list.firstChild);
+                    // Força o navegador a aplicar o estado inicial antes de
+                    // tirar a classe - sem isso as duas mudanças acontecem
+                    // no mesmo frame e não hà nada para animar.
+                    void row.offsetWidth;
+                    requestAnimationFrame(function () { row.classList.remove('is-entering'); });
+                    adjustActionsTotal(1);
+                    actionForm.reset();
+                    window.dashesToast('Ação adicionada.', 'success');
+                }).catch(function (error) {
+                    window.dashesToast(error.message, 'error');
+                }).then(function () {
+                    button.disabled = false;
+                });
+            });
+        }
+
+        var askForm = document.getElementById('dcAskForm');
+        if (askForm) {
+            var askButton = document.getElementById('dcAskButton');
+            var askAnswer = document.getElementById('dcAskAnswer');
+            var askAnswerText = document.getElementById('dcAskAnswerText');
+            var askConfidence = document.getElementById('dcAskConfidence');
+            var confidenceLabels = { high: 'Confiança alta', medium: 'Confiança média', low: 'Confiança baixa' };
+
+            askForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (askButton.dataset.aiBlocked === '1') { return showLimit(); }
+                var original = askButton.innerHTML;
+                askButton.disabled = true;
+                askButton.innerHTML = '<span class="bi-spinner"></span> Perguntando...';
+                post(askUrl, new FormData(askForm)).then(function (payload) {
+                    if (payload.code === 'ai_daily_limit') {
+                        askButton.dataset.aiBlocked = '1';
+                        showLimit(payload.message);
+                        return;
+                    }
+                    if (payload.status !== 'ok') {
+                        throw new Error(payload.message || 'Falha ao perguntar.');
+                    }
+                    askAnswer.hidden = false;
+                    askAnswer.classList.toggle('is-insufficient', payload.data_available === false);
+                    askAnswerText.textContent = payload.answer;
+                    askConfidence.textContent = confidenceLabels[payload.confidence] || '';
+                }).catch(function (error) {
+                    window.dashesToast(error.message, 'error');
+                }).then(function () {
+                    askButton.disabled = false;
+                    askButton.innerHTML = original;
+                });
+            });
+        }
+
+        // Números dos cartões contam de 0 até o valor real ao abrir a tela -
+        // puramente cosmético, então respeita quem pediu menos animação.
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            document.querySelectorAll('.dc-card-kpis strong').forEach(function (el) {
+                var raw = el.textContent.trim();
+                var match = raw.match(/[\d.]+/);
+                if (!match) { return; }
+                var target = parseInt(match[0].replace(/\./g, ''), 10);
+                if (!target) { return; }
+                var prefix = raw.slice(0, match.index);
+                var suffix = raw.slice(match.index + match[0].length);
+                var duration = 700;
+                var start = null;
+                function step(timestamp) {
+                    if (!start) { start = timestamp; }
+                    var progress = Math.min((timestamp - start) / duration, 1);
+                    var eased = 1 - Math.pow(1 - progress, 3);
+                    if (progress < 1) {
+                        el.textContent = prefix + Math.round(target * eased).toLocaleString('pt-BR') + suffix;
+                        requestAnimationFrame(step);
+                    } else {
+                        el.textContent = raw;
+                    }
+                }
+                requestAnimationFrame(step);
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

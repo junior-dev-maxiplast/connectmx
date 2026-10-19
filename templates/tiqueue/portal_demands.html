@@ -7,10 +7,10 @@
     <title>ConnectMX | Portal de Chamados</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
-    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="support-portal-body">
+<body class="support-portal-body support-home-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
     <main class="support-shell support-home-shell">
@@ -18,71 +18,78 @@
             <div class="support-banner is-danger">{{ access_denied_message }}</div>
         {% endif %}
 
-        <section class="support-home-hero">
-            <article class="support-home-intro">
-                <span class="support-kicker">Portal do solicitante</span>
-                <h1>Abra, acompanhe e avalie suas demandas em um fluxo mais simples</h1>
-                <p>O in&iacute;cio do portal mostra apenas os indicadores principais. A partir daqui, voc&ecirc; escolhe se quer abrir uma nova solicita&ccedil;&atilde;o ou acompanhar as demandas j&aacute; registradas.</p>
-            </article>
+        <section class="support-home-header">
+            <span class="support-kicker">Portal do solicitante</span>
+            <h1>Ol&aacute;! O que voc&ecirc; precisa hoje?</h1>
+            <p>Abra uma demanda, acompanhe o andamento das suas e avalie o atendimento assim que ele for conclu&iacute;do.</p>
 
-            <aside class="support-home-actions-panel">
-                <div class="support-card-head">
-                    <div>
-                        <span class="support-kicker">Acesso r&aacute;pido</span>
-                        <h2>Escolha seu pr&oacute;ximo passo</h2>
+            {% if dashboard_cards %}
+                <div class="support-home-stats">
+                    {% for card in dashboard_cards %}
+                        <div class="support-home-stat">
+                            <span>{{ card.label }}</span>
+                            <strong>{{ card.value }}</strong>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="support-home-actions">
+            {% if pending_feedback %}
+                <a href="{% url 'portalMyDemandsPage' %}?feedback_required=1" class="support-home-action-card is-blocked">
+                    <div class="support-home-action-copy">
+                        <strong>Avalie para liberar a abertura</strong>
+                        <span>Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} conclu&iacute;do{{ pending_feedback|length|pluralize }} sem avalia&ccedil;&atilde;o.</span>
+                    </div>
+                </a>
+            {% elif can_request_portal %}
+                <a href="{% url 'portalDemandChatPage' %}" class="support-home-action-card is-primary">
+                    <div class="support-home-action-copy">
+                        <strong>🤖 Chatbot de Ajuda</strong>
+                        <span>Conte o que est&aacute; acontecendo e o assistente prepara o chamado pra voc&ecirc;.</span>
+                    </div>
+                </a>
+                <a href="{% url 'portalDemandCreatePage' %}" class="support-home-action-card">
+                    <div class="support-home-action-copy">
+                        <strong>Abrir manualmente</strong>
+                        <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>
+                    </div>
+                </a>
+            {% else %}
+                <div class="support-home-action-card">
+                    <div class="support-home-action-copy">
+                        <strong>Acesso de abertura pendente</strong>
+                        <span>Seu usu&aacute;rio ainda precisa ser vinculado a um colaborador e setor para abrir demandas ao TI.</span>
                     </div>
                 </div>
-
-                <div class="support-home-actions">
-                    {% if can_request_portal and pending_feedback %}
-                        <a href="{% url 'portalMyDemandsPage' %}?feedback_required=1" class="support-home-action-card is-blocked">
-                            <strong>Avalie para liberar a abertura</strong>
-                            <span>Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} conclu&iacute;do{{ pending_feedback|length|pluralize }} sem avalia&ccedil;&atilde;o. Avalie para abrir um novo chamado.</span>
-                        </a>
-                    {% elif can_request_portal %}
-                        <a href="{% url 'portalDemandCreatePage' %}" class="support-home-action-card is-primary">
-                            <strong>Abrir demanda</strong>
-                            <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>
-                        </a>
-                    {% else %}
-                        <div class="support-home-action-card">
-                            <strong>Acesso de abertura pendente</strong>
-                            <span>Seu usu&aacute;rio ainda precisa ser vinculado a um colaborador e setor para abrir demandas ao TI.</span>
-                        </div>
-                    {% endif %}
-                    <a href="{% url 'portalMyDemandsPage' %}" class="support-home-action-card">
-                        <strong>Minhas demandas</strong>
-                        <span>Ver andamento, conversar com o atendente e enviar feedback ap&oacute;s a conclus&atilde;o.</span>
-                    </a>
-                    {% if can_manage_portal %}
-                        <a href="{% url 'portalPendingDemandsPage' %}" class="support-home-action-card">
-                            <strong>Entrada de chamados</strong>
-                            <span>Assumir, responder e concluir os chamados abertos pelos solicitantes.</span>
-                        </a>
-                    {% endif %}
+            {% endif %}
+            <a href="{% url 'portalMyDemandsPage' %}" class="support-home-action-card">
+                <div class="support-home-action-copy">
+                    <strong>Minhas demandas</strong>
+                    <span>Ver andamento, conversar com o atendente e avaliar ap&oacute;s a conclus&atilde;o.</span>
                 </div>
-            </aside>
+            </a>
+            {% if can_manage_portal %}
+                <a href="{% url 'portalPendingDemandsPage' %}" class="support-home-action-card">
+                    <div class="support-home-action-copy">
+                        <strong>Entrada de chamados</strong>
+                        <span>Assumir, responder e concluir os chamados abertos pelos solicitantes.</span>
+                    </div>
+                </a>
+            {% endif %}
         </section>
 
-        <section class="support-home-bi-grid">
-            {% for card in dashboard_cards %}
-                <article class="support-home-bi-card is-{{ card.tone }}">
-                    <span>{{ card.label }}</span>
-                    <strong>{{ card.value }}</strong>
-                    <small>{{ card.hint }}</small>
-                </article>
-            {% endfor %}
-        </section>
-
-        <section class="support-home-insight-grid">
-            {% for insight in insight_cards %}
-                <article class="support-home-insight-card">
-                    <span>{{ insight.label }}</span>
-                    <strong>{{ insight.value }}</strong>
-                    <small>{{ insight.hint }}</small>
-                </article>
-            {% endfor %}
-        </section>
+        {% if insight_cards %}
+            <section class="support-home-insight-grid">
+                {% for insight in insight_cards %}
+                    <div class="support-home-insight-card">
+                        <span>{{ insight.label }}</span>
+                        <strong>{{ insight.value }}</strong>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endif %}
     </main>
 </body>
 </html>

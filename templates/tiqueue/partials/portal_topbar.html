@@ -8,16 +8,53 @@ Barra do portal. Dois modos:
   cena para não competir com o formulário e não dar saída acidental no meio do
   preenchimento.
 {% endcomment %}
-<header class="support-topbar{% if portal_topbar_focus %} is-focus{% endif %}">
+<header class="support-topbar{% if portal_topbar_focus %} is-focus{% endif %}{% if can_manage_portal %} is-staff{% endif %}">
     <div class="support-brand">
         <img src="{% static 'assets/cmx.png' %}" alt="ConnectMX" class="support-brand-mark">
         <div>
             <strong>ConnectMX</strong>
             <span>{{ portal_page_label|default:"Portal de Chamados" }}</span>
         </div>
+        <span class="support-role-badge{% if can_manage_portal %} is-staff{% endif %}">{% if can_manage_portal %}Atendente{% else %}Solicitante{% endif %}</span>
     </div>
 
     <div class="support-top-actions">
+        {% if not portal_topbar_focus %}
+            <details class="support-notif-menu">
+                <summary class="support-notif-bell" aria-label="Notificações">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                    {% if portal_notifications_unread_count %}<span class="support-topbar-badge support-notif-count">{{ portal_notifications_unread_count }}</span>{% endif %}
+                </summary>
+                <div class="support-notif-panel">
+                    <div class="support-notif-panel-head">
+                        <strong>Notificações</strong>
+                        {% if portal_notifications_unread_count %}
+                            <form method="POST" action="{% url 'portalNotificationsMarkAllRead' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="support-notif-mark-all">Marcar todas como lidas</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                    {% if portal_notifications %}
+                        <ul class="support-notif-list">
+                            {% for notification in portal_notifications %}
+                                <li>
+                                    <a href="{% url 'portalNotificationOpen' notification.pk %}" class="support-notif-item{% if not notification.is_read %} is-unread{% endif %}">
+                                        <strong>{{ notification.title }}</strong>
+                                        {% if notification.message %}<span>{{ notification.message }}</span>{% endif %}
+                                        <small>{{ notification.created_at|date:"d/m/Y H:i" }}</small>
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <div class="support-notif-empty">Nenhuma notifica&ccedil;&atilde;o por aqui ainda.</div>
+                    {% endif %}
+                </div>
+            </details>
+        {% endif %}
+
         <div class="theme-toggle">
             <span class="theme-icon" aria-hidden="true">&#9728;</span>
             <label class="theme-switch" title="Alternar tema">
@@ -36,7 +73,10 @@ Barra do portal. Dois modos:
             {% if can_request_portal %}
                 <a href="{% url 'portalDemandCreatePage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'create' %} is-active{% endif %}">Abrir demanda</a>
             {% endif %}
-            <a href="{% url 'portalMyDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'my-demands' %} is-active{% endif %}">Minhas demandas</a>
+            <a href="{% url 'portalMyDemandsPage' %}{% if pending_feedback_count %}?feedback_required=1{% endif %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'my-demands' %} is-active{% endif %}">
+                Minhas demandas
+                {% if pending_feedback_count %}<span class="support-topbar-badge" title="Avaliação pendente">{{ pending_feedback_count }}</span>{% endif %}
+            </a>
             {% if can_manage_portal %}
                 <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_nav_active == 'pending' %} is-active{% endif %}">Entrada de chamados</a>
             {% endif %}
@@ -50,3 +90,17 @@ Barra do portal. Dois modos:
         {% endif %}
     </div>
 </header>
+
+{% if not portal_topbar_focus %}
+    <script>
+        (function() {
+            const menu = document.querySelector(".support-notif-menu");
+            if (!menu) return;
+            document.addEventListener("click", function(event) {
+                if (menu.open && !menu.contains(event.target)) {
+                    menu.open = false;
+                }
+            });
+        })();
+    </script>
+{% endif %}

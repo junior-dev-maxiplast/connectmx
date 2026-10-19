@@ -16,6 +16,7 @@ from .models import (
     KnowledgeCategory,
     KnowledgeEntry,
     PortalCannedResponse,
+    PortalCompany,
     PortalDemandAttachment,
     Project,
     ProjectMilestone,
@@ -1042,6 +1043,7 @@ class PortalDemandFlowTests(TestCase):
         )
         self.group = TaskGroup.objects.create(name="Infraestrutura Portal")
         self.task_type = TaskType.objects.create(group=self.group, name="Acesso", color="#4567aa")
+        self.company, _ = PortalCompany.objects.get_or_create(name="Matriz")
 
     def test_requester_can_create_portal_demand(self):
         self.client.login(username="portal.requester", password="pw123456")
@@ -1095,6 +1097,7 @@ class PortalDemandFlowTests(TestCase):
             reverse("portalRequesterAdminPage"),
             {
                 "form_type": "create_collaborator",
+                "portal_collaborator-company": str(self.company.id),
                 "portal_collaborator-sector": str(sector.id),
                 "portal_collaborator-full_name": "Maria do Comercial",
                 "portal_collaborator-registration_code": "55001",
@@ -1357,6 +1360,66 @@ class PortalDemandFlowTests(TestCase):
                 related_message=message,
             ).exists()
         )
+
+    def test_attendant_can_log_multiple_worklog_shifts(self):
+        demand = PortalDemand.objects.create(
+            requester=self.requester,
+            title="Vários turnos de atendimento",
+            description="Demanda para validar apontamentos dedicados.",
+            task_group=self.group,
+            task_type=self.task_type,
+            assigned_to=self.admin,
+            status=PortalDemand.STATUS_ASSUMED,
+            assumed_at=timezone.now(),
+        )
+
+        self.client.login(username="portal.admin", password="pw123456")
+
+        first = self.client.post(
+            reverse("portalDemandDetailPage", args=[demand.id]),
+            {
+                "form_type": "worklog",
+                "work_date": "2026-07-14",
+                "work_start_time": "08:00",
+                "work_end_time": "09:30",
+                "description": "Levantamento inicial com o solicitante.",
+            },
+            follow=True,
+        )
+        self.assertEqual(first.status_code, 200)
+
+        # Turno que vira a noite: o fim deve cair no dia seguinte, não antes do início.
+        second = self.client.post(
+            reverse("portalDemandDetailPage", args=[demand.id]),
+            {
+                "form_type": "worklog",
+                "work_date": "2026-07-14",
+                "work_start_time": "22:00",
+                "work_end_time": "02:00",
+                "description": "Plantão noturno, reinício do serviço.",
+            },
+            follow=True,
+        )
+        self.assertEqual(second.status_code, 200)
+
+        worklog_messages = list(
+            PortalDemandMessage.objects.filter(demand=demand, work_started_at__isnull=False).order_by("id")
+        )
+        self.assertEqual(len(worklog_messages), 2)
+        self.assertTrue(all(message.is_internal for message in worklog_messages))
+        self.assertEqual(worklog_messages[0].worked_minutes, 90)
+        self.assertEqual(worklog_messages[1].worked_minutes, 240)
+        self.assertEqual(
+            worklog_messages[1].work_ended_at.date(),
+            worklog_messages[1].work_started_at.date() + timedelta(days=1),
+        )
+        self.assertEqual(
+            PortalDemandLog.objects.filter(demand=demand, event_type=PortalDemandLog.EVENT_WORKLOG).count(),
+            2,
+        )
+
+        detail_response = self.client.get(reverse("portalDemandDetailPage", args=[demand.id]))
+        self.assertContains(detail_response, '<div class="dd-total">5h 30min</div>', html=False)
 
     def test_requester_can_create_portal_demand_with_initial_attachment(self):
         self.client.login(username="portal.requester", password="pw123456")
@@ -1899,7 +1962,7 @@ class PortalDemandFlowTests(TestCase):
         response = self.client.get(reverse("portalDemandDetailPage", args=[demand.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Sugest&otilde;es r&aacute;pidas", html=False)
+        self.assertContains(response, "Sugestões rápidas", html=False)
         self.assertContains(response, "Liberacao padrao")
         self.assertContains(response, "mesmo tipo")
 

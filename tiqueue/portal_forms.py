@@ -1,5 +1,8 @@
+from datetime import datetime, timedelta
+
 from django import forms
 from django.db.models import Q
+from django.utils import timezone
 
 from accounts.models import User
 
@@ -12,7 +15,9 @@ from .forms import (
     TaskTypeSelect,
 )
 from .models import (
+    KnowledgeCategory,
     PortalCannedResponse,
+    PortalCompany,
     PortalDemandCustomField,
     PortalRequesterAccount,
     PortalRequesterCollaborator,
@@ -115,6 +120,91 @@ class PortalDemandReplyForm(forms.Form):
         return cleaned
 
 
+class PortalDemandWorklogForm(forms.Form):
+    """Apontamento de horas: um turno de trabalho na demanda.
+
+    Campo separado do formulário de resposta de propósito — quem atende quer
+    registrar vários turnos (manhã, tarde, outro dia) sem precisar escrever uma
+    mensagem de conversa a cada um. Data e horários entram separados porque é
+    assim que a pessoa pensa um turno, não como um único datetime.
+    """
+
+    work_date = forms.DateField(
+        required=True,
+        label="Dia",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    work_start_time = forms.TimeField(
+        required=True,
+        label="Hora inicial",
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    work_end_time = forms.TimeField(
+        required=True,
+        label="Hora final",
+        widget=forms.TimeInput(attrs={"type": "time"}),
+    )
+    description = forms.CharField(
+        required=True,
+        label="Descrição",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "O que foi feito nesse turno de atendimento.",
+            }
+        ),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        work_date = cleaned.get("work_date")
+        start_time = cleaned.get("work_start_time")
+        end_time = cleaned.get("work_end_time")
+        if not (work_date and start_time and end_time):
+            return cleaned
+
+        current_tz = timezone.get_current_timezone()
+        started_at = timezone.make_aware(datetime.combine(work_date, start_time), current_tz)
+        ended_naive = datetime.combine(work_date, end_time)
+        if end_time <= start_time:
+            # Turno vira a noite (ex.: 22:00 às 02:00): o fim é no dia seguinte.
+            ended_naive += timedelta(days=1)
+        ended_at = timezone.make_aware(ended_naive, current_tz)
+
+        if ended_at - started_at > timedelta(hours=18):
+            self.add_error("work_end_time", "Esse turno passou de 18h — confira o horário inicial e final.")
+        else:
+            cleaned["work_started_at"] = started_at
+            cleaned["work_ended_at"] = ended_at
+        return cleaned
+
+
+class PortalCompanyForm(forms.ModelForm):
+    class Meta:
+        model = PortalCompany
+        fields = ["name", "description", "is_active"]
+        labels = {
+            "name": "Nome da empresa",
+            "description": "Descrição",
+            "is_active": "Empresa ativa",
+        }
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "Ex.: Magnaplast, Matriz, Ráfia, Serafina"}),
+            "description": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "Observação opcional sobre esta empresa do grupo.",
+                }
+            ),
+        }
+
+    def clean_name(self):
+        return (self.cleaned_data.get("name") or "").strip()
+
+    def clean_description(self):
+        return (self.cleaned_data.get("description") or "").strip()
+
+
 class PortalRequesterSectorForm(forms.ModelForm):
     class Meta:
         model = PortalRequesterSector
@@ -144,8 +234,9 @@ class PortalRequesterSectorForm(forms.ModelForm):
 class PortalRequesterCollaboratorForm(forms.ModelForm):
     class Meta:
         model = PortalRequesterCollaborator
-        fields = ["sector", "full_name", "registration_code", "email", "role_title", "phone", "notes", "is_active"]
+        fields = ["company", "sector", "full_name", "registration_code", "email", "role_title", "phone", "notes", "is_active"]
         labels = {
+            "company": "Empresa",
             "sector": "Setor",
             "full_name": "Nome completo",
             "registration_code": "Matrícula",
@@ -156,6 +247,7 @@ class PortalRequesterCollaboratorForm(forms.ModelForm):
             "is_active": "Colaborador ativo",
         }
         widgets = {
+            "company": forms.Select(attrs={"class": "queue-select"}),
             "sector": forms.Select(attrs={"class": "queue-select"}),
             "full_name": forms.TextInput(attrs={"placeholder": "Ex.: João da Silva"}),
             "registration_code": forms.TextInput(attrs={"placeholder": "Ex.: 10025"}),
@@ -173,6 +265,14 @@ class PortalRequesterCollaboratorForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["sector"].queryset = PortalRequesterSector.objects.order_by("name")
+        self.fields["company"].queryset = PortalCompany.objects.order_by("name")
+        self.fields["company"].required = True
+        # Imutavel depois de cadastrado: uma vez que o colaborador tem empresa,
+        # a tela nao deixa mais trocar (ver comentario no campo do model). Um
+        # colaborador novo, ou um antigo que ainda nao tinha empresa, continua
+        # podendo escolher.
+        if self.instance and self.instance.pk and self.instance.company_id:
+            self.fields["company"].disabled = True
 
     def clean_full_name(self):
         return (self.cleaned_data.get("full_name") or "").strip()
@@ -433,6 +533,37 @@ class PortalCannedResponseForm(forms.ModelForm):
         return cleaned
 
 
+class PortalDemandDocumentForm(forms.Form):
+    """Documentação de solução: revisada pelo atendente antes de virar entrada da base."""
+
+    title = forms.CharField(max_length=180, label="Título")
+    trigger = forms.CharField(
+        label="Situação que gerou o chamado",
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )
+    impact = forms.CharField(required=False, label="Impacto", widget=forms.Textarea(attrs={"rows": 2}))
+    root_cause = forms.CharField(required=False, label="Causa", widget=forms.Textarea(attrs={"rows": 2}))
+    resolution = forms.CharField(
+        label="Como resolver",
+        widget=forms.Textarea(attrs={"rows": 5, "placeholder": "1. ...\n2. ..."}),
+    )
+    workaround = forms.CharField(
+        required=False,
+        label="Contorno temporário",
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )
+    tags = forms.CharField(required=False, max_length=220, label="Palavras-chave")
+    category = forms.ModelChoiceField(
+        queryset=KnowledgeCategory.objects.filter(is_active=True).order_by("sort_order", "name"),
+        required=False,
+        label="Categoria",
+    )
+    include_attachments = forms.BooleanField(required=False, initial=True, label="Incluir anexos do chamado")
+
+    def clean_title(self):
+        return (self.cleaned_data.get("title") or "").strip()
+
+
 __all__ = [
     "PortalDemandForm",
     "PortalDemandReplyForm",
@@ -445,4 +576,5 @@ __all__ = [
     "PortalDemandCustomFieldOptionForm",
     "PortalDemandSlaPolicyForm",
     "PortalCannedResponseForm",
+    "PortalDemandDocumentForm",
 ]

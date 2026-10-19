@@ -12,6 +12,7 @@
     <div class="support-admin-nav-links">
         <a href="{% url 'portalPendingDemandsPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'pending' %} is-active{% endif %}">Entrada de chamados</a>
         {% if can_configure %}
+            <a href="{% url 'portalCompanyConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'companies' %} is-active{% endif %}">Empresas</a>
             <a href="{% url 'portalRequesterAdminPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'requesters' %} is-active{% endif %}">Solicitantes</a>
             <a href="{% url 'portalDemandFieldsConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'fields' %} is-active{% endif %}">Campos de abertura</a>
             <a href="{% url 'portalDemandSlaConfigPage' %}" class="support-btn support-btn-secondary{% if portal_admin_nav_active == 'sla' %} is-active{% endif %}">SLA e metas</a>

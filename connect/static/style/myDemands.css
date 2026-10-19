@@ -1,0 +1,518 @@
+/* Minhas demandas: lista densa e silenciosa. Escala tipográfica pequena (base
+   13px, metadados 11px) e colunas fixas, para o cabeçalho e cada linha ficarem
+   alinhados. Prefixo md- para não depender das regras antigas de
+   supportPortal.css (mydemands, feedbackgate). */
+
+.md-body {
+    font-family: "Plus Jakarta Sans", "Open Sans", system-ui, sans-serif;
+}
+
+.md-page {
+    --md-ink: #1b2546;
+    --md-text: #3a4466;
+    --md-muted: #6d7596;
+    --md-faint: #9aa1bb;
+    --md-line: rgba(28, 58, 92, 0.09);
+    --md-line-strong: rgba(28, 58, 92, 0.18);
+    --md-primary: #2e6da4;
+    --md-primary-hover: #1c3a5c;
+    --md-surface: #ffffff;
+    --md-input: #ffffff;
+    --md-hover: rgba(46, 109, 164, 0.05);
+    --md-amber: #c7782a;
+
+    width: min(1080px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 16px 0 40px;
+    font-size: 13px;
+    color: var(--md-text);
+}
+
+html[data-theme="dark"] .md-page {
+    --md-ink: #eef2ff;
+    --md-text: rgba(238, 242, 255, 0.84);
+    --md-muted: rgba(214, 222, 245, 0.6);
+    --md-faint: rgba(214, 222, 245, 0.42);
+    --md-line: rgba(255, 255, 255, 0.07);
+    --md-line-strong: rgba(255, 255, 255, 0.15);
+    --md-primary: #3f7fbd;
+    --md-primary-hover: #2e6da4;
+    --md-surface: #171d34;
+    --md-input: #10152a;
+    --md-hover: rgba(138, 160, 232, 0.08);
+    --md-amber: #f0b26a;
+}
+
+/* ----- Avisos ----- */
+
+.md-notice {
+    margin-bottom: 10px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    font-size: 12.5px;
+}
+
+.md-notice.is-success { background: #e8f6ee; color: #1d6b45; border-color: #bfe5cf; }
+.md-notice.is-danger { background: #fbe9ec; color: #8d3945; border-color: #f1c3cb; }
+
+/* ----- Bloqueio por avaliação pendente ----- */
+
+.md-gate {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(199, 120, 42, 0.32);
+    background: rgba(199, 120, 42, 0.06);
+}
+
+.md-gate-text strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--md-ink);
+}
+
+.md-gate-text span {
+    display: block;
+    margin-top: 1px;
+    font-size: 11.5px;
+    color: var(--md-muted);
+}
+
+.md-gate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.md-gate-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--md-surface);
+    color: var(--md-ink);
+    text-decoration: none;
+    font-size: 12px;
+}
+
+.md-gate-item:hover { box-shadow: inset 0 0 0 1px var(--md-primary); }
+
+.md-gate-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.md-gate-cta {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: rgba(199, 120, 42, 0.16);
+    color: var(--md-amber);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* ----- Cabeçalho ----- */
+
+.md-top {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.md-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: var(--md-ink);
+}
+
+.md-sub {
+    margin: 2px 0 0;
+    font-size: 11.5px;
+    color: var(--md-muted);
+}
+
+.md-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--md-primary);
+    color: #fff;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.md-btn:hover { background: var(--md-primary-hover); }
+
+.md-btn--ghost {
+    background: transparent;
+    color: var(--md-ink);
+    border-color: var(--md-line-strong);
+}
+
+.md-btn--ghost:hover {
+    background: var(--md-hover);
+    border-color: var(--md-primary);
+}
+
+/* ----- Cartão da lista ----- */
+
+.md-card {
+    background: var(--md-surface);
+    border: 1px solid var(--md-line);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* Abas de status: uma linha só, com contagem discreta. */
+.md-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 8px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--md-line);
+    scrollbar-width: none;
+}
+
+.md-tabs::-webkit-scrollbar { display: none; }
+
+.md-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 10px 9px;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    color: var(--md-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.md-tab span {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(28, 58, 92, 0.07);
+    color: var(--md-muted);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.md-tab:hover { color: var(--md-ink); }
+
+.md-tab.is-active {
+    color: var(--md-ink);
+    border-bottom-color: var(--md-primary);
+}
+
+.md-tab.is-active span {
+    background: rgba(46, 109, 164, 0.14);
+    color: var(--md-primary);
+}
+
+html[data-theme="dark"] .md-tab span { background: rgba(255, 255, 255, 0.07); }
+
+/* Busca e ordenação na mesma linha. */
+.md-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.md-search,
+.md-select {
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--md-line-strong);
+    background: var(--md-input);
+    color: var(--md-ink);
+    font: inherit;
+    font-size: 12px;
+}
+
+.md-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 10px;
+}
+
+.md-select {
+    flex: 0 0 auto;
+    padding: 0 26px 0 10px;
+}
+
+.md-search:focus,
+.md-select:focus {
+    outline: none;
+    border-color: var(--md-primary);
+    box-shadow: 0 0 0 3px rgba(46, 109, 164, 0.16);
+}
+
+.md-search::placeholder { color: var(--md-faint); }
+
+/* ----- Lista: grade com colunas fixas (cabeçalho e linhas compartilham a grade) ----- */
+
+.md-head,
+.md-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px 128px 158px 132px;
+    align-items: center;
+    column-gap: 12px;
+    padding: 0 14px;
+}
+
+.md-head {
+    height: 30px;
+    border-bottom: 1px solid var(--md-line);
+    background: var(--md-hover);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--md-faint);
+}
+
+.md-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.md-row {
+    min-height: 46px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--md-line);
+    color: var(--md-text);
+    text-decoration: none;
+    transition: background-color 0.12s ease;
+}
+
+.md-row:last-child { border-bottom: 0; }
+.md-row:hover { background: var(--md-hover); }
+
+.md-row:focus-visible,
+.md-tab:focus-visible,
+.md-gate-item:focus-visible,
+.md-pager-btn:focus-visible,
+.md-btn:focus-visible {
+    outline: 2px solid var(--md-primary);
+    outline-offset: 2px;
+}
+
+.md-cell {
+    min-width: 0;
+    font-size: 12px;
+    color: var(--md-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.md-cell--main {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.md-title-line {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--md-ink);
+}
+
+.md-proto {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.03em;
+    color: var(--md-faint);
+    white-space: nowrap;
+}
+
+.md-cell--req {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.md-cell--date { white-space: nowrap; }
+
+.md-cell--last {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.md-last-label {
+    font-size: 10.5px;
+    color: var(--md-faint);
+}
+
+.md-cell--status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-self: start;
+}
+
+/* Chips pequenos: tons vindos do backend (is-pending, is-assumed...). */
+.md-chip {
+    --chip-bg: rgba(97, 104, 140, 0.12);
+    --chip-fg: #52597d;
+    display: inline-flex;
+    align-items: center;
+    height: 19px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--chip-bg);
+    color: var(--chip-fg);
+    font-size: 10.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.md-chip.is-pending { --chip-bg: #fdf0dc; --chip-fg: #9a6417; }
+.md-chip.is-assumed { --chip-bg: #e6effa; --chip-fg: #2a5f97; }
+.md-chip.is-waiting { --chip-bg: #efeaf8; --chip-fg: #5f4f9c; }
+.md-chip.is-completed { --chip-bg: #e2f4ea; --chip-fg: #1d6f49; }
+.md-chip.is-cancelled { --chip-bg: #fbe6ea; --chip-fg: #983a48; }
+
+html[data-theme="dark"] .md-chip.is-pending { --chip-bg: rgba(229, 168, 74, 0.16); --chip-fg: #f0c27a; }
+html[data-theme="dark"] .md-chip.is-assumed { --chip-bg: rgba(108, 159, 212, 0.18); --chip-fg: #a9cbef; }
+html[data-theme="dark"] .md-chip.is-waiting { --chip-bg: rgba(157, 141, 214, 0.2); --chip-fg: #d6cdf5; }
+html[data-theme="dark"] .md-chip.is-completed { --chip-bg: rgba(60, 170, 110, 0.18); --chip-fg: #9fe0bd; }
+html[data-theme="dark"] .md-chip.is-cancelled { --chip-bg: rgba(220, 86, 86, 0.18); --chip-fg: #ffb8c0; }
+
+/* No desktop o grupo de metadados vira três colunas da grade. */
+.md-meta { display: contents; }
+
+/* ----- Paginação e vazio ----- */
+
+.md-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--md-line);
+    font-size: 11.5px;
+    color: var(--md-muted);
+}
+
+.md-pager-nav {
+    display: flex;
+    gap: 6px;
+}
+
+.md-pager-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 7px;
+    border: 1px solid var(--md-line-strong);
+    color: var(--md-ink);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.md-pager-btn:hover {
+    border-color: var(--md-primary);
+    color: var(--md-primary);
+}
+
+.md-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.md-empty strong {
+    font-size: 13px;
+    color: var(--md-ink);
+}
+
+.md-empty span {
+    font-size: 12px;
+    color: var(--md-muted);
+}
+
+/* ----- Responsivo: abaixo de 820px a linha empilha e os rótulos aparecem ----- */
+
+@media (max-width: 820px) {
+    .md-page {
+        width: calc(100% - 20px);
+        padding-top: 10px;
+    }
+
+    .md-head { display: none; }
+
+    .md-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "main status"
+            "meta meta";
+        row-gap: 5px;
+        padding-top: 9px;
+        padding-bottom: 9px;
+    }
+
+    .md-cell--main { grid-area: main; }
+    .md-cell--status { grid-area: status; justify-self: end; }
+
+    .md-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 14px;
+        grid-area: meta;
+    }
+
+    .md-meta > .md-cell::before {
+        content: attr(data-label) ": ";
+        color: var(--md-faint);
+    }
+
+    .md-cell--last {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .md-toolbar { flex-wrap: wrap; }
+    .md-search { flex-basis: 100%; }
+    .md-select { flex: 1 1 auto; }
+}

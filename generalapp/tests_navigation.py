@@ -64,7 +64,17 @@ class NavigationCatalogTests(TestCase):
 
         self.assertEqual(
             labels,
-            ["Início", "Atendimento", "Projetos", "Operação", "Conhecimento", "ConnectMX Dashes", "Administração"],
+            [
+                "Início",
+                "Atendimento",
+                "Helpdesk",
+                "Projetos",
+                "Operação",
+                "Conhecimento",
+                "ConnectMX Dashes",
+                "Parâmetros do Helpdesk",
+                "Administração",
+            ],
         )
         # Nenhum grupo vira o balde que "Funcionalidades" era (39 itens).
         for group in build_menu(admin):

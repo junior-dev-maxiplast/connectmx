@@ -8,15 +8,15 @@
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
-    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="support-portal-body support-admin-queue-body">
-    {% include 'partials/sidebar.html' %}
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
 
-    <div class="queue_main support-admin-page support-admin-queue-page">
+    <main class="support-shell support-queue-shell">
         {% if access_denied_message %}
-            <div class="queue-banner queue-banner-danger">{{ access_denied_message }}</div>
+            <div class="support-banner is-danger">{{ access_denied_message }}</div>
         {% endif %}
 
         {% if assumed_flag %}
@@ -32,7 +32,11 @@
                 <header class="ticket-header">
                     <div class="ticket-header-top">
                         <div class="ticket-header-titles">
-                            <h1>Chamados</h1>
+                            <div class="ticket-header-title-row">
+                                <span class="ticket-header-accent" aria-hidden="true"></span>
+                                <h1>Chamados</h1>
+                                <span class="ticket-header-kicker">fila de atendimento &middot; assuma ou acompanhe os chamados abertos</span>
+                            </div>
                             <span class="ticket-header-sub">
                                 <span class="support-live-dot" aria-hidden="true"></span>
                                 <strong>{{ page_obj.paginator.count }}</strong> {{ current_view_label }}
@@ -68,7 +72,7 @@
                         <div class="ticket-kpi is-static">
                             <span class="ticket-kpi-value">
                                 {% if header_stats.csat_average %}
-                                    {{ header_stats.csat_average }}<small>/5</small>
+                                    {{ header_stats.csat_average }}<small>/10</small>
                                 {% else %}
                                     &mdash;
                                 {% endif %}
@@ -160,19 +164,30 @@
                                             <span class="support-chip support-chip-sm {{ ticket.status_render.css }}">{{ ticket.status_render.label }}</span>
                                         </td>
                                         <td class="ticket-col-priority">
-                                            <span class="ticket-priority-dot" style="background: {{ ticket.priority_render.color }};" title="{{ ticket.priority_render.label }}"></span>
+                                            <span class="ticket-priority-tag" style="--priority-color: {{ ticket.priority_render.color }};">{{ ticket.priority_render.label }}</span>
                                         </td>
                                         <td class="ticket-col-subject">
                                             <a href="{{ ticket.detail_url }}" class="ticket-protocol" onclick="event.stopPropagation()">{{ ticket.protocol }}</a>
                                             <span class="ticket-subject">{{ ticket.title }}</span>
                                         </td>
                                         <td class="ticket-col-person" title="{{ ticket.requester_display }}">
-                                            {{ ticket.requester_display }}
-                                            {% if ticket.requester_sector_display != "-" %}<span class="ticket-person-sector">{{ ticket.requester_sector_display }}</span>{% endif %}
+                                            <div class="ticket-person">
+                                                <span class="ticket-avatar-mini is-requester" aria-hidden="true">{{ ticket.requester_display|first|upper }}</span>
+                                                <div class="ticket-person-copy">
+                                                    <span class="ticket-person-name">{{ ticket.requester_display }}</span>
+                                                    <span class="ticket-person-meta">
+                                                        {% if ticket.company_display != "-" %}<span class="ticket-person-sector">{{ ticket.company_display }}</span>{% endif %}
+                                                        {% if ticket.requester_sector_display != "-" %}<span class="ticket-person-sector">{{ ticket.requester_sector_display }}</span>{% endif %}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td class="ticket-col-person">
                                             {% if ticket.assigned_to %}
-                                                <span title="{{ ticket.assigned_display }}">{{ ticket.assigned_display }}</span>
+                                                <div class="ticket-person">
+                                                    <span class="ticket-avatar-mini is-attendant" aria-hidden="true">{{ ticket.assigned_display|first|upper }}</span>
+                                                    <span class="ticket-person-name" title="{{ ticket.assigned_display }}">{{ ticket.assigned_display }}</span>
+                                                </div>
                                             {% else %}
                                                 <span class="ticket-unassigned">N&atilde;o atribu&iacute;do</span>
                                             {% endif %}
@@ -191,7 +206,7 @@
                                         </td>
                                         <td class="ticket-col-csat">
                                             {% if ticket.feedback_rating %}
-                                                <span class="ticket-csat-stars" title="{{ ticket.feedback_rating_label }}">{% for n in "12345" %}<span class="ticket-star{% if forloop.counter <= ticket.feedback_rating %} is-filled{% endif %}">&#9733;</span>{% endfor %}</span>
+                                                <span class="ticket-csat-score is-tier-{{ ticket.feedback_rating_tier }}">{{ ticket.feedback_rating }}/10</span>
                                             {% elif ticket.status == "completed" %}
                                                 <span class="ticket-csat-pending">Aguardando</span>
                                             {% else %}
@@ -236,7 +251,7 @@
                 {% endif %}
             </section>
         {% endif %}
-    </div>
+    </main>
 
     <script>
         (function() {

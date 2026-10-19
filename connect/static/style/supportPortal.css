@@ -7,11 +7,101 @@ body.support-portal-body {
     --support-surface-alt: rgba(246, 249, 255, 0.92);
     margin: 0;
     min-height: 100vh;
-    font-family: "Open Sans", sans-serif;
+    font-family: "Plus Jakarta Sans", "Open Sans", sans-serif;
     background:
         radial-gradient(circle at top right, rgba(88, 114, 211, 0.16), transparent 28%),
         linear-gradient(180deg, #eef2fb 0%, #e6ecf8 100%);
     color: var(--support-text-body);
+}
+
+/* ===================== Fundo animado do portal do solicitante =====================
+   Só nas telas que o solicitante mais olha — abertura (`.newticket-body`) e início
+   (`.support-home-body`). O resto do portal (listas, detalhe, admin) fica com o
+   fundo estático de sempre, sem competir com dados. */
+
+body.newticket-body,
+body.support-home-body {
+    position: relative;
+    overflow-x: hidden;
+}
+
+body.newticket-body::before,
+body.newticket-body::after,
+body.support-home-body::before,
+body.support-home-body::after {
+    content: "";
+    position: fixed;
+    z-index: 0;
+    border-radius: 50%;
+    filter: blur(75px);
+    pointer-events: none;
+    will-change: transform;
+}
+
+body.newticket-body::before,
+body.support-home-body::before {
+    top: -18%;
+    right: -10%;
+    width: 48vw;
+    height: 48vw;
+    background: radial-gradient(circle, rgba(0, 191, 99, 0.24), transparent 70%);
+    animation: newticketBlobA 24s ease-in-out infinite;
+}
+
+body.newticket-body::after,
+body.support-home-body::after {
+    bottom: -22%;
+    left: -12%;
+    width: 42vw;
+    height: 42vw;
+    background: radial-gradient(circle, rgba(88, 114, 211, 0.2), transparent 70%);
+    animation: newticketBlobB 28s ease-in-out infinite;
+}
+
+@keyframes newticketBlobA {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50%      { transform: translate(-5%, 6%) scale(1.1); }
+}
+
+@keyframes newticketBlobB {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50%      { transform: translate(6%, -4%) scale(1.06); }
+}
+
+.newticket-body .newticket-shell,
+.support-home-body .support-home-shell {
+    position: relative;
+    z-index: 1;
+}
+
+html[data-theme="dark"] body.newticket-body::before,
+html[data-theme="dark"] body.support-home-body::before {
+    background: radial-gradient(circle, rgba(0, 191, 99, 0.3), transparent 70%);
+}
+
+html[data-theme="dark"] body.newticket-body::after,
+html[data-theme="dark"] body.support-home-body::after {
+    background: radial-gradient(circle, rgba(88, 114, 211, 0.26), transparent 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.newticket-body::before,
+    body.newticket-body::after,
+    body.support-home-body::before,
+    body.support-home-body::after {
+        animation: none;
+    }
+}
+
+@media (max-width: 720px) {
+    body.newticket-body::before,
+    body.newticket-body::after,
+    body.support-home-body::before,
+    body.support-home-body::after {
+        width: 80vw;
+        height: 80vw;
+        filter: blur(55px);
+    }
 }
 
 .support-topbar {
@@ -19,25 +109,48 @@ body.support-portal-body {
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 16px 24px;
-    border-bottom: 1px solid rgba(70, 86, 140, 0.12);
-    background: rgba(255, 255, 255, 0.86);
-    backdrop-filter: blur(20px);
+    padding: 12px 24px;
+    border-bottom: 1px solid rgba(28, 58, 92, 0.10);
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(12px);
+    /* backdrop-filter cria contexto de empilhamento sozinho — sem position +
+       z-index aqui, esse contexto fica "sem ordem" (nível 0 por posição no
+       DOM) e o <main>, que vem depois no HTML, pinta por cima da barra
+       inteira onde se sobrepõem — painel de notificação incluso, mesmo ele
+       tendo z-index:40 lá dentro. */
+    position: relative;
+    z-index: 50;
+}
+
+/* Faixa com as cores do pinwheel da Maxiplast — marca o topo e separa a barra
+   do resto da tela, no lugar de depender só de tipografia/sombra pra isso. */
+.support-topbar::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #2E6DA4 0%, #3FA66B 25%, #F0B429 50%, #EF8B3A 75%, #E0564A 100%);
+}
+
+.support-topbar.is-focus::before {
+    content: none;
 }
 
 .support-brand {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
 }
 
 .support-brand-mark {
-    width: 44px;
-    height: 44px;
+    width: 28px;
+    height: 28px;
     object-fit: contain;
     border-radius: 6px;
-    background: rgba(48, 60, 112, 0.08);
-    padding: 5px;
+    background: transparent;
+    padding: 0;
 }
 
 .support-brand strong,
@@ -46,59 +159,445 @@ body.support-portal-body {
 }
 
 .support-brand strong {
-    font-size: 14px;
-    color: var(--support-text-strong);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: #1C3A5C;
 }
 
 .support-brand span {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--support-text-muted);
 }
 
 .support-top-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 2px;
     flex-wrap: wrap;
 }
 
 .support-top-actions form {
     margin: 0;
+    margin-left: 10px;
 }
 
+/* Navegação do topo em modo minimalista: links de texto, sem caixa nem
+   sombra por padrão — só ganham peso visual no hover/ativo. O botão de sair
+   também vira contorno fino, pra não competir com as ações reais da página. */
+.support-top-actions .support-btn-secondary {
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--support-text-muted);
+    font-weight: 600;
+    font-size: 12.5px;
+    box-shadow: none;
+}
+
+.support-top-actions .support-btn-secondary:hover {
+    background: rgba(46, 109, 164, 0.08);
+    color: #1C3A5C;
+}
+
+.support-top-actions .support-btn-secondary.is-active {
+    background: rgba(46, 109, 164, 0.10);
+    border-color: transparent;
+    color: #1C3A5C;
+}
+
+/* Selo de papel ao lado da marca — "Solicitante" azul (o normal) ou
+   "Atendente" roxo. Rótulo explícito, não só cor, porque quem atende a fila
+   também abre chamado pelo próprio nome às vezes, e a cor sozinha é fácil de
+   não notar na correria. */
+.support-role-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(46, 109, 164, 0.12);
+    color: #1C3A5C;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.support-role-badge.is-staff {
+    background: rgba(107, 70, 160, 0.14);
+    color: #6B46C1;
+}
+
+/* Modo atendente: a mesma barra, só troca o azul do solicitante pelo roxo —
+   sinal visual rápido de em qual papel a pessoa está navegando agora. */
+.support-topbar.is-staff .support-top-actions .support-btn-secondary:hover {
+    background: rgba(107, 70, 160, 0.1);
+    color: #4C2E8F;
+}
+
+.support-topbar.is-staff .support-top-actions .support-btn-secondary.is-active {
+    background: rgba(107, 70, 160, 0.14);
+    color: #4C2E8F;
+}
+
+.support-topbar.is-staff .support-top-actions form .support-btn:hover {
+    background: rgba(107, 70, 160, 0.08);
+    color: #4C2E8F;
+}
+
+.support-topbar.is-staff .support-notif-bell:hover {
+    background: rgba(107, 70, 160, 0.1);
+    color: #4C2E8F;
+}
+
+/* Painéis de abertura (início, formulário manual, chat) herdam o roxo do
+   atendente via seletor de irmão — a barra vem sempre antes do <main> no
+   corpo da página, em todo template do portal, então um ponto só de troca
+   (a classe acima) já alcança essas telas sem repetir a condição em cada
+   template. */
+.support-topbar.is-staff ~ main .support-home-action-card.is-primary {
+    border-left-color: #6B46C1;
+}
+
+.support-topbar.is-staff ~ main .support-home-action-card.is-primary strong {
+    color: #4C2E8F;
+}
+
+.support-topbar.is-staff ~ main .newticket-progress-fill {
+    background: #6B46C1;
+}
+
+.support-topbar.is-staff ~ main .aichat-header {
+    background: #4C2E8F;
+}
+
+.support-topbar.is-staff ~ main .aichat-send-btn {
+    background: #6B46C1;
+}
+
+.support-topbar.is-staff ~ main .aichat-send-btn:hover {
+    background: #4C2E8F;
+}
+
+.support-topbar.is-staff ~ main .aichat-bubble.is-user {
+    background: #e6def2;
+}
+
+.support-topbar.is-staff ~ main .aichat-summary-card h3 {
+    color: #4C2E8F;
+}
+
+.support-topbar.is-staff ~ main .aichat-footer-link a {
+    color: #6B46C1;
+}
+
+html[data-theme="dark"] .support-role-badge {
+    background: rgba(138, 160, 232, 0.16);
+    color: #bcd0f5;
+}
+
+html[data-theme="dark"] .support-role-badge.is-staff {
+    background: rgba(177, 139, 230, 0.2);
+    color: #cdb3ef;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff .support-top-actions .support-btn-secondary:hover,
+html[data-theme="dark"] .support-topbar.is-staff .support-top-actions form .support-btn:hover,
+html[data-theme="dark"] .support-topbar.is-staff .support-notif-bell:hover {
+    background: rgba(177, 139, 230, 0.16);
+    color: #e9e0f7;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff .support-top-actions .support-btn-secondary.is-active {
+    background: rgba(177, 139, 230, 0.2);
+    color: #e9e0f7;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff ~ main .aichat-bubble.is-user {
+    background: #3d2f57;
+    color: #e9edef;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff ~ main .aichat-header {
+    background: #2c2043;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff ~ main .aichat-send-btn {
+    background: #6B46C1;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff ~ main .aichat-summary-card h3,
+html[data-theme="dark"] .support-topbar.is-staff ~ main .aichat-footer-link a {
+    color: #cdb3ef;
+}
+
+html[data-theme="dark"] .support-topbar.is-staff ~ main .support-home-action-card.is-primary strong {
+    color: #e9e0f7;
+}
+
+.support-top-actions form .support-btn {
+    min-height: 32px;
+    padding: 0 14px;
+    background: transparent;
+    color: var(--support-text-muted);
+    border: 1px solid rgba(28, 58, 92, 0.16);
+    box-shadow: none;
+    font-weight: 600;
+    font-size: 12.5px;
+}
+
+.support-top-actions form .support-btn:hover {
+    background: rgba(28, 58, 92, 0.06);
+    color: #1C3A5C;
+    filter: none;
+}
+
+/* Selo de pendência no link do topo — avaliação esperando, em toda página do
+   portal, não só na home. Laranja porque é um lembrete, não um erro. */
+.support-topbar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 5px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #EF8B3A;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+/* Sino de notificações — <details>/<summary> nativo, sem JS pra abrir/fechar
+   (só pra fechar sozinho ao clicar fora, isso sim usa um fiapo de script). */
+.support-notif-menu {
+    position: relative;
+}
+
+.support-notif-menu > summary {
+    list-style: none;
+}
+
+.support-notif-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.support-notif-bell {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    color: var(--support-text-muted);
+    cursor: pointer;
+}
+
+.support-notif-bell:hover {
+    background: rgba(46, 109, 164, 0.08);
+    color: #1C3A5C;
+}
+
+.support-notif-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    margin-left: 0;
+}
+
+.support-notif-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 40;
+    width: 320px;
+    max-height: 70vh;
+    overflow-y: auto;
+    border: 1px solid rgba(28, 58, 92, 0.12);
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 18px 40px rgba(10, 14, 31, 0.16);
+}
+
+.support-notif-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(28, 58, 92, 0.1);
+}
+
+.support-notif-panel-head strong {
+    font-size: 13px;
+    color: var(--support-text-strong);
+}
+
+.support-notif-panel-head form {
+    margin: 0;
+}
+
+.support-notif-mark-all {
+    border: none;
+    background: transparent;
+    color: #2E6DA4;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+.support-notif-mark-all:hover {
+    text-decoration: underline;
+}
+
+.support-notif-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.support-notif-item {
+    display: block;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(28, 58, 92, 0.08);
+    text-decoration: none;
+    color: var(--support-text-body);
+}
+
+.support-notif-list li:last-child .support-notif-item {
+    border-bottom: none;
+}
+
+.support-notif-item:hover {
+    background: rgba(46, 109, 164, 0.05);
+}
+
+.support-notif-item.is-unread {
+    background: rgba(239, 139, 58, 0.06);
+    box-shadow: inset 3px 0 0 #EF8B3A;
+}
+
+.support-notif-item strong {
+    display: block;
+    font-size: 12.5px;
+    color: var(--support-text-strong);
+}
+
+.support-notif-item span {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--support-text-muted);
+}
+
+.support-notif-item small {
+    display: block;
+    margin-top: 4px;
+    font-size: 10.5px;
+    color: var(--support-text-soft);
+}
+
+.support-notif-empty {
+    padding: 18px 14px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--support-text-soft);
+}
+
+html[data-theme="dark"] .support-notif-panel {
+    background: #171d34;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .support-notif-panel-head {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .support-notif-item {
+    border-bottom-color: rgba(255, 255, 255, 0.06);
+    color: rgba(238, 242, 255, 0.88);
+}
+
+html[data-theme="dark"] .support-notif-item:hover {
+    background: rgba(138, 160, 232, 0.08);
+}
+
+html[data-theme="dark"] .support-notif-item.is-unread {
+    background: rgba(239, 139, 58, 0.1);
+}
+
+html[data-theme="dark"] .support-notif-bell:hover {
+    background: rgba(138, 160, 232, 0.14);
+    color: #eef2ff;
+}
+
+@media (max-width: 480px) {
+    .support-notif-panel {
+        position: fixed;
+        top: 60px;
+        right: 8px;
+        left: 8px;
+        width: auto;
+    }
+}
+
+/* Botão achatado, cor sólida — sem gradiente nem sombra pesada. É a cor de
+   marca (azul Maxiplast) para a ação principal; tudo que não é a ação
+   principal usa .support-btn-secondary (contorno) ou vira texto puro. */
 .support-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 7px;
     min-height: 36px;
-    padding: 0 14px;
-    border: 1px solid rgba(52, 63, 104, 0.2);
-    border-radius: 6px;
-    background: linear-gradient(180deg, #435799 0%, #34457c 100%);
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: #2E6DA4;
     color: #fff;
     text-decoration: none;
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-    box-shadow: 0 10px 18px rgba(52, 69, 124, 0.16);
-}
-
-.support-btn:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.04);
-}
-
-.support-btn-secondary {
-    background: rgba(255, 255, 255, 0.92);
-    color: var(--support-text-body);
+    transition: background-color 0.16s ease;
     box-shadow: none;
 }
 
+.support-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.support-btn:hover {
+    background: #1C3A5C;
+}
+
+.support-btn-secondary {
+    background: transparent;
+    border-color: rgba(46, 109, 164, 0.35);
+    color: #1C3A5C;
+    box-shadow: none;
+}
+
+.support-btn-secondary:hover {
+    background: rgba(46, 109, 164, 0.08);
+    border-color: rgba(46, 109, 164, 0.5);
+}
+
 .support-btn-secondary.is-active {
-    background: rgba(67, 87, 153, 0.12);
-    border-color: rgba(67, 87, 153, 0.26);
-    color: #29407d;
+    background: rgba(46, 109, 164, 0.12);
+    border-color: rgba(46, 109, 164, 0.5);
+    color: #1C3A5C;
 }
 
 .support-shell {
@@ -115,14 +614,17 @@ body.support-portal-body {
     margin-bottom: 16px;
 }
 
+/* Cartões achatados: hairline em vez de sombra pesada, no mesmo espírito
+   minimalista do início do portal — vale pra toda tela que reaproveita esses
+   blocos (fila, atendimento, admin, formulário de abertura). */
 .support-hero-copy,
 .support-stats,
 .support-card,
 .support-stat {
-    border: 1px solid rgba(70, 86, 140, 0.12);
+    border: 1px solid rgba(28, 58, 92, 0.12);
     border-radius: 8px;
     background: var(--support-surface);
-    box-shadow: 0 14px 28px rgba(49, 61, 108, 0.08);
+    box-shadow: none;
 }
 
 .support-hero-copy {
@@ -133,9 +635,9 @@ body.support-portal-body {
     display: inline-flex;
     align-items: center;
     padding: 5px 10px;
-    border-radius: 999px;
-    background: rgba(68, 89, 165, 0.12);
-    color: #3651a2;
+    border-radius: 5px;
+    background: rgba(46, 109, 164, 0.12);
+    color: #2E6DA4;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -354,8 +856,8 @@ body.support-portal-body {
     min-height: 24px;
     padding: 0 8px;
     border-radius: 999px;
-    background: rgba(67, 87, 153, 0.12);
-    color: #3651a2;
+    background: rgba(46, 109, 164, 0.12);
+    color: #2E6DA4;
     font-weight: 800;
 }
 
@@ -413,6 +915,133 @@ body.support-portal-body {
 
 .support-demand-code-link:hover {
     text-decoration: underline;
+}
+
+/* Minhas demandas: barra de filtro que recarrega a página (filtro, busca e
+   paginação de verdade no servidor — antes era tudo renderizado de uma vez e
+   escondido via JS, o que não aguenta um histórico de centenas de linhas) e
+   lista compacta, uma linha por demanda em vez do cartão grande de antes. */
+.support-mydemands-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.support-mydemands-search {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.support-mydemands-toolbar select {
+    flex: 0 0 auto;
+}
+
+.support-mydemands-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(28, 58, 92, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.support-mydemands-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 14px;
+    text-decoration: none;
+    color: var(--support-text-body);
+    background: var(--support-surface);
+    transition: background-color 0.14s ease;
+}
+
+.support-mydemands-row + .support-mydemands-row {
+    border-top: 1px solid rgba(28, 58, 92, 0.08);
+}
+
+.support-mydemands-row:hover {
+    background: rgba(46, 109, 164, 0.05);
+}
+
+.support-mydemands-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.support-mydemands-row-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.support-mydemands-row-top strong {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--support-text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.support-mydemands-row-top .support-demand-code {
+    flex-shrink: 0;
+    margin-top: 0;
+    font-size: 11.5px;
+}
+
+/* Linha de contexto — abertura, solicitante e última movimentação — era o
+   que sumiu quando a linha ficou compacta; volta aqui só como texto
+   pequeno, não como mais um bloco de cartão igual a versão antiga. */
+.support-mydemands-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 10px;
+    row-gap: 2px;
+    font-size: 11px;
+    color: var(--support-text-soft);
+}
+
+.support-mydemands-row-tags {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+    .support-mydemands-row {
+        flex-wrap: wrap;
+    }
+
+    .support-mydemands-row-main {
+        flex-basis: 100%;
+    }
+}
+
+html[data-theme="dark"] .support-mydemands-list {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="dark"] .support-mydemands-row {
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(238, 242, 255, 0.88);
+}
+
+html[data-theme="dark"] .support-mydemands-row + .support-mydemands-row {
+    border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .support-mydemands-row:hover {
+    background: rgba(138, 160, 232, 0.08);
+}
+
+html[data-theme="dark"] .support-mydemands-row-main strong {
+    color: #eef2ff;
 }
 
 .support-demand-meta,
@@ -500,6 +1129,24 @@ body.support-portal-body {
     border-color: rgba(97, 104, 140, 0.18);
 }
 
+/* Variantes genéricas de status (SLA e afins) — mesmas cores de
+   cancelada/concluída/assumida, só com nome que faz sentido fora do ciclo de
+   vida da demanda. */
+.support-chip.is-danger {
+    background: rgba(154, 85, 97, 0.16);
+    color: #7f3d49;
+}
+
+.support-chip.is-success {
+    background: rgba(45, 149, 102, 0.16);
+    color: #216944;
+}
+
+.support-chip.is-info {
+    background: rgba(77, 119, 217, 0.16);
+    color: #355bb2;
+}
+
 .support-demand-item-rich {
     padding: 18px;
     border-radius: 8px;
@@ -512,7 +1159,7 @@ body.support-portal-body {
 .support-demand-item-rich:hover {
     transform: translateY(-2px);
     border-color: rgba(70, 96, 176, 0.2);
-    box-shadow: 0 18px 34px rgba(52, 69, 124, 0.12);
+    box-shadow: 0 18px 34px rgba(28, 58, 92, 0.12);
 }
 
 .support-demand-stats-grid {
@@ -583,15 +1230,6 @@ body.support-portal-body {
     gap: 10px;
     flex-wrap: wrap;
     margin-top: 12px;
-}
-
-.support-admin-nav-links .support-btn {
-    min-height: 40px;
-    padding-inline: 16px;
-}
-
-.support-admin-nav-links .support-btn.is-active {
-    box-shadow: 0 12px 22px rgba(63, 85, 153, 0.18);
 }
 
 .support-admin-alert-shell {
@@ -757,7 +1395,7 @@ body.support-portal-body {
 
 .support-demand-item-selectable:hover {
     border-color: rgba(70, 96, 176, 0.24);
-    box-shadow: 0 18px 34px rgba(52, 69, 124, 0.12);
+    box-shadow: 0 18px 34px rgba(28, 58, 92, 0.12);
 }
 
 .support-demand-head-main {
@@ -792,8 +1430,8 @@ body.support-portal-body {
 }
 
 .support-demand-checkbox:checked + .support-demand-check-ui {
-    background: linear-gradient(180deg, #435799 0%, #34457c 100%);
-    border-color: rgba(52, 69, 124, 0.88);
+    background: linear-gradient(180deg, #2E6DA4 0%, #1C3A5C 100%);
+    border-color: rgba(28, 58, 92, 0.88);
 }
 
 .support-demand-checkbox:checked + .support-demand-check-ui::after {
@@ -891,7 +1529,7 @@ body.support-portal-body {
 body.support-admin-queue-body {
     margin: 0;
     min-height: 100vh;
-    font-family: "Open Sans", sans-serif;
+    font-family: "Plus Jakarta Sans", "Open Sans", sans-serif;
     background: var(--page-bg, #eef0fc);
     color: var(--page-text, #1c2242);
 }
@@ -910,8 +1548,116 @@ body.support-admin-queue-body {
     font-size: 12px;
 }
 
+/* Mesma correção da fila: esses botões vêm estilizados pro tema escuro da
+   sidebar interna (mainQueue.css); aqui sobrescrevemos pra ficarem claros e
+   achatados, iguais ao resto do portal. */
+.support-admin-queue-page .queue-primary-btn {
+    background: #2E6DA4;
+    border-color: rgba(28, 58, 92, 0.2);
+    box-shadow: none;
+}
+
+.support-admin-queue-page .queue-primary-btn:hover {
+    background: #1C3A5C;
+    box-shadow: none;
+}
+
+.support-admin-queue-page .queue-secondary-btn {
+    background: var(--surface-1, rgba(255, 255, 255, 0.95));
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.14));
+    color: var(--title-text, #1c2242);
+}
+
+.support-admin-queue-page .queue-secondary-btn:hover {
+    background: rgba(46, 109, 164, 0.08);
+    border-color: rgba(46, 109, 164, 0.3);
+}
+
+.support-admin-queue-page .queue-select {
+    background: rgba(28, 34, 66, 0.03);
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.16));
+    color: var(--page-text, #1c2242);
+    color-scheme: light;
+}
+
+.support-admin-queue-page .queue-select:focus {
+    border-color: rgba(46, 109, 164, 0.55);
+    box-shadow: 0 0 0 3px rgba(46, 109, 164, 0.14);
+}
+
+.support-admin-queue-page .queue-select option {
+    background-color: #fff;
+    color: var(--page-text, #1c2242);
+}
+
+html[data-theme="dark"] .support-admin-queue-page .queue-secondary-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(238, 242, 255, 0.88);
+}
+
+html[data-theme="dark"] .support-admin-queue-page .queue-secondary-btn:hover {
+    background: rgba(138, 160, 232, 0.12);
+    border-color: rgba(138, 160, 232, 0.3);
+}
+
+html[data-theme="dark"] .support-admin-queue-page .queue-select {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #eef2ff;
+    color-scheme: dark;
+}
+
+html[data-theme="dark"] .support-admin-queue-page .queue-select option {
+    background-color: #151a33;
+    color: #eef2ff;
+}
+
 .support-admin-queue-page .queue-toolbar {
     gap: 8px;
+}
+
+/* Sub-navegação do admin do portal (Empresas / Solicitantes / Campos / SLA /
+   Respostas): mesmo tratamento enxuto dos links do topo — texto, sem caixa
+   pesada, só ganha fundo leve no hover/ativo. */
+.support-admin-nav-links .support-btn {
+    min-height: 32px;
+    padding-inline: 12px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--support-text-muted);
+    box-shadow: none;
+    font-size: 12.5px;
+}
+
+.support-admin-nav-links .support-btn:hover {
+    background: rgba(46, 109, 164, 0.08);
+    color: #1C3A5C;
+}
+
+.support-admin-nav-links .support-btn.is-active {
+    background: rgba(46, 109, 164, 0.1);
+    border-color: transparent;
+    color: #1C3A5C;
+    box-shadow: none;
+}
+
+html[data-theme="dark"] .support-admin-nav-links .support-btn {
+    background: transparent;
+    border-color: transparent;
+    color: rgba(230, 236, 255, 0.72);
+}
+
+html[data-theme="dark"] .support-admin-nav-links .support-btn:hover {
+    background: rgba(138, 160, 232, 0.12);
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
+    background: rgba(138, 160, 232, 0.16);
+    border-color: transparent;
+    color: #eef2ff;
+    box-shadow: none;
 }
 
 .support-pending-dashboard {
@@ -1308,14 +2054,18 @@ body.support-admin-queue-body {
     width: min(1180px, calc(100% - 32px));
 }
 
+.support-thread-shell .support-card-head {
+    margin-bottom: 10px;
+}
+
 .support-thread-header-card,
 .support-thread-metric,
 .support-thread-timeline-card,
 .support-thread-reply-card {
-    border: 1px solid rgba(70, 86, 140, 0.12);
+    border: 1px solid rgba(28, 58, 92, 0.12);
     border-radius: 9px;
     background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 18px 40px rgba(49, 61, 108, 0.1);
+    box-shadow: none;
 }
 
 .support-thread-header-card {
@@ -1323,8 +2073,8 @@ body.support-admin-queue-body {
     align-items: flex-start;
     justify-content: space-between;
     gap: 18px;
-    padding: 24px 26px;
-    margin-bottom: 16px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
 }
 
 .support-thread-header-main {
@@ -1332,17 +2082,44 @@ body.support-admin-queue-body {
 }
 
 .support-thread-header-main h1 {
-    margin: 12px 0 10px;
+    margin: 6px 0 8px;
     color: #1e2851;
+    font-size: 18px;
+    line-height: 1.25;
 }
 
 .support-thread-subline {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
     color: rgba(32, 40, 74, 0.72);
-    font-size: 13px;
+    font-size: 12.5px;
+}
+
+.support-thread-avatar-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.support-thread-avatar-sm.is-requester {
+    background: #2d9566;
+}
+
+.support-thread-avatar-sm.is-attendant {
+    background: #2E6DA4;
+}
+
+.support-thread-subline-sep {
+    color: rgba(32, 40, 74, 0.32);
 }
 
 .support-thread-header-side {
@@ -1353,43 +2130,84 @@ body.support-admin-queue-body {
     flex-wrap: wrap;
 }
 
-.support-thread-metrics {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+/* Barra lateral: ações, detalhes e SLA empilhados ao lado da conversa — era
+   tudo espalhado em seções de largura total antes da conversa começar. */
+.support-thread-sidebar {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    margin-bottom: 18px;
+    position: sticky;
+    top: 18px;
 }
 
-.support-thread-metric {
-    padding: 18px 20px;
+.support-thread-details-card,
+.support-thread-sla-card-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-.support-thread-metric span {
-    display: block;
-    font-size: 12px;
-    color: rgba(32, 40, 74, 0.66);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+.support-thread-detail-list {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.support-thread-detail-list > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(28, 58, 92, 0.08);
+}
+
+.support-thread-detail-list > div:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.support-thread-detail-list dt {
+    font-size: 11.5px;
+    color: var(--support-text-muted);
+}
+
+.support-thread-detail-list dd {
+    margin: 0;
+    font-size: 12.5px;
     font-weight: 700;
+    color: var(--support-text-strong);
+    text-align: right;
 }
 
-.support-thread-metric strong {
-    display: block;
-    margin-top: 8px;
-    color: #1e2851;
-    font-size: 14px;
+.support-thread-sla-chips {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.support-thread-sla-chips .support-chip {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+    height: auto;
+    min-height: 26px;
+    line-height: 1.3;
+    padding: 5px 10px;
 }
 
 .support-thread-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-    gap: 18px;
+    gap: 12px;
     align-items: start;
 }
 
 .support-thread-timeline-card,
 .support-thread-reply-card {
-    padding: 22px;
+    padding: 16px;
 }
 
 .support-thread-timeline {
@@ -1410,7 +2228,7 @@ body.support-admin-queue-body {
 }
 
 .support-thread-message.is-attendant {
-    border-left: 4px solid rgba(67, 87, 153, 0.8);
+    border-left: 4px solid rgba(46, 109, 164, 0.8);
 }
 
 .support-thread-message-opening {
@@ -1438,11 +2256,11 @@ body.support-admin-queue-body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 28px;
-    padding: 0 10px;
+    min-height: 22px;
+    padding: 0 9px;
     border-radius: 999px;
-    background: rgba(67, 87, 153, 0.12);
-    color: #3651a2;
+    background: rgba(46, 109, 164, 0.12);
+    color: #2E6DA4;
     font-size: 11px;
     font-weight: 800;
     white-space: nowrap;
@@ -1454,8 +2272,8 @@ body.support-admin-queue-body {
 }
 
 .support-thread-role-chip.is-attendant {
-    background: rgba(67, 87, 153, 0.14);
-    color: #3651a2;
+    background: rgba(46, 109, 164, 0.14);
+    color: #2E6DA4;
 }
 
 .support-thread-role-chip.is-internal {
@@ -1483,8 +2301,8 @@ body.support-admin-queue-body {
     margin-top: 12px;
     padding: 12px 14px;
     border-radius: 7px;
-    border: 1px solid rgba(67, 87, 153, 0.12);
-    background: rgba(67, 87, 153, 0.08);
+    border: 1px solid rgba(46, 109, 164, 0.12);
+    background: rgba(46, 109, 164, 0.08);
 }
 
 .support-thread-worklog small {
@@ -1498,10 +2316,249 @@ body.support-admin-queue-body {
     min-height: 28px;
     padding: 0 12px;
     border-radius: 999px;
-    background: rgba(67, 87, 153, 0.16);
-    color: #3651a2;
+    background: rgba(46, 109, 164, 0.16);
+    color: #2E6DA4;
     font-size: 12px;
     font-weight: 800;
+}
+
+/* Apontamento de horas: cartão próprio, com a lista de turnos (reaproveita o
+   visual do log da demanda) em cima do formulário de um novo turno. */
+.support-thread-worklog-section {
+    margin-top: 12px;
+    padding: 16px;
+}
+
+.support-thread-worklog-list {
+    margin-bottom: 18px;
+}
+
+.support-thread-worklog-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.support-thread-worklog-fields .support-field-span-3 {
+    grid-column: span 3;
+}
+
+@media (max-width: 640px) {
+    .support-thread-worklog-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .support-thread-worklog-fields .support-field-span-3 {
+        grid-column: span 1;
+    }
+}
+
+/* Painel de ações: o que antes eram 3 cartões grandes (transferir, encerrar,
+   reabrir) sempre abertos na página virou uma barra de botões — o formulário
+   só aparece quando a pessoa clica, dentro de um modal. */
+.support-thread-actions-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.support-thread-actions-status {
+    margin: 0;
+}
+
+.support-thread-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.support-thread-actions-row form {
+    margin: 0;
+}
+
+/* Menu "Mais ações": <details>/<summary> nativo, sem JS pra abrir/fechar —
+   só um toque de JS pra fechar ao clicar fora ou escolher um item. Junta as
+   ações menos usadas (transferir, aguardar, retomar, reabrir, cancelar) pra
+   não competir visualmente com Responder/Concluir. */
+.support-menu {
+    position: relative;
+}
+
+.support-menu summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.support-menu summary::-webkit-details-marker,
+.support-menu summary::marker {
+    display: none;
+    content: "";
+}
+
+.support-menu summary::after {
+    content: "";
+    display: inline-block;
+    margin-left: 6px;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+
+.support-menu[open] summary::after {
+    transform: translateY(1px) rotate(-135deg);
+}
+
+.support-menu-panel {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 6px);
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 210px;
+    padding: 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(28, 58, 92, 0.12);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 16px 32px rgba(10, 14, 31, 0.16);
+}
+
+.support-menu-panel form {
+    margin: 0;
+}
+
+.support-menu-panel button {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    padding: 9px 10px;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--support-text-body);
+    cursor: pointer;
+}
+
+.support-menu-panel button svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    color: var(--support-text-muted);
+}
+
+.support-menu-panel button.is-danger svg {
+    color: #963f4c;
+}
+
+.support-menu-panel button:hover {
+    background: rgba(46, 109, 164, 0.08);
+}
+
+.support-menu-panel button.is-danger {
+    color: #963f4c;
+}
+
+.support-menu-panel button.is-danger:hover {
+    background: rgba(181, 89, 101, 0.1);
+}
+
+html[data-theme="dark"] .support-menu-panel {
+    background: #1b2140;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .support-menu-panel button {
+    color: rgba(238, 242, 255, 0.9);
+}
+
+html[data-theme="dark"] .support-menu-panel button:hover {
+    background: rgba(138, 160, 232, 0.14);
+}
+
+html[data-theme="dark"] .support-menu-panel button.is-danger {
+    color: #ff8f9c;
+}
+
+/* Modal nativo (<dialog>): sem biblioteca — abre com showModal() num botão
+   data-open-modal, fecha no X, no fundo ou com Esc (de graça, do próprio
+   elemento). Reduz o que fica renderizado na tela por padrão. */
+.support-modal {
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    width: min(560px, calc(100% - 32px));
+    max-height: 85vh;
+    background: rgba(255, 255, 255, 0.98);
+    color: var(--support-text-body);
+    box-shadow: 0 24px 60px rgba(10, 14, 31, 0.28);
+}
+
+.support-modal::backdrop {
+    background: rgba(10, 14, 31, 0.5);
+}
+
+.support-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px 0;
+}
+
+.support-modal-head h2 {
+    margin: 4px 0 0;
+    font-size: 15px;
+    color: var(--support-text-strong);
+}
+
+.support-modal-close {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--support-text-soft);
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+
+.support-modal-close:hover {
+    background: rgba(28, 58, 92, 0.08);
+    color: #1C3A5C;
+}
+
+.support-modal-body {
+    padding: 14px 18px 18px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+html[data-theme="dark"] .support-modal {
+    background: #171d34;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="dark"] .support-modal::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme="dark"] .support-modal-head h2 {
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-modal-close:hover {
+    background: rgba(138, 160, 232, 0.14);
+    color: #eef2ff;
 }
 
 .support-thread-attachments {
@@ -1596,8 +2653,8 @@ body.support-admin-queue-body {
 }
 
 .support-thread-management-card {
-    margin-bottom: 18px;
-    padding: 18px;
+    margin-bottom: 0;
+    padding: 12px 14px;
     border-radius: 8px;
     border: 1px solid rgba(70, 86, 140, 0.12);
     background: rgba(246, 249, 255, 0.92);
@@ -1606,8 +2663,8 @@ body.support-admin-queue-body {
 .support-thread-management-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    margin-bottom: 18px;
+    gap: 10px;
+    margin-bottom: 12px;
 }
 
 .support-thread-management-card.is-danger-zone {
@@ -1618,13 +2675,13 @@ body.support-admin-queue-body {
 .support-thread-management-copy {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-bottom: 14px;
+    gap: 4px;
+    margin-bottom: 8px;
 }
 
 .support-thread-management-copy strong {
     color: #1f2950;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .support-thread-management-copy span {
@@ -1645,16 +2702,24 @@ body.support-admin-queue-body {
 }
 
 .support-btn-danger {
-    background: linear-gradient(180deg, #c45b6b 0%, #a94453 100%);
-    border-color: rgba(127, 39, 56, 0.26);
-    box-shadow: 0 10px 18px rgba(135, 51, 67, 0.18);
+    background: #a94453;
+    border-color: transparent;
+}
+
+.support-btn-danger:hover {
+    background: #8a3542;
 }
 
 .support-btn-soft-danger {
-    background: rgba(255, 255, 255, 0.92);
+    background: transparent;
     color: #963f4c;
-    border-color: rgba(181, 89, 101, 0.24);
+    border-color: rgba(181, 89, 101, 0.4);
     box-shadow: none;
+}
+
+.support-btn-soft-danger:hover {
+    background: rgba(181, 89, 101, 0.08);
+    border-color: rgba(181, 89, 101, 0.55);
 }
 
 .support-thread-transfer-form {
@@ -1716,7 +2781,7 @@ body.support-admin-queue-body {
 }
 
 .support-thread-log-side strong {
-    color: #3651a2;
+    color: #2E6DA4;
     font-size: 13px;
 }
 
@@ -1729,10 +2794,10 @@ body.support-admin-queue-body {
 
 .support-thread-extra-card,
 .support-portal-field-card {
-    border: 1px solid rgba(70, 86, 140, 0.12);
+    border: 1px solid rgba(28, 58, 92, 0.12);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 12px 26px rgba(49, 61, 108, 0.08);
+    box-shadow: none;
 }
 
 .support-thread-extra-card {
@@ -1844,90 +2909,131 @@ body.support-admin-queue-body {
 }
 
 .support-home-shell {
-    width: min(1180px, calc(100% - 32px));
+    width: min(760px, calc(100% - 32px));
 }
 
-.support-home-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
-    gap: 16px;
-    margin-bottom: 16px;
+/* Início minimalista: sem blob animado atrás, sem vidro fosco, sem cartões
+   grandes em grid — uma coluna só, hairlines no lugar de sombra, e a cor da
+   Maxiplast (navy/azul do pinwheel) só onde guia a ação principal. */
+body.support-home-body::before,
+body.support-home-body::after {
+    content: none;
 }
 
-.support-home-intro,
-.support-home-actions-panel,
-.support-home-bi-card,
-.support-home-insight-card,
-.support-page-hero-copy,
-.support-page-mini-metrics,
-.support-page-tip-card {
-    border: 1px solid rgba(70, 86, 140, 0.12);
-    border-radius: 8px;
-    background: var(--support-surface);
-    box-shadow: 0 14px 28px rgba(49, 61, 108, 0.08);
+.support-home-header {
+    padding: 8px 0 22px;
 }
 
-.support-home-intro,
-.support-home-actions-panel {
-    padding: 20px;
+.support-home-header h1 {
+    margin: 10px 0 6px;
+    color: #1C3A5C;
+    font-size: clamp(19px, 3vw, 26px);
+    line-height: 1.2;
+    font-weight: 700;
 }
 
-.support-home-intro h1,
-.support-page-hero-copy h1 {
-    margin: 10px 0 8px;
-    color: var(--support-text-strong);
-    font-size: clamp(17px, 3vw, 30px);
-    line-height: 1.12;
-}
-
-.support-home-intro p,
-.support-page-hero-copy p {
+.support-home-header p {
     margin: 0;
-    color: var(--support-text-body);
-    line-height: 1.55;
+    color: var(--support-text-muted);
+    line-height: 1.5;
     font-size: 13px;
+    max-width: 48ch;
+}
+
+.support-home-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    margin: 20px 0 26px;
+    border-top: 1px solid rgba(28, 58, 92, 0.10);
+    border-bottom: 1px solid rgba(28, 58, 92, 0.10);
+}
+
+.support-home-stat {
+    flex: 1 1 140px;
+    padding: 14px 18px 14px 0;
+    border-left: 1px solid rgba(28, 58, 92, 0.10);
+}
+
+.support-home-stat:first-child {
+    border-left: none;
+    padding-left: 0;
+}
+
+.support-home-stat span {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--support-text-soft);
+}
+
+.support-home-stat strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1C3A5C;
 }
 
 .support-home-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
 }
 
 .support-home-action-card {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: 112px;
-    padding: 16px;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(28, 58, 92, 0.12);
     border-radius: 7px;
-    border: 1px solid rgba(70, 86, 140, 0.12);
-    background: rgba(246, 249, 255, 0.9);
     color: var(--support-text-body);
     text-decoration: none;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    background: var(--support-surface);
+    transition: background-color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
 }
 
 .support-home-action-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(67, 87, 153, 0.26);
-    box-shadow: 0 16px 28px rgba(52, 69, 124, 0.12);
+    background: rgba(46, 109, 164, 0.05);
+    border-color: rgba(46, 109, 164, 0.28);
+}
+
+.support-home-action-copy {
+    display: block;
+    min-width: 0;
 }
 
 .support-home-action-card strong {
-    font-size: 14px;
+    display: block;
+    font-size: 13.5px;
+    font-weight: 700;
     color: var(--support-text-strong);
 }
 
 .support-home-action-card span {
+    display: block;
+    margin-top: 2px;
     color: var(--support-text-muted);
-    line-height: 1.5;
-    font-size: 12.5px;
+    line-height: 1.45;
+    font-size: 12px;
 }
 
+/* A ação principal precisa saltar aos olhos antes das outras — preenchimento
+   sólido na cor de marca, não só uma linha fina, porque é pra onde a pessoa
+   deve ir primeiro. */
 .support-home-action-card.is-primary {
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.96) 0%, rgba(52, 69, 124, 0.96) 100%);
-    border-color: rgba(52, 69, 124, 0.26);
+    border-color: transparent;
+    background: linear-gradient(135deg, #2E6DA4 0%, #1C3A5C 100%);
+    box-shadow: 0 10px 22px rgba(28, 58, 92, 0.22);
+}
+
+.support-home-action-card.is-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 26px rgba(28, 58, 92, 0.28);
 }
 
 .support-home-action-card.is-primary strong,
@@ -1935,71 +3041,43 @@ body.support-admin-queue-body {
     color: #fff;
 }
 
-.support-home-bi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 14px;
+.support-home-action-card.is-primary span {
+    color: rgba(255, 255, 255, 0.82);
 }
 
-.support-home-bi-card,
-.support-home-insight-card {
-    padding: 16px;
-}
-
-.support-home-bi-card span,
-.support-home-insight-card span {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--support-text-soft);
-}
-
-.support-home-bi-card strong,
-.support-home-insight-card strong {
-    display: block;
-    margin-top: 8px;
-    font-size: 17px;
-    color: var(--support-text-strong);
-}
-
-.support-home-bi-card small,
-.support-home-insight-card small {
-    display: block;
-    margin-top: 6px;
-    color: var(--support-text-muted);
-    line-height: 1.45;
-    font-size: 12px;
-}
-
-.support-home-bi-card.is-primary {
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.98) 0%, rgba(52, 69, 124, 0.98) 100%);
-}
-
-.support-home-bi-card.is-primary span,
-.support-home-bi-card.is-primary strong,
-.support-home-bi-card.is-primary small {
-    color: #fff;
-}
-
-.support-home-bi-card.is-info {
-    background: linear-gradient(180deg, rgba(234, 241, 255, 0.98) 0%, rgba(223, 233, 255, 0.98) 100%);
-}
-
-.support-home-bi-card.is-success {
-    background: linear-gradient(180deg, rgba(234, 250, 241, 0.98) 0%, rgba(223, 245, 232, 0.98) 100%);
-}
-
-.support-home-bi-card.is-warning {
-    background: linear-gradient(180deg, rgba(255, 248, 232, 0.98) 0%, rgba(250, 238, 207, 0.98) 100%);
+div.support-home-action-card {
+    cursor: default;
 }
 
 .support-home-insight-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+}
+
+.support-home-insight-card {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+.support-home-insight-card span {
+    font-size: 11.5px;
+    color: var(--support-text-muted);
+}
+
+.support-home-insight-card strong {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--support-text-strong);
+}
+
+.support-home-insight-card small {
+    display: none;
 }
 
 .support-page-hero {
@@ -2008,6 +3086,29 @@ body.support-admin-queue-body {
     gap: 14px;
     align-items: stretch;
     margin-bottom: 14px;
+}
+
+.support-page-hero-copy,
+.support-page-mini-metrics,
+.support-page-tip-card {
+    border: 1px solid rgba(28, 58, 92, 0.12);
+    border-radius: 8px;
+    background: var(--support-surface);
+    box-shadow: none;
+}
+
+.support-page-hero-copy h1 {
+    margin: 10px 0 8px;
+    color: var(--support-text-strong);
+    font-size: clamp(17px, 3vw, 30px);
+    line-height: 1.12;
+}
+
+.support-page-hero-copy p {
+    margin: 0;
+    color: var(--support-text-body);
+    line-height: 1.55;
+    font-size: 13px;
 }
 
 .support-page-hero-copy {
@@ -2160,9 +3261,9 @@ body.support-admin-queue-body {
 }
 
 .support-create-draft-pill.is-loaded {
-    border-color: rgba(67, 87, 153, 0.2);
+    border-color: rgba(46, 109, 164, 0.2);
     background: rgba(233, 239, 255, 0.98);
-    color: #34457c;
+    color: #1C3A5C;
 }
 
 .support-create-draft-pill.is-loading {
@@ -2272,7 +3373,7 @@ body.support-admin-queue-body {
 }
 
 .support-create-upload-box.is-dragover {
-    border-color: rgba(67, 87, 153, 0.42);
+    border-color: rgba(46, 109, 164, 0.42);
     background: rgba(232, 238, 255, 0.92);
     box-shadow: 0 0 0 4px rgba(88, 114, 211, 0.1);
 }
@@ -2294,20 +3395,20 @@ body.support-admin-queue-body {
     padding: 0 16px;
     border-radius: 6px;
     border: 1px solid rgba(52, 63, 104, 0.18);
-    background: linear-gradient(180deg, #435799 0%, #34457c 100%);
+    background: linear-gradient(180deg, #2E6DA4 0%, #1C3A5C 100%);
     color: #fff;
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-    box-shadow: 0 10px 18px rgba(52, 69, 124, 0.14);
+    box-shadow: 0 10px 18px rgba(28, 58, 92, 0.14);
     transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
 }
 
 .support-create-upload-trigger:hover {
     transform: translateY(-1px);
     filter: brightness(1.04);
-    box-shadow: 0 14px 24px rgba(52, 69, 124, 0.18);
+    box-shadow: 0 14px 24px rgba(28, 58, 92, 0.18);
 }
 
 .support-create-upload-display {
@@ -2521,7 +3622,12 @@ html[data-theme="dark"] body.support-portal-body {
     color: var(--support-text-body);
 }
 
-html[data-theme="dark"] .support-topbar,
+html[data-theme="dark"] .support-topbar {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(17, 21, 38, 0.94);
+    box-shadow: none;
+}
+
 html[data-theme="dark"] .support-hero-copy,
 html[data-theme="dark"] .support-card,
 html[data-theme="dark"] .support-stat,
@@ -2530,7 +3636,7 @@ html[data-theme="dark"] .support-demand-item,
 html[data-theme="dark"] .support-empty {
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(25, 31, 54, 0.92);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .support-brand strong,
@@ -2553,15 +3659,48 @@ html[data-theme="dark"] .support-field label {
 }
 
 html[data-theme="dark"] .support-btn-secondary {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--support-text-body);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: rgba(230, 236, 255, 0.85);
+    border-color: rgba(138, 160, 232, 0.4);
+}
+
+html[data-theme="dark"] .support-btn-secondary:hover {
+    background: rgba(138, 160, 232, 0.12);
+    border-color: rgba(138, 160, 232, 0.55);
 }
 
 html[data-theme="dark"] .support-btn-secondary.is-active {
     background: rgba(108, 132, 214, 0.2);
     color: #eef2ff;
-    border-color: rgba(138, 160, 232, 0.24);
+    border-color: rgba(138, 160, 232, 0.55);
+}
+
+html[data-theme="dark"] .support-top-actions .support-btn-secondary {
+    background: transparent;
+    border-color: transparent;
+    color: rgba(230, 236, 255, 0.72);
+}
+
+html[data-theme="dark"] .support-top-actions .support-btn-secondary:hover {
+    background: rgba(138, 160, 232, 0.14);
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-top-actions .support-btn-secondary.is-active {
+    background: rgba(138, 160, 232, 0.18);
+    border-color: transparent;
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-top-actions form .support-btn {
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.14);
+    color: rgba(230, 236, 255, 0.72);
+}
+
+html[data-theme="dark"] .support-top-actions form .support-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #eef2ff;
 }
 
 html[data-theme="dark"] .support-form input,
@@ -2651,7 +3790,7 @@ html[data-theme="dark"] .support-create-draft-pill.is-saved {
 }
 
 html[data-theme="dark"] .support-create-draft-pill.is-loaded {
-    background: rgba(67, 87, 153, 0.22);
+    background: rgba(46, 109, 164, 0.22);
     color: #dce4ff;
     border-color: rgba(138, 160, 232, 0.24);
 }
@@ -2852,7 +3991,7 @@ html[data-theme="dark"] .support-thread-message,
 html[data-theme="dark"] .support-thread-attachment {
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(25, 31, 54, 0.92);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .support-thread-management-card,
@@ -2902,7 +4041,7 @@ html[data-theme="dark"] .support-thread-feedback-pill {
 }
 
 html[data-theme="dark"] .support-thread-worklog {
-    background: rgba(67, 87, 153, 0.14);
+    background: rgba(46, 109, 164, 0.14);
     border-color: rgba(255, 255, 255, 0.08);
 }
 
@@ -2911,66 +4050,76 @@ html[data-theme="dark"] .support-thread-log-side strong {
     color: #d9e4ff;
 }
 
-html[data-theme="dark"] .support-home-intro,
-html[data-theme="dark"] .support-home-actions-panel,
-html[data-theme="dark"] .support-home-bi-card,
-html[data-theme="dark"] .support-home-insight-card,
 html[data-theme="dark"] .support-page-hero-copy,
 html[data-theme="dark"] .support-page-mini-metrics,
 html[data-theme="dark"] .support-page-tip-card {
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(25, 31, 54, 0.92);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+    box-shadow: none;
 }
 
-html[data-theme="dark"] .support-home-intro h1,
 html[data-theme="dark"] .support-page-hero-copy h1,
-html[data-theme="dark"] .support-home-action-card strong,
-html[data-theme="dark"] .support-home-bi-card strong,
-html[data-theme="dark"] .support-home-insight-card strong,
 html[data-theme="dark"] .support-page-mini-metric strong,
 html[data-theme="dark"] .support-page-tip-card strong {
     color: #eef2ff;
 }
 
-html[data-theme="dark"] .support-home-intro p,
-html[data-theme="dark"] .support-home-action-card span,
-html[data-theme="dark"] .support-home-bi-card span,
-html[data-theme="dark"] .support-home-bi-card small,
-html[data-theme="dark"] .support-home-insight-card span,
-html[data-theme="dark"] .support-home-insight-card small,
 html[data-theme="dark"] .support-page-tip-card span,
 html[data-theme="dark"] .support-page-mini-metric span {
     color: rgba(230, 236, 255, 0.72);
 }
 
-html[data-theme="dark"] .support-home-action-card,
 html[data-theme="dark"] .support-page-mini-metric {
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
 }
 
+/* Início (minimalista) em modo escuro: mesma ideia do claro, hairlines em vez
+   de cartão cheio, só a cor muda de navy pro acento claro do tema escuro. */
+html[data-theme="dark"] .support-home-header h1 {
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-home-stats {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="dark"] .support-home-stat {
+    border-left-color: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme="dark"] .support-home-stat strong {
+    color: #eef2ff;
+}
+
+html[data-theme="dark"] .support-home-action-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(238, 242, 255, 0.88);
+}
+
+html[data-theme="dark"] .support-home-action-card:hover {
+    background: rgba(138, 160, 232, 0.08);
+    border-color: rgba(138, 160, 232, 0.3);
+}
+
+html[data-theme="dark"] .support-home-action-card strong {
+    color: #eef2ff;
+}
+
 html[data-theme="dark"] .support-home-action-card.is-primary {
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.98) 0%, rgba(52, 69, 124, 0.98) 100%);
+    background: linear-gradient(135deg, #3B82C4 0%, #1C3A5C 100%);
 }
 
-html[data-theme="dark"] .support-home-bi-card.is-info {
-    background: linear-gradient(180deg, rgba(45, 62, 112, 0.98) 0%, rgba(33, 47, 92, 0.98) 100%);
-}
-
-html[data-theme="dark"] .support-home-bi-card.is-success {
-    background: linear-gradient(180deg, rgba(22, 86, 65, 0.98) 0%, rgba(16, 66, 50, 0.98) 100%);
-}
-
-html[data-theme="dark"] .support-home-bi-card.is-warning {
-    background: linear-gradient(180deg, rgba(116, 82, 27, 0.98) 0%, rgba(90, 62, 18, 0.98) 100%);
+html[data-theme="dark"] .support-home-insight-card strong {
+    color: #eef2ff;
 }
 
 html[data-theme="dark"] .support-thread-extra-card,
 html[data-theme="dark"] .support-portal-field-card {
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(25, 31, 54, 0.92);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .support-thread-extra-card span,
@@ -3105,7 +4254,6 @@ html[data-theme="light"] .support-demand-detail-description p {
     .support-grid,
     .support-admin-lower-grid,
     .support-thread-layout,
-    .support-home-hero,
     .support-page-hero,
     .support-portal-field-layout,
     .support-create-header,
@@ -3126,10 +4274,8 @@ html[data-theme="light"] .support-demand-detail-description p {
     .support-stats,
     .support-admin-summary,
     .support-thread-metrics,
-    .support-home-bi-grid,
     .support-home-insight-grid,
     .support-page-mini-metrics,
-    .support-home-actions,
     .support-thread-extra-grid,
     .support-create-guide-row,
     .support-create-header-metrics {
@@ -3155,10 +4301,7 @@ html[data-theme="light"] .support-demand-detail-description p {
     .support-stats,
     .support-admin-summary,
     .support-thread-metrics,
-    .support-home-bi-grid,
-    .support-home-insight-grid,
     .support-page-mini-metrics,
-    .support-home-actions,
     .support-thread-extra-grid,
     .support-create-guide-row,
     .support-create-header-metrics,
@@ -3290,8 +4433,8 @@ html[data-theme="light"] .support-demand-detail-description p {
 
 .support-insight-link:hover {
     transform: translateY(-1px);
-    border-color: rgba(67, 87, 153, 0.26);
-    box-shadow: 0 12px 24px rgba(52, 69, 124, 0.12);
+    border-color: rgba(46, 109, 164, 0.26);
+    box-shadow: 0 12px 24px rgba(28, 58, 92, 0.12);
 }
 
 .support-sla-grid,
@@ -3387,8 +4530,8 @@ html[data-theme="light"] .support-demand-detail-description p {
 }
 
 .support-config-card.is-active-edit {
-    border-color: rgba(67, 87, 153, 0.34);
-    box-shadow: 0 18px 34px rgba(67, 87, 153, 0.12);
+    border-color: rgba(46, 109, 164, 0.34);
+    box-shadow: 0 18px 34px rgba(46, 109, 164, 0.12);
 }
 
 .support-config-card-actions {
@@ -3487,10 +4630,6 @@ html[data-theme="dark"] .support-admin-alert-metric.is-warning {
 html[data-theme="dark"] .support-thread-message.is-internal-note {
     background: linear-gradient(180deg, rgba(126, 77, 26, 0.22) 0%, rgba(92, 58, 24, 0.18) 100%);
     border-color: rgba(214, 149, 74, 0.28);
-}
-
-html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
-    box-shadow: 0 14px 24px rgba(0, 0, 0, 0.22);
 }
 
 @media (max-width: 1120px) {
@@ -3612,7 +4751,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 }
 
 .support-thread-person-card.is-attendant {
-    border-color: rgba(67, 87, 153, 0.2);
+    border-color: rgba(46, 109, 164, 0.2);
     background: linear-gradient(180deg, rgba(237, 242, 255, 0.98) 0%, rgba(246, 249, 255, 0.92) 100%);
 }
 
@@ -3637,14 +4776,14 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 46px;
-    height: 46px;
-    flex: 0 0 46px;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 30px;
     border-radius: 7px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
     color: #fff;
-    box-shadow: 0 12px 18px rgba(52, 69, 124, 0.16);
+    box-shadow: none;
 }
 
 .support-thread-avatar.is-requester {
@@ -3652,7 +4791,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 }
 
 .support-thread-avatar.is-attendant {
-    background: linear-gradient(180deg, #435799 0%, #34457c 100%);
+    background: linear-gradient(180deg, #2E6DA4 0%, #1C3A5C 100%);
 }
 
 .support-thread-avatar.is-opening {
@@ -3677,7 +4816,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 
 .support-thread-timeline {
     position: relative;
-    gap: 18px;
+    gap: 10px;
 }
 
 .support-thread-message {
@@ -3690,8 +4829,8 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 
 .support-thread-message-shell {
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr);
-    gap: 14px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 10px;
     align-items: flex-start;
 }
 
@@ -3704,11 +4843,11 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 .support-thread-avatar-col::after {
     content: "";
     position: absolute;
-    top: 56px;
-    bottom: -22px;
+    top: 38px;
+    bottom: -10px;
     width: 2px;
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.22) 0%, rgba(67, 87, 153, 0.06) 100%);
+    background: linear-gradient(180deg, rgba(46, 109, 164, 0.22) 0%, rgba(46, 109, 164, 0.06) 100%);
 }
 
 .support-thread-timeline > :last-child .support-thread-avatar-col::after {
@@ -3716,17 +4855,16 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 }
 
 .support-thread-message-card {
-    padding: 18px 18px 16px;
-    border-radius: 13px;
-    border: 1px solid rgba(70, 86, 140, 0.12);
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(28, 58, 92, 0.12);
     background: rgba(246, 249, 255, 0.98);
-    box-shadow: 0 14px 24px rgba(49, 61, 108, 0.08);
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    box-shadow: none;
+    transition: border-color 0.18s ease;
 }
 
 .support-thread-message-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 18px 32px rgba(49, 61, 108, 0.12);
+    border-color: rgba(46, 109, 164, 0.3);
 }
 
 .support-thread-message.is-requester .support-thread-message-card {
@@ -3735,7 +4873,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 }
 
 .support-thread-message.is-attendant .support-thread-message-card {
-    border-left: 4px solid rgba(67, 87, 153, 0.8);
+    border-left: 4px solid rgba(46, 109, 164, 0.8);
     background: linear-gradient(180deg, rgba(241, 245, 255, 0.98) 0%, rgba(235, 241, 255, 0.92) 100%);
 }
 
@@ -3749,17 +4887,43 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 }
 
 .support-thread-message-head {
-    gap: 16px;
+    gap: 10px;
 }
 
 .support-thread-message-head strong {
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .support-thread-message-body {
-    margin-top: 14px;
-    font-size: 14px;
-    line-height: 1.72;
+    margin-top: 6px;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+/* Entrada em cascata: cabeçalho e métricas primeiro, depois a conversa — cada
+   mensagem com um delay curto, mesmo espírito da fila e do início do portal. */
+@media (prefers-reduced-motion: no-preference) {
+    .support-thread-header-card,
+    .support-thread-header-side {
+        animation: supportStepRise 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    .support-thread-metrics {
+        animation: supportStepRise 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) 0.05s both;
+    }
+
+    .support-thread-timeline > .support-thread-message {
+        animation: supportStepRise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+        animation-delay: calc(0.04s * var(--thread-message-index, 0));
+    }
+
+    .support-thread-timeline > .support-thread-message:nth-child(1) { --thread-message-index: 1; }
+    .support-thread-timeline > .support-thread-message:nth-child(2) { --thread-message-index: 2; }
+    .support-thread-timeline > .support-thread-message:nth-child(3) { --thread-message-index: 3; }
+    .support-thread-timeline > .support-thread-message:nth-child(4) { --thread-message-index: 4; }
+    .support-thread-timeline > .support-thread-message:nth-child(5) { --thread-message-index: 5; }
+    .support-thread-timeline > .support-thread-message:nth-child(6) { --thread-message-index: 6; }
+    .support-thread-timeline > .support-thread-message:nth-child(n+7) { animation-delay: 0.24s; }
 }
 
 .support-thread-worklog {
@@ -3767,7 +4931,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     align-items: flex-start;
     justify-content: flex-start;
     flex-wrap: wrap;
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.1) 0%, rgba(67, 87, 153, 0.06) 100%);
+    background: linear-gradient(180deg, rgba(46, 109, 164, 0.1) 0%, rgba(46, 109, 164, 0.06) 100%);
 }
 
 .support-thread-attachments {
@@ -3801,8 +4965,8 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     min-width: 28px;
     height: 28px;
     border-radius: 5px;
-    background: rgba(67, 87, 153, 0.12);
-    color: #3651a2;
+    background: rgba(46, 109, 164, 0.12);
+    color: #2E6DA4;
     font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.06em;
@@ -3894,8 +5058,8 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 
 .support-quick-canned-chip:hover {
     transform: translateY(-1px);
-    border-color: rgba(67, 87, 153, 0.24);
-    box-shadow: 0 12px 24px rgba(52, 69, 124, 0.1);
+    border-color: rgba(46, 109, 164, 0.24);
+    box-shadow: 0 12px 24px rgba(28, 58, 92, 0.1);
 }
 
 .support-quick-canned-chip strong {
@@ -3929,7 +5093,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     margin-right: 12px;
     border: none;
     border-radius: 6px;
-    background: linear-gradient(180deg, #435799 0%, #34457c 100%);
+    background: linear-gradient(180deg, #2E6DA4 0%, #1C3A5C 100%);
     color: #fff;
     font: inherit;
     font-size: 12px;
@@ -3940,8 +5104,8 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
 .support-thread-secondary-grid {
     display: grid;
     grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
-    gap: 18px;
-    margin-top: 18px;
+    gap: 12px;
+    margin-top: 12px;
 }
 
 .support-thread-log-card,
@@ -3967,7 +5131,7 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     bottom: 8px;
     width: 2px;
     border-radius: 999px;
-    background: linear-gradient(180deg, rgba(67, 87, 153, 0.22) 0%, rgba(67, 87, 153, 0.06) 100%);
+    background: linear-gradient(180deg, rgba(46, 109, 164, 0.22) 0%, rgba(46, 109, 164, 0.06) 100%);
 }
 
 .support-thread-log-entry {
@@ -3983,8 +5147,8 @@ html[data-theme="dark"] .support-admin-nav-links .support-btn.is-active {
     width: 10px;
     height: 10px;
     border-radius: 999px;
-    background: #3651a2;
-    box-shadow: 0 0 0 6px rgba(67, 87, 153, 0.12);
+    background: #2E6DA4;
+    box-shadow: 0 0 0 6px rgba(46, 109, 164, 0.12);
 }
 
 html[data-theme="dark"] .support-thread-shell {
@@ -3994,9 +5158,9 @@ html[data-theme="dark"] .support-thread-shell {
 html[data-theme="dark"] .support-thread-header-card {
     border-color: rgba(255, 255, 255, 0.08);
     background:
-        radial-gradient(circle at top right, rgba(96, 125, 236, 0.18), transparent 34%),
-        linear-gradient(180deg, rgba(25, 31, 54, 0.98) 0%, rgba(18, 23, 42, 0.94) 100%);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+        radial-gradient(circle at top right, rgba(96, 125, 236, 0.1), transparent 34%),
+        rgba(25, 31, 54, 0.92);
+    box-shadow: none;
 }
 
 html[data-theme="dark"] .support-thread-header-summary,
@@ -4208,8 +5372,8 @@ html[data-theme="light"] .support-thread-message {
 }
 
 @keyframes supportPulseDot {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(0, 191, 99, 0.55); }
-    50% { box-shadow: 0 0 0 5px rgba(0, 191, 99, 0); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(46, 109, 164, 0.55); }
+    50% { box-shadow: 0 0 0 5px rgba(46, 109, 164, 0); }
 }
 
 @keyframes supportCriticalPulse {
@@ -4232,7 +5396,7 @@ html[data-theme="light"] .support-thread-message {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #00bf63;
+    background: #2E6DA4;
     animation: supportPulseDot 1.8s ease-out infinite;
 }
 
@@ -4288,6 +5452,29 @@ html[data-theme="light"] .support-thread-message {
     color: var(--title-text, #1c2242);
 }
 
+.ticket-header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.ticket-header-accent {
+    width: 4px;
+    height: 20px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #2E6DA4, #6fa3d1);
+    flex: 0 0 auto;
+}
+
+.ticket-header-kicker {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted-text, rgba(28, 34, 66, 0.55));
+    padding-left: 10px;
+    border-left: 1px solid var(--surface-border, rgba(28, 34, 66, 0.16));
+}
+
 .ticket-header-sub {
     display: inline-flex;
     align-items: center;
@@ -4322,27 +5509,53 @@ html[data-theme="light"] .support-thread-message {
 }
 
 .ticket-kpi {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 1px;
     min-width: 128px;
-    padding: 7px 12px;
+    padding: 7px 12px 7px 15px;
     border-radius: 8px;
     border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.1));
     background: var(--surface-1, rgba(255, 255, 255, 0.95));
     color: inherit;
     text-decoration: none;
+    overflow: hidden;
     transition: border-color 0.14s ease, background-color 0.14s ease, transform 0.1s ease;
+}
+
+.ticket-kpi::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #2E6DA4;
+    opacity: 0.7;
+}
+
+.ticket-kpi.is-danger::before {
+    background: #d5495e;
+}
+
+.ticket-kpi.is-warning::before {
+    background: #b57c1c;
+}
+
+.ticket-kpi.is-static::before {
+    background: var(--muted-text, rgba(28, 34, 66, 0.3));
+    opacity: 0.4;
 }
 
 a.ticket-kpi:hover {
     transform: translateY(-1px);
-    border-color: rgba(0, 191, 99, 0.4);
+    border-color: rgba(46, 109, 164, 0.4);
 }
 
 .ticket-kpi.is-active {
-    border-color: rgba(0, 191, 99, 0.5);
-    background: rgba(0, 191, 99, 0.08);
+    border-color: rgba(46, 109, 164, 0.5);
+    background: rgba(46, 109, 164, 0.08);
 }
 
 .ticket-kpi.is-static {
@@ -4400,9 +5613,11 @@ html[data-theme="dark"] .ticket-kpi.is-warning .ticket-kpi-value {
 .ticket-tabs {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 0 2px;
-    border-bottom: 1px solid var(--surface-border, rgba(28, 34, 66, 0.1));
+    gap: 6px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--surface-2, rgba(28, 34, 66, 0.04));
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.1));
     overflow-x: auto;
 }
 
@@ -4410,19 +5625,15 @@ html[data-theme="dark"] .ticket-kpi.is-warning .ticket-kpi-value {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 9px 4px;
-    margin-bottom: -1px;
-    border-bottom: 2px solid transparent;
+    padding: 7px 12px;
+    border-radius: 7px;
+    border: 1px solid transparent;
     color: var(--muted-text, rgba(28, 34, 66, 0.62));
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 700;
     text-decoration: none;
     white-space: nowrap;
-    transition: color 0.14s ease, border-color 0.14s ease;
-}
-
-.ticket-tab + .ticket-tab {
-    margin-left: 14px;
+    transition: color 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
 }
 
 .ticket-tab span {
@@ -4442,16 +5653,18 @@ html[data-theme="dark"] .ticket-kpi.is-warning .ticket-kpi-value {
 
 .ticket-tab:hover {
     color: var(--title-text, #1c2242);
+    background: var(--surface-1, rgba(255, 255, 255, 0.7));
 }
 
 .ticket-tab.is-active {
-    color: #0f7b4b;
-    border-bottom-color: #00bf63;
+    color: #1C3A5C;
+    background: rgba(46, 109, 164, 0.14);
+    border-color: rgba(46, 109, 164, 0.35);
 }
 
 .ticket-tab.is-active span {
-    background: rgba(0, 191, 99, 0.16);
-    color: #0f7b4b;
+    background: rgba(46, 109, 164, 0.22);
+    color: #1C3A5C;
 }
 
 .ticket-tabs-live {
@@ -4472,10 +5685,13 @@ html[data-theme="dark"] .ticket-tab {
 
 html[data-theme="dark"] .ticket-tab:hover {
     color: rgba(255, 255, 255, 0.92);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 html[data-theme="dark"] .ticket-tab.is-active {
-    color: #92f0c7;
+    color: #9dc4e8;
+    background: rgba(46, 109, 164, 0.16);
+    border-color: rgba(138, 160, 232, 0.35);
 }
 
 html[data-theme="dark"] .ticket-tab span {
@@ -4484,8 +5700,8 @@ html[data-theme="dark"] .ticket-tab span {
 }
 
 html[data-theme="dark"] .ticket-tab.is-active span {
-    background: rgba(0, 191, 99, 0.2);
-    color: #92f0c7;
+    background: rgba(46, 109, 164, 0.2);
+    color: #9dc4e8;
 }
 
 .ticket-toolbar {
@@ -4537,8 +5753,8 @@ html[data-theme="dark"] .ticket-tab.is-active span {
 }
 
 .ticket-search:focus {
-    border-color: rgba(0, 191, 99, 0.55);
-    box-shadow: 0 0 0 3px rgba(0, 191, 99, 0.14);
+    border-color: rgba(46, 109, 164, 0.55);
+    box-shadow: 0 0 0 3px rgba(46, 109, 164, 0.14);
 }
 
 .ticket-select {
@@ -4578,6 +5794,11 @@ html[data-theme="dark"] .ticket-tab.is-active span {
     width: 100%;
     border-collapse: collapse;
     min-width: 1080px;
+    /* mainQueue.css declara `table { table-layout: fixed }` global, que vaza
+       pra aqui (as duas folhas carregam juntas nesta tela) e faz o navegador
+       ignorar o min-width/max-width das colunas — sobrando quase nada para
+       Assunto e Pessoa. Layout auto respeita esses limites de novo. */
+    table-layout: auto;
 }
 
 .ticket-table thead th {
@@ -4635,7 +5856,7 @@ html[data-theme="dark"] .ticket-tab.is-active span {
 }
 
 .ticket-row:hover td {
-    background: rgba(0, 191, 99, 0.06);
+    background: rgba(46, 109, 164, 0.06);
 }
 
 .ticket-col-check {
@@ -4647,14 +5868,81 @@ html[data-theme="dark"] .ticket-tab.is-active span {
 }
 
 .ticket-col-priority {
-    width: 30px;
+    width: 64px;
 }
 
-.ticket-priority-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
+.ticket-priority-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px 2px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--priority-color, #61688c) 16%, transparent);
+    color: var(--priority-color, #61688c);
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.ticket-priority-tag::before {
+    content: "";
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
+    background: currentColor;
+    flex: 0 0 auto;
+}
+
+html[data-theme="dark"] .ticket-priority-tag {
+    background: color-mix(in srgb, var(--priority-color, #61688c) 28%, transparent);
+    filter: brightness(1.25) saturate(1.1);
+}
+
+.ticket-person {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ticket-avatar-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    border-radius: 7px;
+    font-size: 10.5px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.ticket-avatar-mini.is-requester {
+    background: linear-gradient(180deg, #39b977 0%, #249c5f 100%);
+}
+
+.ticket-avatar-mini.is-attendant {
+    background: linear-gradient(180deg, #2E6DA4 0%, #1C3A5C 100%);
+}
+
+.ticket-person-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.ticket-person-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ticket-person-meta {
+    display: block;
 }
 
 .ticket-col-subject {
@@ -4672,7 +5960,7 @@ html[data-theme="dark"] .ticket-tab.is-active span {
 }
 
 .ticket-protocol:hover {
-    color: #00bf63;
+    color: #2E6DA4;
 }
 
 .ticket-subject {
@@ -4721,18 +6009,33 @@ html[data-theme="dark"] .ticket-tab.is-active span {
     width: 110px;
 }
 
-.ticket-csat-stars {
+/* Selo de nota (1-10), colorido por faixa estilo NPS — troca as 5 estrelas
+   antigas, que não davam pra encaixar 10 pontos sem ficar apertado. */
+.ticket-csat-score {
     display: inline-flex;
-    gap: 1px;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(97, 104, 140, 0.12);
+    color: #52597d;
 }
 
-.ticket-star {
-    font-size: 12px;
-    color: rgba(28, 34, 66, 0.16);
+.ticket-csat-score.is-tier-low {
+    background: rgba(154, 85, 97, 0.16);
+    color: #7f3d49;
 }
 
-.ticket-star.is-filled {
-    color: #f0a74d;
+.ticket-csat-score.is-tier-mid {
+    background: rgba(216, 160, 75, 0.18);
+    color: #9a6922;
+}
+
+.ticket-csat-score.is-tier-high {
+    background: rgba(45, 149, 102, 0.16);
+    color: #216944;
 }
 
 .ticket-csat-pending {
@@ -4771,10 +6074,6 @@ html[data-theme="dark"] .ticket-tab.is-active span {
     gap: 8px;
 }
 
-html[data-theme="dark"] .ticket-star {
-    color: rgba(255, 255, 255, 0.14);
-}
-
 @media (prefers-reduced-motion: reduce) {
     .support-live-dot,
     .ticket-row {
@@ -4796,6 +6095,108 @@ html[data-theme="dark"] .ticket-star {
 
     .ticket-toolbar-actions {
         justify-content: flex-end;
+    }
+}
+
+/* A fila agora vive sob o mesmo topo do portal (`portal_topbar.html`), não mais
+   sob a sidebar interna — mesma largura centralizada das outras telas do
+   módulo, sem o recuo de 3.5% que `.queue_main` reservava pra sidebar. */
+.support-queue-shell {
+    width: min(1320px, calc(100% - 32px));
+}
+
+/* `.queue-primary-btn`/`.queue-secondary-btn`/`.queue-select` vêm do
+   mainQueue.css (sidebar interna, tema escuro nos campos) — aqui, dentro do
+   console de chamados, sobrescrevemos pra ficarem claros e achatados, no
+   mesmo padrão do resto do portal, sem precisar duplicar o componente. */
+.ticket-console .queue-primary-btn {
+    background: #2E6DA4;
+    border-color: rgba(28, 58, 92, 0.2);
+    box-shadow: none;
+}
+
+.ticket-console .queue-primary-btn:hover {
+    background: #1C3A5C;
+    box-shadow: none;
+}
+
+.ticket-console .queue-secondary-btn {
+    background: var(--surface-1, rgba(255, 255, 255, 0.95));
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.14));
+    color: var(--title-text, #1c2242);
+}
+
+.ticket-console .queue-secondary-btn:hover {
+    background: rgba(46, 109, 164, 0.08);
+    border-color: rgba(46, 109, 164, 0.3);
+}
+
+.ticket-console .queue-select {
+    height: 30px;
+    border-radius: 7px;
+    background: rgba(28, 34, 66, 0.03);
+    border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.16));
+    color: var(--page-text, #1c2242);
+    color-scheme: light;
+}
+
+.ticket-console .queue-select:focus {
+    border-color: rgba(46, 109, 164, 0.55);
+    box-shadow: 0 0 0 3px rgba(46, 109, 164, 0.14);
+}
+
+.ticket-console .queue-select option {
+    background-color: #fff;
+    color: var(--page-text, #1c2242);
+}
+
+html[data-theme="dark"] .ticket-console .queue-secondary-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(238, 242, 255, 0.88);
+}
+
+html[data-theme="dark"] .ticket-console .queue-secondary-btn:hover {
+    background: rgba(138, 160, 232, 0.12);
+    border-color: rgba(138, 160, 232, 0.3);
+}
+
+html[data-theme="dark"] .ticket-console .queue-select {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #eef2ff;
+    color-scheme: dark;
+}
+
+html[data-theme="dark"] .ticket-console .queue-select option {
+    background-color: #151a33;
+    color: #eef2ff;
+}
+
+/* Sombra pesada só no cartão da tabela, achatada pro mesmo hairline do resto —
+   a densidade da tabela já dá contraste suficiente sem precisar de sombra. */
+.ticket-toolbar,
+.ticket-table-wrap {
+    box-shadow: none;
+}
+
+/* Cabeçalho, KPIs, abas e barra de filtro entram em cascata curta, como no
+   início do portal — as linhas da tabela já tinham sua própria animação. */
+@media (prefers-reduced-motion: no-preference) {
+    .ticket-header {
+        animation: supportStepRise 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    .ticket-tabs {
+        animation: supportStepRise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) 0.05s both;
+    }
+
+    .ticket-toolbar {
+        animation: supportStepRise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) 0.08s both;
+    }
+
+    .ticket-table-wrap {
+        animation: supportStepRise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) 0.1s both;
     }
 }
 
@@ -4899,6 +6300,374 @@ html[data-theme="dark"] .ticket-star {
     border-left: 3px solid rgba(0, 191, 99, 0.55);
 }
 
+/* Convite pra abertura por conversa — a conversa em si virou tela própria
+   (`portal_demand_chat.html`); aqui no formulário manual sobra só um link
+   discreto de ida. Some inteiro se a IA não estiver configurada. */
+.newticket-chat-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(46, 109, 164, 0.3);
+    border-radius: 12px;
+    background: rgba(46, 109, 164, 0.06);
+    text-decoration: none;
+    transition: background-color 0.16s ease;
+}
+
+.newticket-chat-banner:hover {
+    background: rgba(46, 109, 164, 0.1);
+}
+
+.newticket-chat-banner-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+}
+
+.newticket-chat-banner-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.newticket-chat-banner-copy strong {
+    font-size: 13px;
+    color: var(--title-text, #1c2242);
+}
+
+.newticket-chat-banner-copy span {
+    font-size: 12px;
+    color: var(--muted-text, rgba(28, 34, 66, 0.66));
+}
+
+.newticket-chat-banner-arrow {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: #2E6DA4;
+    font-size: 16px;
+}
+
+html[data-theme="dark"] .newticket-chat-banner {
+    background: rgba(138, 160, 232, 0.1);
+    border-color: rgba(138, 160, 232, 0.3);
+}
+
+html[data-theme="dark"] .newticket-chat-banner:hover {
+    background: rgba(138, 160, 232, 0.16);
+}
+
+html[data-theme="dark"] .newticket-chat-banner-copy strong {
+    color: #eef2ff;
+}
+
+/* ===================== Tela de abertura por conversa =====================
+   Página própria (`portal_demand_chat.html`) — formato de app de mensagens
+   (balão, cabeçalho de contato, barra de digitação com botão redondo), mas
+   com a cor da marca Maxiplast (navy/azul), não mais o verde do WhatsApp que
+   era só a referência inicial de layout. */
+.aichat-shell {
+    width: min(720px, calc(100% - 32px));
+    margin: 18px auto 32px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(10, 14, 31, 0.16);
+    background: #eef2fb;
+}
+
+.aichat-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #1C3A5C;
+    color: #fff;
+}
+
+.aichat-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.18);
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.aichat-header-copy {
+    min-width: 0;
+}
+
+.aichat-header-copy strong {
+    display: block;
+    font-size: 14px;
+}
+
+.aichat-header-copy span {
+    display: block;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.aichat-header-copy span.is-typing {
+    color: #bcd6ec;
+}
+
+.aichat-log {
+    min-height: 380px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-image: radial-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+    background-size: 18px 18px;
+}
+
+.aichat-bubble-row {
+    display: flex;
+}
+
+.aichat-bubble-row.is-user {
+    justify-content: flex-end;
+}
+
+.aichat-bubble {
+    max-width: 78%;
+    padding: 8px 12px 6px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    white-space: pre-line;
+}
+
+.aichat-bubble.is-bot {
+    background: #fff;
+    color: #111b21;
+    border-top-left-radius: 2px;
+}
+
+.aichat-bubble.is-user {
+    background: #dce9f6;
+    color: #111b21;
+    border-top-right-radius: 2px;
+}
+
+.aichat-bubble.is-error {
+    background: #ffe3e3;
+    color: #8d2727;
+    border-top-left-radius: 2px;
+}
+
+.aichat-bubble-time {
+    display: block;
+    margin-top: 3px;
+    font-size: 10px;
+    color: rgba(17, 27, 33, 0.45);
+    text-align: right;
+}
+
+.aichat-typing-row .aichat-bubble {
+    font-size: 12px;
+    font-style: italic;
+    color: rgba(17, 27, 33, 0.5);
+    padding: 7px 12px;
+}
+
+.aichat-summary-card {
+    align-self: flex-start;
+    max-width: 85%;
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+.aichat-summary-card h3 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #1C3A5C;
+}
+
+.aichat-summary-row {
+    margin-bottom: 6px;
+}
+
+.aichat-summary-row span {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(17, 27, 33, 0.5);
+}
+
+.aichat-summary-row strong {
+    display: block;
+    font-size: 13px;
+    color: #111b21;
+    font-weight: 600;
+}
+
+.aichat-summary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.aichat-input-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #f0f0f0;
+}
+
+.aichat-input-bar input {
+    flex: 1;
+    min-height: 42px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: none;
+    font-size: 14px;
+    background: #fff;
+    color: #111b21;
+}
+
+.aichat-input-bar input:disabled {
+    opacity: 0.7;
+}
+
+.aichat-send-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: #2E6DA4;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.16s ease;
+}
+
+.aichat-send-btn:hover {
+    background: #1C3A5C;
+}
+
+.aichat-send-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.aichat-footer-link {
+    text-align: center;
+    padding: 10px;
+    font-size: 12px;
+    background: #f0f0f0;
+}
+
+.aichat-footer-link a {
+    color: #2E6DA4;
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+html[data-theme="dark"] .aichat-shell {
+    background: #0d1022;
+}
+
+html[data-theme="dark"] .aichat-header {
+    background: #171d34;
+}
+
+html[data-theme="dark"] .aichat-header-copy span.is-typing {
+    color: #8fb8e0;
+}
+
+html[data-theme="dark"] .aichat-log {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
+html[data-theme="dark"] .aichat-bubble.is-bot {
+    background: #1b2338;
+    color: #e9edef;
+}
+
+html[data-theme="dark"] .aichat-bubble.is-user {
+    background: #21507e;
+    color: #e9edef;
+}
+
+html[data-theme="dark"] .aichat-bubble.is-error {
+    background: #3a1f1f;
+    color: #ffb4b4;
+}
+
+html[data-theme="dark"] .aichat-bubble-time {
+    color: rgba(233, 237, 239, 0.5);
+}
+
+html[data-theme="dark"] .aichat-typing-row .aichat-bubble {
+    color: rgba(233, 237, 239, 0.55);
+}
+
+html[data-theme="dark"] .aichat-summary-card {
+    background: #1b2338;
+}
+
+html[data-theme="dark"] .aichat-summary-card h3 {
+    color: #8fb8e0;
+}
+
+html[data-theme="dark"] .aichat-summary-row span {
+    color: rgba(233, 237, 239, 0.55);
+}
+
+html[data-theme="dark"] .aichat-summary-row strong {
+    color: #e9edef;
+}
+
+html[data-theme="dark"] .aichat-input-bar {
+    background: #171d34;
+}
+
+html[data-theme="dark"] .aichat-input-bar input {
+    background: #232b45;
+    color: #e9edef;
+}
+
+html[data-theme="dark"] .aichat-footer-link {
+    background: #171d34;
+}
+
+html[data-theme="dark"] .aichat-footer-link a {
+    color: #8fb8e0;
+}
+
+@media (max-width: 600px) {
+    .aichat-shell {
+        border-radius: 0;
+        margin: 0 auto;
+        width: 100%;
+    }
+
+    .aichat-log {
+        min-height: 60vh;
+    }
+}
+
 .newticket-step.is-attendant-only .newticket-step-num {
     background: rgba(0, 191, 99, 0.16);
     color: #00854a;
@@ -4973,7 +6742,8 @@ html[data-theme="dark"] .ticket-star {
     padding: 16px 18px;
     border-radius: 10px;
     border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.1));
-    background: var(--surface-1, rgba(255, 255, 255, 0.95));
+    background: color-mix(in srgb, var(--surface-1, rgba(255, 255, 255, 0.95)) 88%, transparent);
+    backdrop-filter: blur(18px);
     box-shadow: var(--surface-shadow, 0 8px 20px rgba(28, 34, 66, 0.05));
     display: grid;
     gap: 14px;
@@ -5369,7 +7139,8 @@ html[data-theme="dark"] .ticket-star {
 .newticket-side-card {
     border-radius: 10px;
     border: 1px solid var(--surface-border, rgba(28, 34, 66, 0.1));
-    background: var(--surface-1, rgba(255, 255, 255, 0.95));
+    background: color-mix(in srgb, var(--surface-1, rgba(255, 255, 255, 0.95)) 88%, transparent);
+    backdrop-filter: blur(18px);
     box-shadow: var(--surface-shadow, 0 8px 20px rgba(28, 34, 66, 0.05));
     overflow: hidden;
 }
@@ -5702,6 +7473,11 @@ html[data-theme="dark"] .feedbackgate-icon,
 html[data-theme="dark"] .feedbackgate-cta {
     color: #ffd07a;
     background: rgba(240, 167, 77, 0.2);
+}
+
+html[data-theme="dark"] .support-home-action-card.is-blocked {
+    border-color: rgba(255, 208, 122, 0.45);
+    background: rgba(240, 167, 77, 0.1);
 }
 
 html[data-theme="dark"] .support-home-action-card.is-blocked strong {
@@ -6180,7 +7956,81 @@ html[data-theme="dark"] .portallogin-alert.is-warning {
     to   { opacity: 1; transform: none; }
 }
 
+@keyframes newticketDropzoneFloat {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+}
+
+@keyframes newticketShake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-4px); }
+    40%      { transform: translateX(4px); }
+    60%      { transform: translateX(-3px); }
+    80%      { transform: translateX(3px); }
+}
+
+@keyframes newticketCtaGlow {
+    0%, 100% { box-shadow: 0 16px 28px rgba(28, 58, 92, 0.12); }
+    50%      { box-shadow: 0 16px 34px rgba(0, 191, 99, 0.3); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
+    /* Cabeçalho entra antes das etapas, para a tela não "acender" tudo de uma vez. */
+    .newticket-head-copy .newticket-kicker,
+    .newticket-head-copy h1,
+    .newticket-head-copy p {
+        animation: supportFadeSlideUp 0.36s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    .newticket-head-copy h1 { animation-delay: 0.03s; }
+    .newticket-head-copy p { animation-delay: 0.06s; }
+
+    /* A grade de tipos só existe depois que uma área é escolhida (ver JS); a
+       revelação em si já comunica que a escolha liberou novas opções. */
+    #newticketTypeCards:not(:empty) {
+        animation: supportFadeSlideUp 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    /* Convite sutil para soltar um arquivo — some assim que algo é arrastado. */
+    .newticket-dropzone svg {
+        animation: newticketDropzoneFloat 3.2s ease-in-out infinite;
+    }
+
+    .newticket-dropzone.is-dragover svg {
+        animation: none;
+        transform: scale(1.12);
+        transition: transform 0.16s ease;
+    }
+
+    /* Título/descrição vazios no envio: um tremor curto chama atenção sem susto. */
+    .newticket-field input.is-invalid,
+    .newticket-field textarea.is-invalid {
+        animation: newticketShake 0.36s ease;
+    }
+
+    /* Início do portal: cabeçalho, ações e indicadores entram em cascata, bem
+       discreto — é só um fade+subida curta, sem brilho ou loop, pra combinar
+       com o resto minimalista da tela. */
+    .support-home-body .support-home-header {
+        animation: supportStepRise 0.36s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    .support-home-body .support-home-stats {
+        animation: supportStepRise 0.36s cubic-bezier(0.2, 0.7, 0.3, 1) 0.05s both;
+    }
+
+    .support-home-body .support-home-action-card {
+        animation: supportStepRise 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    }
+
+    .support-home-actions .support-home-action-card:nth-child(1) { animation-delay: 0.10s; }
+    .support-home-actions .support-home-action-card:nth-child(2) { animation-delay: 0.14s; }
+    .support-home-actions .support-home-action-card:nth-child(3) { animation-delay: 0.18s; }
+
+    .support-home-body .support-home-insight-grid {
+        animation: supportStepRise 0.32s cubic-bezier(0.2, 0.7, 0.3, 1) 0.2s both;
+    }
+
     /* Etapas do formulário entram em cascata, na ordem de preenchimento. */
     .newticket-step,
     .newticket-side-card {
@@ -6234,7 +8084,28 @@ html[data-theme="dark"] .portallogin-alert.is-warning {
 /* ── Barra de progresso da abertura ───────────────────────────────────────── */
 
 .newticket-progress-fill {
+    position: relative;
+    overflow: hidden;
     transition: width 0.42s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.newticket-progress-fill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+    transform: translateX(-100%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .newticket-progress-fill::after {
+        animation: newticketProgressShimmer 2.2s ease-in-out infinite;
+    }
+}
+
+@keyframes newticketProgressShimmer {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 /* ── Botão de envio ocupado ───────────────────────────────────────────────── */
@@ -6260,3 +8131,310 @@ html[data-theme="dark"] .portallogin-alert.is-warning {
 html[data-theme="dark"] .support-topbar.is-focus {
     border-bottom-color: rgba(255, 255, 255, 0.09);
 }
+
+/* ===================== Anexos e problemas parecidos na conversa de abertura ===================== */
+
+.aichat-attach-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    color: #2E6DA4;
+    background: transparent;
+    transition: background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+}
+
+.aichat-attach-btn:hover { background: rgba(46, 109, 164, 0.1); color: #1C3A5C; }
+
+.aichat-attach-btn.is-disabled { opacity: 0.45; pointer-events: none; }
+
+.aichat-attach-btn.is-busy { animation: aichatSpin 0.9s linear infinite; }
+
+.aichat-attach-btn.is-suggested {
+    background: #2E6DA4;
+    color: #fff;
+    animation: aichatPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes aichatPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(46, 109, 164, 0.45); }
+    50% { box-shadow: 0 0 0 8px rgba(46, 109, 164, 0); }
+}
+
+@keyframes aichatSpin {
+    to { transform: rotate(360deg); }
+}
+
+.aichat-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px 0;
+    background: #f0f0f0;
+}
+
+.aichat-chips[hidden] { display: none; }
+
+.aichat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    padding: 4px 6px 4px 10px;
+    border-radius: 999px;
+    background: #fff;
+    color: #1C3A5C;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+
+.aichat-chip > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.aichat-chip-remove {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 20px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(28, 58, 92, 0.08);
+    color: #1C3A5C;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.aichat-chip-remove:hover { background: rgba(28, 58, 92, 0.16); }
+
+.aichat-summary-files {
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: rgba(17, 27, 33, 0.6);
+}
+
+.aichat-similar {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(28, 58, 92, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.aichat-similar-title {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #1C3A5C;
+}
+
+.aichat-similar-empty {
+    font-size: 12px;
+    color: rgba(17, 27, 33, 0.55);
+}
+
+.aichat-similar-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    background: #f5f8fc;
+    color: #111b21;
+    text-decoration: none;
+}
+
+.aichat-similar-item:hover { box-shadow: inset 0 0 0 1px #2E6DA4; }
+
+.aichat-similar-item strong {
+    font-size: 12.5px;
+    font-weight: 700;
+}
+
+.aichat-similar-item small {
+    font-size: 11px;
+    color: rgba(17, 27, 33, 0.55);
+}
+
+.aichat-similar-excerpt {
+    font-size: 11.5px;
+    color: rgba(17, 27, 33, 0.7);
+}
+
+.aichat-similar-kind {
+    align-self: flex-start;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 800;
+    background: rgba(46, 109, 164, 0.14);
+    color: #2E6DA4;
+}
+
+.aichat-similar-kind.is-demand {
+    background: rgba(28, 58, 92, 0.1);
+    color: #1C3A5C;
+}
+
+.newticket-chat-uploads {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px dashed rgba(46, 109, 164, 0.4);
+    background: rgba(46, 109, 164, 0.05);
+}
+
+.newticket-chat-uploads strong {
+    display: block;
+    font-size: 12.5px;
+    color: #1C3A5C;
+}
+
+.newticket-chat-uploads ul {
+    margin: 6px 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.newticket-chat-uploads li span {
+    font-size: 12.5px;
+    color: #111b21;
+}
+
+.newticket-chat-uploads small {
+    font-size: 11.5px;
+    color: rgba(17, 27, 33, 0.6);
+}
+
+html[data-theme="dark"] .aichat-chips { background: #1f2c34; }
+html[data-theme="dark"] .aichat-chip { background: #2a3942; color: #e9edef; }
+html[data-theme="dark"] .aichat-chip-remove { background: rgba(255, 255, 255, 0.1); color: #e9edef; }
+html[data-theme="dark"] .aichat-attach-btn { color: #8fb8e0; }
+html[data-theme="dark"] .aichat-attach-btn:hover { background: rgba(138, 160, 232, 0.14); color: #eef2ff; }
+html[data-theme="dark"] .aichat-attach-btn.is-suggested { background: #3f7fbd; color: #fff; }
+html[data-theme="dark"] .aichat-similar { border-top-color: rgba(255, 255, 255, 0.14); }
+html[data-theme="dark"] .aichat-similar-title { color: #8fb8e0; }
+html[data-theme="dark"] .aichat-similar-item { background: #1f2c34; color: #e9edef; }
+html[data-theme="dark"] .aichat-similar-item small,
+html[data-theme="dark"] .aichat-similar-excerpt,
+html[data-theme="dark"] .aichat-summary-files,
+html[data-theme="dark"] .aichat-similar-empty { color: rgba(233, 237, 239, 0.6); }
+html[data-theme="dark"] .aichat-similar-kind { color: #8fb8e0; background: rgba(138, 160, 232, 0.18); }
+html[data-theme="dark"] .aichat-similar-kind.is-demand { color: #e9edef; background: rgba(255, 255, 255, 0.1); }
+html[data-theme="dark"] .newticket-chat-uploads { background: rgba(138, 160, 232, 0.08); border-color: rgba(138, 160, 232, 0.35); }
+html[data-theme="dark"] .newticket-chat-uploads strong { color: #8fb8e0; }
+html[data-theme="dark"] .newticket-chat-uploads li span { color: #e9edef; }
+html[data-theme="dark"] .newticket-chat-uploads small { color: rgba(233, 237, 239, 0.6); }
+
+/* ===================== Conversa: passos, respostas rápidas e resolvido =====================
+   Passos sugeridos pela base (ação `solution`), botões de resposta rápida e o
+   aviso de "resolvido sem chamado". */
+.aichat-steps-card {
+    align-self: flex-start;
+    max-width: 85%;
+    background: #fff;
+    border-radius: 10px;
+    border-left: 3px solid #2E6DA4;
+    padding: 10px 12px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+.aichat-steps-card h3 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #1C3A5C;
+}
+
+.aichat-steps {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #111b21;
+}
+
+.aichat-steps li + li {
+    margin-top: 4px;
+}
+
+.aichat-source-link {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #2E6DA4;
+    text-decoration: none;
+}
+
+.aichat-source-link:hover {
+    text-decoration: underline;
+}
+
+.aichat-quick-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 2px 8px;
+}
+
+.aichat-quick {
+    border: 1px solid rgba(46, 109, 164, 0.45);
+    background: #fff;
+    color: #2E6DA4;
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.aichat-quick:hover {
+    background: #2E6DA4;
+    color: #fff;
+}
+
+.aichat-resolved {
+    align-self: flex-start;
+    max-width: 85%;
+    background: #e6f5ec;
+    color: #1f6b45;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+
+.aichat-resolved small {
+    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(31, 107, 69, 0.8);
+}
+
+html[data-theme="dark"] .aichat-steps-card { background: #1b2338; border-left-color: #8fb8e0; }
+html[data-theme="dark"] .aichat-steps-card h3 { color: #8fb8e0; }
+html[data-theme="dark"] .aichat-steps { color: #e9edef; }
+html[data-theme="dark"] .aichat-source-link { color: #8fb8e0; }
+html[data-theme="dark"] .aichat-quick { background: #1b2338; border-color: rgba(143, 184, 224, 0.45); color: #8fb8e0; }
+html[data-theme="dark"] .aichat-quick:hover { background: #3f7fbd; color: #fff; }
+html[data-theme="dark"] .aichat-resolved { background: #17362a; color: #9fe0bd; }
+html[data-theme="dark"] .aichat-resolved small { color: rgba(159, 224, 189, 0.75); }

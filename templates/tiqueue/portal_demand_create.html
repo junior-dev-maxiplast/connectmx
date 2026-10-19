@@ -7,8 +7,8 @@
     <title>ConnectMX | Abrir Chamado</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
-    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body class="support-portal-body newticket-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
@@ -51,6 +51,17 @@
 
             <div class="newticket-layout">
                 <div class="newticket-main">
+
+                    {% if ai_chat_available %}
+                        <a href="{% url 'portalDemandChatPage' %}" class="newticket-chat-banner">
+                            <span class="newticket-chat-banner-icon" aria-hidden="true">💬</span>
+                            <span class="newticket-chat-banner-copy">
+                                <strong>Prefere contar com suas palavras?</strong>
+                                <span>Converse com o assistente e ele preenche o t&iacute;tulo e a descri&ccedil;&atilde;o pra voc&ecirc;.</span>
+                            </span>
+                            <span class="newticket-chat-banner-arrow" aria-hidden="true">&#8594;</span>
+                        </a>
+                    {% endif %}
 
                     {% if can_open_on_behalf %}
                         <section class="newticket-step is-attendant-only">
@@ -206,6 +217,20 @@
                                 <small>Imagens, PDF, planilhas e documentos</small>
                                 <div class="newticket-hidden-input">{{ form.attachments }}</div>
                             </div>
+                            {% if chat_uploads %}
+                                <div class="newticket-chat-uploads">
+                                    <strong>Enviados na conversa com o assistente</strong>
+                                    <ul>
+                                        {% for upload in chat_uploads %}
+                                            <li>
+                                                <input type="hidden" name="chat_upload_ids" value="{{ upload.id }}">
+                                                <span>{{ upload.original_name }}</span>
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                    <small>Esses arquivos seguem junto com o chamado.</small>
+                                </div>
+                            {% endif %}
                             <div id="portalAttachmentsList" class="newticket-file-list"></div>
                             <span id="portalAttachmentsDisplay" class="newticket-sr-only">Nenhum arquivo selecionado</span>
                             {% if form.attachments.errors %}<div class="newticket-error">{{ form.attachments.errors|join:", " }}</div>{% endif %}
@@ -360,11 +385,17 @@
             function renderTypeCards() {
                 if (!typeCards) return;
                 const selectedGroup = String(groupField.value || "");
-                const options = Array.from(typeField.options).filter((option) => {
-                    if (!option.value) return false;
-                    const optionGroup = option.getAttribute("data-group-id") || "";
-                    return !selectedGroup || optionGroup === selectedGroup;
-                });
+                /* Sem área escolhida ainda não mostra nenhum tipo: a lista completa
+                   (todas as áreas somadas) é grande demais para servir de estado
+                   inicial — a mensagem de ajuda abaixo já orienta a escolher a área
+                   primeiro, então a grade some até isso acontecer. */
+                const options = selectedGroup
+                    ? Array.from(typeField.options).filter((option) => {
+                        if (!option.value) return false;
+                        const optionGroup = option.getAttribute("data-group-id") || "";
+                        return optionGroup === selectedGroup;
+                    })
+                    : [];
 
                 if (!options.length) {
                     typeCards.innerHTML = "";

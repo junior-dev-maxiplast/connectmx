@@ -97,6 +97,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'tiqueue.context_processors.system_config',
+                'tiqueue.context_processors.dashes_alerts',
                 'generalapp.context_processors.navigation',
             ],
         },

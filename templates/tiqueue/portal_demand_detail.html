@@ -7,614 +7,880 @@
     <title>ConnectMX | {{ demand.protocol }}</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
-    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link rel="stylesheet" href="{% static '/style/demandDetail.css' %}?v=2">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="support-portal-body">
+<body class="support-portal-body dd-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
-    <main class="support-shell support-thread-shell">
-        <section class="support-thread-header-card">
-            <div class="support-thread-header-main">
-                <span class="support-kicker">Detalhamento</span>
-                <h1>{{ demand.title }}</h1>
-                <p class="support-thread-header-summary">Acompanhe a conversa, o contexto e as pr&oacute;ximas intera&ccedil;&otilde;es desta demanda em um feed mais claro e organizado.</p>
-                <div class="support-thread-subline">
-                    <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
-                    <span>{{ demand.created_at|date:"d/m/Y H:i" }}</span>
-                    <span>Solicitante: {{ demand.requester_display }}</span>
-                    {% if demand.requester_sector %}<span>Setor: {{ demand.requester_sector.name }}</span>{% endif %}
-                    {% if demand.reopen_count %}<span class="support-chip is-waiting">Reaberta {{ demand.reopen_count }}x</span>{% endif %}
-                </div>
-                <div class="support-thread-quick-actions">
-                    <a href="#conversation" class="support-btn support-btn-secondary">Ver conversa</a>
-                    <a href="#feedback" class="support-btn support-btn-secondary">Ver feedback</a>
-                </div>
-            </div>
+    <main class="dd-page">
+        <div class="dd-notices">
+            {% if reply_success %}<div class="dd-notice is-success">Resposta registrada.</div>{% endif %}
+            {% if feedback_success %}<div class="dd-notice is-success">Avaliação registrada. Obrigado pelo retorno.</div>{% endif %}
+            {% if transfer_success %}<div class="dd-notice is-success">Demanda transferida.</div>{% endif %}
+            {% if worklog_success %}<div class="dd-notice is-success">Turno apontado.</div>{% endif %}
 
-            <div class="support-thread-header-side">
-                <div class="support-thread-status-row">
-                    <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
-                    <span class="support-chip is-soft" style="--chip-color: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</span>
-                    <span class="support-chip {{ demand.next_action_css }}">{{ demand.next_action_label }}</span>
-                    {% if can_assume_here %}
-                        <form method="POST" action="{% url 'portalDemandAssume' demand.id %}">
-                            {% csrf_token %}
-                            <input type="hidden" name="next" value="{{ demand.detail_url }}">
-                            <button type="submit" class="support-btn">Assumir como atendente</button>
-                        </form>
-                    {% endif %}
-                </div>
+            {% if workflow_state == "waiting" %}
+                <div class="dd-notice is-info">Aguardando o solicitante. O prazo de SLA fica pausado até a resposta chegar.</div>
+            {% elif workflow_state == "resumed" %}
+                <div class="dd-notice is-success">Atendimento retomado. O prazo de SLA voltou a correr.</div>
+            {% elif workflow_state == "reopened" %}
+                <div class="dd-notice is-info">Demanda reaberta. Ela voltou para a fila com um novo prazo de resolução.</div>
+            {% elif workflow_state == "completed" %}
+                <div class="dd-notice is-success">Demanda concluída.</div>
+            {% elif workflow_state == "cancelled" %}
+                <div class="dd-notice is-success">Demanda cancelada.</div>
+            {% endif %}
 
-                <div class="support-thread-people-grid">
-                    <article class="support-thread-person-card is-requester">
-                        <span class="support-thread-avatar is-requester">{{ demand.requester_display|first|upper }}</span>
-                        <div>
-                            <span>Solicitante</span>
-                            <strong>{{ demand.requester_display }}</strong>
-                        </div>
-                    </article>
-                    <article class="support-thread-person-card is-attendant">
-                        <span class="support-thread-avatar is-attendant">{{ demand.assigned_display|first|upper }}</span>
-                        <div>
-                            <span>Atendente</span>
-                            <strong>{{ demand.assigned_display }}</strong>
-                        </div>
-                    </article>
-                </div>
-            </div>
-        </section>
+            {% if workflow_error_message %}<div class="dd-notice is-danger">{{ workflow_error_message }}</div>{% endif %}
+            {% if documented_success %}<div class="dd-notice is-success">Documentação salva. Ela já está na base de conhecimento.</div>{% endif %}
+            {% if reply_form.non_field_errors %}<div class="dd-notice is-danger">{{ reply_form.non_field_errors }}</div>{% endif %}
+            {% if transfer_form.non_field_errors %}<div class="dd-notice is-danger">{{ transfer_form.non_field_errors }}</div>{% endif %}
+            {% if worklog_form.non_field_errors %}<div class="dd-notice is-danger">{{ worklog_form.non_field_errors }}</div>{% endif %}
+            {% if feedback_form.non_field_errors %}<div class="dd-notice is-danger">{{ feedback_form.non_field_errors }}</div>{% endif %}
+        </div>
 
-        <section class="support-thread-metrics support-thread-metrics-expanded">
-            <article class="support-thread-metric">
-                <span>C&oacute;digo p&uacute;blico</span>
-                <strong>{{ demand.protocol }}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Grupo</span>
-                <strong>{% if demand.task_group %}{{ demand.task_group.name }}{% else %}Sem grupo{% endif %}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Tipo</span>
-                <strong>{% if demand.task_type %}{{ demand.task_type.name }}{% else %}Sem tipo{% endif %}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Respons&aacute;vel</span>
-                <strong>{{ demand.assigned_display }}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Mensagens</span>
-                <strong>{{ demand.reply_count }}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Tempo apontado</span>
-                <strong>{{ demand.total_worked_display }}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>Urg&ecirc;ncia</span>
-                <strong>{{ demand.triage_label }}</strong>
-            </article>
-            <article class="support-thread-metric">
-                <span>{{ demand.sla_next_label }}</span>
-                <strong>{{ demand.sla_next_display }}</strong>
-            </article>
-        </section>
+        <div class="dd-layout">
+            <div class="dd-main">
+                <header class="dd-head" id="management">
+                    <nav class="dd-crumbs" aria-label="Navegação">
+                        {% if demand.requester_id == request.user.id %}
+                            <a class="dd-back" href="{% url 'portalMyDemandsPage' %}">&larr; Minhas demandas</a>
+                        {% else %}
+                            <a class="dd-back" href="{% url 'portalPendingDemandsPage' %}">&larr; Entrada de chamados</a>
+                        {% endif %}
+                        <span class="dd-sep" aria-hidden="true">/</span>
+                        <span class="dd-code">{{ demand.protocol }}</span>
+                        {% if demand.reopen_count %}<span class="dd-chip is-waiting">Reaberta {{ demand.reopen_count }}&times;</span>{% endif %}
+                    </nav>
 
-        <section class="support-thread-sla-grid">
-            <article class="support-thread-sla-card">
-                <span class="support-kicker">Pol&iacute;tica de SLA</span>
-                <strong>{{ demand.sla_preview.title }}</strong>
-                <p>{{ demand.sla_preview.subtitle }}</p>
-                {% if demand.sla_preview.has_policy %}
-                    <div class="support-thread-sla-meta">
-                        <span>Primeira resposta: {{ demand.sla_preview.first_response_display }}</span>
-                        <span>Resolu&ccedil;&atilde;o: {{ demand.sla_preview.resolution_display }}</span>
-                        <span>Atendente padr&atilde;o: {{ demand.sla_preview.default_attendant }}</span>
+                    <h1 class="dd-title">{{ demand.title }}</h1>
+
+                    <div class="dd-meta">
+                        {% if documentation_entry %}<a class="dd-chip is-completed" href="{% url 'knowledgeEntryDetailPage' documentation_entry.id %}">Documentada</a>{% endif %}
+                        <span class="dd-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                        <span class="dd-chip {{ demand.next_action_css }}" title="{{ demand.next_action_hint }}">{{ demand.next_action_label }}</span>
+                        <span class="dd-prio"><span class="dd-dot" style="background: {{ demand.priority_render.color }};" aria-hidden="true"></span>Prioridade {{ demand.priority_render.label|lower }}</span>
+                        <span class="dd-prio">Urgência {{ demand.triage_label|lower }}</span>
                     </div>
-                {% endif %}
-            </article>
-            <article class="support-thread-sla-card {{ demand.sla_first_response.css }}">
-                <span class="support-kicker">Primeira resposta</span>
-                <strong>{{ demand.sla_first_response.status }}</strong>
-                <p>{{ demand.sla_first_response.hint }}</p>
-                <div class="support-thread-sla-meta">
-                    <span>Limite: {{ demand.first_response_due_display }}</span>
-                </div>
-            </article>
-            <article class="support-thread-sla-card {{ demand.sla_resolution.css }}">
-                <span class="support-kicker">Resolu&ccedil;&atilde;o</span>
-                <strong>{{ demand.sla_resolution.status }}</strong>
-                <p>{{ demand.sla_resolution.hint }}</p>
-                <div class="support-thread-sla-meta">
-                    <span>Limite: {{ demand.resolution_due_display }}</span>
-                    <span>Urg&ecirc;ncia: {{ demand.triage_label }}</span>
-                </div>
-            </article>
-        </section>
 
-        {% if demand.extra_details %}
-            <section class="support-thread-extra-grid">
-                {% for item in demand.extra_details %}
-                    <article class="support-thread-extra-card">
-                        <span>{{ item.label }}</span>
-                        <strong>{{ item.value }}</strong>
-                    </article>
-                {% endfor %}
-            </section>
-        {% endif %}
+                    <div class="dd-actions">
+                        {% if can_assume_here %}
+                            <form method="POST" action="{% url 'portalDemandAssume' demand.id %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ demand.detail_url }}">
+                                <button type="submit" class="dd-btn dd-btn--primary">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                                    Assumir
+                                </button>
+                            </form>
+                        {% endif %}
 
-        {% if reply_success %}
-            <div class="support-banner is-success">Resposta registrada com sucesso.</div>
-        {% endif %}
+                        {% if can_reply %}
+                            <button type="button" class="dd-btn {% if can_assume_here %}dd-btn--ghost{% else %}dd-btn--primary{% endif %}" data-open-modal="replyModal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
+                                Responder
+                            </button>
+                        {% endif %}
 
-        {% if feedback_success %}
-            <div class="support-banner is-success">Feedback registrado com sucesso.</div>
-        {% endif %}
-
-        {% if transfer_success %}
-            <div class="support-banner is-success">Demanda transferida com sucesso.</div>
-        {% endif %}
-
-        {% if workflow_state == "waiting" %}
-            <div class="support-banner is-info">Demanda marcada como aguardando o solicitante. O prazo de SLA fica pausado at&eacute; a resposta chegar.</div>
-        {% elif workflow_state == "resumed" %}
-            <div class="support-banner is-success">Atendimento retomado. O prazo de SLA voltou a correr, j&aacute; descontado o tempo de espera.</div>
-        {% elif workflow_state == "reopened" %}
-            <div class="support-banner is-info">Demanda reaberta. Ela voltou para a fila com um novo prazo de resolu&ccedil;&atilde;o.</div>
-        {% elif workflow_state == "completed" %}
-            <div class="support-banner is-success">Demanda conclu&iacute;da com sucesso.</div>
-        {% elif workflow_state == "cancelled" %}
-            <div class="support-banner is-success">Demanda cancelada com sucesso.</div>
-        {% endif %}
-
-        {% if workflow_error_message %}
-            <div class="support-banner is-danger">{{ workflow_error_message }}</div>
-        {% endif %}
-
-        {% if reply_form.non_field_errors %}
-            <div class="support-banner is-danger">{{ reply_form.non_field_errors }}</div>
-        {% endif %}
-
-        {% if feedback_form.non_field_errors %}
-            <div class="support-banner is-danger">{{ feedback_form.non_field_errors }}</div>
-        {% endif %}
-
-        {% if transfer_form.non_field_errors %}
-            <div class="support-banner is-danger">{{ transfer_form.non_field_errors }}</div>
-        {% endif %}
-
-        <section id="conversation" class="support-thread-layout">
-            <article class="support-card support-thread-timeline-card">
-                <div class="support-card-head support-thread-feed-head">
-                    <div>
-                        <span class="support-kicker">Hist&oacute;rico</span>
-                        <h2>Conversa da demanda</h2>
-                        <p class="support-thread-feed-intro">Tudo o que foi trocado entre solicitante e atendente aparece neste feed, com contexto, anexos e apontamentos.</p>
-                    </div>
-                    <div class="support-inline-pills support-thread-feed-badges">
-                        <span class="support-meta-pill">{{ demand.reply_count }} intera&ccedil;&otilde;es</span>
-                        <span class="support-meta-pill">{{ demand.total_worked_display }} apontados</span>
-                    </div>
-                </div>
-
-                <div class="support-thread-timeline">
-                    <article class="support-thread-message support-thread-message-opening">
-                        <div class="support-thread-message-shell">
-                            <div class="support-thread-avatar-col">
-                                <span class="support-thread-avatar is-opening">{{ demand.requester_display|first|upper }}</span>
-                            </div>
-                            <div class="support-thread-message-card">
-                                <div class="support-thread-message-head">
-                                    <div>
-                                        <strong>Abertura da demanda</strong>
-                                        <span>{{ demand.requester_display }} &bull; {{ demand.created_at|date:"d/m/Y H:i" }}</span>
-                                    </div>
-                                    <span class="support-thread-role-chip is-requester">Solicitante</span>
-                                </div>
-
-                                <div class="support-inline-pills support-inline-pills-gap">
-                                    <span class="support-meta-pill">Post inicial</span>
-                                </div>
-
-                                {% if demand.description %}
-                                    <div class="support-thread-message-body">{{ demand.description|linebreaksbr }}</div>
-                                {% else %}
-                                    <div class="support-thread-message-body is-muted">A demanda foi aberta sem descri&ccedil;&atilde;o inicial.</div>
-                                {% endif %}
-
-                                {% if demand.opening_attachments %}
-                                    <div class="support-thread-attachments">
-                                        <span class="support-thread-attachments-title">Anexos iniciais</span>
-                                        <div class="support-thread-attachment-list">
-                                            {% for attachment in demand.opening_attachments %}
-                                                <a href="{{ attachment.file.url }}" target="_blank" class="support-thread-attachment">
-                                                    <strong>{{ attachment.display_name }}</strong>
-                                                    <span>{{ attachment.created_at|date:"d/m/Y H:i" }}</span>
-                                                </a>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </article>
-
-                    {% for message in demand.thread_messages %}
-                        <article class="support-thread-message{% if message.is_requester %} is-requester{% else %} is-attendant{% endif %}{% if message.is_internal_note %} is-internal-note{% endif %}">
-                            <div class="support-thread-message-shell">
-                                <div class="support-thread-avatar-col">
-                                    <span class="support-thread-avatar {% if message.is_requester %}is-requester{% else %}is-attendant{% endif %}{% if message.is_internal_note %} is-internal{% endif %}">{{ message.author_display|first|upper }}</span>
-                                </div>
-                                <div class="support-thread-message-card">
-                                    <div class="support-thread-message-head">
-                                        <div>
-                                            <strong>{{ message.author_display }}</strong>
-                                            <span>{{ message.created_at|date:"d/m/Y H:i" }}</span>
-                                        </div>
-                                        <span class="support-thread-role-chip {% if message.is_requester %}is-requester{% else %}is-attendant{% endif %}{% if message.is_internal_note %} is-internal{% endif %}">{{ message.role_label }}</span>
-                                    </div>
-
-                                    {% if message.canned_response_title %}
-                                        <div class="support-inline-pills support-inline-pills-gap">
-                                            <span class="support-meta-pill">Base pronta: {{ message.canned_response_title }}</span>
-                                        </div>
-                                    {% endif %}
-
-                                    {% if message.message %}
-                                        <div class="support-thread-message-body">{{ message.message|linebreaksbr }}</div>
-                                    {% endif %}
-
-                                    {% if message.has_worklog %}
-                                        <div class="support-thread-worklog">
-                                            <span class="support-thread-worklog-pill">Tempo apontado: {{ message.worked_time_display }}</span>
-                                            <small>{{ message.worked_period_display }}</small>
-                                        </div>
-                                    {% endif %}
-
-                                    {% if message.prefetched_attachments %}
-                                        <div class="support-thread-attachments">
-                                            <span class="support-thread-attachments-title">Anexos</span>
-                                            <div class="support-thread-attachment-list">
-                                                {% for attachment in message.prefetched_attachments %}
-                                                    <a href="{{ attachment.file.url }}" target="_blank" class="support-thread-attachment">
-                                                        <strong>{{ attachment.display_name }}</strong>
-                                                        <span>{{ attachment.created_at|date:"d/m/Y H:i" }}</span>
-                                                    </a>
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </article>
-                    {% empty %}
-                        <div class="support-empty compact">
-                            <strong>Nenhuma resposta registrada ainda</strong>
-                            <span>As pr&oacute;ximas mensagens trocadas entre usu&aacute;rio e atendente aparecer&atilde;o aqui.</span>
-                        </div>
-                    {% endfor %}
-                </div>
-            </article>
-
-            <article class="support-card support-thread-reply-card">
-                <div class="support-card-head">
-                    <div>
-                        <span class="support-kicker">Intera&ccedil;&atilde;o</span>
-                        <h2>Responder demanda</h2>
-                        <p class="support-thread-feed-intro">Escreva uma atualiza&ccedil;&atilde;o objetiva, compartilhe anexos e registre tempo quando fizer sentido.</p>
-                    </div>
-                </div>
-
-                <div class="support-thread-compose-intro">
-                    <span class="support-thread-avatar is-attendant">{{ request.user.nameUser|default:request.user.username|first|upper }}</span>
-                    <div>
-                        <strong>Nova publica&ccedil;&atilde;o nesta demanda</strong>
-                        <span>As respostas ficam organizadas em formato de feed para facilitar a leitura do solicitante e da equipe.</span>
-                    </div>
-                </div>
-
-                {% if can_transfer_here or can_manage_workflow or can_reopen_here %}
-                    <div id="management" class="support-thread-management-grid">
-                        {% if can_transfer_here %}
-                            <div class="support-thread-management-card">
-                                <div class="support-thread-management-copy">
-                                    <strong>Transferir atendimento</strong>
-                                    <span>Encaminhe esta demanda para outro atendente e registre a movimenta&ccedil;&atilde;o no hist&oacute;rico.</span>
-                                </div>
-                                <form method="POST" class="support-form support-thread-transfer-form">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="form_type" value="transfer">
-                                    <div class="support-form-grid">
-                                        <div class="support-field support-field-span-2">
-                                            <label for="{{ transfer_form.target_attendant.id_for_label }}">{{ transfer_form.target_attendant.label }}</label>
-                                            {{ transfer_form.target_attendant }}
-                                            {% if transfer_form.target_attendant.errors %}<div class="support-field-error">{{ transfer_form.target_attendant.errors|join:", " }}</div>{% endif %}
-                                        </div>
-                                    </div>
-                                    <div class="support-form-actions support-form-actions-start">
-                                        <button type="submit" class="support-btn support-btn-secondary">Transferir demanda</button>
-                                    </div>
-                                </form>
-                            </div>
+                        {% if can_leave_feedback %}
+                            <button type="button" class="dd-btn dd-btn--primary" data-open-modal="feedbackModal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                Avaliar atendimento
+                            </button>
                         {% endif %}
 
                         {% if can_manage_workflow %}
-                            <div class="support-thread-management-card is-danger-zone">
-                                <div class="support-thread-management-copy">
-                                    <strong>Encerrar o ciclo da demanda</strong>
-                                    <span>Conclua quando o atendimento estiver finalizado ou cancele se a solicita&ccedil;&atilde;o n&atilde;o precisar mais seguir no fluxo.</span>
-                                </div>
-                                <div class="support-inline-pills support-inline-pills-gap">
-                                    <span class="support-meta-pill">Status atual: {{ demand.status_render.label }}</span>
-                                    <span class="support-meta-pill">Pr&oacute;xima a&ccedil;&atilde;o: {{ demand.next_action_label }}</span>
-                                </div>
-                                <div class="support-thread-workflow-actions">
-                                    {% if can_wait_here %}
-                                        <form method="POST" class="support-thread-workflow-form">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="form_type" value="workflow">
-                                            <input type="hidden" name="workflow_action" value="wait">
-                                            <button type="submit" class="support-btn support-btn-secondary" data-confirm="Marcar como aguardando o solicitante? O SLA fica pausado.">Aguardar solicitante</button>
-                                        </form>
-                                    {% endif %}
-                                    {% if can_resume_here %}
-                                        <form method="POST" class="support-thread-workflow-form">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="form_type" value="workflow">
-                                            <input type="hidden" name="workflow_action" value="resume">
-                                            <button type="submit" class="support-btn support-btn-secondary">Retomar atendimento</button>
-                                        </form>
-                                    {% endif %}
-                                    <form method="POST" class="support-thread-workflow-form">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="form_type" value="workflow">
-                                        <input type="hidden" name="workflow_action" value="complete">
-                                        <button type="submit" class="support-btn" data-confirm="Concluir esta demanda agora?">Concluir demanda</button>
-                                    </form>
-                                    <form method="POST" class="support-thread-workflow-form">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="form_type" value="workflow">
-                                        <input type="hidden" name="workflow_action" value="cancel">
-                                        <button type="submit" class="support-btn support-btn-soft-danger" data-confirm="Cancelar esta demanda agora?">Cancelar demanda</button>
-                                    </form>
-                                </div>
-                            </div>
+                            <form method="POST">
+                                {% csrf_token %}
+                                <input type="hidden" name="form_type" value="workflow">
+                                <input type="hidden" name="workflow_action" value="complete">
+                                <button type="submit" class="dd-btn dd-btn--ghost" data-confirm="Concluir esta demanda agora?">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                                    Concluir
+                                </button>
+                            </form>
                         {% endif %}
 
-                        {% if can_reopen_here %}
-                            <div class="support-thread-management-card">
-                                <div class="support-thread-management-copy">
-                                    <strong>Reabrir demanda</strong>
-                                    <span>Use se o problema voltou ou se a solu&ccedil;&atilde;o entregue n&atilde;o resolveu. A demanda volta para a fila com um novo prazo de resolu&ccedil;&atilde;o.</span>
-                                </div>
-                                <form method="POST" class="support-form support-thread-workflow-form">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="form_type" value="workflow">
-                                    <input type="hidden" name="workflow_action" value="reopen">
-                                    <div class="support-field">
-                                        <label for="portalReopenReason">Por que precisa voltar?</label>
-                                        <textarea id="portalReopenReason" name="reopen_reason" rows="2" placeholder="Ex.: a impressora voltou a falhar hoje de manh&atilde;."></textarea>
+                        {% if can_document_here %}
+                            <button type="button" class="dd-btn dd-btn--ghost" data-open-modal="docModal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                                Salvar como documentação
+                            </button>
+                        {% endif %}
+
+                        {% if can_reopen_here and not can_manage_portal %}
+                            <button type="button" class="dd-btn dd-btn--ghost" data-open-modal="reopenModal">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                Reabrir
+                            </button>
+                        {% endif %}
+
+                        {% if can_manage_portal %}
+                            {% if can_transfer_here or can_wait_here or can_resume_here or can_manage_workflow or can_reopen_here %}
+                                <details class="dd-menu">
+                                    <summary class="dd-btn dd-btn--ghost">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                                        Mais ações
+                                    </summary>
+                                    <div class="dd-menu-panel">
+                                        {% if can_transfer_here %}
+                                            <button type="button" class="dd-menu-item" data-open-modal="transferModal" data-close-menu>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                                                Transferir atendimento
+                                            </button>
+                                        {% endif %}
+                                        {% if can_wait_here %}
+                                            <form method="POST">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_type" value="workflow">
+                                                <input type="hidden" name="workflow_action" value="wait">
+                                                <button type="submit" class="dd-menu-item" data-confirm="Marcar como aguardando o solicitante? O SLA fica pausado.">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                                    Aguardar solicitante
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        {% if can_resume_here %}
+                                            <form method="POST">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_type" value="workflow">
+                                                <input type="hidden" name="workflow_action" value="resume">
+                                                <button type="submit" class="dd-menu-item">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                                    Retomar atendimento
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        {% if can_reopen_here %}
+                                            <button type="button" class="dd-menu-item" data-open-modal="reopenModal" data-close-menu>
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                                                Reabrir demanda
+                                            </button>
+                                        {% endif %}
+                                        {% if can_manage_workflow %}
+                                            <form method="POST">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="form_type" value="workflow">
+                                                <input type="hidden" name="workflow_action" value="cancel">
+                                                <button type="submit" class="dd-menu-item is-danger" data-confirm="Cancelar esta demanda agora?">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                                                    Cancelar demanda
+                                                </button>
+                                            </form>
+                                        {% endif %}
                                     </div>
-                                    <div class="support-form-actions support-form-actions-start">
-                                        <button type="submit" class="support-btn support-btn-secondary">Reabrir demanda</button>
-                                    </div>
-                                </form>
-                            </div>
+                                </details>
+                            {% endif %}
                         {% endif %}
                     </div>
-                {% endif %}
+                </header>
 
-                {% if can_reply %}
-                    <form method="POST" enctype="multipart/form-data" class="support-form" id="portalReplyForm">
-                        {% csrf_token %}
-                        <input type="hidden" name="form_type" value="reply">
-                        <div class="support-inline-pills support-thread-compose-hints">
-                            <span class="support-meta-pill">Resposta vis&iacute;vel no feed</span>
-                            {% if can_manage_portal %}
-                                <span class="support-meta-pill">Nota interna opcional</span>
-                                <span class="support-meta-pill">Apontamento de tempo opcional</span>
-                            {% endif %}
-                        </div>
+                <section id="conversation" class="dd-thread-card">
+                    <div class="dd-thread-head">
+                        <h2>Conversa</h2>
+                        <span class="dd-count">{{ demand.reply_count }} {{ demand.reply_count|pluralize:"mensagem,mensagens" }}</span>
+                    </div>
 
-                        <div class="support-form-grid">
-                            {% if can_manage_portal %}
-                                <div class="support-field support-field-span-2">
-                                    {% if quick_canned_responses %}
-                                        <div class="support-quick-canned-wrap">
-                                            <div class="support-quick-canned-head">
-                                                <strong>Sugest&otilde;es r&aacute;pidas</strong>
-                                                <span>Baseadas no grupo e tipo desta demanda</span>
-                                            </div>
-                                            <div class="support-quick-canned-grid">
-                                                {% for canned in quick_canned_responses %}
-                                                    <button
-                                                        type="button"
-                                                        class="support-quick-canned-chip"
-                                                        data-canned-shortcut
-                                                        data-canned-id="{{ canned.id }}"
-                                                        data-canned-message="{{ canned.message|escape }}"
-                                                        data-canned-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
-                                                    >
-                                                        <strong>{{ canned.title }}</strong>
-                                                        <span>{{ canned.match_reason }}</span>
-                                                    </button>
+                    <ol class="dd-thread" id="ddThread">
+                        <li class="dd-msg is-requester dd-msg--opening{% if demand.requester_id == request.user.id %} is-mine{% endif %}">
+                            <span class="dd-avatar is-requester" aria-hidden="true">{{ demand.requester_display|first|upper }}</span>
+                            <div class="dd-bubble-wrap">
+                                <div class="dd-msg-meta">
+                                    <strong>{{ demand.requester_display }}</strong>
+                                    <span class="dd-tag">Abertura</span>
+                                    <time datetime="{{ demand.created_at|date:'c' }}">{{ demand.created_at|date:"d/m/Y · H:i" }}</time>
+                                </div>
+                                <div class="dd-bubble">
+                                    {% if demand.description %}{{ demand.description|linebreaksbr }}{% else %}<span class="dd-muted-text">Aberta sem descrição.</span>{% endif %}
+                                </div>
+                                {% if demand.opening_attachments %}
+                                    <div class="dd-files">
+                                        {% for attachment in demand.opening_attachments %}
+                                            <a class="dd-file-chip" href="{{ attachment.file.url }}" target="_blank" rel="noopener"><span>{{ attachment.display_name }}</span></a>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </li>
+
+                        {% for message in demand.thread_messages %}
+                            {% if message.has_worklog %}
+                                <li class="dd-event is-turno" id="msg-{{ message.id }}">
+                                    <span class="dd-event-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                                    <div class="dd-event-body">
+                                        <strong>Turno apontado · {{ message.worked_time_display }}</strong>
+                                        <span>{{ message.worked_period_display }} · {{ message.author_display }}</span>
+                                        {% if message.message %}<p>{{ message.message|linebreaksbr }}</p>{% endif %}
+                                    </div>
+                                    <time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"d/m/Y · H:i" }}</time>
+                                </li>
+                            {% elif message.is_requester or message.is_attendant %}
+                                <li class="dd-msg{% if message.is_requester %} is-requester{% else %} is-attendant{% endif %}{% if message.is_internal_note %} is-internal{% endif %}{% if message.author_id == request.user.id %} is-mine{% endif %}" id="msg-{{ message.id }}">
+                                    <span class="dd-avatar{% if message.is_internal_note %} is-internal{% elif message.is_requester %} is-requester{% else %} is-attendant{% endif %}" aria-hidden="true">{{ message.author_display|first|upper }}</span>
+                                    <div class="dd-bubble-wrap">
+                                        <div class="dd-msg-meta">
+                                            <strong>{{ message.author_display }}</strong>
+                                            {% if message.is_internal_note %}
+                                                <span class="dd-tag is-internal">Nota interna</span>
+                                            {% else %}
+                                                <span class="dd-role">{{ message.role_label }}</span>
+                                            {% endif %}
+                                            {% if message.canned_response_title %}<span class="dd-tag">Base: {{ message.canned_response_title }}</span>{% endif %}
+                                            <time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"d/m/Y · H:i" }}</time>
+                                        </div>
+                                        {% if message.message %}
+                                            <div class="dd-bubble">{{ message.message|linebreaksbr }}</div>
+                                        {% endif %}
+                                        {% if message.prefetched_attachments %}
+                                            <div class="dd-files">
+                                                {% for attachment in message.prefetched_attachments %}
+                                                    <a class="dd-file-chip" href="{{ attachment.file.url }}" target="_blank" rel="noopener"><span>{{ attachment.display_name }}</span></a>
                                                 {% endfor %}
                                             </div>
-                                        </div>
-                                    {% endif %}
-
-                                    <label for="{{ reply_form.canned_response.id_for_label }}">{{ reply_form.canned_response.label }}</label>
-                                    <input type="search" id="portalCannedResponseSearch" class="support-portal-search support-canned-filter-input" placeholder="Buscar resposta pronta por t&iacute;tulo...">
-                                    <div class="support-inline-select-row">
-                                        <select name="{{ reply_form.canned_response.html_name }}" id="{{ reply_form.canned_response.id_for_label }}" class="queue-select">
-                                            <option value="">Selecione uma resposta pronta</option>
-                                            {% for canned in reply_canned_responses %}
-                                                <option
-                                                    value="{{ canned.id }}"
-                                                    data-message="{{ canned.message|escape }}"
-                                                    data-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
-                                                    data-title="{{ canned.title|lower }}"
-                                                    {% if reply_canned_response_value|stringformat:'s' == canned.id|stringformat:'s' %}selected{% endif %}
-                                                >
-                                                    {{ canned.title }}
-                                                </option>
-                                            {% endfor %}
-                                        </select>
-                                        <button type="button" class="support-btn support-btn-secondary support-inline-apply-btn" id="applyCannedResponseBtn">Aplicar</button>
+                                        {% endif %}
                                     </div>
-                                    {% if reply_form.canned_response.errors %}<div class="support-field-error">{{ reply_form.canned_response.errors|join:", " }}</div>{% endif %}
-                                </div>
+                                </li>
+                            {% else %}
+                                <li class="dd-event" id="msg-{{ message.id }}">
+                                    <div class="dd-event-body">
+                                        <span>{{ message.message|default:message.role_label }}</span>
+                                    </div>
+                                    <time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"d/m/Y · H:i" }}</time>
+                                </li>
                             {% endif %}
+                        {% empty %}
+                            <li class="dd-thread-empty">Ainda não há respostas. As próximas mensagens entre solicitante e atendente aparecem aqui, em ordem.</li>
+                        {% endfor %}
+                    </ol>
 
-                            <div class="support-field support-field-span-2">
-                                <label for="{{ reply_form.message.id_for_label }}">{{ reply_form.message.label }}</label>
-                                {{ reply_form.message }}
-                                {% if reply_form.message.errors %}<div class="support-field-error">{{ reply_form.message.errors|join:", " }}</div>{% endif %}
-                            </div>
-
-                            <div class="support-field support-field-span-2">
-                                <label for="{{ reply_form.attachments.id_for_label }}">{{ reply_form.attachments.label }}</label>
-                                {{ reply_form.attachments }}
-                                <small class="support-helper-text">Voc&ecirc; pode anexar um ou mais arquivos em cada resposta.</small>
-                                {% if reply_form.attachments.errors %}<div class="support-field-error">{{ reply_form.attachments.errors|join:", " }}</div>{% endif %}
-                            </div>
-
-                            {% if can_manage_portal %}
-                                <div class="support-field">
-                                    <label for="{{ reply_form.work_started_at.id_for_label }}">{{ reply_form.work_started_at.label }}</label>
-                                    {{ reply_form.work_started_at }}
-                                    {% if reply_form.work_started_at.errors %}<div class="support-field-error">{{ reply_form.work_started_at.errors|join:", " }}</div>{% endif %}
-                                </div>
-
-                                <div class="support-field">
-                                    <label for="{{ reply_form.work_ended_at.id_for_label }}">{{ reply_form.work_ended_at.label }}</label>
-                                    {{ reply_form.work_ended_at }}
-                                    {% if reply_form.work_ended_at.errors %}<div class="support-field-error">{{ reply_form.work_ended_at.errors|join:", " }}</div>{% endif %}
-                                </div>
-
-                                <label class="support-inline-checkbox support-field-span-2">
-                                    {{ reply_form.is_internal }}
-                                    <span>{{ reply_form.is_internal.label }}</span>
-                                </label>
-                            {% endif %}
+                    {% if can_reply %}
+                        <div class="dd-composer-bar">
+                            <button type="button" class="dd-composer" data-open-modal="replyModal">
+                                <span>{% if can_manage_portal %}Escreva uma resposta ou nota interna…{% else %}Escreva uma resposta…{% endif %}</span>
+                                <span class="dd-composer-send" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                </span>
+                            </button>
                         </div>
-
-                        <div class="support-form-actions">
-                            <button type="submit" class="support-btn">Enviar resposta</button>
+                    {% else %}
+                        <div class="dd-closed">
+                            <strong>Conversa encerrada</strong>
+                            <span>Esta demanda está {{ demand.status_render.label|lower }}.{% if can_reopen_here %} Reabra para continuar.{% endif %}</span>
                         </div>
-                    </form>
-                {% else %}
-                    <div class="support-empty compact">
-                        <strong>Conversa encerrada para novas respostas</strong>
-                        <span>Essa demanda j&aacute; foi conclu&iacute;da ou cancelada, ent&atilde;o novas mensagens n&atilde;o est&atilde;o dispon&iacute;veis.</span>
+                    {% endif %}
+                </section>
+            </div>
+
+            <aside class="dd-side">
+                <article class="dd-card">
+                    <div class="dd-card-head"><h3 class="dd-card-title">Envolvidos</h3></div>
+                    <div class="dd-people">
+                        <div class="dd-person">
+                            <span class="dd-avatar is-requester" aria-hidden="true">{{ demand.requester_display|first|upper }}</span>
+                            <div>
+                                <small>Solicitante</small>
+                                <strong>{{ demand.requester_display }}</strong>
+                            </div>
+                        </div>
+                        <div class="dd-person">
+                            <span class="dd-avatar is-attendant" aria-hidden="true">{{ demand.assigned_display|first|upper }}</span>
+                            <div>
+                                <small>Atendente</small>
+                                <strong>{{ demand.assigned_display }}</strong>
+                            </div>
+                        </div>
                     </div>
+                </article>
+
+                {% if documentation_entry %}
+                <article class="dd-card">
+                    <div class="dd-card-head"><h3 class="dd-card-title">Documentação</h3></div>
+                    <a class="dd-doc-link" href="{% url 'knowledgeEntryDetailPage' documentation_entry.id %}">
+                        <strong>{{ documentation_entry.title }}</strong>
+                        <span>{{ documentation_entry.category.name }}</span>
+                    </a>
+                </article>
                 {% endif %}
-            </article>
-        </section>
 
-        <section class="support-thread-secondary-grid">
-            <article id="feedback" class="support-card support-thread-feedback-card">
-                <div class="support-card-head">
-                    <div>
-                        <span class="support-kicker">P&oacute;s-atendimento</span>
-                        <h2>Feedback da demanda</h2>
-                        <p class="support-thread-feed-intro">Depois da conclus&atilde;o, o solicitante pode registrar como foi a experi&ecirc;ncia de atendimento.</p>
-                    </div>
-                </div>
-
-                {% if can_leave_feedback %}
-                    <form method="POST" class="support-form">
-                        {% csrf_token %}
-                        <input type="hidden" name="form_type" value="feedback">
-                        <div class="support-form-grid">
-                            <div class="support-field">
-                                <label for="{{ feedback_form.feedback_rating.id_for_label }}">{{ feedback_form.feedback_rating.label }}</label>
-                                {{ feedback_form.feedback_rating }}
-                                {% if feedback_form.feedback_rating.errors %}<div class="support-field-error">{{ feedback_form.feedback_rating.errors|join:", " }}</div>{% endif %}
+                <article class="dd-card">
+                    <div class="dd-card-head"><h3 class="dd-card-title">Detalhes</h3></div>
+                    <dl class="dd-list">
+                        <div>
+                            <dt>Empresa</dt>
+                            <dd>{% if demand.company %}{{ demand.company.name }}{% else %}&mdash;{% endif %}</dd>
+                        </div>
+                        <div>
+                            <dt>Setor</dt>
+                            <dd>{% if demand.requester_sector %}{{ demand.requester_sector.name }}{% else %}&mdash;{% endif %}</dd>
+                        </div>
+                        <div>
+                            <dt>Grupo</dt>
+                            <dd>{% if demand.task_group %}{{ demand.task_group.name }}{% else %}&mdash;{% endif %}</dd>
+                        </div>
+                        <div>
+                            <dt>Tipo</dt>
+                            <dd>{% if demand.task_type %}{{ demand.task_type.name }}{% else %}&mdash;{% endif %}</dd>
+                        </div>
+                        <div>
+                            <dt>Aberta em</dt>
+                            <dd>{{ demand.created_at|date:"d/m/Y · H:i" }}</dd>
+                        </div>
+                        {% if demand.last_movement_label != "Abertura" %}
+                            <div>
+                                <dt>{{ demand.last_movement_label }}</dt>
+                                <dd>{{ demand.last_movement_display }}</dd>
                             </div>
-
-                            <div class="support-field support-field-span-2">
-                                <label for="{{ feedback_form.feedback_comment.id_for_label }}">{{ feedback_form.feedback_comment.label }}</label>
-                                {{ feedback_form.feedback_comment }}
-                                {% if feedback_form.feedback_comment.errors %}<div class="support-field-error">{{ feedback_form.feedback_comment.errors|join:", " }}</div>{% endif %}
+                        {% endif %}
+                        {% for item in demand.extra_details %}
+                            <div>
+                                <dt>{{ item.label }}</dt>
+                                <dd>{{ item.value }}</dd>
                             </div>
-                        </div>
+                        {% endfor %}
+                    </dl>
+                </article>
 
-                        <div class="support-form-actions">
-                            <button type="submit" class="support-btn">Enviar feedback</button>
+                <article class="dd-card">
+                    <div class="dd-card-head"><h3 class="dd-card-title">Prazos</h3></div>
+                    <dl class="dd-list">
+                        <div>
+                            <dt>1ª resposta</dt>
+                            <dd>
+                                <span class="dd-chip {{ demand.sla_first_response.css }}" title="{{ demand.sla_first_response.hint }}">{{ demand.sla_first_response.status }}</span>
+                                <span class="dd-muted-text">{{ demand.first_response_due_display }}</span>
+                            </dd>
                         </div>
-                    </form>
-                {% elif demand.has_feedback %}
-                    <div class="support-thread-feedback-summary">
-                        <div class="support-thread-feedback-pill">
-                            <strong>{{ demand.feedback_rating }}/5</strong>
-                            <span>{{ demand.feedback_rating_label }}</span>
+                        <div>
+                            <dt>Resolução</dt>
+                            <dd>
+                                <span class="dd-chip {{ demand.sla_resolution.css }}" title="{{ demand.sla_resolution.hint }}">{{ demand.sla_resolution.status }}</span>
+                                <span class="dd-muted-text">{{ demand.resolution_due_display }}</span>
+                            </dd>
                         </div>
-                        {% if demand.feedback_comment %}
-                            <p>{{ demand.feedback_comment|linebreaksbr }}</p>
+                    </dl>
+                    {% if demand.sla_preview.has_policy %}
+                        <p class="dd-foot-note">Política: {{ demand.sla_preview.title }}</p>
+                    {% endif %}
+                </article>
+
+                {% if can_manage_portal %}
+                    <article id="worklog" class="dd-card">
+                        <div class="dd-card-head">
+                            <h3 class="dd-card-title">Tempo apontado</h3>
+                            {% if can_log_worklog %}
+                                <button type="button" class="dd-btn dd-btn--ghost dd-btn--sm" data-open-modal="worklogModal">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    Apontar
+                                </button>
+                            {% endif %}
+                        </div>
+                        <div class="dd-total">{{ demand.total_worked_display }}</div>
+                        {% if demand.worklog_entries %}
+                            <ul class="dd-turnos">
+                                {% for message in demand.worklog_entries %}
+                                    <li class="dd-turno">
+                                        <strong>{{ message.worked_time_display }}</strong>
+                                        <span>{{ message.worked_period_display }} · {{ message.author_display }}</span>
+                                        {% if message.message %}<p>{{ message.message|linebreaksbr }}</p>{% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
                         {% else %}
-                            <p>O solicitante avaliou a demanda sem coment&aacute;rio complementar.</p>
+                            <p class="dd-foot-note">Nenhum turno apontado ainda.</p>
+                        {% endif %}
+                    </article>
+                {% endif %}
+
+                <article id="feedback" class="dd-card">
+                    <div class="dd-card-head"><h3 class="dd-card-title">Avaliação</h3></div>
+                    {% if can_leave_feedback %}
+                        <p class="dd-foot-note--lead">Como foi o atendimento? Leva alguns segundos e nos ajuda a melhorar.</p>
+                        <button type="button" class="dd-btn dd-btn--primary dd-btn--block" data-open-modal="feedbackModal">Avaliar atendimento</button>
+                    {% elif demand.has_feedback %}
+                        <div class="dd-score"><strong>{{ demand.feedback_rating }}</strong><span>/10</span></div>
+                        {% if demand.feedback_comment %}
+                            <blockquote class="dd-quote">{{ demand.feedback_comment|linebreaksbr }}</blockquote>
+                        {% else %}
+                            <p class="dd-foot-note">Avaliada sem comentário complementar.</p>
                         {% endif %}
                         {% if demand.feedback_submitted_at %}
-                            <small>Registrado em {{ demand.feedback_submitted_at|date:"d/m/Y H:i" }}</small>
+                            <p class="dd-foot-note">Registrada em {{ demand.feedback_submitted_at|date:"d/m/Y · H:i" }}</p>
+                        {% endif %}
+                    {% elif demand.status == "completed" %}
+                        <p class="dd-foot-note">Aguardando a avaliação do solicitante.</p>
+                    {% else %}
+                        <p class="dd-foot-note">Disponível quando a demanda for concluída.</p>
+                    {% endif %}
+                </article>
+
+                <details class="dd-card dd-log">
+                    <summary class="dd-card-title">
+                        Movimentações
+                        <span class="dd-count">{{ demand.activity_logs|length }}</span>
+                    </summary>
+                    {% if demand.activity_logs %}
+                        <ol class="dd-trail">
+                            {% for entry in demand.activity_logs %}
+                                <li>
+                                    <strong>{{ entry.event_label }}</strong>
+                                    <time datetime="{{ entry.created_at|date:'c' }}">{{ entry.created_at|date:"d/m/Y · H:i" }} · {{ entry.actor_display }}</time>
+                                    <p>{{ entry.summary }}</p>
+                                    {% if entry.details %}<small>{{ entry.details }}</small>{% endif %}
+                                </li>
+                            {% endfor %}
+                        </ol>
+                    {% else %}
+                        <p class="dd-foot-note">Nenhuma movimentação registrada.</p>
+                    {% endif %}
+                </details>
+            </aside>
+        </div>
+
+        {% if can_reply %}
+            <dialog id="replyModal" class="dd-modal" data-focus="textarea" {% if reply_form.errors %}data-auto-open="1"{% endif %}>
+                <form method="POST" enctype="multipart/form-data" class="dd-form" id="portalReplyForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="reply">
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">{% if can_manage_portal %}Atendimento{% else %}Sua resposta{% endif %}</span>
+                            <h2>Responder</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        {% if can_manage_portal and quick_canned_responses %}
+                            <div class="dd-field">
+                                <span class="dd-label">Sugestões rápidas <small>baseadas no grupo e tipo</small></span>
+                                <div class="dd-quick">
+                                    {% for canned in quick_canned_responses %}
+                                        <button
+                                            type="button"
+                                            class="dd-quick-chip"
+                                            data-canned-shortcut
+                                            data-canned-id="{{ canned.id }}"
+                                            data-canned-message="{{ canned.message|escape }}"
+                                            data-canned-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
+                                        >
+                                            <strong>{{ canned.title }}</strong>
+                                            <span>{{ canned.match_reason }}</span>
+                                        </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
+
+                        {% if can_manage_portal %}
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ reply_form.canned_response.id_for_label }}">{{ reply_form.canned_response.label }}</label>
+                                <div class="dd-inline">
+                                    <input type="search" id="portalCannedResponseSearch" placeholder="Buscar por título…" autocomplete="off">
+                                    <select name="{{ reply_form.canned_response.html_name }}" id="{{ reply_form.canned_response.id_for_label }}">
+                                        <option value="">Selecione uma resposta pronta</option>
+                                        {% for canned in reply_canned_responses %}
+                                            <option
+                                                value="{{ canned.id }}"
+                                                data-message="{{ canned.message|escape }}"
+                                                data-internal="{% if canned.suggest_internal %}1{% else %}0{% endif %}"
+                                                data-title="{{ canned.title|lower }}"
+                                                {% if reply_canned_response_value|stringformat:'s' == canned.id|stringformat:'s' %}selected{% endif %}
+                                            >
+                                                {{ canned.title }}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="button" class="dd-btn dd-btn--ghost" id="applyCannedResponseBtn">Aplicar</button>
+                                </div>
+                                {% if reply_form.canned_response.errors %}<div class="dd-error">{{ reply_form.canned_response.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        {% endif %}
+
+                        <div class="dd-field">
+                            <label class="dd-label" for="{{ reply_form.message.id_for_label }}">{{ reply_form.message.label }}</label>
+                            {{ reply_form.message }}
+                            {% if reply_form.message.errors %}<div class="dd-error">{{ reply_form.message.errors|join:", " }}</div>{% endif %}
+                        </div>
+
+                        <div class="dd-field">
+                            <span class="dd-label">Anexos <small>opcional</small></span>
+                            <label class="dd-file">
+                                {{ reply_form.attachments }}
+                            </label>
+                            {% if reply_form.attachments.errors %}<div class="dd-error">{{ reply_form.attachments.errors|join:", " }}</div>{% endif %}
+                        </div>
+
+                        {% if can_manage_portal %}
+                            <label class="dd-check">
+                                {{ reply_form.is_internal }}
+                                <span>Nota interna <small class="dd-optional">· visível só para a equipe de atendimento</small></span>
+                            </label>
+
+                            <details class="dd-disclose">
+                                <summary>Apontar tempo nesta resposta</summary>
+                                <div class="dd-row">
+                                    <div class="dd-field">
+                                        <label class="dd-label" for="{{ reply_form.work_started_at.id_for_label }}">{{ reply_form.work_started_at.label }}</label>
+                                        {{ reply_form.work_started_at }}
+                                        {% if reply_form.work_started_at.errors %}<div class="dd-error">{{ reply_form.work_started_at.errors|join:", " }}</div>{% endif %}
+                                    </div>
+                                    <div class="dd-field">
+                                        <label class="dd-label" for="{{ reply_form.work_ended_at.id_for_label }}">{{ reply_form.work_ended_at.label }}</label>
+                                        {{ reply_form.work_ended_at }}
+                                        {% if reply_form.work_ended_at.errors %}<div class="dd-error">{{ reply_form.work_ended_at.errors|join:", " }}</div>{% endif %}
+                                    </div>
+                                </div>
+                                <p class="dd-hint">Para mais de um turno, use “Apontar” na barra lateral.</p>
+                            </details>
                         {% endif %}
                     </div>
-                {% elif demand.status == "completed" %}
-                    <div class="support-empty compact">
-                        <strong>Aguardando feedback do solicitante</strong>
-                        <span>Quando o usu&aacute;rio avaliar o atendimento, o retorno aparecer&aacute; aqui.</span>
-                    </div>
-                {% else %}
-                    <div class="support-empty compact">
-                        <strong>Feedback dispon&iacute;vel ap&oacute;s a conclus&atilde;o</strong>
-                        <span>Assim que a demanda for conclu&iacute;da, o solicitante poder&aacute; avaliar o atendimento por aqui.</span>
-                    </div>
-                {% endif %}
-            </article>
 
-            <article class="support-card support-thread-feedback-card support-thread-log-card">
-                <div class="support-card-head">
-                    <div>
-                        <span class="support-kicker">Movimenta&ccedil;&otilde;es</span>
-                        <h2>Log da demanda</h2>
-                        <p class="support-thread-feed-intro">Assun&ccedil;&otilde;es, transfer&ecirc;ncias e outras altera&ccedil;&otilde;es ficam registradas em ordem cronol&oacute;gica.</p>
-                    </div>
-                </div>
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            Enviar
+                        </button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
 
-                {% if demand.activity_logs %}
-                    <div class="support-thread-log-list">
-                        {% for entry in demand.activity_logs %}
-                            <article class="support-thread-log-entry">
-                                <div class="support-thread-log-main">
-                                    <div class="support-thread-log-head">
-                                        <strong>{{ entry.event_label }}</strong>
-                                        <span>{{ entry.created_at|date:"d/m/Y H:i" }}</span>
-                                    </div>
-                                    <p>{{ entry.summary }}</p>
-                                    {% if entry.details %}
-                                        <small>{{ entry.details }}</small>
+        {% if can_leave_feedback %}
+            <dialog id="feedbackModal" class="dd-modal" data-focus=".dd-scale-btn" {% if feedback_form.errors %}data-auto-open="1"{% endif %}>
+                <form method="POST" class="dd-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="feedback">
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">Pós-atendimento</span>
+                            <h2>Como foi o atendimento?</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        <div class="dd-field">
+                            <span class="dd-label">Nota de 1 a 10</span>
+                            <div class="dd-scale" data-scale-for="{{ feedback_form.feedback_rating.id_for_label }}">
+                                {% for value, label in feedback_form.feedback_rating.field.choices %}
+                                    {% if value %}
+                                        <button
+                                            type="button"
+                                            class="dd-scale-btn"
+                                            data-value="{{ value }}"
+                                            aria-pressed="{% if feedback_form.feedback_rating.value|stringformat:'s' == value|stringformat:'s' %}true{% else %}false{% endif %}"
+                                            title="{{ label }}"
+                                        >{{ value }}</button>
                                     {% endif %}
-                                </div>
-                                <div class="support-thread-log-side">
-                                    <span>{{ entry.actor_display }}</span>
-                                    {% if entry.to_attendant_id %}
-                                        <strong>{{ entry.to_attendant_display }}</strong>
-                                    {% endif %}
-                                </div>
-                            </article>
-                        {% endfor %}
+                                {% endfor %}
+                            </div>
+                            <div class="dd-scale-ends"><span>1 · muito insatisfeito</span><span>10 · muito satisfeito</span></div>
+                            <div class="dd-select-fallback">
+                                {{ feedback_form.feedback_rating }}
+                            </div>
+                            {% if feedback_form.feedback_rating.errors %}<div class="dd-error">{{ feedback_form.feedback_rating.errors|join:", " }}</div>{% endif %}
+                        </div>
+
+                        <div class="dd-field">
+                            <label class="dd-label" for="{{ feedback_form.feedback_comment.id_for_label }}">O que podemos melhorar? <small class="dd-optional">opcional</small></label>
+                            {{ feedback_form.feedback_comment }}
+                            {% if feedback_form.feedback_comment.errors %}<div class="dd-error">{{ feedback_form.feedback_comment.errors|join:", " }}</div>{% endif %}
+                        </div>
                     </div>
-                {% else %}
-                    <div class="support-empty compact">
-                        <strong>Nenhuma movimenta&ccedil;&atilde;o registrada</strong>
-                        <span>Assun&ccedil;&otilde;es, transfer&ecirc;ncias e apontamentos aparecer&atilde;o aqui.</span>
+
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary">Enviar avaliação</button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
+
+        {% if can_transfer_here %}
+            <dialog id="transferModal" class="dd-modal" data-focus="select" {% if transfer_form.errors %}data-auto-open="1"{% endif %}>
+                <form method="POST" class="dd-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="transfer">
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">Atendimento</span>
+                            <h2>Transferir atendimento</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        <div class="dd-field">
+                            <label class="dd-label" for="{{ transfer_form.target_attendant.id_for_label }}">{{ transfer_form.target_attendant.label }}</label>
+                            {{ transfer_form.target_attendant }}
+                            {% if transfer_form.target_attendant.errors %}<div class="dd-error">{{ transfer_form.target_attendant.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <p class="dd-hint">A demanda passa para o novo atendente e a movimentação fica registrada no histórico.</p>
                     </div>
-                {% endif %}
-            </article>
-        </section>
+
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary">Transferir</button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
+
+        {% if can_reopen_here %}
+            <dialog id="reopenModal" class="dd-modal" data-focus="textarea">
+                <form method="POST" class="dd-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="workflow">
+                    <input type="hidden" name="workflow_action" value="reopen">
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">Ciclo da demanda</span>
+                            <h2>Reabrir demanda</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        <p class="dd-hint">Use se o problema voltou ou se a solução entregue não resolveu. A demanda volta para a fila com um novo prazo de resolução.</p>
+                        <div class="dd-field">
+                            <label class="dd-label" for="portalReopenReason">Por que precisa voltar?</label>
+                            <textarea id="portalReopenReason" name="reopen_reason" rows="3" placeholder="Ex.: a impressora voltou a falhar hoje de manhã."></textarea>
+                        </div>
+                    </div>
+
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary">Reabrir</button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
+
+        {% if can_log_worklog %}
+            <dialog id="worklogModal" class="dd-modal" data-focus="input[type=date]" {% if worklog_form.errors %}data-auto-open="1"{% endif %}>
+                <form method="POST" class="dd-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="form_type" value="worklog">
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">Apontamento</span>
+                            <h2>Apontar turno</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        <div class="dd-row dd-row--3">
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ worklog_form.work_date.id_for_label }}">{{ worklog_form.work_date.label }}</label>
+                                {{ worklog_form.work_date }}
+                                {% if worklog_form.work_date.errors %}<div class="dd-error">{{ worklog_form.work_date.errors|join:", " }}</div>{% endif %}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ worklog_form.work_start_time.id_for_label }}">{{ worklog_form.work_start_time.label }}</label>
+                                {{ worklog_form.work_start_time }}
+                                {% if worklog_form.work_start_time.errors %}<div class="dd-error">{{ worklog_form.work_start_time.errors|join:", " }}</div>{% endif %}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ worklog_form.work_end_time.id_for_label }}">{{ worklog_form.work_end_time.label }}</label>
+                                {{ worklog_form.work_end_time }}
+                                {% if worklog_form.work_end_time.errors %}<div class="dd-error">{{ worklog_form.work_end_time.errors|join:", " }}</div>{% endif %}
+                            </div>
+                        </div>
+                        <div class="dd-field">
+                            <label class="dd-label" for="{{ worklog_form.description.id_for_label }}">{{ worklog_form.description.label }}</label>
+                            {{ worklog_form.description }}
+                            {% if worklog_form.description.errors %}<div class="dd-error">{{ worklog_form.description.errors|join:", " }}</div>{% endif %}
+                        </div>
+                    </div>
+
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary">Salvar turno</button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
+        {% if can_document_here %}
+            <dialog id="docModal" class="dd-modal dd-modal--wide" data-focus="#docHow">
+                <form method="POST" class="dd-form" id="docForm" action="{% url 'portalDemandDocumentSaveApi' demand.id %}">
+                    {% csrf_token %}
+                    <header class="dd-modal-head">
+                        <div>
+                            <span class="dd-kicker">Base de conhecimento</span>
+                            <h2>Salvar como documentação</h2>
+                        </div>
+                        <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+                    </header>
+
+                    <div class="dd-modal-body">
+                        <div class="dd-field">
+                            <label class="dd-label" for="docHow">Como você resolveu? <small class="dd-optional">a IA junta isso com todo o histórico do chamado</small></label>
+                            <textarea id="docHow" name="how_it_was_solved" rows="3" placeholder="Ex.: o driver estava corrompido no servidor de impressão; reinstalei e ajustei a fila."></textarea>
+                        </div>
+
+                        <div class="dd-doc-generate">
+                            <button type="button" class="dd-btn dd-btn--primary dd-btn--sm" id="docGenerate"{% if not ai_documentation_available %} disabled{% endif %}>Gerar rascunho com IA</button>
+                            <span class="dd-muted-text" id="docStatus">{% if ai_documentation_available %}Gere o rascunho e revise os campos antes de salvar.{% else %}IA indisponível: preencha os campos manualmente.{% endif %}</span>
+                        </div>
+
+                        <div class="dd-doc-fields">
+                            <div class="dd-field dd-field--wide">
+                                <label class="dd-label" for="{{ documentation_form.title.id_for_label }}">{{ documentation_form.title.label }}</label>
+                                {{ documentation_form.title }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.trigger.id_for_label }}">{{ documentation_form.trigger.label }}</label>
+                                {{ documentation_form.trigger }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.impact.id_for_label }}">{{ documentation_form.impact.label }}</label>
+                                {{ documentation_form.impact }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.root_cause.id_for_label }}">{{ documentation_form.root_cause.label }}</label>
+                                {{ documentation_form.root_cause }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.workaround.id_for_label }}">{{ documentation_form.workaround.label }}</label>
+                                {{ documentation_form.workaround }}
+                            </div>
+                            <div class="dd-field dd-field--wide">
+                                <label class="dd-label" for="{{ documentation_form.resolution.id_for_label }}">{{ documentation_form.resolution.label }}</label>
+                                {{ documentation_form.resolution }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.tags.id_for_label }}">{{ documentation_form.tags.label }}</label>
+                                {{ documentation_form.tags }}
+                            </div>
+                            <div class="dd-field">
+                                <label class="dd-label" for="{{ documentation_form.category.id_for_label }}">{{ documentation_form.category.label }}</label>
+                                <select name="category" id="{{ documentation_form.category.id_for_label }}">
+                                    <option value="">Documentação de chamados (padrão)</option>
+                                    {% for category in documentation_categories %}
+                                        <option value="{{ category.id }}">{{ category.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <label class="dd-check">
+                            {{ documentation_form.include_attachments }}
+                            <span>Incluir os anexos do chamado na documentação</span>
+                        </label>
+
+                        <div class="dd-doc-errors" id="docErrors" hidden></div>
+                    </div>
+
+                    <footer class="dd-modal-foot">
+                        <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Cancelar</button>
+                        <button type="submit" class="dd-btn dd-btn--primary" id="docSave">Salvar documentação</button>
+                    </footer>
+                </form>
+            </dialog>
+        {% endif %}
     </main>
 
     <script>
+        (function() {
+            const thread = document.getElementById("ddThread");
+            if (thread) thread.scrollTop = thread.scrollHeight;
+
+            function closeMenus(except) {
+                document.querySelectorAll("details.dd-menu[open]").forEach((menu) => {
+                    if (menu !== except) menu.open = false;
+                });
+            }
+
+            document.addEventListener("click", function(event) {
+                const insideMenu = event.target.closest("details.dd-menu");
+                closeMenus(insideMenu);
+            });
+
+            function focusModal(modal) {
+                const selector = modal.dataset.focus;
+                const target = selector ? modal.querySelector(selector) : null;
+                if (target) target.focus();
+            }
+
+            document.querySelectorAll("[data-open-modal]").forEach((trigger) => {
+                trigger.addEventListener("click", function() {
+                    const modal = document.getElementById(trigger.dataset.openModal);
+                    if (!modal || typeof modal.showModal !== "function") return;
+                    closeMenus(null);
+                    modal.showModal();
+                    focusModal(modal);
+                });
+            });
+
+            document.querySelectorAll("dialog.dd-modal").forEach((modal) => {
+                modal.querySelectorAll("[data-close-modal]").forEach((button) => {
+                    button.addEventListener("click", () => modal.close());
+                });
+
+                modal.addEventListener("click", function(event) {
+                    if (event.target === modal) modal.close();
+                });
+
+                if (modal.dataset.autoOpen === "1" && typeof modal.showModal === "function") {
+                    modal.showModal();
+                    focusModal(modal);
+                }
+            });
+
+            document.querySelectorAll("[data-close-menu]").forEach((item) => {
+                item.addEventListener("click", () => {
+                    const menu = item.closest("details.dd-menu");
+                    if (menu) menu.open = false;
+                });
+            });
+
+            document.querySelectorAll("[data-scale-for]").forEach((group) => {
+                const field = document.getElementById(group.dataset.scaleFor);
+                if (!field) return;
+                const fallback = field.closest(".dd-select-fallback");
+                if (fallback) fallback.hidden = true;
+                const buttons = Array.from(group.querySelectorAll(".dd-scale-btn"));
+                buttons.forEach((button) => {
+                    button.addEventListener("click", () => {
+                        field.value = button.dataset.value;
+                        buttons.forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
+                    });
+                });
+            });
+
+            document.querySelectorAll("[data-confirm]").forEach((button) => {
+                button.addEventListener("click", function(event) {
+                    const message = button.getAttribute("data-confirm");
+                    if (message && !window.confirm(message)) {
+                        event.preventDefault();
+                    }
+                });
+            });
+
+            document.querySelectorAll("dialog.dd-modal form:not(#docForm), .dd-actions form, .dd-menu-panel form").forEach((form) => {
+                form.addEventListener("submit", function(event) {
+                    if (form.dataset.sent === "1") {
+                        event.preventDefault();
+                        return;
+                    }
+                    form.dataset.sent = "1";
+                    form.querySelectorAll('button[type="submit"]').forEach((button) => { button.disabled = true; });
+                });
+            });
+
+            window.addEventListener("pageshow", function(event) {
+                if (!event.persisted) return;
+                document.querySelectorAll("form[data-sent]").forEach((form) => {
+                    delete form.dataset.sent;
+                    form.querySelectorAll('button[type="submit"]').forEach((button) => { button.disabled = false; });
+                });
+            });
+        })();
+
         (function() {
             const select = document.getElementById("{{ reply_form.canned_response.id_for_label }}");
             const messageField = document.getElementById("{{ reply_form.message.id_for_label }}");
@@ -686,15 +952,95 @@
                 });
             }
         })();
-
+    </script>
+    <script>
         (function() {
-            document.querySelectorAll("[data-confirm]").forEach((button) => {
-                button.addEventListener("click", function(event) {
-                    const message = button.getAttribute("data-confirm");
-                    if (message && !window.confirm(message)) {
-                        event.preventDefault();
-                    }
+            const docModal = document.getElementById("docModal");
+            if (!docModal) return;
+            const docForm = document.getElementById("docForm");
+            const generateBtn = document.getElementById("docGenerate");
+            const saveBtn = document.getElementById("docSave");
+            const how = document.getElementById("docHow");
+            const statusEl = document.getElementById("docStatus");
+            const errorsEl = document.getElementById("docErrors");
+            const csrf = docForm.querySelector("input[name=csrfmiddlewaretoken]").value;
+            const draftUrl = "{% url 'portalDemandDocumentDraftApi' demand.id %}";
+            const draftFields = ["title", "trigger", "impact", "root_cause", "resolution", "workaround", "tags"];
+
+            function showErrors(messages) {
+                errorsEl.replaceChildren();
+                messages.forEach((text) => {
+                    const line = document.createElement("div");
+                    line.className = "dd-error";
+                    line.textContent = text;
+                    errorsEl.appendChild(line);
                 });
+                errorsEl.hidden = messages.length === 0;
+            }
+
+            if (generateBtn) {
+                generateBtn.addEventListener("click", function() {
+                    showErrors([]);
+                    statusEl.textContent = "Lendo o histórico do chamado…";
+                    generateBtn.disabled = true;
+                    fetch(draftUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "X-CSRFToken": csrf, "X-Requested-With": "XMLHttpRequest" },
+                        body: JSON.stringify({ how_it_was_solved: how.value }),
+                    })
+                        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+                        .then(({ ok, data }) => {
+                            if (!ok) {
+                                statusEl.textContent = "Não consegui gerar o rascunho.";
+                                showErrors([data.message || "Tente de novo ou preencha manualmente."]);
+                                return;
+                            }
+                            draftFields.forEach((name) => {
+                                const field = docForm.elements[name];
+                                if (field && data[name] !== undefined) field.value = data[name];
+                            });
+                            statusEl.textContent = "Rascunho gerado. Revise antes de salvar.";
+                        })
+                        .catch(() => {
+                            statusEl.textContent = "Falha de conexão ao gerar o rascunho.";
+                        })
+                        .finally(() => {
+                            generateBtn.disabled = false;
+                        });
+                });
+            }
+
+            let saving = false;
+            docForm.addEventListener("submit", function(event) {
+                event.preventDefault();
+                if (saving) return;
+                saving = true;
+                saveBtn.disabled = true;
+                showErrors([]);
+                fetch(docForm.action, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": csrf, "X-Requested-With": "XMLHttpRequest" },
+                    body: new FormData(docForm),
+                })
+                    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+                    .then(({ ok, data }) => {
+                        if (ok && data.redirect) {
+                            window.location.href = data.redirect;
+                            return;
+                        }
+                        const messages = [];
+                        if (data.errors) {
+                            Object.values(data.errors).forEach((list) => messages.push(...list));
+                        }
+                        showErrors(messages.length ? messages : [data.message || "Não consegui salvar a documentação."]);
+                        saving = false;
+                        saveBtn.disabled = false;
+                    })
+                    .catch(() => {
+                        showErrors(["Falha de conexão ao salvar. Tente de novo."]);
+                        saving = false;
+                        saveBtn.disabled = false;
+                    });
             });
         })();
     </script>

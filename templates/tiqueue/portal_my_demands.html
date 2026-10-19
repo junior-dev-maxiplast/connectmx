@@ -7,284 +7,142 @@
     <title>ConnectMX | Minhas Demandas</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
-    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}">
-    <link href="https://fonts.googleapis.com/css?family=Open Sans" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
+    <link rel="stylesheet" href="{% static '/style/myDemands.css' %}?v=1">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
-<body class="support-portal-body">
+<body class="support-portal-body md-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
-    <main class="support-shell">
+    <main class="md-page">
         {% if success_message %}
-            <div class="support-banner is-success">{{ success_message }}</div>
+            <div class="md-notice is-success">{{ success_message }}</div>
         {% endif %}
 
         {% if access_denied_message %}
-            <div class="support-banner is-danger">{{ access_denied_message }}</div>
+            <div class="md-notice is-danger">{{ access_denied_message }}</div>
         {% endif %}
 
         {% if pending_feedback %}
-            <section class="feedbackgate">
-                <div class="feedbackgate-head">
-                    <span class="feedbackgate-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                    </span>
-                    <div>
-                        <strong>
-                            {% if feedback_required %}
-                                Avalie seu atendimento para abrir um novo chamado
-                            {% else %}
-                                Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} aguardando avalia&ccedil;&atilde;o
-                            {% endif %}
-                        </strong>
-                        <p>Sua avalia&ccedil;&atilde;o leva alguns segundos e &eacute; o que nos permite melhorar o atendimento. Enquanto houver avalia&ccedil;&atilde;o pendente, a abertura de novos chamados fica bloqueada.</p>
-                    </div>
+            <section class="md-gate" aria-labelledby="mdGateTitle">
+                <div class="md-gate-text">
+                    <strong id="mdGateTitle">
+                        {% if feedback_required %}
+                            Avalie um atendimento para abrir um novo chamado
+                        {% else %}
+                            {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} aguardando avaliação
+                        {% endif %}
+                    </strong>
+                    <span>A abertura de novos chamados fica bloqueada até a avaliação.</span>
                 </div>
-                <div class="feedbackgate-list">
+                <div class="md-gate-list">
                     {% for demand in pending_feedback %}
-                        <a href="{{ demand.get_absolute_url }}#feedback" class="feedbackgate-item">
-                            <span class="feedbackgate-protocol">{{ demand.protocol }}</span>
-                            <span class="feedbackgate-title">{{ demand.title }}</span>
-                            <span class="feedbackgate-cta">Avaliar</span>
+                        <a href="{{ demand.get_absolute_url }}#feedback" class="md-gate-item">
+                            <span class="md-proto">{{ demand.protocol }}</span>
+                            <span class="md-gate-title">{{ demand.title }}</span>
+                            <span class="md-gate-cta">Avaliar</span>
                         </a>
                     {% endfor %}
                 </div>
             </section>
         {% endif %}
 
-        <section class="support-page-hero">
-            <article class="support-page-hero-copy">
-                <span class="support-kicker">Acompanhamento</span>
-                <h1>Minhas demandas</h1>
-                <p>Agora voc&ecirc; pode localizar mais r&aacute;pido cada ticket, entender a pr&oacute;xima a&ccedil;&atilde;o esperada e priorizar o que pede resposta ou feedback.</p>
-            </article>
-
-            <article class="support-page-mini-metrics">
-                <div class="support-page-mini-metric">
-                    <span>Pendentes</span>
-                    <strong>{{ counts.pending }}</strong>
-                </div>
-                <div class="support-page-mini-metric">
-                    <span>Em atendimento</span>
-                    <strong>{{ counts.assumed }}</strong>
-                </div>
-                <div class="support-page-mini-metric">
-                    <span>Aguardando voc&ecirc;</span>
-                    <strong>{{ counts.waiting }}</strong>
-                </div>
-                <div class="support-page-mini-metric">
-                    <span>Aguardando feedback</span>
-                    <strong>{{ counts.awaiting_feedback }}</strong>
-                </div>
-            </article>
-        </section>
-
-        <section class="support-card">
-            <div class="support-card-head support-list-head-wrap">
-                <div>
-                    <span class="support-kicker">Hist&oacute;rico</span>
-                    <h2>Demandas registradas</h2>
-                    <p class="support-thread-feed-intro">Use os filtros para encontrar tickets por status, pr&oacute;xima a&ccedil;&atilde;o ou urg&ecirc;ncia.</p>
-                </div>
-                <a href="{% url 'portalDemandCreatePage' %}" class="support-btn">Abrir nova demanda</a>
+        <header class="md-top">
+            <div>
+                <h1 class="md-title">Minhas demandas</h1>
+                <p class="md-sub">{{ counts.total }} no total</p>
             </div>
+            <a class="md-btn" href="{% url 'portalDemandCreatePage' %}">Abrir demanda</a>
+        </header>
+
+        <section class="md-card">
+            <nav class="md-tabs" aria-label="Filtrar por status">
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}{% endif %}" class="md-tab{% if not status_filter %} is-active{% endif %}">
+                    Todas <span>{{ counts.total }}</span>
+                </a>
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}&amp;{% endif %}status=pending" class="md-tab{% if status_filter == 'pending' %} is-active{% endif %}">
+                    Pendentes <span>{{ counts.pending }}</span>
+                </a>
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}&amp;{% endif %}status=assumed" class="md-tab{% if status_filter == 'assumed' %} is-active{% endif %}">
+                    Em atendimento <span>{{ counts.assumed }}</span>
+                </a>
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}&amp;{% endif %}status=waiting_requester" class="md-tab{% if status_filter == 'waiting_requester' %} is-active{% endif %}">
+                    Aguardando você <span>{{ counts.waiting }}</span>
+                </a>
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}&amp;{% endif %}status=completed" class="md-tab{% if status_filter == 'completed' %} is-active{% endif %}">
+                    Concluídas <span>{{ counts.completed }}</span>
+                </a>
+                <a href="?{% if filters_querystring %}{{ filters_querystring }}&amp;{% endif %}status=cancelled" class="md-tab{% if status_filter == 'cancelled' %} is-active{% endif %}">
+                    Canceladas <span>{{ counts.cancelled }}</span>
+                </a>
+            </nav>
+
+            <form method="GET" class="md-toolbar" role="search">
+                <input type="search" name="q" value="{{ search_query }}" class="md-search" placeholder="Buscar por título ou protocolo" aria-label="Buscar demandas">
+                {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+                <select name="sort" class="md-select" aria-label="Ordenar por" onchange="this.form.submit()">
+                    <option value="recent" {% if sort == "recent" %}selected{% endif %}>Mais recentes</option>
+                    <option value="oldest" {% if sort == "oldest" %}selected{% endif %}>Mais antigas</option>
+                    <option value="priority" {% if sort == "priority" %}selected{% endif %}>Maior prioridade</option>
+                    <option value="sla" {% if sort == "sla" %}selected{% endif %}>Maior risco de SLA</option>
+                </select>
+                <noscript><button type="submit" class="md-btn md-btn--ghost">Filtrar</button></noscript>
+            </form>
 
             {% if my_demands %}
-                <div class="support-demand-toolbar">
-                    <div class="support-demand-toolbar-group is-search">
-                        <input id="portalDemandSearch" type="search" class="queue-search support-portal-search" placeholder="Buscar por t&iacute;tulo, protocolo, grupo ou tipo...">
-                    </div>
-                    <div class="support-demand-toolbar-group">
-                        <select id="portalDemandStatusFilter" class="queue-select support-portal-filter">
-                            <option value="">Todos os status</option>
-                            <option value="pending">Pendentes</option>
-                            <option value="assumed">Em atendimento</option>
-                            <option value="waiting_requester">Aguardando voc&ecirc;</option>
-                            <option value="completed">Conclu&iacute;das</option>
-                            <option value="cancelled">Canceladas</option>
-                        </select>
-                    </div>
-                    <div class="support-demand-toolbar-group">
-                        <select id="portalDemandActionFilter" class="queue-select support-portal-filter">
-                            <option value="">Todas as pr&oacute;ximas a&ccedil;&otilde;es</option>
-                            <option value="Aguardando atendente">Aguardando atendente</option>
-                            <option value="Primeira resposta pendente">Primeira resposta pendente</option>
-                            <option value="Conversa em andamento">Conversa em andamento</option>
-                            <option value="Aguardando feedback">Aguardando feedback</option>
-                        </select>
-                    </div>
-                    <div class="support-demand-toolbar-group">
-                        <select id="portalDemandSort" class="queue-select support-portal-filter">
-                            <option value="recent">Mais recentes</option>
-                            <option value="oldest">Mais antigas</option>
-                            <option value="priority">Maior prioridade</option>
-                            <option value="sla">Maior risco de SLA</option>
-                        </select>
-                    </div>
+                <div class="md-head" aria-hidden="true">
+                    <span>Chamado</span>
+                    <span>Solicitante</span>
+                    <span>Aberta em</span>
+                    <span>Última movimentação</span>
+                    <span>Status</span>
                 </div>
 
-                <div class="support-toolbar-meta">
-                    <span id="portalDemandVisibleCount">{{ my_demands|length }}</span>
-                    <span>demanda(s) vis&iacute;vel(is)</span>
-                </div>
-
-                <div id="portalDemandList" class="support-demand-list support-demand-list-compact">
+                <div class="md-list">
                     {% for demand in my_demands %}
-                        <article
-                            class="support-demand-item support-demand-item-rich"
-                            data-demand-row
-                            data-title="{{ demand.title|lower }}"
-                            data-protocol="{{ demand.protocol|lower }}"
-                            data-status="{{ demand.status }}"
-                            data-priority="{{ demand.priority_level|default:'medium' }}"
-                            data-group="{% if demand.task_group %}{{ demand.task_group.name|lower }}{% endif %}"
-                            data-type="{% if demand.task_type %}{{ demand.task_type.name|lower }}{% endif %}"
-                            data-next-action="{{ demand.next_action_label|lower }}"
-                            data-created="{{ demand.created_at|date:'U' }}"
-                            data-updated="{{ demand.updated_at|date:'U' }}"
-                            data-sla="{{ demand.sla_resolution.css }}"
-                        >
-                            <div class="support-demand-head">
-                                <div>
-                                    <strong>{{ demand.title }}</strong>
-                                    <a href="{{ demand.detail_url }}" class="support-demand-code support-demand-code-link">{{ demand.protocol }}</a>
-                                </div>
-                                <span class="support-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                        <a href="{{ demand.detail_url }}" class="md-row">
+                            <div class="md-cell md-cell--main">
+                                <span class="md-title-line">{{ demand.title }}</span>
+                                <span class="md-proto">{{ demand.protocol }}</span>
                             </div>
-
-                            <div class="support-demand-meta support-demand-meta-pills">
-                                <span class="support-chip is-soft" style="--chip-color: {{ demand.priority_render.color }};">{{ demand.priority_render.label }}</span>
-                                <span class="support-chip {{ demand.next_action_css }}">{{ demand.next_action_label }}</span>
-                                <span class="support-chip {{ demand.sla_resolution_chip_css }}">SLA {{ demand.sla_resolution.status }}</span>
-                                {% if demand.status == "completed" and not demand.has_feedback %}
-                                    <span class="support-chip is-pending">Aguardando sua avalia&ccedil;&atilde;o</span>
-                                {% elif demand.has_feedback %}
-                                    <span class="support-chip is-completed">Feedback recebido</span>
+                            <div class="md-meta">
+                                <div class="md-cell md-cell--req" data-label="Solicitante">{{ demand.requester_display }}</div>
+                                <time class="md-cell md-cell--date" data-label="Aberta em" datetime="{{ demand.created_at|date:'c' }}">{{ demand.created_at|date:"d/m/Y H:i" }}</time>
+                                <div class="md-cell md-cell--last" data-label="Última movimentação">
+                                    <span class="md-last-label">{{ demand.last_movement_label }}</span>
+                                    <span class="md-last-date">{{ demand.last_movement_display }}</span>
+                                </div>
+                            </div>
+                            <div class="md-cell md-cell--status">
+                                <span class="md-chip {{ demand.status_render.css }}">{{ demand.status_render.label }}</span>
+                                {% if demand.status == "completed" and not demand.has_feedback and not demand.sm_ticket_id %}
+                                    <span class="md-chip is-pending">Avaliar</span>
                                 {% endif %}
                             </div>
-
-                            <div class="support-demand-stats-grid">
-                                <div class="support-demand-stat-card">
-                                    <span>Respons&aacute;vel</span>
-                                    <strong>{{ demand.assigned_display }}</strong>
-                                </div>
-                                <div class="support-demand-stat-card">
-                                    <span>{{ demand.last_movement_label }}</span>
-                                    <strong>{{ demand.last_movement_display }}</strong>
-                                </div>
-                                <div class="support-demand-stat-card">
-                                    <span>Aberta</span>
-                                    <strong>{{ demand.opened_since_display }}</strong>
-                                </div>
-                                <div class="support-demand-stat-card">
-                                    <span>Atualizada</span>
-                                    <strong>{{ demand.updated_since_display }}</strong>
-                                </div>
-                            </div>
-
-                            <div class="support-demand-meta">
-                                <span>{% if demand.task_group %}{{ demand.task_group.name }}{% else %}Sem grupo{% endif %}</span>
-                                <span>{% if demand.task_type %}{{ demand.task_type.name }}{% else %}Sem tipo{% endif %}</span>
-                                <span>{{ demand.next_action_hint }}</span>
-                            </div>
-
-                            {% if demand.description %}
-                                <p class="support-demand-description">{{ demand.description }}</p>
-                            {% endif %}
-
-                            <div class="support-demand-footer">
-                                <span>{{ demand.sla_resolution.hint }}</span>
-                                <a href="{{ demand.detail_url }}" class="support-inline-link">
-                                    {% if demand.status == "completed" and not demand.has_feedback %}
-                                        Abrir conversa e avaliar
-                                    {% else %}
-                                        Abrir conversa
-                                    {% endif %}
-                                </a>
-                            </div>
-                        </article>
+                        </a>
                     {% endfor %}
                 </div>
+
+                {% if page_obj.paginator.num_pages > 1 %}
+                    <nav class="md-pager" aria-label="Paginação">
+                        <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                        <div class="md-pager-nav">
+                            {% if page_obj.has_previous %}
+                                <a class="md-pager-btn" href="?{% if base_querystring %}{{ base_querystring }}&amp;{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+                            {% endif %}
+                            {% if page_obj.has_next %}
+                                <a class="md-pager-btn" href="?{% if base_querystring %}{{ base_querystring }}&amp;{% endif %}page={{ page_obj.next_page_number }}">Próxima</a>
+                            {% endif %}
+                        </div>
+                    </nav>
+                {% endif %}
             {% else %}
-                <div class="support-empty">
-                    <strong>Nenhuma demanda aberta ainda</strong>
-                    <span>Quando voc&ecirc; enviar a primeira solicita&ccedil;&atilde;o, ela aparecer&aacute; aqui com o status atualizado.</span>
+                <div class="md-empty">
+                    <strong>Nenhuma demanda por aqui</strong>
+                    <span>Troque o filtro ou abra uma nova solicitação.</span>
                 </div>
             {% endif %}
         </section>
     </main>
-
-    <script>
-        (function() {
-            const list = document.getElementById("portalDemandList");
-            if (!list) return;
-
-            const rows = Array.from(list.querySelectorAll("[data-demand-row]"));
-            const searchInput = document.getElementById("portalDemandSearch");
-            const statusFilter = document.getElementById("portalDemandStatusFilter");
-            const actionFilter = document.getElementById("portalDemandActionFilter");
-            const sortSelect = document.getElementById("portalDemandSort");
-            const visibleCount = document.getElementById("portalDemandVisibleCount");
-
-            const priorityRank = { high: 3, medium: 2, low: 1 };
-            const slaRank = { "is-danger": 4, "is-pending": 3, "is-info": 2, "is-success": 1, "is-neutral": 0 };
-
-            function matchesFilters(row) {
-                const rawSearch = (searchInput?.value || "").trim().toLowerCase();
-                const status = (statusFilter?.value || "").trim().toLowerCase();
-                const action = (actionFilter?.value || "").trim().toLowerCase();
-
-                const haystack = [
-                    row.dataset.title || "",
-                    row.dataset.protocol || "",
-                    row.dataset.group || "",
-                    row.dataset.type || "",
-                    row.dataset.nextAction || "",
-                ].join(" ");
-
-                if (rawSearch && !haystack.includes(rawSearch)) return false;
-                if (status && (row.dataset.status || "") !== status) return false;
-                if (action && (row.dataset.nextAction || "") !== action) return false;
-                return true;
-            }
-
-            function sortRows() {
-                const mode = (sortSelect?.value || "recent").trim();
-                const sorted = [...rows].sort((a, b) => {
-                    if (mode === "oldest") {
-                        return Number(a.dataset.created || 0) - Number(b.dataset.created || 0);
-                    }
-                    if (mode === "priority") {
-                        return (priorityRank[b.dataset.priority || ""] || 0) - (priorityRank[a.dataset.priority || ""] || 0);
-                    }
-                    if (mode === "sla") {
-                        const bySla = (slaRank[b.dataset.sla || ""] || 0) - (slaRank[a.dataset.sla || ""] || 0);
-                        if (bySla !== 0) return bySla;
-                    }
-                    return Number(b.dataset.updated || 0) - Number(a.dataset.updated || 0);
-                });
-
-                sorted.forEach((row) => list.appendChild(row));
-            }
-
-            function render() {
-                sortRows();
-                let total = 0;
-                rows.forEach((row) => {
-                    const show = matchesFilters(row);
-                    row.style.display = show ? "" : "none";
-                    if (show) total += 1;
-                });
-                if (visibleCount) visibleCount.textContent = String(total);
-            }
-
-            [searchInput, statusFilter, actionFilter, sortSelect].forEach((node) => {
-                if (!node) return;
-                node.addEventListener("input", render);
-                node.addEventListener("change", render);
-            });
-
-            render();
-        })();
-    </script>
 </body>
 </html>

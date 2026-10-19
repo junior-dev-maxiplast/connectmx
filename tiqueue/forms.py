@@ -722,8 +722,12 @@ class PortalDemandForm(forms.ModelForm):
             )
         self.fields["task_group"].required = False
         self.fields["task_type"].required = False
-        self.fields["task_group"].queryset = TaskGroup.objects.all().order_by("name")
-        self.fields["task_type"].queryset = TaskType.objects.select_related("group").order_by("group__name", "name")
+        # Só ativo aqui: quem abre chamado não deve ver área/tipo que o SM já
+        # tratava como encerrado (ver migração 0083). Este form só cria
+        # demanda nova — nunca edita uma existente — então filtrar o
+        # queryset não corre o risco de rejeitar o grupo de um chamado antigo.
+        self.fields["task_group"].queryset = TaskGroup.objects.filter(is_active=True).order_by("name")
+        self.fields["task_type"].queryset = TaskType.objects.filter(is_active=True).select_related("group").order_by("group__name", "name")
         self.fields["task_type"].widget.choices = self.fields["task_type"].choices
         custom_fields = list(
             PortalDemandCustomField.objects.filter(is_active=True)
@@ -797,11 +801,12 @@ class PortalDemandForm(forms.ModelForm):
         )
 
     def resolve_requester(self, default_user):
-        """Quem assina o chamado e de qual setor ele veio.
+        """Quem assina o chamado, de qual setor e de qual empresa ele veio.
 
-        Retorna (usuario, setor). O setor é gravado como snapshot na demanda
-        porque o cadastro do colaborador pode mudar de área depois, e a triagem
-        precisa saber de onde o chamado saiu.
+        Retorna (usuario, setor, empresa). Setor e empresa sao gravados como
+        snapshot na demanda porque o cadastro do colaborador pode mudar depois,
+        e a triagem/BI precisa saber de onde o chamado saiu, nao de onde a
+        pessoa esta hoje.
         """
         collaborator = None
         if self.can_open_on_behalf:
@@ -811,11 +816,16 @@ class PortalDemandForm(forms.ModelForm):
             account = getattr(collaborator, "portal_account", None)
             target_user = getattr(account, "user", None)
             if target_user is not None:
-                return target_user, collaborator.sector
+                return target_user, collaborator.sector, collaborator.company
 
-        account = PortalRequesterAccount.objects.select_related("collaborator__sector").filter(user=default_user).first()
+        account = (
+            PortalRequesterAccount.objects.select_related("collaborator__sector", "collaborator__company")
+            .filter(user=default_user)
+            .first()
+        )
         sector = getattr(getattr(account, "collaborator", None), "sector", None)
-        return default_user, sector
+        company = getattr(getattr(account, "collaborator", None), "company", None) or getattr(default_user, "company", None)
+        return default_user, sector, company
 
     def get_dynamic_fields(self):
         rows = []

@@ -23,8 +23,19 @@
 .dashes-nav-item > span { min-width: 0; display: grid; gap: 3px; }
 .dashes-nav-item strong { color: inherit; font-size: 11px; }
 .dashes-nav-item small { color: #6f8993; font-size: 9px; }
+.dashes-nav-item { transition: color .16s ease, background-color .16s ease, border-color .16s ease, transform .12s ease; }
 .dashes-nav-item:hover, .dashes-nav-item.is-active { color: #eaffeb; background: rgba(101, 213, 93, .11); border-color: rgba(101, 213, 93, .22); }
 .dashes-nav-item.is-active { box-shadow: inset 3px 0 var(--dashes-green); }
+.dashes-nav-item:active { transform: scale(.98); }
+.dashes-nav-central { position: relative; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--dashes-border); }
+.dashes-alert-badge { position: absolute; top: 10px; right: 11px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center; border-radius: 999px; background: #e0574a; color: #fff; font-size: 9px; font-weight: 800; font-style: normal; line-height: 1; animation: dashesBadgePulse 2.2s ease-in-out infinite; }
+@keyframes dashesBadgePulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(224, 87, 74, .55); }
+    50% { box-shadow: 0 0 0 5px rgba(224, 87, 74, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .dashes-alert-badge { animation: none; }
+}
 .dashes-sidebar-footer { margin-top: auto; display: grid; gap: 12px; }
 .dashes-main-link { color: var(--dashes-muted); font-size: 10px; text-decoration: none; }
 .dashes-main-link:hover { color: #fff; }
@@ -99,4 +110,33 @@
     .dashes-nav-label { display: none; }
     .dashes-nav-item { padding: 9px 11px; }
     .dna-page-dashes { margin-left: 0; }
+}
+
+/* ==========================================================================
+   Toast — substitui window.alert() nos caminhos de erro de fetch de toda
+   tela do Dashes (dashesToast.js). Cores fixas, não `var(--bi-*)`: este
+   arquivo é carregado por telas que não redeclaram essas variáveis (a de
+   login, a de acesso negado), então depender delas quebraria ali.
+   ========================================================================== */
+.dashes-toast-stack { position: fixed; z-index: 2000; top: 18px; right: 18px; display: grid; gap: 8px; max-width: min(360px, calc(100vw - 36px)); }
+.dashes-toast {
+    padding: 12px 15px;
+    border-radius: 10px;
+    border: 1px solid var(--dashes-border);
+    background: linear-gradient(180deg, #0d2732, #0a1e27);
+    color: #eef8f9;
+    font-family: "Open Sans", sans-serif;
+    font-size: 11.5px;
+    line-height: 1.55;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .4);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateX(16px) scale(.98);
+    transition: opacity .22s ease, transform .22s ease;
+}
+.dashes-toast.is-visible { opacity: 1; transform: none; }
+.dashes-toast.is-error { border-color: rgba(255, 122, 140, .38); background: linear-gradient(180deg, #2a151a, #1c1013); }
+.dashes-toast.is-success { border-color: rgba(101, 213, 93, .38); background: linear-gradient(180deg, #123024, #0d221a); }
+@media (prefers-reduced-motion: reduce) {
+    .dashes-toast { transition: opacity .22s ease; transform: none !important; }
 }

@@ -30,17 +30,20 @@ from .forms import (
     MyAgendaReminderForm,
 )
 from .portal_forms import (
+    PortalCompanyForm,
     PortalDemandForm,
     PortalDemandCustomFieldCreateForm,
     PortalDemandCustomFieldOptionForm,
     PortalDemandFeedbackForm,
     PortalDemandReplyForm,
+    PortalDemandWorklogForm,
     PortalRequesterAccountForm,
     PortalRequesterCollaboratorForm,
     PortalRequesterSectorForm,
     PortalDemandTransferForm,
     PortalDemandSlaPolicyForm,
     PortalCannedResponseForm,
+    PortalDemandDocumentForm,
 )
 from .models import (
     userQueue,
@@ -85,8 +88,11 @@ from .models import (
     PortalDemandMessage,
     PortalDemandLog,
     PortalDemandAttachment,
+    PortalChatUpload,
+    PortalNotification,
     PortalDemandSlaPolicy,
     PortalCannedResponse,
+    PortalCompany,
     PortalRequesterSector,
     PortalRequesterCollaborator,
     PortalRequesterAccount,
@@ -118,12 +124,13 @@ from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseBadRequest
 from django.utils import timezone
+import base64
 import json
 import unicodedata
 import hmac
 import threading
 from django.db import transaction, models, IntegrityError
-from django.db.models import Avg, Case, When, IntegerField, Value, Count, Q, Prefetch, Sum, DecimalField, Exists, OuterRef
+from django.db.models import Avg, Case, When, IntegerField, Value, Count, Q, F, Prefetch, Sum, DecimalField, Exists, OuterRef
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_GET
 from django import forms
@@ -148,6 +155,7 @@ from .it_bi import (
     it_dashboard_fingerprint,
     list_attendants,
     IT_BI_SYSTEM_PROMPT,
+    _query as _sm_query,
 )
 from .travel_bi import (
     load_travel_dashboard,
@@ -167,19 +175,46 @@ from .romaneio_bi import (
     ROMANEIO_BI_SYSTEM_PROMPT,
 )
 from .romaneio_bi_pdf import build_romaneio_bi_pdf
+from .compras_bi import (
+    load_compras_dashboard,
+    build_compras_ai_payload,
+    compras_dashboard_fingerprint,
+    list_fornecedores as list_compras_fornecedores,
+    list_branches as list_compras_branches,
+    list_familias as list_compras_familias,
+    COMPRAS_BI_SYSTEM_PROMPT,
+)
+from .compras_bi_pdf import build_compras_bi_pdf
+from .decision_center_pdf import build_decision_center_pdf
 from .bi_periods import period_choices
 from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
 from .models import (
     CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
+    ComprasBiInsightSnapshot,
 )
-from .models import Dashboard, DashboardAccess
+from .models import Dashboard, DashboardAccess, DashAlert, DashDecisionAction, DashQuestion
+from .decision_center import (
+    capture_action_resolution,
+    collect_dashboard_summaries,
+    import_ai_actions,
+    recently_resolved_actions_with_progress,
+    refresh_alerts_for_dashboards,
+)
+from .bi_registry import BI_SOURCES, describe_sources
+from .data_qa import answer_question
 from .ai_config import (
     ALLOWED_REASONING_EFFORTS,
     encrypt_secret,
     get_openai_runtime_config,
     public_openai_runtime_config,
 )
-from .openai_insights import OpenAIInsightError, generate_customer_insights, test_openai_connection
+from .openai_insights import (
+    OpenAIInsightError,
+    generate_customer_insights,
+    generate_demand_documentation,
+    generate_portal_chat_reply,
+    test_openai_connection,
+)
 from .customer_dna_pdf import build_customer_dna_pdf
 from .it_bi_pdf import build_it_bi_pdf
 from .travel_bi_pdf import build_travel_bi_pdf
@@ -1153,6 +1188,12 @@ def _build_project_timeline_context(calendar_user_id=None):
 
 
 def index(request):
+    # Quem não atende a fila nem administra o sistema é solicitante puro: a
+    # tela principal dele é o Portal de Chamados, não o painel interno com o
+    # menu completo da operação.
+    if request.user.is_authenticated and not getattr(request.user, "is_support_staff", False):
+        return redirect("portalDemandPage")
+
     _sync_service_notifications()
     _sync_portal_critical_notifications()
     dashboard = _build_user_project_dashboard(
@@ -1230,6 +1271,265 @@ def dashesHomePage(request):
     if not first:
         return render(request, "tiqueue/dashes_denied.html", {"dashboards": []}, status=403)
     return redirect(first.url_name)
+
+
+def _dashes_session_required(view_func):
+    """Exige sessão do Dashes, sem exigir permissão num painel específico do
+    catálogo — usado pela Central de Decisão, que não pertence a um painel só
+    (mostra um pouco de cada um que o usuário já enxerga)."""
+
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        if not (request.user.is_authenticated and request.session.get("dashes_authenticated")):
+            query = urllib_parse.urlencode({"next": request.get_full_path()})
+            return redirect(f"{reverse('dashesLoginPage')}?{query}")
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+DECISION_CENTER_ACTIONS_PAGE_SIZE = 10
+
+
+def _load_decision_center_data(dashboards):
+    """Cartões, alertas e progresso de ações da Central de Decisão.
+
+    Compartilhado entre a tela e a exportação em PDF — os dois recalculam do
+    zero a cada request (nenhum snapshot salvo, ver docstring de
+    `decision_center.py`), então é o mesmo custo de ERP/MySQL nos dois
+    lugares, só o que se faz com o resultado muda.
+    """
+    cards, metrics_cache = collect_dashboard_summaries(dashboards)
+    refresh_alerts_for_dashboards(dashboards, metrics_cache=metrics_cache)
+    import_ai_actions(dashboards)
+
+    actions_by_dashboard = {}
+    pending_actions = (
+        DashDecisionAction.objects.filter(dashboard__in=dashboards)
+        .exclude(status__in=[DashDecisionAction.STATUS_DONE, DashDecisionAction.STATUS_DISMISSED])
+        .select_related("dashboard", "assigned_to")
+    )
+    for action in pending_actions:
+        actions_by_dashboard.setdefault(action.dashboard_id, []).append(action)
+
+    for dashboard in dashboards:
+        dashboard.center_card = cards.get(dashboard.slug)
+        dashboard.center_actions = actions_by_dashboard.get(dashboard.id, [])
+
+    alerts = list(
+        DashAlert.objects.filter(dashboard__in=dashboards, status=DashAlert.STATUS_ACTIVE)
+        .select_related("dashboard")
+    )
+    resolved_progress = recently_resolved_actions_with_progress(dashboards, metrics_cache)
+    return alerts, resolved_progress
+
+
+@_dashes_session_required
+def dashesDecisionCenterPage(request):
+    """Central de Decisão: KPI + última análise de IA + alertas + ações
+    pendentes de cada painel que o usuário já enxerga — sem chamar a IA
+    sozinha (ver docstring de `decision_center.py`) e sem tocar em nada dos
+    botões "Gerar/Atualizar indicadores" e "Pedir/Atualizar análise à IA" de
+    cada painel, que continuam exatamente como estavam.
+    """
+    dashboards = list(allowed_dashboards(request.user))
+    if not dashboards:
+        return render(request, "tiqueue/dashes_denied.html", {"dashboards": []}, status=403)
+
+    alerts, resolved_progress = _load_decision_center_data(dashboards)
+
+    # Lista paginada pra tela - separada de `dashboard.center_actions` (usado
+    # só pelo PDF, sem paginação, com um teto por painel). Mesmo padrão de
+    # paginação já usado em portal_pending_demands.html (`Paginator` +
+    # `get_page`, query param "page").
+    pending_actions_qs = (
+        DashDecisionAction.objects.filter(dashboard__in=dashboards)
+        .exclude(status__in=[DashDecisionAction.STATUS_DONE, DashDecisionAction.STATUS_DISMISSED])
+        .select_related("dashboard", "assigned_to")
+    )
+    actions_paginator = Paginator(pending_actions_qs, DECISION_CENTER_ACTIONS_PAGE_SIZE)
+    actions_page = actions_paginator.get_page(request.GET.get("page") or "1")
+
+    # "Pergunte aos dados" só oferece as fontes que o usuário já enxerga nos
+    # painéis normais - sem isso, dava pra perguntar sobre um painel sem
+    # acesso digitando o slug certo no POST.
+    allowed_slugs = {dashboard.slug for dashboard in dashboards}
+    qa_sources = describe_sources(allowed_slugs)
+    recent_questions = list(
+        DashQuestion.objects.filter(created_by=request.user, source_slug__in=allowed_slugs)[:5]
+    )
+
+    return render(
+        request,
+        "tiqueue/dashes_decision_center.html",
+        {
+            "dashboards": dashboards,
+            "alerts": alerts,
+            "resolved_progress": resolved_progress,
+            "actions_page": actions_page,
+            "dashes_menu": dashboards,
+            "active_dash": "central-decisao",
+            "updated_at": timezone.now(),
+            "qa_sources": qa_sources,
+            "recent_questions": recent_questions,
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+        },
+    )
+
+
+@_dashes_session_required
+def dashesDecisionCenterExportPdf(request):
+    """PDF executivo da Central de Decisão — mesmos dados da tela, recalculados
+    na hora (não depende de nenhum snapshot salvo)."""
+    dashboards = list(allowed_dashboards(request.user))
+    if not dashboards:
+        return render(request, "tiqueue/dashes_denied.html", {"dashboards": []}, status=403)
+
+    try:
+        alerts, resolved_progress = _load_decision_center_data(dashboards)
+    except Exception as exc:
+        return HttpResponse(f"Não foi possível consultar o ERP/MySQL: {exc}", status=503)
+
+    pdf_bytes = build_decision_center_pdf(
+        dashboards, alerts, resolved_progress, generated_by=request.user.get_full_name() or request.user.username,
+    )
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = 'attachment; filename="connectmx-central-de-decisao.pdf"'
+    return response
+
+
+@_dashes_session_required
+@require_POST
+def dashesAlertAcknowledge(request, alert_id):
+    dashboards = allowed_dashboards(request.user)
+    alert = get_object_or_404(DashAlert, pk=alert_id, dashboard__in=dashboards)
+    alert.acknowledged_by = request.user
+    alert.acknowledged_at = timezone.now()
+    alert.save(update_fields=["acknowledged_by", "acknowledged_at", "updated_at"])
+    return JsonResponse({"status": "ok"})
+
+
+@_dashes_session_required
+@require_POST
+def dashesActionCreate(request):
+    dashboards = allowed_dashboards(request.user)
+    description = (request.POST.get("description") or "").strip()
+    dashboard = dashboards.filter(pk=request.POST.get("dashboard_id")).first()
+    if not dashboard or not description:
+        return JsonResponse(
+            {"status": "error", "message": "Escolha o painel e descreva a ação."}, status=400
+        )
+    action = DashDecisionAction.objects.create(
+        dashboard=dashboard,
+        origin=DashDecisionAction.ORIGIN_MANUAL,
+        description=description,
+        created_by=request.user,
+    )
+    # A tela insere a ação na lista sem recarregar a página (ver
+    # dashes_decision_center.html) - por isso volta pronta pra isso, não só
+    # "status: ok".
+    return JsonResponse({
+        "status": "ok",
+        "action": {"id": action.id, "description": action.description, "dashboard_name": dashboard.name},
+    })
+
+
+@_dashes_session_required
+@require_POST
+def dashesActionUpdateStatus(request, action_id):
+    dashboards = allowed_dashboards(request.user)
+    action = get_object_or_404(DashDecisionAction, pk=action_id, dashboard__in=dashboards)
+    new_status = (request.POST.get("status") or "").strip()
+    if new_status not in dict(DashDecisionAction.STATUS_CHOICES):
+        return JsonResponse({"status": "error", "message": "Status inválido."}, status=400)
+    action.status = new_status
+    action.completed_at = timezone.now() if new_status == DashDecisionAction.STATUS_DONE else None
+    update_fields = ["status", "completed_at", "updated_at"]
+    if new_status == DashDecisionAction.STATUS_DONE:
+        # Guarda o valor do indicador agora, pra Central comparar com o valor
+        # de mais tarde ("Isso realmente melhorou?") - só surte efeito em
+        # ações vindas de um alerta (`origin_alert`), ver capture_action_resolution.
+        capture_action_resolution(action)
+        update_fields += ["resolved_metric_key", "resolved_metric_value"]
+    action.save(update_fields=update_fields)
+    return JsonResponse({"status": "ok"})
+
+
+@_dashes_session_required
+@require_POST
+def dashesAskDataQuestion(request):
+    """"Pergunte aos dados" — item 4 da Central de Decisão.
+
+    Mesma cota diária de IA dos outros painéis (`_dashes_ai_quota`): o teto é
+    por usuário, não por painel — uma pergunta aqui consome a mesma cota que
+    uma análise de insights em qualquer um dos 4 painéis.
+    """
+    allowed_slugs = {dashboard.slug for dashboard in allowed_dashboards(request.user)}
+    slug = (request.POST.get("source") or "").strip()
+    question = (request.POST.get("question") or "").strip()
+
+    if slug not in BI_SOURCES or slug not in allowed_slugs:
+        return JsonResponse({"status": "error", "message": "Escolha um painel liberado para você."}, status=400)
+    if not question:
+        return JsonResponse({"status": "error", "message": "Digite uma pergunta."}, status=400)
+
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error", "code": "ai_daily_limit", "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."}, status=409,
+        )
+
+    dash_question = DashQuestion.objects.create(
+        source_slug=slug, source_label=BI_SOURCES[slug]["label"], question=question,
+        status=DashQuestion.STATUS_PROCESSING, created_by=request.user,
+    )
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    try:
+        ai_result = answer_question(slug, question, runtime_config=runtime_config)
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao responder a pergunta: {exc}")
+        dash_question.status = DashQuestion.STATUS_ERROR
+        dash_question.ai_error = str(exc)
+        dash_question.save(update_fields=["status", "ai_error"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    answer = ai_result["response"]
+    usage = ai_result["usage"]
+    dash_question.status = DashQuestion.STATUS_COMPLETED
+    dash_question.answer = answer.get("answer")
+    dash_question.confidence = answer.get("confidence")
+    dash_question.data_available = answer.get("data_available")
+    dash_question.ai_model = ai_result["model"]
+    dash_question.ai_input_tokens = usage["input_tokens"]
+    dash_question.ai_output_tokens = usage["output_tokens"]
+    dash_question.ai_total_tokens = usage["total_tokens"]
+    dash_question.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "answer": dash_question.answer,
+            "confidence": dash_question.confidence,
+            "data_available": dash_question.data_available,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
 
 
 def dashesLoginPage(request):
@@ -2228,6 +2528,269 @@ def travelBiExportPdf(request):
     return response
 
 
+# ------------------------------------------------------------ BI de Compras --
+
+def _compras_bi_scope_from_source(source):
+    return (
+        (source.get("periodo") or "12").strip(),
+        (source.get("aba") or "pagamento").strip(),
+        (source.get("fornecedor") or "all").strip(),
+        (source.get("filial") or "all").strip(),
+        (source.get("familia") or "all").strip(),
+    )
+
+
+def _compras_bi_scope_query(period_key, view_key, fornecedor_key, filial_key, familia_key):
+    return "?" + urllib_parse.urlencode(
+        {"periodo": period_key, "aba": view_key, "fornecedor": fornecedor_key,
+         "filial": filial_key, "familia": familia_key}
+    )
+
+
+def _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key):
+    """Snapshot do recorte. Aba, fornecedor, filial e família entram na chave junto com o período."""
+    return ComprasBiInsightSnapshot.objects.filter(
+        period_key=period_key, view_key=view_key, fornecedor_key=fornecedor_key,
+        filial_key=filial_key, familia_key=familia_key,
+    ).first()
+
+
+@_dashes_access_required("compras")
+def dashesComprasBiPage(request):
+    """Painel de compras: prazo de pagamento, prazo de entrega e variação de preço."""
+    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = load_compras_dashboard(period_key, view_key, fornecedor_key, filial_key, familia_key)
+        scope = dashboard["scope"]
+        # O recorte volta normalizado: fornecedor/filial/familia inexistentes na
+        # querystring caem para "todos", e a chave do snapshot precisa ser a
+        # mesma que a tela mostra.
+        period_key = scope["period"]["key"]
+        view_key = scope["view"]["key"]
+        fornecedor_key = scope["fornecedor"]["key"]
+        filial_key = scope["branch"]["key"]
+        familia_key = scope["familia"]["key"]
+    except Exception as exc:
+        data_error = f"Nao foi possivel consultar o ERP Senior: {exc}"
+
+    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
+    stale = bool(
+        snapshot and dashboard and snapshot.source_fingerprint != compras_dashboard_fingerprint(dashboard)
+    )
+
+    return render(
+        request,
+        "tiqueue/compras_bi.html",
+        {
+            "dashboard": dashboard,
+            "data_error": data_error,
+            "insight_snapshot": snapshot,
+            "insight_stale": stale,
+            "dashes_mode": True,
+            "active_dash": "compras",
+            "dashes_menu": allowed_dashboards(request.user),
+            "compras_page_url": reverse("dashesComprasBiPage"),
+            "compras_prepare_url": reverse("comprasBiPrepareInsights"),
+            "compras_ai_url": reverse("comprasBiRequestAiInsights"),
+            "compras_payload_url": reverse("comprasBiInsightPayloadApi"),
+            "compras_pdf_url": reverse("comprasBiExportPdf"),
+            "compras_scope_query": _compras_bi_scope_query(period_key, view_key, fornecedor_key, filial_key, familia_key),
+            "dna_ai_quota": _dashes_ai_quota(request.user),
+            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+        },
+    )
+
+
+@login_required
+@require_POST
+def comprasBiPrepareInsights(request):
+    """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
+    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.POST)
+
+    try:
+        fornecedores = list_compras_fornecedores()
+        branches = list_compras_branches()
+        familias = list_compras_familias()
+        dashboard = load_compras_dashboard(
+            period_key, view_key, fornecedor_key, filial_key, familia_key,
+            fornecedores_available=fornecedores, branches_available=branches, familias_available=familias,
+        )
+        scope = dashboard["scope"]
+    except Exception as exc:
+        return JsonResponse(
+            {"status": "error", "message": f"Nao foi possivel consultar o ERP Senior: {exc}"},
+            status=503,
+        )
+
+    fingerprint = compras_dashboard_fingerprint(dashboard)
+    scope_label = (
+        f"{scope['view']['label']} - {scope['period']['full_label']} - {scope['fornecedor']['label']}"
+        f" - {scope['branch']['label']} - {scope['familia']['label']}"
+    )
+    snapshot, created = ComprasBiInsightSnapshot.objects.update_or_create(
+        view_key=scope["view"]["key"],
+        period_key=scope["period"]["key"],
+        fornecedor_key=scope["fornecedor"]["key"],
+        filial_key=scope["branch"]["key"],
+        familia_key=scope["familia"]["key"],
+        defaults={
+            "scope_label": scope_label,
+            "source_fingerprint": fingerprint,
+            "metrics": dashboard["metrics"],
+            "ai_payload": build_compras_ai_payload(dashboard, fingerprint),
+            "status": ComprasBiInsightSnapshot.STATUS_PREPARED,
+            "ai_response": {},
+            "ai_error": None,
+            "created_by": request.user,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "created": created,
+            "snapshot_id": snapshot.id,
+            "message": "Indicadores calculados e payload preparado.",
+        }
+    )
+
+
+@login_required
+@require_POST
+def comprasBiRequestAiInsights(request):
+    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.POST)
+
+    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
+            status=409,
+        )
+
+    # Mesma cota diaria do DNA e dos demais BIs: o teto e por usuario, nao por painel.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
+            status=409,
+        )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    snapshot.status = ComprasBiInsightSnapshot.STATUS_PROCESSING
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
+
+    try:
+        ai_result = generate_customer_insights(
+            snapshot.ai_payload,
+            runtime_config=runtime_config,
+            system_prompt=COMPRAS_BI_SYSTEM_PROMPT,
+        )
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = ComprasBiInsightSnapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    usage = ai_result["usage"]
+    snapshot.status = ComprasBiInsightSnapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
+
+
+@login_required
+@require_GET
+def comprasBiInsightPayloadApi(request):
+    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
+    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "scope": snapshot.scope_label,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "model": snapshot.ai_model,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+@login_required
+@require_GET
+def comprasBiExportPdf(request):
+    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
+    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
+    if snapshot is None or not snapshot.ai_payload:
+        return HttpResponse(
+            "Gere os indicadores deste recorte antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
+        # analise de um filtro com os numeros de outro.
+        dashboard = load_compras_dashboard(
+            snapshot.period_key, snapshot.view_key, snapshot.fornecedor_key,
+            snapshot.filial_key, snapshot.familia_key,
+        )
+    except Exception as exc:
+        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
+
+    pdf_bytes = build_compras_bi_pdf(dashboard, snapshot)
+    filename = f"connectmx-bi-compras-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 # ----------------------------------------------------------- BI de Romaneios --
 
 def _romaneio_bi_scope_from_source(source):
@@ -2618,6 +3181,25 @@ def _portal_topbar_context(user, active, label, focus=False):
         "portal_page_label": label,
         "portal_nav_active": active,
         "portal_topbar_focus": bool(focus),
+        # Contagem no topo, em toda página do portal — não só na home e no
+        # bloqueio de abertura. É o reforço do aviso: a pessoa vê que tem
+        # avaliação pendente onde quer que esteja, não só quando tenta abrir
+        # chamado novo.
+        "pending_feedback_count": len(_portal_pending_feedback_demands(user)),
+        **_portal_notifications_context(user),
+    }
+
+
+def _portal_notifications_context(user):
+    if not getattr(user, "is_authenticated", False):
+        return {"portal_notifications": [], "portal_notifications_unread_count": 0}
+    notifications = list(
+        PortalNotification.objects.filter(recipient=user).select_related("demand")[:8]
+    )
+    unread_count = PortalNotification.objects.filter(recipient=user, read_at__isnull=True).count()
+    return {
+        "portal_notifications": notifications,
+        "portal_notifications_unread_count": unread_count,
     }
 
 
@@ -2674,6 +3256,11 @@ def _portal_pending_feedback_demands(user):
     Business rule: a requester cannot open a new ticket while any of their own
     concluded tickets is still unrated. Portal managers are exempt, otherwise
     support staff would lock themselves out of the intake flow.
+
+    Chamado importado do SM (`sm_ticket_id` preenchido) fica de fora da trava
+    de propósito: são milhares de atendimentos de anos atrás, ninguém vai
+    avaliar retroativamente, e travar quem tem histórico de SM até zerar essa
+    lista deixaria a pessoa sem conseguir abrir chamado novo nenhum.
     """
     if not getattr(user, "is_authenticated", False):
         return []
@@ -2684,6 +3271,7 @@ def _portal_pending_feedback_demands(user):
             requester=user,
             status=PortalDemand.STATUS_COMPLETED,
             feedback_rating__isnull=True,
+            sm_ticket_id__isnull=True,
         ).order_by("completed_at", "id")
     )
 
@@ -2705,6 +3293,7 @@ def _sync_portal_requester_account_user(account, password=None, username=None):
     user.userId = collaborator.registration_code
     user.nameUser = collaborator.full_name
     user.email = collaborator.email
+    user.company = collaborator.company
     user.is_active = should_be_active
     if password:
         user.set_password(password)
@@ -2762,32 +3351,40 @@ def _portal_relative_time_display(moment):
     return local_moment.strftime("%d/%m/%Y")
 
 
+# Palavras sem valor para buscar problemas parecidos — inclui as trocas típicas
+# de conversa ("não funcionou", "consegui fazer", "resolveu"), que sem isso
+# puxariam registros sem relação nenhuma com o problema.
+_PORTAL_SIMILARITY_STOP_WORDS = {
+    "para", "com", "sem", "uma", "que", "das", "dos", "por", "pra", "nao", "mais",
+    "essa", "esse", "isso", "tipo", "grupo", "meu", "minha", "seu", "sua", "estou",
+    "esta", "aqui", "muito", "todo", "toda", "todos", "todas", "como", "quando",
+    "onde", "porque", "ainda", "agora", "tambem", "voces", "voce", "preciso",
+    "quero", "consegui", "conseguir", "funcionou", "funciona", "tentei", "tentar",
+    "passo", "passos", "fiz", "fazer", "resolveu", "resolvido", "obrigado",
+    "obrigada", "ajuda", "ajudar", "problema",
+    # Verbos e expressões genéricas que aparecem em quase qualquer chamado
+    # (inclusive nos e-mails encaminhados, com "bom dia" e "segue abaixo").
+    "abre", "abrir", "fica", "ficou", "segue", "abaixo", "bom", "dia", "dias",
+    "favor", "pode", "poder", "hoje", "ontem", "sempre", "nada", "tudo",
+    "parece", "acontece", "acontecendo",
+    "foi", "pelo", "pela", "pelos", "pelas", "mas", "ser", "sao", "nos", "nas",
+    "dele", "dela", "ele", "ela", "este", "ali", "depois", "antes", "novamente",
+    "continua", "continuou",
+    # Palavras que aparecem em quase todo chamado de RH/TI e não dizem o que
+    # aconteceu ("o colaborador", "o programa", "a empresa").
+    "colaborador", "colaboradora", "colaboradores", "pessoa", "pessoas",
+    "usuario", "usuaria", "empresa", "programa", "programas",
+}
+
+
 def _portal_similarity_tokens(*chunks):
     raw_text = " ".join(str(chunk or "") for chunk in chunks)
     normalized = unicodedata.normalize("NFKD", raw_text.lower())
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
     tokens = re.findall(r"[a-z0-9]{3,}", normalized)
-    stop_words = {
-        "para",
-        "com",
-        "sem",
-        "uma",
-        "que",
-        "das",
-        "dos",
-        "por",
-        "pra",
-        "nao",
-        "mais",
-        "essa",
-        "esse",
-        "isso",
-        "tipo",
-        "grupo",
-    }
     ordered = []
     for token in tokens:
-        if token in stop_words or token in ordered:
+        if token in _PORTAL_SIMILARITY_STOP_WORDS or token in ordered:
             continue
         ordered.append(token)
     return ordered[:8]
@@ -3529,6 +4126,20 @@ def _portal_log_event(
     )
 
 
+def _portal_notify(recipient, demand, title, message=""):
+    """Aviso pessoal no sino do portal. `demand` pode ser None (aviso geral do
+    TI, fase futura) — por isso fica separado de `_portal_log_event`, que é
+    sempre preso a uma demanda."""
+    if not recipient:
+        return None
+    return PortalNotification.objects.create(
+        recipient=recipient,
+        demand=demand,
+        title=(title or "").strip()[:180],
+        message=(message or "").strip()[:255] or None,
+    )
+
+
 def _portal_next_queue_position(owner_user):
     aggregates = userQueue.objects.filter(user_code=str(getattr(owner_user, "userId", "") or "")).aggregate(
         max_position=models.Max("n_queue_position"),
@@ -3570,6 +4181,7 @@ def _decorate_portal_messages(demand):
 
     message_rows = list(getattr(demand, "thread_messages", []))
     total_worked_minutes = 0
+    worklog_entries = []
     for message in message_rows:
         message.author_display = message.display_author_name
         message.is_requester = message.author_role == PortalDemandMessage.ROLE_REQUESTER
@@ -3586,6 +4198,7 @@ def _decorate_portal_messages(demand):
             message.worked_period_display = (
                 f"{message.work_started_at.strftime('%d/%m/%Y %H:%M')} até {message.work_ended_at.strftime('%d/%m/%Y %H:%M')}"
             )
+            worklog_entries.append(message)
         else:
             message.worked_period_display = ""
         for attachment in getattr(message, "prefetched_attachments", []):
@@ -3599,11 +4212,13 @@ def _decorate_portal_messages(demand):
     demand.reply_count = len(message_rows)
     demand.total_worked_minutes = total_worked_minutes
     demand.total_worked_display = _format_portal_work_minutes(total_worked_minutes) if total_worked_minutes else "-"
+    # Mais recente primeiro: é o turno que a pessoa acabou de apontar, ou o
+    # próximo que ela quer conferir.
+    demand.worklog_entries = list(reversed(worklog_entries))
 
 
 def _decorate_portal_demands(demands):
     priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
-    feedback_map = dict(PortalDemand.FEEDBACK_CHOICES)
     for demand in demands:
         demand.status_render = _portal_status_meta(demand.status)
         demand.priority_render = priority_map.get(
@@ -3615,8 +4230,19 @@ def _decorate_portal_demands(demands):
         )
         demand.requester_display = _queue_collaborator_display_name(demand.requester)
         demand.requester_sector_display = getattr(getattr(demand, "requester_sector", None), "name", "") or "-"
+        demand.company_display = getattr(getattr(demand, "company", None), "name", "") or "-"
         demand.assigned_display = _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to else "-"
-        demand.feedback_rating_label = feedback_map.get(demand.feedback_rating or 0, "-")
+        # Faixa (estilo NPS) só pra colorir o selo da nota na lista — 1-6
+        # insatisfeito, 7-8 neutro, 9-10 satisfeito. Não é um dado gravado.
+        rating = demand.feedback_rating
+        if rating is None:
+            demand.feedback_rating_tier = ""
+        elif rating >= 9:
+            demand.feedback_rating_tier = "high"
+        elif rating >= 7:
+            demand.feedback_rating_tier = "mid"
+        else:
+            demand.feedback_rating_tier = "low"
         demand.detail_url = demand.get_absolute_url()
         demand.sla_preview = _portal_build_sla_preview(getattr(demand, "sla_policy", None))
         sla_paused = demand.status == PortalDemand.STATUS_WAITING
@@ -3758,7 +4384,7 @@ def _decorate_portal_custom_values(demand):
 
 def _portal_detail_queryset():
     return PortalDemand.objects.select_related(
-        "requester", "assigned_to", "task_group", "task_type", "linked_queue_item", "sla_policy", "sla_policy__default_attendant"
+        "requester", "assigned_to", "task_group", "task_type", "company", "linked_queue_item", "sla_policy", "sla_policy__default_attendant"
     ).prefetch_related(
         Prefetch(
             "logs",
@@ -3803,32 +4429,90 @@ def _portal_requester_queryset(user):
     )
 
 
-def _portal_requester_demands(user):
-    demand_rows = list(_portal_requester_queryset(user))
-    _decorate_portal_demands(demand_rows)
-    return demand_rows
+def _portal_my_demands_counts(user):
+    """Contagens pros mini-cartões do topo de "Minhas demandas" — agregado no
+    banco, sem carregar e decorar as centenas de linhas do histórico só pra
+    somar 4 números (ver _portal_my_demands_list_context pra lista em si,
+    paginada e filtrada separadamente)."""
+    aggregates = PortalDemand.objects.filter(requester=user).aggregate(
+        total=Count("id"),
+        pending=Count("id", filter=Q(status=PortalDemand.STATUS_PENDING)),
+        assumed=Count("id", filter=Q(status=PortalDemand.STATUS_ASSUMED)),
+        waiting=Count("id", filter=Q(status=PortalDemand.STATUS_WAITING)),
+        completed=Count("id", filter=Q(status=PortalDemand.STATUS_COMPLETED)),
+        cancelled=Count("id", filter=Q(status=PortalDemand.STATUS_CANCELLED)),
+        # sm_ticket_id de fora: histórico importado do SM não entra na conta
+        # de "aguardando feedback" — mesma régua da trava de avaliação, ver
+        # _portal_pending_feedback_demands.
+        awaiting_feedback=Count(
+            "id",
+            filter=Q(status=PortalDemand.STATUS_COMPLETED, feedback_rating__isnull=True, sm_ticket_id__isnull=True),
+        ),
+    )
+    return {key: value or 0 for key, value in aggregates.items()}
 
 
-def _portal_counts_from_demands(demands):
-    pending = sum(1 for row in demands if row.status == PortalDemand.STATUS_PENDING)
-    assumed = sum(1 for row in demands if row.status == PortalDemand.STATUS_ASSUMED)
-    waiting = sum(1 for row in demands if row.status == PortalDemand.STATUS_WAITING)
-    completed = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED)
-    awaiting_feedback = sum(1 for row in demands if row.status == PortalDemand.STATUS_COMPLETED and not row.has_feedback)
-    feedback_values = [row.feedback_rating for row in demands if row.feedback_rating]
-    feedback_avg = (sum(feedback_values) / len(feedback_values)) if feedback_values else None
+_PORTAL_MY_DEMANDS_PAGE_SIZE = 20
+
+
+def _portal_my_demands_list_context(request):
+    """Lista de "Minhas demandas": filtro, ordenação e paginação de verdade no
+    banco — antes era tudo renderizado de uma vez (todo o histórico) e um
+    script escondia/mostrava linha por linha no navegador, o que não escala
+    para quem já tem centenas de chamados (ex. histórico importado do SM)."""
+    qs = _portal_requester_queryset(request.user)
+
+    valid_statuses = {choice[0] for choice in PortalDemand.STATUS_CHOICES}
+    status = (request.GET.get("status") or "").strip()
+    if status not in valid_statuses:
+        status = ""
+    if status:
+        qs = qs.filter(status=status)
+
+    search = (request.GET.get("q") or "").strip()
+    if search:
+        qs = qs.filter(Q(title__icontains=search) | Q(access_code__icontains=search))
+
+    sort = (request.GET.get("sort") or "recent").strip()
+    if sort == "oldest":
+        qs = qs.order_by("created_at", "id")
+    elif sort == "priority":
+        qs = qs.order_by(
+            Case(
+                When(priority_level=userQueue.PRIORITY_HIGH, then=Value(0)),
+                When(priority_level=userQueue.PRIORITY_MEDIUM, then=Value(1)),
+                When(priority_level=userQueue.PRIORITY_LOW, then=Value(2)),
+                default=Value(3),
+                output_field=IntegerField(),
+            ),
+            "-created_at",
+        )
+    elif sort == "sla":
+        qs = qs.order_by(F("resolution_due_at").asc(nulls_last=True))
+    else:
+        sort = "recent"
+
+    paginator = Paginator(qs, _PORTAL_MY_DEMANDS_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get("page") or "1")
+    demands = list(page_obj.object_list)
+    _decorate_portal_demands(demands)
+
+    querystring_params = request.GET.copy()
+    querystring_params.pop("page", None)
+    base_querystring = querystring_params.urlencode()
+
+    # Abas de status trocam só o status: busca e ordenação continuam valendo.
+    kept_params = {key: value for key, value in (("q", search), ("sort", sort)) if value and value != "recent"}
+    filters_querystring = urllib_parse.urlencode(kept_params)
+
     return {
-        "total": len(demands),
-        "pending": pending,
-        "assumed": assumed,
-        "waiting": waiting,
-        "completed": completed,
-        # "Aguardando você" continua contando como demanda ativa do solicitante:
-        # ela ainda não terminou, só está esperando resposta dele.
-        "active": pending + assumed + waiting,
-        "awaiting_feedback": awaiting_feedback,
-        "feedback_avg": feedback_avg,
-        "feedback_avg_display": f"{feedback_avg:.1f}/5" if feedback_avg else "-",
+        "my_demands": demands,
+        "page_obj": page_obj,
+        "status_filter": status,
+        "search_query": search,
+        "sort": sort,
+        "base_querystring": base_querystring,
+        "filters_querystring": filters_querystring,
     }
 
 
@@ -3839,7 +4523,10 @@ def _portal_dashboard_context(user):
         pending=Count("id", filter=Q(status=PortalDemand.STATUS_PENDING)),
         assumed=Count("id", filter=Q(status=PortalDemand.STATUS_ASSUMED)),
         completed=Count("id", filter=Q(status=PortalDemand.STATUS_COMPLETED)),
-        awaiting_feedback=Count("id", filter=Q(status=PortalDemand.STATUS_COMPLETED, feedback_rating__isnull=True)),
+        awaiting_feedback=Count(
+            "id",
+            filter=Q(status=PortalDemand.STATUS_COMPLETED, feedback_rating__isnull=True, sm_ticket_id__isnull=True),
+        ),
         feedback_avg=Avg("feedback_rating"),
     )
     total = aggregates.get("total") or 0
@@ -3848,7 +4535,7 @@ def _portal_dashboard_context(user):
     completed = aggregates.get("completed") or 0
     awaiting_feedback = aggregates.get("awaiting_feedback") or 0
     feedback_avg = aggregates.get("feedback_avg")
-    feedback_avg_display = f"{feedback_avg:.1f}/5" if feedback_avg else "-"
+    feedback_avg_display = f"{feedback_avg:.1f}/10" if feedback_avg else "-"
     last_demand = base_queryset.order_by("-created_at", "-id").only("created_at").first()
     admin_pending = PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if _portal_can_attend(user) else None
 
@@ -4034,6 +4721,29 @@ def portalDemandPage(request):
     )
 
 
+@login_required
+def portalNotificationOpen(request, pk):
+    """Abre o que a notificação aponta (hoje, sempre a demanda) e marca como
+    lida no caminho — não existe uma tela separada só pra "ver a notificação",
+    ela é a porta de entrada pro destino."""
+    notification = get_object_or_404(PortalNotification, pk=pk, recipient=request.user)
+    if not notification.is_read:
+        PortalNotification.objects.filter(pk=notification.pk).update(read_at=timezone.now())
+    return redirect(notification.get_absolute_url())
+
+
+@login_required
+@require_POST
+def portalNotificationsMarkAllRead(request):
+    PortalNotification.objects.filter(recipient=request.user, read_at__isnull=True).update(read_at=timezone.now())
+    next_url = request.POST.get("next") or ""
+    if next_url and url_has_allowed_host_and_scheme(
+        url=next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return redirect(next_url)
+    return redirect("portalDemandPage")
+
+
 _PORTAL_PRIORITY_HINTS = {
     userQueue.PRIORITY_LOW: "Consigo trabalhar normalmente. Pode ser tratado na ordem da fila.",
     userQueue.PRIORITY_MEDIUM: "Atrapalha meu trabalho, mas consigo contornar por enquanto.",
@@ -4062,21 +4772,38 @@ def portalDemandCreatePage(request):
     if _portal_pending_feedback_demands(request.user):
         return redirect(f"{reverse('portalMyDemandsPage')}?feedback_required=1")
 
+    chat_draft = None
+    chat_upload_ids = []
+    if request.method == "GET":
+        # Visita nova à tela = conversa nova. Só no GET: um POST com erro de
+        # validação re-renderiza a mesma página e não deve apagar o que a
+        # pessoa já conversou com o assistente. O rascunho do resumo (se
+        # veio da tela de conversa) é consumido uma única vez aqui.
+        request.session.pop(_PORTAL_CHAT_SESSION_KEY, None)
+        chat_draft = request.session.pop(_PORTAL_CHAT_DRAFT_KEY, None)
+        if chat_draft:
+            chat_upload_ids = chat_draft.pop("attachment_ids", []) or []
+    else:
+        chat_upload_ids = request.POST.getlist("chat_upload_ids")
+    chat_uploads = _portal_chat_uploads_for(request.user, chat_upload_ids)
+
     can_open_on_behalf = _portal_can_attend(request.user)
     form = PortalDemandForm(
         request.POST or None,
         request.FILES or None,
+        initial=chat_draft or None,
         can_open_on_behalf=can_open_on_behalf,
     )
     dashboard_context = _portal_dashboard_context(request.user)
 
     if request.method == "POST" and form.is_valid():
         request_base_url = request.build_absolute_uri("/").rstrip("/")
-        requester_user, requester_sector = form.resolve_requester(request.user)
+        requester_user, requester_sector, requester_company = form.resolve_requester(request.user)
         with transaction.atomic():
             demand = form.save(commit=False)
             demand.requester = requester_user
             demand.requester_sector = requester_sector
+            demand.company = requester_company
             demand.status = PortalDemand.STATUS_PENDING
             demand.priority_level = form.cleaned_data.get("priority_level") or userQueue.PRIORITY_MEDIUM
             demand.save()
@@ -4086,6 +4813,7 @@ def portalDemandCreatePage(request):
                 request.FILES.getlist("attachments"),
                 uploaded_by=request.user,
             )
+            _claim_portal_chat_uploads(demand, chat_uploads, request.user)
             matched_policy = _portal_apply_sla_policy(demand, save=True)
             if matched_policy and matched_policy.auto_assign_on_create and matched_policy.default_attendant_id:
                 _assume_portal_demand(demand, matched_policy.default_attendant)
@@ -4108,10 +4836,661 @@ def portalDemandCreatePage(request):
             "initial_sla_preview": _portal_build_sla_preview(None),
             "requester_profile": _portal_requester_profile(request.user),
             "can_open_on_behalf": can_open_on_behalf,
+            "ai_chat_available": _portal_ai_chat_available(),
+            "chat_uploads": chat_uploads,
             **_portal_topbar_context(request.user, "create", "Nova Demanda", focus=True),
             **dashboard_context,
         },
     )
+
+
+_PORTAL_CHAT_SESSION_KEY = "portal_chat_history"
+_PORTAL_CHAT_DRAFT_KEY = "portal_chat_draft"
+_PORTAL_CHAT_MAX_TURNS = 10  # 5 trocas — teto de custo/sessão, não limite de UX real.
+
+
+def _portal_ai_chat_available():
+    config = get_openai_runtime_config()
+    return bool(config["enabled"] and config["api_key_configured"])
+
+
+@login_required
+def portalDemandChatPage(request):
+    """Abertura por conversa, em tela própria — não é mais um painel dentro
+    do formulário. O resumo final vira rascunho de sessão e a pessoa segue
+    pro formulário de sempre (`portalDemandCreatePage`) só pra revisar,
+    escolher área/anexos e confirmar o envio de verdade.
+    """
+    if not _portal_can_open_new_demands(request.user):
+        return redirect(f"{reverse('portalDemandPage')}?requester_denied=1")
+    if _portal_pending_feedback_demands(request.user):
+        return redirect(f"{reverse('portalMyDemandsPage')}?feedback_required=1")
+    if not _portal_ai_chat_available():
+        return redirect("portalDemandCreatePage")
+
+    if request.method == "GET":
+        # Visita nova = conversa nova, mesmo critério do formulário manual.
+        request.session.pop(_PORTAL_CHAT_SESSION_KEY, None)
+        request.session.pop(_PORTAL_CHAT_SOURCES_KEY, None)
+
+    return render(
+        request,
+        "tiqueue/portal_demand_chat.html",
+        {
+            "requester_profile": _portal_requester_profile(request.user),
+            **_portal_topbar_context(request.user, "create", "Abrir por conversa", focus=True),
+        },
+    )
+
+
+_PORTAL_CHAT_UPLOAD_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".gif",
+    ".pdf", ".txt", ".log", ".csv",
+    ".xlsx", ".xls", ".docx", ".doc",
+}
+_PORTAL_CHAT_IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+_PORTAL_CHAT_TEXT_EXTENSIONS = {".txt", ".log", ".csv"}
+_PORTAL_CHAT_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+_PORTAL_CHAT_INLINE_MAX_BYTES = 5 * 1024 * 1024
+_PORTAL_CHAT_TEXT_EXCERPT_BYTES = 6000
+_PORTAL_CHAT_UPLOAD_TTL = timedelta(hours=24)
+
+
+def _portal_chat_upload_kind(extension):
+    if extension in _PORTAL_CHAT_IMAGE_TYPES:
+        return "image"
+    if extension == ".pdf":
+        return "pdf"
+    if extension in _PORTAL_CHAT_TEXT_EXTENSIONS:
+        return "text"
+    return "file"
+
+
+def _portal_cleanup_chat_uploads(user):
+    stale = list(
+        PortalChatUpload.objects.filter(
+            user=user,
+            claimed_demand__isnull=True,
+            created_at__lt=timezone.now() - _PORTAL_CHAT_UPLOAD_TTL,
+        )
+    )
+    for upload in stale:
+        upload.file.delete(save=False)
+        upload.delete()
+
+
+def _portal_chat_uploads_for(user, ids):
+    clean_ids = [int(item) for item in ids if str(item).isdigit()]
+    if not clean_ids or not getattr(user, "is_authenticated", False):
+        return []
+    return list(
+        PortalChatUpload.objects.filter(user=user, claimed_demand__isnull=True, id__in=clean_ids).order_by("id")
+    )
+
+
+def _claim_portal_chat_uploads(demand, uploads, actor):
+    for upload in uploads:
+        PortalDemandAttachment.objects.create(
+            demand=demand,
+            uploaded_by=actor,
+            uploaded_by_name=_queue_collaborator_display_name(actor),
+            original_name=upload.original_name,
+            file=upload.file.name,
+        )
+        upload.claimed_demand = demand
+        upload.save(update_fields=["claimed_demand"])
+
+
+def _portal_chat_upload_parts(uploads):
+    """Conteúdo dos anexos para o modelo: imagens e PDFs entram como arquivo,
+    textos entram como trecho, e o resto só é citado pelo nome."""
+    parts = []
+    notes = []
+    images = 0
+    pdfs = 0
+    for upload in uploads:
+        extension = os.path.splitext(upload.original_name)[1].lower()
+        kind = _portal_chat_upload_kind(extension)
+        upload.file.open("rb")
+        try:
+            data = upload.file.read()
+        finally:
+            upload.file.close()
+        if kind == "image" and images < 4 and len(data) <= _PORTAL_CHAT_INLINE_MAX_BYTES:
+            images += 1
+            encoded = base64.b64encode(data).decode("ascii")
+            parts.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{_PORTAL_CHAT_IMAGE_TYPES[extension]};base64,{encoded}",
+                    "detail": "auto",
+                }
+            )
+        elif kind == "pdf" and pdfs < 2 and len(data) <= _PORTAL_CHAT_INLINE_MAX_BYTES:
+            pdfs += 1
+            encoded = base64.b64encode(data).decode("ascii")
+            parts.append(
+                {
+                    "type": "input_file",
+                    "filename": upload.original_name,
+                    "file_data": f"data:application/pdf;base64,{encoded}",
+                }
+            )
+        elif kind == "text":
+            excerpt = data[:_PORTAL_CHAT_TEXT_EXCERPT_BYTES].decode("utf-8", errors="replace")
+            notes.append(f"Conteúdo do arquivo {upload.original_name}:\n{excerpt}")
+        else:
+            notes.append(f"Arquivo anexado: {upload.original_name} (conteúdo não lido pelo assistente).")
+    if notes:
+        parts.insert(0, {"type": "input_text", "text": "\n\n".join(notes)})
+    return parts
+
+
+_PORTAL_CHAT_MIN_SCORE = 3  # um termo no título (3) ou três no corpo (1 cada)
+_PORTAL_CHAT_CANDIDATE_LIMIT = 5
+_PORTAL_CHAT_SOURCES_KEY = "portal_chat_sources"
+
+
+def _portal_normalized_text(value):
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def _portal_chat_search_tokens(texts, limit=14):
+    """Termos de busca, do texto mais recente para o mais antigo."""
+    tokens = []
+    for text in texts:
+        for token in _portal_similarity_tokens(text):
+            if token not in tokens:
+                tokens.append(token)
+    return tokens[:limit]
+
+
+def _portal_word_set(*chunks):
+    text = _portal_normalized_text(" ".join(str(chunk or "") for chunk in chunks))
+    return set(re.findall(r"[a-z0-9]+", text))
+
+
+def _portal_has_word(token, words):
+    """Palavra inteira, aceitando plural. Substring não: 'mail' não pode casar
+    com 'mailto' de uma assinatura de e-mail, nem 'fica' com 'ficar'."""
+    if token in words or f"{token}s" in words:
+        return True
+    return token.endswith("s") and token[:-1] in words
+
+
+def _portal_match_hits(tokens, title, *body):
+    """Termos da busca que aparecem no título e, à parte, só no corpo."""
+    title_words = _portal_word_set(title)
+    body_words = _portal_word_set(*body)
+    title_hits = [token for token in tokens if _portal_has_word(token, title_words)]
+    body_hits = [token for token in tokens if token not in title_hits and _portal_has_word(token, body_words)]
+    return title_hits, body_hits
+
+
+def _portal_candidate_score(tokens, title, *body):
+    """Termo no título vale 3; no corpo, 1. Acento é ignorado nos dois lados."""
+    title_hits, body_hits = _portal_match_hits(tokens, title, *body)
+    return 3 * len(title_hits) + len(body_hits)
+
+
+def _portal_demand_answer_excerpt(demand_id):
+    """Última resposta pública da equipe no chamado: é ela que costuma dizer
+    como o problema foi resolvido. Nota interna nunca sai daqui."""
+    message = (
+        PortalDemandMessage.objects.filter(
+            demand_id=demand_id,
+            is_internal=False,
+            author_role=PortalDemandMessage.ROLE_ATTENDANT,
+        )
+        .exclude(message__isnull=True)
+        .exclude(message="")
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    return _portal_trim_excerpt(message.message, limit=900) if message else None
+
+
+def _portal_chat_knowledge_candidates(user, texts, limit=_PORTAL_CHAT_CANDIDATE_LIMIT):
+    """Registros já resolvidos que podem resolver a conversa: soluções da base
+    de conhecimento (só entradas resolvidas, de categorias ativas) e chamados
+    concluídos. A base é visível a todos; chamado de outra pessoa só aparece
+    para quem atende."""
+    tokens = _portal_chat_search_tokens(texts)
+    if not tokens:
+        return []
+
+    candidates = []
+    entries = (
+        KnowledgeEntry.objects.select_related("category")
+        .filter(is_resolved=True, category__is_active=True)
+        .order_by("-inserted_at", "-id")[:400]
+    )
+    for entry in entries:
+        score = _portal_candidate_score(
+            tokens,
+            entry.title,
+            entry.tags,
+            entry.trigger,
+            entry.root_cause,
+            entry.impact,
+            entry.workaround,
+            entry.resolution,
+        )
+        if score < _PORTAL_CHAT_MIN_SCORE:
+            continue
+        documented = entry.source_demand_id is not None
+        candidates.append(
+            {
+                "ref": f"KB-{entry.id}",
+                "kind": "documentation" if documented else "knowledge",
+                "score": score,
+                "title": entry.title,
+                "url": reverse("knowledgeEntryDetailPage", args=[entry.id]),
+                "meta": "Documentação de chamados" if documented else entry.category.name,
+                "problem": _portal_trim_excerpt(entry.trigger, limit=400),
+                "solution": _portal_trim_excerpt(entry.resolution or entry.workaround, limit=900) or None,
+            }
+        )
+
+    demands = PortalDemand.objects.filter(
+        status=PortalDemand.STATUS_COMPLETED,
+        documentation__isnull=True,
+    )
+    if not _portal_can_attend(user):
+        demands = demands.filter(requester=user)
+    for demand in demands.order_by("-created_at", "-id")[:300]:
+        # Chamado: o título precisa casar com algum termo, e o conjunto precisa
+        # de pelo menos dois termos distintos. Corpo sozinho não basta — texto
+        # de e-mail encaminhado casa com qualquer busca por palavras comuns.
+        title_hits, body_hits = _portal_match_hits(tokens, demand.title, demand.description)
+        if not title_hits or len(title_hits) + len(body_hits) < 2:
+            continue
+        score = 3 * len(title_hits) + len(body_hits)
+        candidates.append(
+            {
+                "ref": f"CH-{demand.id}",
+                "kind": "demand",
+                "score": score,
+                "title": demand.title,
+                "url": demand.get_absolute_url(),
+                "meta": f"{demand.protocol} · {timezone.localtime(demand.created_at).strftime('%d/%m/%Y')}",
+                "problem": _portal_trim_excerpt(demand.description, limit=400),
+                "solution": None,
+                "demand_id": demand.id,
+            }
+        )
+
+    candidates.sort(key=lambda row: (-row["score"], row["title"]))
+    top = candidates[:limit]
+    for row in top:
+        if row["kind"] == "demand":
+            row["solution"] = _portal_demand_answer_excerpt(row.pop("demand_id"))
+    return [{key: value for key, value in row.items() if key not in {"score", "demand_id"}} for row in top]
+
+
+def _portal_chat_knowledge_block(candidates):
+    """Seção 'Base consultada' do prompt deste turno."""
+    if not candidates:
+        return (
+            "Base consultada: nenhum registro resolvido parecido com esta conversa até agora. "
+            "Não sugira solução da base neste turno."
+        )
+    lines = ["Base consultada (registros reais; use só estes e copie o ref em source_id):"]
+    for row in candidates:
+        lines.append(f"[{row['ref']}] {row['title']} ({row['meta']})")
+        lines.append(f"Problema: {row['problem']}")
+        if row["solution"]:
+            lines.append(f"Como foi resolvido: {row['solution']}")
+    return "\n".join(lines)
+
+
+def _portal_chat_source_for(source_id, candidates):
+    if not source_id:
+        return None
+    return next((row for row in candidates if row["ref"] == source_id), None)
+
+
+def _portal_chat_with_sources(description, sources):
+    """Anexa ao resumo as soluções da base que foram sugeridas na conversa,
+    para quem atende ver o que já foi oferecido à pessoa."""
+    lines = [
+        f"Solução da base consultada: {item['title']} ({item['url']})"
+        for item in sources
+        if item["url"] not in description
+    ]
+    return "\n".join([description, *lines]).strip() if lines else description
+
+
+def _portal_find_similar_resolved(user, title, description, keywords=None, limit=4):
+    """Problemas parecidos já resolvidos, para a lista do resumo. Mesma busca
+    do chat: base de conhecimento e chamados concluídos, respeitando quem vê o quê."""
+    candidates = _portal_chat_knowledge_candidates(
+        user,
+        [" ".join(keywords or []), title, description],
+        limit=limit,
+    )
+    return [
+        {
+            "kind": row["kind"],
+            "title": row["title"],
+            "excerpt": _portal_trim_excerpt(row["problem"]),
+            "meta": row["meta"],
+            "url": row["url"],
+        }
+        for row in candidates
+    ]
+
+
+@login_required
+@require_POST
+def portalDemandChatUploadApi(request):
+    """Anexo da conversa de abertura. Fica guardado até o resumo virar chamado
+    (aí é ligado a ele) ou expirar; quem envia só vê o próprio arquivo."""
+    if not _portal_can_open_new_demands(request.user):
+        return JsonResponse({"message": "Você não pode abrir chamados agora."}, status=403)
+    if not _portal_ai_chat_available():
+        return JsonResponse({"message": "O assistente por conversa não está disponível agora."}, status=503)
+
+    uploaded = request.FILES.get("file")
+    if uploaded is None:
+        return JsonResponse({"message": "Selecione um arquivo."}, status=400)
+    name = os.path.basename(uploaded.name or "")[:255] or "arquivo"
+    extension = os.path.splitext(name)[1].lower()
+    if extension not in _PORTAL_CHAT_UPLOAD_EXTENSIONS:
+        return JsonResponse(
+            {"message": "Esse tipo de arquivo não é aceito. Use imagem, PDF, texto, planilha ou documento."},
+            status=400,
+        )
+    if uploaded.size > _PORTAL_CHAT_UPLOAD_MAX_BYTES:
+        return JsonResponse({"message": "O arquivo passa de 10 MB."}, status=400)
+
+    _portal_cleanup_chat_uploads(request.user)
+    upload = PortalChatUpload.objects.create(
+        user=request.user,
+        file=uploaded,
+        original_name=name,
+        size=uploaded.size,
+    )
+    return JsonResponse(
+        {
+            "id": upload.id,
+            "name": name,
+            "kind": _portal_chat_upload_kind(extension),
+            "size": upload.size,
+        }
+    )
+
+
+@login_required
+@require_POST
+def portalDemandChatMessageApi(request):
+    """Um turno do assistente de abertura por conversa.
+
+    Histórico fica na sessão — é rascunho até a pessoa clicar em "usar este
+    resumo" no formulário de verdade; nada aqui cria PortalDemand. Os anexos
+    enviados na conversa seguem junto em cada turno, para o modelo continuar
+    vendo o print ou o log enquanto a conversa durar.
+    """
+    if not _portal_ai_chat_available():
+        return JsonResponse(
+            {"action": "error", "message": "O assistente por conversa não está disponível agora."},
+            status=503,
+        )
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"action": "error", "message": "Payload inválido."}, status=400)
+
+    message = (payload.get("message") or "").strip()
+    uploads = _portal_chat_uploads_for(request.user, payload.get("attachment_ids") or [])
+    if not message and not uploads:
+        return JsonResponse({"action": "error", "message": "Digite uma mensagem ou anexe um arquivo."}, status=400)
+
+    user_text = message or "Enviei o(s) arquivo(s) abaixo."
+    if uploads:
+        user_text += "\n[anexos: " + ", ".join(upload.original_name for upload in uploads) + "]"
+
+    history = request.session.get(_PORTAL_CHAT_SESSION_KEY) or []
+    history.append({"role": "user", "content": user_text[:2500]})
+    history = history[-_PORTAL_CHAT_MAX_TURNS:]
+
+    # Busca a cada turno, com os termos da conversa (o mais recente primeiro):
+    # a IA só pode sugerir solução a partir desses registros.
+    user_texts = [turn["content"] for turn in reversed(history) if turn.get("role") == "user"]
+    candidates = _portal_chat_knowledge_candidates(request.user, user_texts)
+
+    try:
+        reply = generate_portal_chat_reply(
+            history,
+            extra_parts=_portal_chat_upload_parts(uploads),
+            knowledge_context=_portal_chat_knowledge_block(candidates),
+        )
+    except OpenAIInsightError as exc:
+        return JsonResponse({"action": "error", "message": str(exc)}, status=502)
+
+    source = _portal_chat_source_for(reply.get("source_id"), candidates)
+    reply["source_id"] = source["ref"] if source else None
+    history.append({"role": "assistant", "content": json.dumps(reply, ensure_ascii=False)})
+    request.session[_PORTAL_CHAT_SESSION_KEY] = history[-_PORTAL_CHAT_MAX_TURNS:]
+    reply["solution_source"] = (
+        {"title": source["title"], "url": source["url"], "kind": source["kind"]} if source else None
+    )
+
+    sources = request.session.get(_PORTAL_CHAT_SOURCES_KEY) or []
+    if reply["action"] == "resolved":
+        # Resolveu sem chamado: a rascunho e as fontes sugeridas não valem mais.
+        request.session.pop(_PORTAL_CHAT_DRAFT_KEY, None)
+        request.session.pop(_PORTAL_CHAT_SOURCES_KEY, None)
+        sources = []
+    elif source and reply["action"] in {"solution", "summary"}:
+        if all(item["url"] != source["url"] for item in sources):
+            sources.append({"title": source["title"], "url": source["url"]})
+        sources = sources[-5:]
+        request.session[_PORTAL_CHAT_SOURCES_KEY] = sources
+
+    if reply["action"] == "summary":
+        title = (reply.get("title") or "")[:180]
+        description = _portal_chat_with_sources(reply.get("description") or "", sources)
+        keywords = [str(term) for term in (reply.get("keywords") or [])][:8]
+        reply["description"] = description
+        request.session[_PORTAL_CHAT_DRAFT_KEY] = {
+            "title": title,
+            "description": description,
+            "priority_level": reply.get("priority_level") or "",
+            "attachment_ids": [upload.id for upload in uploads],
+        }
+        reply["similar"] = _portal_find_similar_resolved(request.user, title, description, keywords)
+        reply["attachments"] = [upload.original_name for upload in uploads]
+
+    return JsonResponse(reply)
+
+
+@login_required
+@require_POST
+def portalDemandChatResetApi(request):
+    request.session.pop(_PORTAL_CHAT_SESSION_KEY, None)
+    request.session.pop(_PORTAL_CHAT_DRAFT_KEY, None)
+    request.session.pop(_PORTAL_CHAT_SOURCES_KEY, None)
+    return JsonResponse({"status": "ok"})
+
+
+_PORTAL_DOC_TEXT_LIMIT = 1500
+_PORTAL_DOC_RECORD_LIMIT = 28000
+_PORTAL_DOCUMENTATION_CATEGORY = "Documentação de chamados"
+
+
+def _portal_doc_text(value, limit=_PORTAL_DOC_TEXT_LIMIT):
+    text = str(value or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def _portal_documentation_record(demand):
+    """Registro completo do chamado em texto, para a IA resumir a solução."""
+
+    def fmt(moment):
+        return timezone.localtime(moment).strftime("%d/%m/%Y %H:%M") if moment else "-"
+
+    requester_name = _queue_collaborator_display_name(demand.requester)
+    lines = [
+        f"Chamado {demand.protocol}: {demand.title}",
+        f"Aberto em {fmt(demand.created_at)} por {requester_name}",
+        f"Concluído em {fmt(demand.completed_at)}",
+        f"Prioridade: {demand.priority_level or '-'}",
+        f"Área: {demand.task_group.name if demand.task_group_id else '-'} · "
+        f"Tipo: {demand.task_type.name if demand.task_type_id else '-'}",
+        f"Empresa: {demand.company.name if demand.company_id else '-'} · "
+        f"Setor: {demand.requester_sector.name if demand.requester_sector_id else '-'}",
+        "",
+        "Descrição inicial do solicitante:",
+        _portal_doc_text(demand.description or "(sem descrição)"),
+    ]
+    opening_files = [attachment.original_name or attachment.file.name for attachment in demand.attachments.filter(message__isnull=True)]
+    if opening_files:
+        lines.append("Anexos da abertura: " + ", ".join(opening_files))
+
+    lines.extend(["", "Histórico (cronológico):"])
+    messages = (
+        PortalDemandMessage.objects.filter(demand=demand)
+        .select_related("author")
+        .prefetch_related("attachments")
+        .order_by("created_at", "id")
+    )
+    role_labels = dict(PortalDemandMessage.ROLE_CHOICES)
+    for message in messages:
+        if message.has_worklog:
+            lines.append(
+                f"[{fmt(message.created_at)}] Turno apontado por {message.display_author_name} "
+                f"({message.worked_time_display}, de {fmt(message.work_started_at)} a {fmt(message.work_ended_at)}): "
+                f"{_portal_doc_text(message.message or '(sem descrição)')}"
+            )
+            continue
+        label = "Nota interna" if message.is_internal else role_labels.get(message.author_role, "Mensagem")
+        lines.append(
+            f"[{fmt(message.created_at)}] {label} ({message.display_author_name}): "
+            f"{_portal_doc_text(message.message or '(sem texto)')}"
+        )
+        files = [attachment.original_name or attachment.file.name for attachment in message.attachments.all()]
+        if files:
+            lines.append("  Anexos: " + ", ".join(files))
+
+    event_labels = dict(PortalDemandLog.EVENT_CHOICES)
+    lines.extend(["", "Movimentações:"])
+    for entry in PortalDemandLog.objects.filter(demand=demand).order_by("created_at", "id"):
+        lines.append(f"[{fmt(entry.created_at)}] {event_labels.get(entry.event_type, 'Movimentação')}: {entry.summary}")
+
+    if demand.feedback_rating is not None:
+        lines.extend(
+            ["", f"Avaliação do solicitante: {demand.feedback_rating}/10. Comentário: {demand.feedback_comment or '-'}"]
+        )
+
+    text = "\n".join(lines)
+    if len(text) > _PORTAL_DOC_RECORD_LIMIT:
+        text = text[:_PORTAL_DOC_RECORD_LIMIT].rstrip() + "\n[registro truncado]"
+    return text
+
+
+def _portal_documentation_category():
+    category, _ = KnowledgeCategory.objects.get_or_create(
+        name=_PORTAL_DOCUMENTATION_CATEGORY,
+        defaults={"description": "Soluções documentadas a partir de chamados resolvidos."},
+    )
+    return category
+
+
+def _portal_documentation_blocker(user, demand):
+    if not _portal_can_attend(user):
+        return JsonResponse({"message": "Somente atendentes podem documentar chamados."}, status=403)
+    if demand.status != PortalDemand.STATUS_COMPLETED:
+        return JsonResponse({"message": "Só chamados concluídos podem virar documentação."}, status=400)
+    if KnowledgeEntry.objects.filter(source_demand=demand).exists():
+        return JsonResponse({"message": "Este chamado já tem documentação."}, status=409)
+    return None
+
+
+@login_required
+@require_POST
+def portalDemandDocumentDraftApi(request, demand_id):
+    """Rascunho da documentação: a IA lê o registro inteiro do chamado e a
+    descrição de como o atendente resolveu, e devolve os campos para revisão."""
+    demand = get_object_or_404(
+        PortalDemand.objects.select_related("requester", "task_group", "task_type", "company", "requester_sector"),
+        pk=demand_id,
+    )
+    blocker = _portal_documentation_blocker(request.user, demand)
+    if blocker is not None:
+        return blocker
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"message": "Payload inválido."}, status=400)
+    how = str(payload.get("how_it_was_solved") or "").strip()[:2000]
+    if len(how) < 20:
+        return JsonResponse(
+            {"message": "Descreva em uma ou duas frases como o chamado foi resolvido."},
+            status=400,
+        )
+    if not _portal_ai_chat_available():
+        return JsonResponse(
+            {"message": "A IA não está disponível agora. Preencha a documentação manualmente."},
+            status=503,
+        )
+
+    try:
+        draft = generate_demand_documentation(_portal_documentation_record(demand), how)
+    except OpenAIInsightError as exc:
+        return JsonResponse({"message": str(exc)}, status=502)
+    return JsonResponse(draft)
+
+
+@login_required
+@require_POST
+def portalDemandDocumentSaveApi(request, demand_id):
+    demand = get_object_or_404(PortalDemand, pk=demand_id)
+    blocker = _portal_documentation_blocker(request.user, demand)
+    if blocker is not None:
+        return blocker
+
+    form = PortalDemandDocumentForm(request.POST)
+    if not form.is_valid():
+        errors = {field: [item["message"] for item in items] for field, items in form.errors.get_json_data().items()}
+        return JsonResponse({"message": "Revise os campos destacados.", "errors": errors}, status=400)
+
+    category = form.cleaned_data.get("category") or _portal_documentation_category()
+    try:
+        with transaction.atomic():
+            entry = KnowledgeEntry.objects.create(
+                category=category,
+                title=form.cleaned_data["title"],
+                trigger=form.cleaned_data["trigger"],
+                description=demand.description or form.cleaned_data["trigger"],
+                impact=form.cleaned_data.get("impact") or None,
+                root_cause=form.cleaned_data.get("root_cause") or None,
+                resolution=form.cleaned_data["resolution"],
+                workaround=form.cleaned_data.get("workaround") or None,
+                tags=form.cleaned_data.get("tags") or None,
+                is_resolved=True,
+                created_by=request.user,
+                source_demand=demand,
+            )
+            if form.cleaned_data.get("include_attachments"):
+                for attachment in demand.attachments.all():
+                    KnowledgeEntryAttachment.objects.create(
+                        entry=entry,
+                        file=attachment.file.name,
+                        original_name=attachment.original_name,
+                    )
+    except IntegrityError:
+        return JsonResponse({"message": "Este chamado já tem documentação."}, status=409)
+    return JsonResponse({"redirect": f"{demand.get_absolute_url()}?documented=1#documentation"}, status=201)
 
 
 @login_required
@@ -4310,8 +5689,7 @@ def portalMyDemandsPage(request):
     elif request.GET.get("denied") == "1":
         access_denied_message = "Você não possui acesso a esta demanda."
 
-    my_demands = _portal_requester_demands(request.user)
-    counts = _portal_counts_from_demands(my_demands)
+    counts = _portal_my_demands_counts(request.user)
     pending_feedback = _portal_pending_feedback_demands(request.user)
     feedback_required = request.GET.get("feedback_required") == "1"
 
@@ -4319,12 +5697,12 @@ def portalMyDemandsPage(request):
         request,
         "tiqueue/portal_my_demands.html",
         {
-            "my_demands": my_demands,
             "counts": counts,
             "pending_feedback": pending_feedback,
             "feedback_required": feedback_required,
             "success_message": success_message,
             "access_denied_message": access_denied_message,
+            **_portal_my_demands_list_context(request),
             **_portal_topbar_context(request.user, "my-demands", "Minhas Demandas"),
         },
     )
@@ -4343,9 +5721,13 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
     reply_form = PortalDemandReplyForm(demand=demand, user=request.user)
     feedback_form = PortalDemandFeedbackForm(instance=demand)
     transfer_form = PortalDemandTransferForm(demand=demand)
+    worklog_form = PortalDemandWorklogForm()
     reply_success = request.GET.get("replied") == "1"
     feedback_success = request.GET.get("feedback") == "1"
     transfer_success = request.GET.get("transferred") == "1"
+    worklog_success = request.GET.get("worklog") == "1"
+    documented_success = request.GET.get("documented") == "1"
+    documentation_entry = KnowledgeEntry.objects.filter(source_demand=demand).first()
     workflow_state = (request.GET.get("workflow") or "").strip().lower()
     workflow_error_message = None
 
@@ -4380,6 +5762,41 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                 if transferred:
                     return redirect(f"{locked_demand.get_absolute_url()}?transferred=1#management")
                 transfer_form.add_error(None, transfer_error or "Nao foi possivel transferir a demanda.")
+        elif form_type == "worklog":
+            worklog_form = PortalDemandWorklogForm(request.POST or None)
+            if not _portal_can_attend(request.user):
+                worklog_form.add_error(None, "Somente atendentes podem apontar tempo de atendimento.")
+            elif not _portal_can_reply_to_demand(request.user, demand):
+                worklog_form.add_error(None, "Esta demanda não aceita novos apontamentos no status atual.")
+            elif worklog_form.is_valid():
+                with transaction.atomic():
+                    locked_demand = get_object_or_404(
+                        PortalDemand.objects.select_for_update().select_related("assigned_to"),
+                        pk=demand.pk,
+                    )
+                    message = PortalDemandMessage.objects.create(
+                        demand=locked_demand,
+                        author=request.user,
+                        author_name=_queue_collaborator_display_name(request.user),
+                        author_role=_portal_actor_role(request.user, locked_demand),
+                        is_internal=True,
+                        message=worklog_form.cleaned_data["description"],
+                        work_started_at=worklog_form.cleaned_data["work_started_at"],
+                        work_ended_at=worklog_form.cleaned_data["work_ended_at"],
+                    )
+                    _portal_log_event(
+                        locked_demand,
+                        PortalDemandLog.EVENT_WORKLOG,
+                        actor=request.user,
+                        summary=f"Tempo apontado: {message.worked_time_display}.",
+                        details=(
+                            f"Inicio: {timezone.localtime(message.work_started_at).strftime('%d/%m/%Y %H:%M')} | "
+                            f"Fim: {timezone.localtime(message.work_ended_at).strftime('%d/%m/%Y %H:%M')}"
+                        ),
+                        to_attendant=locked_demand.assigned_to if locked_demand.assigned_to_id else None,
+                        related_message=message,
+                    )
+                return redirect(f"{demand.get_absolute_url()}?worklog=1#worklog")
         elif form_type == "workflow":
             workflow_action = (request.POST.get("workflow_action") or "").strip().lower()
             # Reabrir é a única ação de ciclo de vida que o solicitante também
@@ -4502,13 +5919,16 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             "reply_form": reply_form,
             "feedback_form": feedback_form,
             "transfer_form": transfer_form,
+            "worklog_form": worklog_form,
             "reply_success": reply_success,
             "feedback_success": feedback_success,
             "transfer_success": transfer_success,
+            "worklog_success": worklog_success,
             "workflow_state": workflow_state,
             "workflow_error_message": workflow_error_message,
             **_portal_topbar_context(request.user, "my-demands", "Conversa da Demanda"),
             "can_reply": _portal_can_reply_to_demand(request.user, demand),
+            "can_log_worklog": _portal_can_attend(request.user) and _portal_can_reply_to_demand(request.user, demand),
             "can_leave_feedback": _portal_can_leave_feedback(request.user, demand),
             "can_assume_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_PENDING,
             "can_transfer_here": _portal_can_attend(request.user) and demand.status not in set(PortalDemand.CLOSED_STATUSES),
@@ -4525,6 +5945,16 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             "reply_canned_responses": reply_canned_responses,
             "quick_canned_responses": quick_canned_responses,
             "reply_canned_response_value": reply_form["canned_response"].value() if "canned_response" in reply_form.fields else "",
+            "documentation_entry": documentation_entry,
+            "documented_success": documented_success,
+            "can_document_here": (
+                _portal_can_attend(request.user)
+                and demand.status == PortalDemand.STATUS_COMPLETED
+                and documentation_entry is None
+            ),
+            "documentation_categories": KnowledgeCategory.objects.filter(is_active=True).order_by("sort_order", "name"),
+            "documentation_form": PortalDemandDocumentForm(initial={"include_attachments": True}),
+            "ai_documentation_available": _portal_ai_chat_available(),
         },
     )
 
@@ -4563,6 +5993,73 @@ def _portal_admin_base_context(request, active_key, page_title, requires="config
         "portal_admin_nav_active": active_key,
         "portal_admin_page_title": page_title,
     }
+
+
+def _portal_company_admin_summary():
+    return {
+        "companies": PortalCompany.objects.count(),
+        "active_companies": PortalCompany.objects.filter(is_active=True).count(),
+    }
+
+
+@login_required
+def portalCompanyConfigPage(request):
+    """Cadastro das empresas do grupo atendidas pelo ConnectMX Helpdesk.
+
+    Fica junto das outras telas de parametro do portal (campos, SLA,
+    respostas, solicitantes) porque e a mesma familia de cadastro: pouca
+    coisa, que muda pouco, e que todo o resto (fila, BI, roteamento) vai
+    passar a enxergar.
+    """
+    context = _portal_admin_base_context(request, "companies", "Empresas do ConnectMX Helpdesk")
+    summary = _portal_company_admin_summary() if context["can_manage"] else {"companies": 0, "active_companies": 0}
+
+    editing_company = None
+    edit_company_id = (request.GET.get("edit_company") or "").strip()
+    if context["can_manage"] and edit_company_id.isdigit():
+        editing_company = PortalCompany.objects.filter(pk=int(edit_company_id)).first()
+
+    company_form = PortalCompanyForm(instance=editing_company, prefix="portal_company")
+
+    if request.method == "POST" and context["can_manage"]:
+        form_type = (request.POST.get("form_type") or "").strip().lower()
+
+        if form_type == "create_company":
+            company_form = PortalCompanyForm(request.POST, prefix="portal_company")
+            if company_form.is_valid():
+                company_form.save()
+                return redirect(f"{reverse('portalCompanyConfigPage')}?company_created=1")
+
+        elif form_type == "update_company":
+            company_id = (request.POST.get("company_id") or "").strip()
+            editing_company = PortalCompany.objects.filter(pk=company_id).first() if company_id.isdigit() else None
+            company_form = PortalCompanyForm(request.POST, instance=editing_company, prefix="portal_company")
+            if editing_company and company_form.is_valid():
+                company_form.save()
+                return redirect(f"{reverse('portalCompanyConfigPage')}?company_updated=1")
+
+        elif form_type == "toggle_company":
+            company_id = (request.POST.get("company_id") or "").strip()
+            company = PortalCompany.objects.filter(pk=company_id).first() if company_id.isdigit() else None
+            if company:
+                company.is_active = not company.is_active
+                company.save(update_fields=["is_active", "updated_at"])
+                return redirect(f"{reverse('portalCompanyConfigPage')}?company_toggled=1")
+
+    companies = PortalCompany.objects.all() if context["can_manage"] else PortalCompany.objects.none()
+
+    context.update(
+        {
+            "summary": summary,
+            "companies": companies,
+            "editing_company": editing_company,
+            "company_form": company_form,
+            "company_created_flag": request.GET.get("company_created") == "1",
+            "company_updated_flag": request.GET.get("company_updated") == "1",
+            "company_toggled_flag": request.GET.get("company_toggled") == "1",
+        }
+    )
+    return render(request, "tiqueue/portal_companies.html", context)
 
 
 def _portal_requester_admin_summary():
@@ -4762,7 +6259,7 @@ def portalRequesterAdminPage(request):
         ).order_by("name", "id")
     ) if context["can_manage"] else []
     collaborators = list(
-        PortalRequesterCollaborator.objects.select_related("sector").order_by("full_name", "id")
+        PortalRequesterCollaborator.objects.select_related("sector", "company").order_by("full_name", "id")
     ) if context["can_manage"] else []
     accounts = list(
         PortalRequesterAccount.objects.select_related("collaborator", "collaborator__sector", "user").order_by(
@@ -4821,6 +6318,7 @@ def _portal_ticket_list_context(request):
         "task_group",
         "task_type",
         "requester_sector",
+        "company",
         "sla_policy",
         "sla_policy__default_attendant",
     )
@@ -5094,8 +6592,18 @@ def _sync_portal_critical_notifications(open_demands=None):
 
 
 @login_required
+def portalMyAssignedDemandsPage(request):
+    """Atalho do menu interno do ConnectMX pros chamados assumidos pelo
+    atendente logado — mesma fila de "Entrada de Chamados", só já na aba
+    "Meus chamados". É "Minhas demandas" do ATENDENTE; a do solicitante mora
+    no Portal (ver portalMyDemandsPage), são listas diferentes de propósito."""
+    return redirect(f"{reverse('portalPendingDemandsPage')}?view=meus")
+
+
+@login_required
 def portalPendingDemandsPage(request):
     context = _portal_admin_base_context(request, "pending", "Entrada de Chamados", requires="attend")
+    context.update(_portal_topbar_context(request.user, "pending", "Entrada de Chamados"))
     if context["can_manage"]:
         _sync_portal_critical_notifications()
         context.update(_portal_ticket_list_context(request))
@@ -5565,6 +7073,12 @@ def _complete_portal_demand(demand, actor_user):
         summary=f"Demanda concluída por {_queue_collaborator_display_name(actor_user)}.",
         to_attendant=demand.assigned_to if demand.assigned_to_id else None,
     )
+    _portal_notify(
+        demand.requester,
+        demand,
+        title="Seu chamado foi concluído",
+        message=f"{demand.protocol} — {demand.title}",
+    )
     _sync_portal_critical_notifications()
     return True, None
 
@@ -5959,13 +7473,11 @@ def _query_sm_tickets(attendant_id: str, closed: bool = False):
     """
     Returns SM tickets for the attendant in format:
     [{"codigo_helpdesk": "...", "descricao": "...", "detalhe_demanda": "..."}]
-    """
-    host = os.getenv("SM_DB_HOST", "192.168.0.209")
-    port = int(os.getenv("SM_DB_PORT", "3306"))
-    db_name = os.getenv("SM_DB_NAME", "sm")
-    db_user = os.getenv("SM_DB_USER", "sm_viewer")
-    db_pass = os.getenv("SM_DB_PASSWORD", "KcyVbd66h@UnvZ")
 
+    Conexão compartilhada com o resto da sincronização do SM (`tiqueue.it_bi`)
+    — isto aqui tinha a própria cópia da lógica de conexão, com uma senha de
+    produção commitada como fallback; ver `it_bi._sm_connection`.
+    """
     status_filter = "in (5, 6, 13)" if closed else "not in (5, 6, 13)"
     query = f"""
         select
@@ -5978,103 +7490,15 @@ def _query_sm_tickets(attendant_id: str, closed: bool = False):
             A.status_id {status_filter} AND
             A.user_id_attendent = %s
     """
-
-    driver_errors = []
-
-    # Try PyMySQL first.
-    try:
-        import pymysql  # type: ignore
-
-        conn = pymysql.connect(
-            host=host,
-            user=db_user,
-            password=db_pass,
-            database=db_name,
-            port=port,
-            charset="utf8mb4",
-            cursorclass=pymysql.cursors.DictCursor,
-        )
-        try:
-            with conn.cursor() as cur:
-                cur.execute(query, (attendant_id,))
-                rows = cur.fetchall() or []
-                return [
-                    {
-                        "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
-                        "descricao": str(r.get("descricao") or "").strip(),
-                        "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
-                    }
-                    for r in rows
-                ]
-        finally:
-            conn.close()
-    except Exception as exc:
-        driver_errors.append(f"pymysql: {exc}")
-
-    # Fallback to mysql-connector-python if available.
-    try:
-        import mysql.connector  # type: ignore
-
-        conn = mysql.connector.connect(
-            host=host,
-            user=db_user,
-            password=db_pass,
-            database=db_name,
-            port=port,
-        )
-        try:
-            cur = conn.cursor(dictionary=True)
-            cur.execute(query, (attendant_id,))
-            rows = cur.fetchall() or []
-            cur.close()
-            return [
-                {
-                    "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
-                    "descricao": str(r.get("descricao") or "").strip(),
-                    "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
-                }
-                for r in rows
-            ]
-        finally:
-            conn.close()
-    except Exception as exc:
-        driver_errors.append(f"mysql-connector: {exc}")
-
-    # Fallback to mysqlclient (MySQLdb) if available.
-    try:
-        import MySQLdb  # type: ignore
-
-        conn = MySQLdb.connect(
-            host=host,
-            user=db_user,
-            passwd=db_pass,
-            db=db_name,
-            port=port,
-            charset="utf8mb4",
-        )
-        try:
-            cur = conn.cursor(MySQLdb.cursors.DictCursor)
-            cur.execute(query, (attendant_id,))
-            rows = cur.fetchall() or []
-            cur.close()
-            return [
-                {
-                    "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
-                    "descricao": str(r.get("descricao") or "").strip(),
-                    "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
-                }
-                for r in rows
-            ]
-        finally:
-            conn.close()
-    except Exception as exc:
-        driver_errors.append(f"mysqlclient/MySQLdb: {exc}")
-
-    raise RuntimeError(
-        "Falha ao conectar no SM: nenhum driver MySQL disponivel. "
-        "Instale um destes pacotes: `pip install pymysql` ou `pip install mysql-connector-python`. "
-        f"Detalhes: {' | '.join(driver_errors)}"
-    )
+    rows = _sm_query(query, (attendant_id,))
+    return [
+        {
+            "codigo_helpdesk": str(r.get("codigo_helpdesk") or "").strip(),
+            "descricao": str(r.get("descricao") or "").strip(),
+            "detalhe_demanda": str(r.get("detalhe_demanda") or "").strip(),
+        }
+        for r in rows
+    ]
 
 
 def _query_sm_open_tickets(attendant_id: str):

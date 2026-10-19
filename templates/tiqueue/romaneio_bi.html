@@ -7,6 +7,7 @@
     <title>ConnectMX | BI de Romaneios</title>
     <script src="{% static '/js/theme.js' %}"></script>
     <script src="{% static '/js/dashesFetch.js' %}"></script>
+    <script src="{% static '/js/dashesToast.js' %}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
     <link rel="stylesheet" href="{% static '/style/romaneioBi.css' %}">
@@ -424,7 +425,7 @@
                 }).catch(function (error) {
                     button.disabled = false;
                     button.innerHTML = original;
-                    window.alert(error.message);
+                    window.dashesToast(error.message, 'error');
                 });
             });
         }

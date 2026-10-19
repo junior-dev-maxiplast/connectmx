@@ -10,6 +10,11 @@ from django.utils.text import slugify
 
 class TaskGroup(models.Model):
     name = models.CharField(max_length=80, unique=True)
+    # Default True de propósito: todo grupo já cadastrado continua aparecendo
+    # pra quem abre chamado. Só vira False por ação explícita — hoje, a
+    # importação do SM marcando os departamentos que o próprio SM já tratava
+    # como desativados (nome com "(DESATIVADO)"/"(DESATIVADA)").
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
@@ -37,6 +42,7 @@ class TaskType(models.Model):
     group = models.ForeignKey(TaskGroup, on_delete=models.CASCADE, related_name="types")
     name = models.CharField(max_length=80)
     color = models.CharField(max_length=7, default="#5CD6A3")
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         unique_together = ("group", "name")
@@ -503,6 +509,69 @@ class PortalCannedResponse(models.Model):
         return self.title
 
 
+class PortalCompany(models.Model):
+    """Empresa do grupo atendida pelo ConnectMX Helpdesk (ex-SM).
+
+    O SM atendia varias empresas do grupo pelo mesmo `organization_id`; aqui
+    cada uma vira um cadastro proprio. `sm_organization_id` guarda o id antigo
+    so para a migracao de dados conseguir casar os chamados do SM com a
+    empresa certa sem depender de mapear nome por nome na mao.
+    """
+
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(blank=True, null=True)
+    sm_organization_id = models.PositiveIntegerField(blank=True, null=True, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        verbose_name = "Empresa"
+        verbose_name_plural = "Empresas"
+
+    def __str__(self):
+        return self.name
+
+
+class SmHistoricalSnapshot(models.Model):
+    """Retrato agregado (empresa + mês) dos chamados já FECHADOS no SM.
+
+    Existe para o BI do TI sobreviver ao dia em que o SM for desligado: hoje
+    `tiqueue.it_bi.load_it_dashboard` consulta o MySQL do SM direto, a cada
+    abertura do painel. Isto aqui congela os números agora, enquanto o SM
+    ainda está de pé — reescrever o painel para ler daqui é passo futuro
+    (Fase 5 do corte), não feito nesta migração.
+
+    Granularidade fina de propósito: empresa + mês, não o recorte do filtro
+    da tela (3 meses, 12 meses, "mês passado"...). Qualquer um desses recortes
+    dá para somar a partir daqui; o contrário — guardar só o recorte da tela —
+    obrigaria a reconsultar o SM de novo cada vez que alguém quisesse olhar de
+    um jeito diferente.
+    """
+
+    company = models.ForeignKey(PortalCompany, on_delete=models.CASCADE, related_name="sm_historical_snapshots")
+    month = models.DateField()
+    total_tickets = models.PositiveIntegerField(default=0)
+    avg_rating = models.FloatField(blank=True, null=True)
+    avg_attending_minutes = models.FloatField(blank=True, null=True)
+    avg_first_response_minutes = models.FloatField(blank=True, null=True)
+    by_priority = models.JSONField(default=dict)
+    by_type = models.JSONField(default=dict)
+    by_department = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["company__name", "month"]
+        unique_together = ("company", "month")
+        verbose_name = "Retrato histórico do SM"
+        verbose_name_plural = "Retratos históricos do SM"
+
+    def __str__(self):
+        return f"{self.company.name} - {self.month:%m/%Y}"
+
+
 class PortalRequesterSector(models.Model):
     name = models.CharField(max_length=120, unique=True)
     description = models.TextField(blank=True, null=True)
@@ -519,6 +588,17 @@ class PortalRequesterSector(models.Model):
 
 class PortalRequesterCollaborator(models.Model):
     sector = models.ForeignKey(PortalRequesterSector, on_delete=models.PROTECT, related_name="collaborators")
+    # Fixada no cadastro e depois disso a tela nao deixa mais mudar (ver
+    # PortalRequesterCollaboratorForm): trocar a empresa de quem ja abriu
+    # chamado bagunçaria o BI por empresa desses chamados. Precisando mudar de
+    # verdade, o caminho e desativar este colaborador e cadastrar outro.
+    company = models.ForeignKey(
+        PortalCompany,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="collaborators",
+    )
     full_name = models.CharField(max_length=160)
     registration_code = models.CharField(max_length=40, unique=True)
     email = models.EmailField(unique=True)
@@ -582,13 +662,10 @@ class PortalDemand(models.Model):
     OPEN_STATUSES = [STATUS_PENDING, STATUS_ASSUMED, STATUS_WAITING]
     # Status em que o ciclo ja terminou.
     CLOSED_STATUSES = [STATUS_COMPLETED, STATUS_CANCELLED]
-    FEEDBACK_CHOICES = [
-        (1, "Muito insatisfeito"),
-        (2, "Insatisfeito"),
-        (3, "Neutro"),
-        (4, "Satisfeito"),
-        (5, "Muito satisfeito"),
-    ]
+    # Escala 1-10 (não 1-5): o texto na tela explica as pontas (1 = muito
+    # insatisfeito, 10 = muito satisfeito) em vez de rotular cada nota — dez
+    # adjetivos inventados renderiam mais arbitrário do que o próprio número.
+    FEEDBACK_CHOICES = [(n, str(n)) for n in range(1, 11)]
 
     requester = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="portal_demands")
     assigned_to = models.ForeignKey(
@@ -619,6 +696,20 @@ class PortalDemand(models.Model):
         related_name="demands",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    # Id do chamado no SM (ex.: "ABL-PHHJR"), so preenchido em chamado importado
+    # de la. Existe pra a importacao ser idempotente (rodar de novo nao duplica)
+    # e pra dar pra achar de volta o chamado original se precisar conferir algo.
+    sm_ticket_id = models.CharField(max_length=50, blank=True, null=True, unique=True, db_index=True)
+    # Empresa do grupo dona do chamado, no momento da abertura. Mesmo raciocinio
+    # de requester_sector: snapshot, nao o cadastro atual do solicitante, para o
+    # BI por empresa nao se confundir se a pessoa for remanejada depois.
+    company = models.ForeignKey(
+        PortalCompany,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="demands",
+    )
     # Setor do solicitante no momento da abertura. E snapshot de proposito: o
     # cadastro pode mudar de setor depois, e a triagem/BI precisa saber de onde
     # o chamado veio, nao de onde a pessoa esta hoje.
@@ -916,6 +1007,77 @@ class PortalDemandAttachment(models.Model):
 
     def __str__(self):
         return f"{self.demand.protocol} - {self.display_name}"
+
+
+class PortalChatUpload(models.Model):
+    """Arquivo enviado na conversa de abertura, antes de existir chamado.
+
+    Vira anexo do chamado quando a pessoa envia o resumo; enquanto não é usado
+    fica guardado e é apagado depois de 24h (ver _portal_cleanup_chat_uploads).
+    """
+
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="portal_chat_uploads")
+    file = models.FileField(upload_to="portal_chat/%Y/%m/")
+    original_name = models.CharField(max_length=255)
+    size = models.PositiveIntegerField(default=0)
+    claimed_demand = models.ForeignKey(
+        PortalDemand,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chat_uploads",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self):
+        return f"{self.user} - {self.original_name}"
+
+
+class PortalNotification(models.Model):
+    """Aviso pessoal no sino do portal — hoje só "seu chamado foi concluído,
+    avalie"; o campo `demand` é opcional de propósito para também caber um
+    aviso geral do TI sem chamado nenhum por trás (fase futura).
+
+    Diferente de `SystemNotification` (painel interno, transmissão, sem dono):
+    aqui cada linha pertence a UM usuário e tem estado de lido, porque é isso
+    que falta pro solicitante saber que o chamado dele terminou sem precisar
+    voltar ao portal por conta própria.
+    """
+
+    recipient = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="portal_notifications",
+    )
+    demand = models.ForeignKey(
+        PortalDemand,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
+    title = models.CharField(max_length=180)
+    message = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    @property
+    def is_read(self):
+        return self.read_at is not None
+
+    def get_absolute_url(self):
+        if self.demand_id:
+            return self.demand.get_absolute_url()
+        return reverse("portalDemandPage")
+
+    def __str__(self):
+        return f"{self.recipient} - {self.title}"
 
 
 class Project(models.Model):
@@ -1382,6 +1544,13 @@ class KnowledgeEntry(models.Model):
     tags = models.CharField(max_length=220, blank=True, null=True)
     is_resolved = models.BooleanField(default=False)
     created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    source_demand = models.OneToOneField(
+        "PortalDemand",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="documentation",
+    )
     inserted_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1978,3 +2147,218 @@ class RomaneioBiInsightSnapshot(models.Model):
 
     def __str__(self):
         return f"Romaneios {self.scope_label or self.period_key}"
+
+
+class ComprasBiInsightSnapshot(models.Model):
+    """Análise de IA do BI de Compras, por recorte de aba, período, fornecedor,
+    filial e família.
+
+    Espelha o TravelBiInsightSnapshot e o RomaneioBiInsightSnapshot, mas com
+    cinco eixos de escopo: a aba (`view_key` — pagamento/entrega/preço) muda
+    o conjunto de métricas inteiro, tão determinante quanto o período.
+    """
+
+    STATUS_PREPARED = "prepared"
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PREPARED, "Preparado"),
+        (STATUS_PROCESSING, "Processando na IA"),
+        (STATUS_COMPLETED, "Concluído"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    view_key = models.CharField(max_length=20, default="pagamento")
+    period_key = models.CharField(max_length=20)
+    fornecedor_key = models.CharField(max_length=20, default="all")
+    filial_key = models.CharField(max_length=20, default="all")
+    familia_key = models.CharField(max_length=20, default="all")
+    scope_label = models.CharField(max_length=160, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PREPARED)
+    source_fingerprint = models.CharField(max_length=64, db_index=True)
+    metrics = models.JSONField(default=dict)
+    ai_payload = models.JSONField(default=dict)
+    ai_response = models.JSONField(default=dict, blank=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_response_id = models.CharField(max_length=120, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    ai_requested_at = models.DateTimeField(blank=True, null=True)
+    ai_completed_at = models.DateTimeField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="compras_bi_insight_snapshots",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["view_key", "period_key", "fornecedor_key", "filial_key", "familia_key"],
+                name="unique_compras_bi_insight_scope",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Compras {self.scope_label or self.period_key}"
+
+
+class DashAlert(models.Model):
+    """Alerta proativo de um painel do Dashes (Central de Decisão).
+
+    Uma linha por métrica por painel, não uma por execução: recalcular é
+    `update_or_create` por `(dashboard, metric_key)`. Quando a condição que
+    gerou o alerta some, a linha vira `resolved` em vez de ser apagada — dá
+    para ver o alerta desapareceu, não só que ele nunca existiu.
+    """
+
+    SEVERITY_ATENCAO = "atencao"
+    SEVERITY_CRITICO = "critico"
+    SEVERITY_CHOICES = [
+        (SEVERITY_ATENCAO, "Atenção"),
+        (SEVERITY_CRITICO, "Crítico"),
+    ]
+
+    STATUS_ACTIVE = "active"
+    STATUS_RESOLVED = "resolved"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Ativo"),
+        (STATUS_RESOLVED, "Resolvido"),
+    ]
+
+    dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="alerts")
+    metric_key = models.CharField(max_length=80)
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default=SEVERITY_ATENCAO)
+    title = models.CharField(max_length=180)
+    message = models.TextField()
+    scope_label = models.CharField(max_length=160, blank=True, null=True)
+    current_value = models.FloatField(blank=True, null=True)
+    baseline_value = models.FloatField(blank=True, null=True)
+    change_pct = models.FloatField(blank=True, null=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    acknowledged_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="acknowledged_dash_alerts",
+    )
+    acknowledged_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-severity", "-updated_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(fields=["dashboard", "metric_key"], name="unique_dash_alert_metric"),
+        ]
+
+    def __str__(self):
+        return f"{self.dashboard.slug} - {self.metric_key} - {self.status}"
+
+
+class DashDecisionAction(models.Model):
+    """Item de checklist da Central de Decisão.
+
+    Nasce de três lugares (`origin`): uma recomendação que a IA já devolvia
+    (`recommended_actions`, hoje só exibida e esquecida em cada painel), um
+    alerta proativo (`DashAlert`), ou digitada à mão por quem está gerindo o
+    painel. Fechar o ciclo insight → ação é o objetivo do item 3 da Central.
+    """
+
+    ORIGIN_AI = "ai"
+    ORIGIN_MANUAL = "manual"
+    ORIGIN_ALERT = "alert"
+    ORIGIN_CHOICES = [
+        (ORIGIN_AI, "Análise de IA"),
+        (ORIGIN_MANUAL, "Manual"),
+        (ORIGIN_ALERT, "Alerta"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_DONE = "done"
+    STATUS_DISMISSED = "dismissed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendente"),
+        (STATUS_IN_PROGRESS, "Em andamento"),
+        (STATUS_DONE, "Concluída"),
+        (STATUS_DISMISSED, "Descartada"),
+    ]
+
+    dashboard = models.ForeignKey(Dashboard, on_delete=models.CASCADE, related_name="decision_actions")
+    origin = models.CharField(max_length=10, choices=ORIGIN_CHOICES, default=ORIGIN_MANUAL)
+    origin_alert = models.ForeignKey(
+        DashAlert, on_delete=models.SET_NULL, blank=True, null=True, related_name="actions",
+    )
+    description = models.TextField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    assigned_to = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="assigned_dash_actions",
+    )
+    due_date = models.DateField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="created_dash_actions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    # Capturado só quando a ação vem de um alerta (`origin_alert`) e é
+    # marcada concluída - o "antes" que a Central compara com o valor atual
+    # do mesmo indicador mais tarde ("Isso realmente melhorou?"). Ver
+    # `decision_center.capture_action_resolution`/`resolved_action_progress`.
+    resolved_metric_key = models.CharField(max_length=80, blank=True, null=True)
+    resolved_metric_value = models.FloatField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["status", "-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.dashboard.slug} - {self.description[:40]}"
+
+
+class DashQuestion(models.Model):
+    """Pergunta em linguagem natural sobre um painel do Dashes (item 4 da
+    Central de Decisão, "Pergunte aos dados" — ver `data_qa.py`).
+
+    `source_slug` não é FK de `Dashboard`: é a chave de `bi_registry.BI_SOURCES`
+    (hoje "romaneios", "viagens" ou "ti-bi") — DNA de Cliente não entra porque
+    a análise ali é por cliente, não por painel inteiro.
+    """
+
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [
+        (STATUS_PROCESSING, "Processando"),
+        (STATUS_COMPLETED, "Concluída"),
+        (STATUS_ERROR, "Erro"),
+    ]
+
+    source_slug = models.CharField(max_length=40)
+    source_label = models.CharField(max_length=120, blank=True, null=True)
+    question = models.TextField()
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PROCESSING)
+    answer = models.TextField(blank=True, null=True)
+    confidence = models.CharField(max_length=10, blank=True, null=True)
+    data_available = models.BooleanField(blank=True, null=True)
+    ai_model = models.CharField(max_length=80, blank=True, null=True)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_total_tokens = models.PositiveIntegerField(default=0)
+    ai_error = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, blank=True, null=True, related_name="dash_questions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.source_slug}: {self.question[:50]}"

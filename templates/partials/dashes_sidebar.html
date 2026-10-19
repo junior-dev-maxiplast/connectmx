@@ -8,6 +8,11 @@
         <p>Indicadores estratégicos em uma experiência dedicada.</p>
     </div>
     <nav class="dashes-nav" aria-label="Painéis disponíveis">
+        <a class="dashes-nav-item dashes-nav-central{% if active_dash == 'central-decisao' %} is-active{% endif %}" href="{% url 'dashesDecisionCenterPage' %}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6v7H4zM14 4h6v16h-6zM4 4h6v6H4z"/></svg>
+            <span><strong>Central de Decisão</strong><small>Visão geral e alertas</small></span>
+            {% if dashes_alert_count %}<em class="dashes-alert-badge">{{ dashes_alert_count }}</em>{% endif %}
+        </a>
         <span class="dashes-nav-label">DASHES</span>
         {% for dash in dashes_menu %}
         <a class="dashes-nav-item{% if active_dash == dash.slug %} is-active{% endif %}" href="{% url dash.url_name %}">

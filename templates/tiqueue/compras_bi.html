@@ -1,0 +1,555 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | BI de Compras</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <script src="{% static '/js/dashesFetch.js' %}"></script>
+    <script src="{% static '/js/dashesToast.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/dashes.css' %}">
+    {# itBi.css é a casca compartilhada dos painéis do Dashes (tudo que é .bi-*). #}
+    <link rel="stylesheet" href="{% static '/style/itBi.css' %}">
+    <link rel="stylesheet" href="{% static '/style/comprasBi.css' %}">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+</head>
+<body class="comprasbi">
+    {% include 'partials/dashes_sidebar.html' %}
+
+    <main class="bi-page">
+        <header class="bi-topbar">
+            <div>
+                <span class="bi-kicker">Ordens de compra · ERP Senior</span>
+                <h1>BI de Compras</h1>
+            </div>
+
+            {% if dashboard %}
+            <div class="bi-filters">
+                <div class="bi-filter-group">
+                    <span>Aba</span>
+                    {% for choice in dashboard.scope.view_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.view.key %} is-active{% endif %}"
+                           href="{{ compras_page_url }}?periodo={{ dashboard.scope.period.key }}&aba={{ choice.key }}&fornecedor={{ dashboard.scope.fornecedor.key }}&filial={{ dashboard.scope.branch.key }}&familia={{ dashboard.scope.familia.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Período</span>
+                    {% for choice in dashboard.scope.period_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.period.key %} is-active{% endif %}"
+                           href="{{ compras_page_url }}?periodo={{ choice.key }}&aba={{ dashboard.scope.view.key }}&fornecedor={{ dashboard.scope.fornecedor.key }}&filial={{ dashboard.scope.branch.key }}&familia={{ dashboard.scope.familia.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                <div class="bi-filter-group">
+                    <span>Filial</span>
+                    {% for choice in dashboard.scope.branch_choices %}
+                        <a class="bi-filter{% if choice.key == dashboard.scope.branch.key %} is-active{% endif %}"
+                           href="{{ compras_page_url }}?periodo={{ dashboard.scope.period.key }}&aba={{ dashboard.scope.view.key }}&fornecedor={{ dashboard.scope.fornecedor.key }}&filial={{ choice.key }}&familia={{ dashboard.scope.familia.key }}">{{ choice.label }}</a>
+                    {% endfor %}
+                </div>
+                {% comment %}
+                Fornecedor e família somam milhares de opções (2.600+ fornecedores) — uma
+                lista de links quebraria a tela, então os dois viram <select> que recarrega
+                a página sozinho, dentro do mesmo recorte das outras abas.
+                {% endcomment %}
+                <form class="bi-filter-select-group" method="get" action="{{ compras_page_url }}">
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="aba" value="{{ dashboard.scope.view.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="familia" value="{{ dashboard.scope.familia.key }}">
+                    <span>Fornecedor</span>
+                    <select name="fornecedor" class="bi-filter-select" onchange="this.form.submit()">
+                        {% for choice in dashboard.scope.fornecedor_choices %}
+                        <option value="{{ choice.key }}"{% if choice.key == dashboard.scope.fornecedor.key %} selected{% endif %}>{{ choice.label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                <form class="bi-filter-select-group" method="get" action="{{ compras_page_url }}">
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="aba" value="{{ dashboard.scope.view.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="fornecedor" value="{{ dashboard.scope.fornecedor.key }}">
+                    <span>Família</span>
+                    <select name="familia" class="bi-filter-select" onchange="this.form.submit()">
+                        {% for choice in dashboard.scope.familia_choices %}
+                        <option value="{{ choice.key }}"{% if choice.key == dashboard.scope.familia.key %} selected{% endif %}>{{ choice.label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            </div>
+            <div class="bi-ai-actions">
+                <form id="biIndicatorForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="aba" value="{{ dashboard.scope.view.key }}">
+                    <input type="hidden" name="fornecedor" value="{{ dashboard.scope.fornecedor.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="familia" value="{{ dashboard.scope.familia.key }}">
+                    <button type="submit" class="bi-btn" id="biIndicatorButton">
+                        <span>▦</span>{% if insight_snapshot %}Atualizar indicadores{% else %}Gerar indicadores{% endif %}
+                    </button>
+                </form>
+                <form id="biAiForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
+                    <input type="hidden" name="aba" value="{{ dashboard.scope.view.key }}">
+                    <input type="hidden" name="fornecedor" value="{{ dashboard.scope.fornecedor.key }}">
+                    <input type="hidden" name="filial" value="{{ dashboard.scope.branch.key }}">
+                    <input type="hidden" name="familia" value="{{ dashboard.scope.familia.key }}">
+                    <button type="submit" class="bi-btn is-ai{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="biAiButton"
+                            {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
+                        <span>✦</span>{% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
+                    </button>
+                </form>
+                {% if insight_snapshot %}
+                    <a class="bi-btn" href="{{ compras_payload_url }}{{ compras_scope_query }}" target="_blank" rel="noopener">JSON IA</a>
+                    <a class="bi-btn is-pdf" href="{{ compras_pdf_url }}{{ compras_scope_query }}"
+                       title="{% if insight_snapshot.ai_response %}Baixar relatório com a análise da IA{% else %}Baixar relatório dos indicadores (sem análise da IA){% endif %}">PDF{% if not insight_snapshot.ai_response %} dos indicadores{% else %} completo{% endif %}</a>
+                {% endif %}
+                {% if dna_ai_quota.limit != None %}
+                    <span class="bi-quota{% if dna_ai_quota.blocked %} is-blocked{% endif %}" title="Análises de IA usadas hoje">IA {{ dna_ai_quota.used }}/{{ dna_ai_quota.limit }}</span>
+                {% endif %}
+            </div>
+            <div class="bi-status"><i></i> Senior · E420OCP / E420IPO</div>
+            {% endif %}
+        </header>
+
+        {% if data_error %}
+            <section class="bi-shell">
+                <div class="bi-empty">
+                    <strong>Não foi possível carregar os indicadores</strong>
+                    <span>{{ data_error }}</span>
+                </div>
+            </section>
+        {% endif %}
+
+        {% if dashboard %}
+        <div class="bi-shell">
+            {% if insight_snapshot.ai_response %}
+            <section class="bi-panel bi-ai">
+                <div class="bi-panel-head">
+                    <h2>Análise da IA</h2>
+                    <span>{{ insight_snapshot.scope_label }} · {{ insight_snapshot.ai_model|default:"-" }} · {{ insight_snapshot.ai_total_tokens }} tokens</span>
+                </div>
+
+                {% if insight_stale %}
+                <p class="bi-stale">Os números mudaram desde esta análise. Gere os indicadores e peça uma nova para atualizar as conclusões.</p>
+                {% endif %}
+
+                <div class="bi-ai-head">
+                    <span class="bi-health is-{{ insight_snapshot.ai_response.health }}">{{ insight_snapshot.ai_response.health|title }}</span>
+                    <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                </div>
+
+                <div class="bi-grid is-2" style="margin-top: 13px;">
+                    <div class="bi-callout is-red"><span>Principal risco</span><strong>{{ insight_snapshot.ai_response.principal_risk }}</strong></div>
+                    <div class="bi-callout is-green"><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></div>
+                </div>
+
+                <div class="bi-ai-cards">
+                    {% for item in insight_snapshot.ai_response.insights %}
+                    <article class="bi-ai-card is-{{ item.type }}">
+                        <div class="bi-ai-card-head">
+                            <strong>{{ item.title }}</strong>
+                            <span class="bi-tag">{{ item.confidence }}</span>
+                        </div>
+                        <p>{{ item.summary }}</p>
+                        {% if item.evidence %}
+                        <div class="bi-evidence">
+                            {% for evidence in item.evidence %}<span>{{ evidence }}</span>{% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="bi-action"><b>Ação:</b> {{ item.recommended_action }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                {% if insight_snapshot.ai_response.recommended_actions %}
+                <div class="bi-actions-list">
+                    <span>Plano recomendado</span>
+                    <ol>{% for action in insight_snapshot.ai_response.recommended_actions %}<li>{{ action }}</li>{% endfor %}</ol>
+                </div>
+                {% endif %}
+            </section>
+            {% elif insight_snapshot.ai_error %}
+            <section class="bi-panel bi-ai-empty">
+                <strong>A última análise falhou</strong>
+                <em>{{ insight_snapshot.ai_error }}</em>
+            </section>
+            {% endif %}
+
+            {% if dashboard.scope.view.key == 'preco' %}
+            <section class="bi-kpis">
+                <div class="bi-kpi is-blue">
+                    <span>Qtde. cotada</span>
+                    <strong>{{ dashboard.metrics.qtd_cotada_display }}</strong>
+                    <small>em {{ dashboard.scope.period.full_label|lower }}</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>R$ total cotado</span>
+                    <strong>{{ dashboard.metrics.total_cotado_display }}</strong>
+                    <small>{{ dashboard.metrics.sequencias_display }} sequência(s) de item</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Ordens</span>
+                    <strong>{{ dashboard.metrics.ordens_display }}</strong>
+                    <small>{{ dashboard.metrics.fornecedores_display }} fornecedor(es)</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Produtos</span>
+                    <strong>{{ dashboard.metrics.produtos_display }}</strong>
+                    <small>cotados no recorte</small>
+                </div>
+                <div class="bi-kpi is-amber">
+                    <span>Preço unitário mínimo</span>
+                    <strong>{{ dashboard.metrics.preco_min_display }}</strong>
+                </div>
+                <div class="bi-kpi is-amber">
+                    <span>Preço unitário médio</span>
+                    <strong>{{ dashboard.metrics.preco_medio_display }}</strong>
+                </div>
+                <div class="bi-kpi is-red">
+                    <span>Preço unitário máximo</span>
+                    <strong>{{ dashboard.metrics.preco_max_display }}</strong>
+                </div>
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Preço unitário médio {{ dashboard.scope.period.full_label|lower }}</h2>
+                    <span>{{ dashboard.scope.fornecedor.label }} · {{ dashboard.scope.familia.label }}</span>
+                </div>
+                {% if dashboard.monthly %}
+                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                    {% for item in dashboard.monthly %}
+                    <div title="{{ item.label }}: {{ item.preco_medio_display }} · total {{ item.total_display }}">
+                        <div class="bi-chart-bars">
+                            <i class="is-blue" style="height: {{ item.height_pct }}%"></i>
+                        </div>
+                        <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem itens cotados no período selecionado.</div>
+                {% endif %}
+            </section>
+
+            <div class="bi-grid is-aside">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Por fornecedor</h2>
+                        <span>{{ dashboard.fornecedores|length }} no recorte · barra por R$ gasto</span>
+                    </div>
+                    {% if dashboard.fornecedores %}
+                    <div class="bi-bars">
+                        {% for item in dashboard.fornecedores %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.total_display }} · {{ item.quantidade_display }} un. · {{ item.preco_medio_display }} médio</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem fornecedores no recorte.</div>
+                    {% endif %}
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Por produto</h2>
+                        <span>{{ dashboard.produtos|length }} no recorte · barra por R$ gasto</span>
+                    </div>
+                    {% if dashboard.produtos %}
+                    <div class="bi-bars">
+                        {% for item in dashboard.produtos %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.total_display }} · {{ item.quantidade_display }} un. · {{ item.preco_medio_display }} médio</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.height_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem produtos no recorte.</div>
+                    {% endif %}
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Detalhe</h2>
+                    <span>últimas {{ dashboard.detalhe|length }} linha(s)</span>
+                </div>
+                {% if dashboard.detalhe %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead><tr><th>Ordem</th><th>Fornecedor</th><th>Produto</th><th class="is-num">Qtde.</th><th class="is-num">Unitário</th><th class="is-num">Total</th><th>Geração</th></tr></thead>
+                        <tbody>
+                        {% for item in dashboard.detalhe %}
+                            <tr>
+                                <td>{{ item.ordem }}</td>
+                                <td>{{ item.fornecedor }}</td>
+                                <td>{{ item.produto }}</td>
+                                <td class="is-num">{{ item.quantidade_display }}</td>
+                                <td class="is-num">{{ item.preco_unitario_display }}</td>
+                                <td class="is-num">{{ item.total_display }}</td>
+                                <td>{{ item.geracao }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem itens no recorte.</div>
+                {% endif %}
+            </section>
+
+            {% else %}
+            <section class="bi-kpis">
+                <div class="bi-kpi is-blue">
+                    <span>Fornecedores</span>
+                    <strong>{{ dashboard.metrics.fornecedores_display }}</strong>
+                    <small>em {{ dashboard.scope.period.full_label|lower }}</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Notas</span>
+                    <strong>{{ dashboard.metrics.notas_display }}</strong>
+                    <small>{{ dashboard.metrics.ordens_display }} ordem(ns)</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Produtos</span>
+                    <strong>{{ dashboard.metrics.produtos_display }}</strong>
+                    <small>{{ dashboard.metrics.linhas_display }} linha(s) recebida(s)</small>
+                </div>
+                <div class="bi-kpi is-purple">
+                    <span>{% if dashboard.scope.view.key == 'pagamento' %}Prazo real de pagamento{% else %}Prazo real de entrega{% endif %}</span>
+                    <strong>{{ dashboard.metrics.prazo_medio_display }}</strong>
+                    <small>{{ dashboard.metrics.prazo_coverage_pct }}% das linhas com prazo apurado</small>
+                </div>
+                {% if dashboard.scope.view.key == 'pagamento' %}
+                <div class="bi-kpi is-amber">
+                    <span>Meta contratada</span>
+                    <strong>{{ dashboard.metrics.prazo_meta_display }}</strong>
+                    <small>{% if dashboard.metrics.variacao_dias > 0 %}{{ dashboard.metrics.variacao_dias }} dia(s) acima da meta{% else %}{{ dashboard.metrics.variacao_dias }} dia(s) frente à meta{% endif %}</small>
+                </div>
+                <div class="bi-kpi">
+                    <span>Notas pagas</span>
+                    <strong>{{ dashboard.metrics.pagos_pct }}%</strong>
+                    <small>do recorte já liquidado</small>
+                </div>
+                {% endif %}
+                {% if dashboard.metrics.inconsistencias %}
+                <div class="bi-kpi is-red">
+                    <span>Inconsistências</span>
+                    <strong>{{ dashboard.metrics.inconsistencias }}</strong>
+                    <small>{{ dashboard.metrics.inconsistencias_pct }}% com data anterior à geração da OC</small>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>{% if dashboard.scope.view.key == 'pagamento' %}Prazo de pagamento{% else %}Prazo de entrega{% endif %} {{ dashboard.scope.period.full_label|lower }}</h2>
+                    <span>{{ dashboard.scope.fornecedor.label }} · {{ dashboard.scope.branch.label }}</span>
+                </div>
+                {% if dashboard.monthly %}
+                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                    {% for item in dashboard.monthly %}
+                    <div title="{{ item.label }}: {{ item.prazo_medio_display }}{% if dashboard.scope.view.key == 'pagamento' %} · meta {{ item.prazo_meta_display }}{% endif %}">
+                        <div class="bi-chart-bars">
+                            <i class="is-blue" style="height: {{ item.height_pct }}%"></i>
+                            {% if dashboard.scope.view.key == 'pagamento' %}<i class="is-meta" style="height: {{ item.meta_height_pct }}%"></i>{% endif %}
+                        </div>
+                        <small>{% if item.tick %}{{ item.label }}{% endif %}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if dashboard.scope.view.key == 'pagamento' %}
+                <div class="bi-legend">
+                    <span><i class="is-blue"></i> Prazo real</span>
+                    <span><i class="is-meta"></i> Meta contratada</span>
+                </div>
+                {% endif %}
+                {% else %}
+                <div class="bi-empty-inline">Sem itens recebidos no período selecionado.</div>
+                {% endif %}
+            </section>
+
+            <div class="bi-grid is-aside">
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Por família</h2>
+                        <span>{{ dashboard.familias|length }} no recorte</span>
+                    </div>
+                    {% if dashboard.familias %}
+                    <div class="bi-bars">
+                        {% for item in dashboard.familias %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s)</span></div>
+                            <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem famílias no recorte.</div>
+                    {% endif %}
+                </section>
+
+                <section class="bi-panel">
+                    <div class="bi-panel-head">
+                        <h2>Por origem</h2>
+                        <span>{{ dashboard.origens|length }} no recorte</span>
+                    </div>
+                    {% if dashboard.origens %}
+                    <div class="bi-bars">
+                        {% for item in dashboard.origens %}
+                        <div class="bi-bar">
+                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s)</span></div>
+                            <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.height_pct }}%"></i></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="bi-empty-inline">Sem origens no recorte.</div>
+                    {% endif %}
+                </section>
+            </div>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Fornecedores</h2>
+                    <span>{{ dashboard.fornecedores|length }} no recorte · barra por prazo médio</span>
+                </div>
+                {% if dashboard.fornecedores %}
+                <div class="bi-bars">
+                    {% for item in dashboard.fornecedores %}
+                    <div class="bi-bar">
+                        <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s) · {{ item.ordens }} ordem(ns)</span></div>
+                        <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem fornecedores no recorte.</div>
+                {% endif %}
+            </section>
+
+            <section class="bi-panel">
+                <div class="bi-panel-head">
+                    <h2>Detalhe</h2>
+                    <span>últimas {{ dashboard.detalhe|length }} linha(s)</span>
+                </div>
+                {% if dashboard.detalhe %}
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead>
+                            <tr>
+                                <th>Ordem</th><th>Nota</th><th>Fornecedor</th><th>Filial</th><th>Produto</th>
+                                <th>Geração</th><th>Entrega</th><th>Pagamento</th><th class="is-num">Dias</th><th>Situação</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for item in dashboard.detalhe %}
+                            <tr>
+                                <td>{{ item.ordem }}</td>
+                                <td>{{ item.nota }}</td>
+                                <td>{{ item.fornecedor }}</td>
+                                <td>{{ item.filial }}</td>
+                                <td>{{ item.produto }}</td>
+                                <td>{{ item.geracao }}</td>
+                                <td>{{ item.entrega }}</td>
+                                <td>{{ item.pagamento }}</td>
+                                <td class="is-num">{% if dashboard.scope.view.key == 'pagamento' %}{{ item.dias_pagamento|default:"-" }}{% else %}{{ item.dias_entrega|default:"-" }}{% endif %}</td>
+                                <td><span class="bi-tag{% if item.situacao_pagamento == 'Pago' %} is-green{% else %} is-amber{% endif %}">{{ item.situacao_pagamento }}</span></td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="bi-empty-inline">Sem linhas no recorte.</div>
+                {% endif %}
+            </section>
+            {% endif %}
+        </div>
+        {% endif %}
+    </main>
+
+    <div class="bi-limit-overlay" id="biLimitOverlay" hidden>
+        <div class="bi-limit-modal" role="alertdialog" aria-modal="true" aria-labelledby="biLimitTitle">
+            <div class="bi-limit-icon" aria-hidden="true">!</div>
+            <h2 id="biLimitTitle">Limite diário de análises atingido</h2>
+            <p id="biLimitText">{{ dna_ai_limit_message }}</p>
+            {% if dna_ai_quota.limit != None %}
+            <p class="bi-limit-meta">Consumo de hoje: {{ dna_ai_quota.used }} de {{ dna_ai_quota.limit }} análise(s).</p>
+            {% endif %}
+            <button type="button" class="bi-limit-close" id="biLimitClose">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        var prepareUrl = "{{ compras_prepare_url }}";
+        var aiUrl = "{{ compras_ai_url }}";
+        var overlay = document.getElementById('biLimitOverlay');
+        var closeButton = document.getElementById('biLimitClose');
+
+        function showLimit(message) {
+            if (!overlay) { return window.alert(message); }
+            if (message) { document.getElementById('biLimitText').textContent = message; }
+            overlay.hidden = false;
+        }
+        if (closeButton) { closeButton.addEventListener('click', function () { overlay.hidden = true; }); }
+        if (overlay) {
+            overlay.addEventListener('click', function (event) { if (event.target === overlay) { overlay.hidden = true; } });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && overlay && !overlay.hidden) { overlay.hidden = true; }
+        });
+
+        function wire(formId, buttonId, url, loadingLabel) {
+            var form = document.getElementById(formId);
+            var button = document.getElementById(buttonId);
+            if (!form || !button) { return; }
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                // Quem ja estourou a cota nem dispara a requisicao.
+                if (button.dataset.aiBlocked === '1') { return showLimit(); }
+                var original = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<span class="bi-spinner"></span> ' + loadingLabel;
+                fetch(url, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                }).then(function (response) {
+                    return window.dashesReadJson(response).then(function (payload) {
+                        return { response: response, payload: payload };
+                    });
+                }).then(function (result) {
+                    var payload = result.payload;
+                    if (payload.code === 'ai_daily_limit') {
+                        button.disabled = false;
+                        button.innerHTML = original;
+                        button.dataset.aiBlocked = '1';
+                        return showLimit(payload.message);
+                    }
+                    if (!result.response.ok || payload.status !== 'ok') {
+                        throw new Error(payload.message || 'Falha ao executar a solicitação.');
+                    }
+                    window.location.reload();
+                }).catch(function (error) {
+                    button.disabled = false;
+                    button.innerHTML = original;
+                    window.dashesToast(error.message, 'error');
+                });
+            });
+        }
+
+        wire('biIndicatorForm', 'biIndicatorButton', prepareUrl, 'Calculando...');
+        wire('biAiForm', 'biAiButton', aiUrl, 'Analisando...');
+    })();
+    </script>
+</body>
+</html>

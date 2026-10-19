@@ -1,0 +1,402 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectMX | Abrir por conversa</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <link rel="stylesheet" href="{% static '/style/theme.css' %}">
+    <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=13">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="support-portal-body">
+    {% include 'tiqueue/partials/portal_topbar.html' %}
+
+    <main class="support-shell">
+        <div class="aichat-shell">
+            <div class="aichat-header">
+                <span class="aichat-avatar" aria-hidden="true">🤖</span>
+                <div class="aichat-header-copy">
+                    <strong>Assistente de chamados</strong>
+                    <span id="aichatStatus">online</span>
+                </div>
+            </div>
+
+            <div class="aichat-log" id="aichatLog">
+                <div class="aichat-bubble-row">
+                    <div class="aichat-bubble is-bot">Oi, {{ requester_profile.name|default:"tudo bem" }}! Me conta o que está acontecendo. Antes de abrir um chamado, eu verifico se já existe uma solução registrada para o seu caso e, se der, te explico o passo a passo. Se tiver um print ou uma mensagem de erro, pode anexar também.</div>
+                </div>
+            </div>
+
+            <div class="aichat-chips" id="aichatChips" hidden></div>
+
+            <form class="aichat-input-bar" id="aichatForm">
+                <label class="aichat-attach-btn" id="aichatAttachBtn" title="Anexar arquivo" aria-label="Anexar arquivo">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                    <input type="file" id="aichatFile" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.log,.csv,.xlsx,.xls,.docx,.doc" hidden>
+                </label>
+                <input type="text" id="aichatInput" placeholder="Escreva sua mensagem" autocomplete="off" maxlength="2000">
+                <button type="submit" class="aichat-send-btn" id="aichatSendBtn" aria-label="Enviar">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </form>
+
+            <div class="aichat-footer-link">
+                <a href="{% url 'portalDemandCreatePage' %}">Prefiro preencher o formulário manualmente</a>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function() {
+            const log = document.getElementById("aichatLog");
+            const form = document.getElementById("aichatForm");
+            const input = document.getElementById("aichatInput");
+            const sendBtn = document.getElementById("aichatSendBtn");
+            const status = document.getElementById("aichatStatus");
+            const attachBtn = document.getElementById("aichatAttachBtn");
+            const fileInput = document.getElementById("aichatFile");
+            const chips = document.getElementById("aichatChips");
+            const csrfToken = "{{ csrf_token }}";
+            const uploadUrl = "{% url 'portalDemandChatUploadApi' %}";
+            const messageUrl = "{% url 'portalDemandChatMessageApi' %}";
+            const createUrl = "{% url 'portalDemandCreatePage' %}";
+            const kindLabels = {
+                documentation: "Solução documentada",
+                knowledge: "Base de conhecimento",
+                demand: "Chamado",
+            };
+            let busy = false;
+            let pending = [];
+
+            function timeNow() {
+                const now = new Date();
+                return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+            }
+
+            function scrollToEnd() {
+                log.scrollTop = log.scrollHeight;
+            }
+
+            function addBubble(text, kind) {
+                const row = document.createElement("div");
+                row.className = `aichat-bubble-row${kind === "user" ? " is-user" : ""}`;
+                const bubble = document.createElement("div");
+                bubble.className = `aichat-bubble is-${kind}`;
+                bubble.textContent = text;
+                const time = document.createElement("span");
+                time.className = "aichat-bubble-time";
+                time.textContent = timeNow();
+                bubble.appendChild(time);
+                row.appendChild(bubble);
+                log.appendChild(row);
+                scrollToEnd();
+                return row;
+            }
+
+            function addTypingRow() {
+                const row = document.createElement("div");
+                row.className = "aichat-bubble-row aichat-typing-row";
+                const bubble = document.createElement("div");
+                bubble.className = "aichat-bubble is-bot";
+                bubble.textContent = "digitando…";
+                row.appendChild(bubble);
+                log.appendChild(row);
+                scrollToEnd();
+                return row;
+            }
+
+            function renderChips() {
+                chips.replaceChildren();
+                chips.hidden = pending.length === 0;
+                pending.forEach((item) => {
+                    const chip = document.createElement("span");
+                    chip.className = "aichat-chip";
+                    const name = document.createElement("span");
+                    name.textContent = item.name;
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "aichat-chip-remove";
+                    remove.setAttribute("aria-label", `Remover ${item.name}`);
+                    remove.textContent = "×";
+                    remove.addEventListener("click", () => {
+                        pending = pending.filter((other) => other.id !== item.id);
+                        renderChips();
+                    });
+                    chip.append(name, remove);
+                    chips.appendChild(chip);
+                });
+            }
+
+            function addLine(parent, className, text) {
+                const line = document.createElement("div");
+                line.className = className;
+                line.textContent = text;
+                parent.appendChild(line);
+                return line;
+            }
+
+            function addQuickReplies(replies) {
+                if (!replies || replies.length === 0) return;
+                const row = document.createElement("div");
+                row.className = "aichat-quick-row";
+                replies.forEach((label) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "aichat-quick";
+                    button.textContent = label;
+                    button.addEventListener("click", () => send(label));
+                    row.appendChild(button);
+                });
+                log.appendChild(row);
+                scrollToEnd();
+            }
+
+            function addSourceLink(parent, source) {
+                const link = document.createElement("a");
+                link.className = "aichat-source-link";
+                link.href = source.url;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.textContent = `Baseado em: ${source.title}`;
+                parent.appendChild(link);
+            }
+
+            function addSolutionCard(data) {
+                const row = document.createElement("div");
+                row.className = "aichat-bubble-row";
+                const card = document.createElement("div");
+                card.className = "aichat-steps-card";
+                const heading = document.createElement("h3");
+                heading.textContent = "Passo a passo";
+                card.appendChild(heading);
+                const list = document.createElement("ol");
+                list.className = "aichat-steps";
+                (data.steps || []).forEach((text) => {
+                    const item = document.createElement("li");
+                    item.textContent = text;
+                    list.appendChild(item);
+                });
+                card.appendChild(list);
+                if (data.solution_source) addSourceLink(card, data.solution_source);
+                row.appendChild(card);
+                log.appendChild(row);
+                scrollToEnd();
+            }
+
+            function addResolvedNotice() {
+                const row = document.createElement("div");
+                row.className = "aichat-bubble-row";
+                const notice = document.createElement("div");
+                notice.className = "aichat-resolved";
+                notice.textContent = "Problema resolvido. Nenhum chamado foi aberto.";
+                const hint = document.createElement("small");
+                hint.textContent = "Se o problema voltar, é só me chamar aqui.";
+                notice.appendChild(hint);
+                row.appendChild(notice);
+                log.appendChild(row);
+                scrollToEnd();
+            }
+
+            function addSimilarBlock(card, similar) {
+                const box = document.createElement("div");
+                box.className = "aichat-similar";
+                addLine(box, "aichat-similar-title", "Problemas parecidos já resolvidos");
+                if (!similar || similar.length === 0) {
+                    addLine(box, "aichat-similar-empty", "Não encontrei nada parecido resolvido até agora.");
+                    card.appendChild(box);
+                    return;
+                }
+                similar.forEach((item) => {
+                    const link = document.createElement("a");
+                    link.className = "aichat-similar-item";
+                    link.href = item.url;
+                    link.target = "_blank";
+                    link.rel = "noopener";
+                    const kind = document.createElement("span");
+                    kind.className = `aichat-similar-kind is-${item.kind === "demand" ? "demand" : "documentation"}`;
+                    kind.textContent = kindLabels[item.kind] || "Chamado";
+                    const title = document.createElement("strong");
+                    title.textContent = item.title;
+                    const meta = document.createElement("small");
+                    meta.textContent = item.meta;
+                    link.append(kind, title, meta);
+                    if (item.excerpt) addLine(link, "aichat-similar-excerpt", item.excerpt);
+                    box.appendChild(link);
+                });
+                card.appendChild(box);
+            }
+
+            function addSummaryCard(data) {
+                const row = document.createElement("div");
+                row.className = "aichat-bubble-row";
+                const card = document.createElement("div");
+                card.className = "aichat-summary-card";
+
+                const heading = document.createElement("h3");
+                heading.textContent = "Resumo do chamado";
+                card.appendChild(heading);
+
+                const priorityLabels = { low: "Baixo — dá para contornar", medium: "Médio", high: "Alto — impede o trabalho" };
+                [
+                    ["Título", data.title || "—"],
+                    ["Descrição", data.description || "—"],
+                    ["Impacto", priorityLabels[data.priority_level] || "—"],
+                ].forEach(([label, value]) => {
+                    const item = document.createElement("div");
+                    item.className = "aichat-summary-row";
+                    const labelEl = document.createElement("span");
+                    labelEl.textContent = label;
+                    const valueEl = document.createElement("strong");
+                    valueEl.textContent = value;
+                    item.append(labelEl, valueEl);
+                    card.appendChild(item);
+                });
+
+                if (data.attachments && data.attachments.length) {
+                    addLine(card, "aichat-summary-files", `Anexos: ${data.attachments.join(", ")}`);
+                }
+
+                addSimilarBlock(card, data.similar || []);
+
+                const actions = document.createElement("div");
+                actions.className = "aichat-summary-actions";
+                const useLink = document.createElement("a");
+                useLink.className = "support-btn";
+                useLink.href = createUrl;
+                useLink.textContent = "Usar este resumo";
+                actions.appendChild(useLink);
+                card.appendChild(actions);
+
+                row.appendChild(card);
+                log.appendChild(row);
+                scrollToEnd();
+                return row;
+            }
+
+            // Cada ação da IA tem o seu jeito de aparecer na conversa:
+            // ask = pergunta (com respostas rápidas), solution = passos da base,
+            // resolved = fim sem chamado, summary = resumo para abrir o chamado.
+            function renderReply(data) {
+                if (data.action === "ask") {
+                    addBubble(data.question, "bot");
+                    if (data.request_attachment) {
+                        attachBtn.classList.add("is-suggested");
+                        attachBtn.title = "Anexar arquivo — pode ajudar o diagnóstico";
+                    }
+                    addQuickReplies(data.quick_replies);
+                } else if (data.action === "solution") {
+                    addBubble(data.question, "bot");
+                    addSolutionCard(data);
+                    addQuickReplies(data.quick_replies);
+                } else if (data.action === "resolved") {
+                    addBubble(data.question, "bot");
+                    addResolvedNotice();
+                } else if (data.action === "summary") {
+                    addBubble(data.question || "Prontinho, montei um resumo do seu chamado:", "bot");
+                    addSummaryCard(data);
+                }
+            }
+
+            function setBusy(value) {
+                busy = value;
+                input.disabled = value;
+                sendBtn.disabled = value;
+                attachBtn.classList.toggle("is-disabled", value);
+                status.textContent = value ? "digitando…" : "online";
+                status.classList.toggle("is-typing", value);
+            }
+
+            function uploadFile(file) {
+                const body = new FormData();
+                body.append("file", file);
+                return fetch(uploadUrl, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest" },
+                    body: body,
+                })
+                    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+                    .then(({ ok, data }) => {
+                        if (!ok) {
+                            addBubble(data.message || "Não consegui receber esse arquivo.", "error");
+                            return;
+                        }
+                        pending.push({ id: data.id, name: data.name, kind: data.kind });
+                        renderChips();
+                    })
+                    .catch(() => {
+                        addBubble("Não consegui enviar esse arquivo agora. Tente de novo.", "error");
+                    });
+            }
+
+            function send(message) {
+                if (busy) return;
+                const sentNames = pending.map((item) => item.name);
+                const userText = message || "Enviei o(s) arquivo(s) abaixo.";
+                log.querySelectorAll(".aichat-quick-row").forEach((row) => row.remove());
+                addBubble(sentNames.length ? `${userText}\n📎 ${sentNames.join(", ")}` : userText, "user");
+                attachBtn.classList.remove("is-suggested");
+                setBusy(true);
+                const typingRow = addTypingRow();
+
+                fetch(messageUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken,
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: JSON.stringify({ message: message, attachment_ids: pending.map((item) => item.id) }),
+                })
+                    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+                    .then(({ ok, data }) => {
+                        typingRow.remove();
+                        if (!ok || data.action === "error") {
+                            addBubble(data.message || "Não consegui responder agora. Tente de novo em instantes.", "error");
+                            return;
+                        }
+                        renderReply(data);
+                    })
+                    .catch(() => {
+                        typingRow.remove();
+                        addBubble("Não consegui me conectar agora. Tente de novo ou use o formulário manual.", "error");
+                    })
+                    .finally(() => setBusy(false));
+            }
+
+            fileInput.addEventListener("change", function() {
+                const files = Array.from(fileInput.files || []);
+                fileInput.value = "";
+                if (!files.length) return;
+                attachBtn.classList.add("is-busy");
+                Promise.all(files.map(uploadFile)).finally(() => {
+                    attachBtn.classList.remove("is-busy");
+                    input.focus();
+                });
+            });
+
+            // Submissão implícita do Enter num form com 1 input é um default
+            // action do navegador — só roda pra eventos de teclado confiáveis
+            // (reais). Esse listener explícito cobre o resto (IME, teclados
+            // virtuais, automação) sem depender só desse comportamento padrão.
+            input.addEventListener("keydown", function(event) {
+                if (event.key === "Enter" && !event.isComposing) {
+                    event.preventDefault();
+                    form.requestSubmit();
+                }
+            });
+
+            form.addEventListener("submit", function(event) {
+                event.preventDefault();
+                const message = input.value.trim();
+                if ((!message && pending.length === 0) || busy) return;
+                input.value = "";
+                send(message);
+            });
+
+            input.focus();
+        })();
+    </script>
+</body>
+</html>

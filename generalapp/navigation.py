@@ -49,6 +49,19 @@ NAV_GROUPS = [
         ],
     },
     {
+        # "Minhas demandas" aqui é do ATENDENTE (chamados que ele assumiu) —
+        # atalho direto pra aba "Meus chamados" da Entrada de Chamados, sem
+        # precisar entrar lá e trocar de aba. Não confundir com "Minhas
+        # demandas" do Portal, que é a lista do SOLICITANTE.
+        "key": "helpdesk",
+        "label": "Helpdesk",
+        "icon": "icon-chat",
+        "tone": "queue",
+        "items": [
+            ("portalMyAssignedDemandsPage", "Minhas demandas", "chamados atendente assumidos meus", "atendente"),
+        ],
+    },
+    {
         "key": "projetos",
         "label": "Projetos",
         "icon": "icon-kanban",
@@ -102,13 +115,29 @@ NAV_GROUPS = [
         ],
     },
     {
+        # Todo cadastro de parametro do Helpdesk (empresas, solicitantes, campos
+        # de abertura, SLA, respostas prontas) junto num sub-menu so, em vez de
+        # espalhado entre "Atendimento" e "Administração" — é a mesma familia de
+        # tela (configura o portal, nao atende chamado) e tende a crescer.
+        "key": "helpdesk_parametros",
+        "label": "Parâmetros do Helpdesk",
+        "icon": "icon-settings",
+        "tone": "system",
+        "items": [
+            ("portalCompanyConfigPage", "Empresas", "cadastro organizacao filial grupo", "admin"),
+            ("portalRequesterAdminPage", "Solicitantes do portal", "setor colaborador acesso", "admin"),
+            ("portalDemandFieldsConfigPage", "Campos de abertura", "formulario personalizado", "admin"),
+            ("portalDemandSlaConfigPage", "SLA e metas", "prazo politica", "admin"),
+            ("portalDemandResponsesConfigPage", "Respostas prontas", "modelo mensagem", "admin"),
+        ],
+    },
+    {
         "key": "administracao",
         "label": "Administração",
         "icon": "icon-settings",
         "tone": "system",
         "items": [
             ("createUser", "Usuários", "cadastro interno acesso permissao", "admin"),
-            ("portalRequesterAdminPage", "Usuários do portal", "solicitante", "admin"),
             ("manageHubTools", "Cadastro do HUB", "ferramentas"),
             ("manageMyHubTools", "Meu HUB", "ferramentas pessoais"),
             ("systemSettingsPage", "Configurações", "sistema"),

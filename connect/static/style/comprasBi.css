@@ -1,0 +1,34 @@
+/* ==========================================================================
+   BI de Compras — painel do ConnectMX Dashes.
+
+   Este arquivo carrega DEPOIS de itBi.css, que é a casca compartilhada dos
+   painéis do Dashes: tudo que começa com `.bi-` (grid, painel, KPI, barras,
+   tabela, cartões de IA, popup de cota) já vem de lá e não se repete aqui.
+   Só o escopo do body e as cores de barra que só este painel usa (prazo real
+   vs meta contratada) moram neste arquivo.
+   ========================================================================== */
+
+body.comprasbi { margin: 0; background: var(--bi-bg); color: var(--bi-text); font-family: "Open Sans", sans-serif; }
+body.comprasbi * { box-sizing: border-box; }
+body.comprasbi a { color: inherit; text-decoration: none; }
+
+/* Tipo de insight que só este painel usa. */
+.bi-ai-card.is-supplier { border-left-color: var(--bi-blue); }
+
+/* Prazo real (azul) e meta contratada (lilás tênue), lado a lado na mesma
+   competência — a mesma lógica de duas barras do BI de Viagens, só que aqui
+   as duas vêm de médias, não de contagens. */
+.bi-chart-bars i.is-blue { background: linear-gradient(180deg, rgba(101, 168, 255, .95), rgba(101, 168, 255, .32)); }
+.bi-chart-bars i.is-meta { background: linear-gradient(180deg, rgba(214, 92, 255, .55), rgba(214, 92, 255, .18)); }
+.bi-legend i.is-blue { background: var(--bi-blue); }
+.bi-legend i.is-meta { background: var(--bi-purple); }
+
+/* Fornecedor e família têm centenas/milhares de opções — não cabem como uma
+   fileira de .bi-filter, viram <select> no mesmo visual da casca de filtros. */
+.bi-filter-select-group { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 10px;
+    border: 1px solid var(--bi-border); background: rgba(126, 169, 183, .05); margin: 0; }
+.bi-filter-select-group > span { padding: 0 6px; color: var(--bi-muted); font-size: 9px; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; }
+.bi-filter-select { appearance: none; border: 1px solid var(--bi-border); background: var(--bi-bg);
+    color: var(--bi-text); border-radius: 7px; padding: 6px 11px; font-size: 10.5px; font-weight: 600;
+    font-family: inherit; max-width: 260px; }

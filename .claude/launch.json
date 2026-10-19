@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "connectmx",
-      "runtimeExecutable": "C:\\Users\\junio\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+      "runtimeExecutable": "C:\\ConnectMX\\connect\\.venv\\Scripts\\python.exe",
       "runtimeArgs": ["manage.py", "runserver", "8000"],
       "port": 8000
     }
