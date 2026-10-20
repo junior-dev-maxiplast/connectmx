@@ -33,7 +33,8 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = _env_bool("DJANGO_DEBUG", default=True)
+# Padrão é produção: para desenvolvimento, DJANGO_DEBUG=true no .env local.
+DEBUG = _env_bool("DJANGO_DEBUG", default=False)
 
 if not SECRET_KEY:
     if DEBUG:
@@ -43,6 +44,10 @@ if not SECRET_KEY:
         raise RuntimeError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG is false")
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()]
+if not DEBUG and not ALLOWED_HOSTS:
+    # Sem isso o Django recusa todo acesso pelo domínio (DisallowedHost) e o erro
+    # só aparece na requisição, não na subida do servidor.
+    raise RuntimeError("DJANGO_ALLOWED_HOSTS is required when DJANGO_DEBUG is false (ex.: connectmx.maxiplast.com.br)")
 
 # Atrás do nginx o TLS termina no proxy: o Django recebe a requisição em HTTP e,
 # sem isso, `request.is_secure()` é False. O CSRF então compara o Origin

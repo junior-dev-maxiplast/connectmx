@@ -63,5 +63,6 @@ tzdata==2025.1
 tzlocal==5.3.1
 urllib3==2.2.1
 virtualenv==20.29.1
+waitress==3.0.0
 websockets==15.0.1
 yarl==1.20.1
