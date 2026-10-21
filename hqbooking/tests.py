@@ -34,6 +34,26 @@ def _sample_structure():
     ]
 
 
+class OpenMobileApiMixin:
+    """Roda a classe com a API mobile aberta, sem a chave do .env da máquina.
+
+    Em produção o .env define CONNECTMX_MOBILE_API_KEY e o load_dotenv a coloca
+    no ambiente; sem isto, todo POST dos testes voltaria 401. Testes que
+    conferem a chave a definem de novo com patch.dict no próprio método.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._mobile_key_patch = patch.dict("os.environ", {"CONNECTMX_MOBILE_API_KEY": ""})
+        cls._mobile_key_patch.start()
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        cls._mobile_key_patch.stop()
+
+
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
 class TruckTirePagesTests(TestCase):
     def setUp(self):
@@ -168,6 +188,10 @@ class TruckTirePagesTests(TestCase):
         self.assertRedirects(response, reverse("tires_movements"), fetch_redirect_response=False)
 
 
+# DOT e sulco são obrigatórios em todo cadastro ou edição de pneu (ficha física).
+TIRE_SPECS = {"dot_code": "2524", "groove_depth_mm": "16"}
+
+
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
 class TruckTireFlowTests(TestCase):
     def setUp(self):
@@ -192,6 +216,7 @@ class TruckTireFlowTests(TestCase):
         response = self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "create_and_install",
                 "new_tire_brand": "Goodyear",
@@ -248,6 +273,7 @@ class TruckTireFlowTests(TestCase):
         response = self.client.post(
             self.tire_create_url,
             {
+                **TIRE_SPECS,
                 "batch_mode": "paste",
                 "brand": "Goodyear",
                 "serial_batch": "L-001\nL-002\nL-003",
@@ -272,6 +298,7 @@ class TruckTireFlowTests(TestCase):
         response = self.client.post(
             self.tire_create_url,
             {
+                **TIRE_SPECS,
                 "batch_mode": "generate",
                 "brand": "Pirelli",
                 "batch_prefix": "P-",
@@ -294,6 +321,7 @@ class TruckTireFlowTests(TestCase):
         response = self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -325,6 +353,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -371,6 +400,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -401,6 +431,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -453,6 +484,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -469,6 +501,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -485,6 +518,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "initial_load",
                 "new_tire_brand": "Goodyear",
@@ -501,6 +535,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.tire_create_url,
             {
+                **TIRE_SPECS,
                 "batch_mode": "single",
                 "brand": "Bridgestone",
                 "serial_number": "USADO-1",
@@ -517,7 +552,7 @@ class TruckTireFlowTests(TestCase):
     def test_recap_count_above_the_limit_is_clamped(self):
         self.client.post(
             self.tire_create_url,
-            {"batch_mode": "single", "brand": "Pirelli", "serial_number": "USADO-2", "recap_count": "9"},
+            {**TIRE_SPECS, "batch_mode": "single", "brand": "Pirelli", "serial_number": "USADO-2", "recap_count": "9"},
             follow=True,
         )
 
@@ -528,7 +563,7 @@ class TruckTireFlowTests(TestCase):
 
         self.client.post(
             self.tire_create_url,
-            {"batch_mode": "single", "brand": "  GOODYEAR ", "serial_number": "MARCA-1"},
+            {**TIRE_SPECS, "batch_mode": "single", "brand": "  GOODYEAR ", "serial_number": "MARCA-1"},
             follow=True,
         )
 
@@ -541,6 +576,7 @@ class TruckTireFlowTests(TestCase):
         self.client.post(
             self.slot_url,
             {
+                **TIRE_SPECS,
                 "tire_number": 1,
                 "action_mode": "create_and_install",
                 "new_tire_brand": "michelin",
@@ -598,6 +634,7 @@ class TruckTireFlowTests(TestCase):
         response = self.client.post(
             reverse("tires_tire_edit", args=[tire.id]),
             {
+                **TIRE_SPECS,
                 "serial_number": "EDIT-CERTO",
                 "brand": "Firestone",
                 "purchase_value": "980,50",
@@ -1250,7 +1287,7 @@ class LogisticsRomaneioTests(TestCase):
         insert_mock.assert_called_once()
 
 
-class MobileApiTests(TestCase):
+class MobileApiTests(OpenMobileApiMixin, TestCase):
     """API consumida pelo app Expo em `connectmx-mobile/`."""
 
     @staticmethod
@@ -1588,7 +1625,7 @@ class MobileApiTests(TestCase):
         self.assertEqual(insert_mock.call_count, 2)
 
 
-class RomaneioStageTests(TestCase):
+class RomaneioStageTests(OpenMobileApiMixin, TestCase):
     """Os quatro estágios da contagem (USU_TIPREG).
 
     O que estes testes protegem é uma regra que não é óbvia lendo o código: a

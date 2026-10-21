@@ -176,6 +176,13 @@ class DashesOnlyAccountTests(TestCase):
         regular = make_user("interno")
         self.client.force_login(regular)
 
+        # Não fica presa no Dashes: quem não é da equipe de suporte vai ao
+        # Portal de Chamados, e a equipe abre o painel interno.
+        response = self.client.get(reverse("index"))
+        self.assertRedirects(response, reverse("portalDemandPage"), fetch_redirect_response=False)
+
+        staff = make_user("atendente", is_support_attendant=True)
+        self.client.force_login(staff)
         self.assertEqual(self.client.get(reverse("index")).status_code, 200)
 
 
