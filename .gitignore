@@ -51,3 +51,6 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Saída do collectstatic em produção (STATIC_ROOT)
+/static/

@@ -178,6 +178,8 @@ USE_I18N = True
 USE_TZ = True
 
 LOGIN_URL = 'loginPage'
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/main/login/"
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
@@ -192,3 +194,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# O MySQL de produção foi migrado com Django 6, cujo padrão é BigAutoField: as
+# PKs lá são BIGINT. Fixar aqui mantém as FKs novas compatíveis com elas.
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
