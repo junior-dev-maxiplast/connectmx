@@ -115,12 +115,31 @@ WSGI_APPLICATION = 'connect.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Banco: SQLite por padrão (desenvolvimento). Em produção, DJANGO_DB_ENGINE=mysql
+# e as demais DJANGO_DB_* no .env. Sem isso, o sistema ignora o MySQL.
+DB_ENGINE = os.environ.get("DJANGO_DB_ENGINE", "sqlite").strip().lower()
+if DB_ENGINE == "mysql":
+    _db_name = os.environ.get("DJANGO_DB_NAME", "").strip()
+    _db_user = os.environ.get("DJANGO_DB_USER", "").strip()
+    if not _db_name or not _db_user:
+        raise RuntimeError("DJANGO_DB_NAME e DJANGO_DB_USER são obrigatórios quando DJANGO_DB_ENGINE=mysql")
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': _db_name,
+            'USER': _db_user,
+            'PASSWORD': os.environ.get("DJANGO_DB_PASSWORD", ""),
+            'HOST': os.environ.get("DJANGO_DB_HOST", "127.0.0.1"),
+            'PORT': os.environ.get("DJANGO_DB_PORT", "3306"),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
