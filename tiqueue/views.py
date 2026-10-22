@@ -4663,10 +4663,13 @@ def portalLoginPage(request):
     """Dedicated sign-in page for portal requesters.
 
     Separate from the internal ConnectMX login: same credentials, but its own
-    entry point and always lands the person on the requester portal.
+    entry point. Requesters land on the portal; support staff land on the
+    internal panel, where they work the queue.
     """
+    landing = lambda user: "index" if user.is_support_staff else "portalDemandPage"
+
     if request.user.is_authenticated:
-        return redirect("portalDemandPage")
+        return redirect(landing(request.user))
 
     error_message = None
     redirect_to = request.POST.get(REDIRECT_FIELD_NAME) or request.GET.get(REDIRECT_FIELD_NAME) or ""
@@ -4683,7 +4686,7 @@ def portalLoginPage(request):
                 require_https=request.is_secure(),
             ):
                 return redirect(redirect_to)
-            return redirect("portalDemandPage")
+            return redirect(landing(user))
         error_message = "Usuário ou senha inválidos."
 
     return render(
