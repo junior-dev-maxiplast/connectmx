@@ -340,3 +340,99 @@ class DashesPanelApiRoutingTests(TestCase):
         ):
             url = reverse(name, args=args)
             self.assertTrue(url.startswith("/dashes/"), f"{name} = {url}")
+
+
+@override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+class DashesPanelApiPermissionTests(TestCase):
+    """As rotas que o JS de cada painel chama seguem a permissão do painel.
+
+    Antes só exigiam login: um solicitante do portal, ou qualquer usuário sem
+    o painel liberado, baixava o PDF, lia os indicadores e disparava a IA
+    chamando a URL direto.
+    """
+
+    # (rota, args, método, painel)
+    ROUTES = [
+        ("itBiPrepareInsights", None, "post", "ti-bi"),
+        ("itBiRequestAiInsights", None, "post", "ti-bi"),
+        ("itBiInsightPayloadApi", None, "get", "ti-bi"),
+        ("itBiExportPdf", None, "get", "ti-bi"),
+        ("travelBiPrepareInsights", None, "post", "viagens"),
+        ("travelBiRequestAiInsights", None, "post", "viagens"),
+        ("travelBiInsightPayloadApi", None, "get", "viagens"),
+        ("travelBiExportPdf", None, "get", "viagens"),
+        ("comprasBiPrepareInsights", None, "post", "compras"),
+        ("comprasBiRequestAiInsights", None, "post", "compras"),
+        ("comprasBiInsightPayloadApi", None, "get", "compras"),
+        ("comprasBiExportPdf", None, "get", "compras"),
+        ("romaneioBiPrepareInsights", None, "post", "romaneios"),
+        ("romaneioBiRequestAiInsights", None, "post", "romaneios"),
+        ("romaneioBiInsightPayloadApi", None, "get", "romaneios"),
+        ("romaneioBiExportPdf", None, "get", "romaneios"),
+        ("dashesCustomerDnaSearchApi", None, "get", "customer-dna"),
+        ("dashesCustomerDnaPrepareInsights", None, "post", "customer-dna"),
+        ("dashesCustomerDnaRequestAiInsights", None, "post", "customer-dna"),
+        ("dashesCustomerDnaInsightPayloadApi", [10832], "get", "customer-dna"),
+        ("dashesCustomerDnaExportPdf", [10832], "get", "customer-dna"),
+        ("customerDnaPage", None, "get", "customer-dna"),
+        ("customerDnaSearchApi", None, "get", "customer-dna"),
+        ("customerDnaPrepareInsights", None, "post", "customer-dna"),
+        ("customerDnaRequestAiInsights", None, "post", "customer-dna"),
+        ("customerDnaInsightPayloadApi", [10832], "get", "customer-dna"),
+        ("customerDnaExportPdf", [10832], "get", "customer-dna"),
+    ]
+
+    def _dashes_login(self, user):
+        self.client.force_login(user)
+        session = self.client.session
+        session["dashes_authenticated"] = True
+        session.save()
+
+    def _call(self, name, args, method):
+        return getattr(self.client, method)(reverse(name, args=args))
+
+    def test_a_user_without_the_panel_is_refused_on_every_route(self):
+        self._dashes_login(make_user("sem.painel"))
+
+        for name, args, method, _slug in self.ROUTES:
+            with self.subTest(route=name):
+                response = self._call(name, args, method)
+                self.assertEqual(response.status_code, 403)
+
+    def test_a_user_with_another_panel_is_still_refused(self):
+        user = make_user("so.compras")
+        DashboardAccess.objects.create(user=user, dashboard=Dashboard.objects.get(slug="compras"))
+        self._dashes_login(user)
+
+        response = self.client.post(reverse("itBiRequestAiInsights"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["status"], "error")
+
+    def test_a_dashes_route_needs_the_dashes_session(self):
+        user = make_user("sem.sessao")
+        DashboardAccess.objects.create(user=user, dashboard=Dashboard.objects.get(slug="ti-bi"))
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("itBiInsightPayloadApi"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_browser_gets_the_denied_page_instead_of_json(self):
+        self._dashes_login(make_user("navegador"))
+
+        response = self.client.get(reverse("itBiExportPdf"), HTTP_ACCEPT="text/html")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTemplateUsed(response, "tiqueue/dashes_denied.html")
+
+    def test_a_user_with_the_panel_gets_through(self):
+        user = make_user("com.painel")
+        for slug in ("ti-bi", "viagens", "compras", "romaneios", "customer-dna"):
+            DashboardAccess.objects.create(user=user, dashboard=Dashboard.objects.get(slug=slug))
+        self._dashes_login(user)
+
+        # Só o PDF: sem indicadores gerados ele responde 409, sem tocar no ERP.
+        for name in ("itBiExportPdf", "travelBiExportPdf", "comprasBiExportPdf", "romaneioBiExportPdf"):
+            with self.subTest(route=name):
+                self.assertEqual(self.client.get(reverse(name)).status_code, 409)

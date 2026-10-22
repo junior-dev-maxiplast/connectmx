@@ -1286,6 +1286,44 @@ def _dashes_session_required(view_func):
     return wrapped
 
 
+def _dashes_panel_api(slug):
+    """Mesma regra da página do painel para as rotas que o JS dela chama
+    (preparar, IA, payload, PDF, busca).
+
+    Antes estas rotas só exigiam login: quem não tinha o painel liberado — um
+    solicitante do portal, por exemplo — baixava o PDF ou disparava a IA
+    chamando a URL direto. Sob /dashes/ vale também a sessão do Dashes; a rota
+    antiga /clientes/dna/ exige só a permissão no painel.
+    """
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            in_dashes = request.path.startswith("/dashes/")
+            allowed = (
+                request.user.is_authenticated
+                and (not in_dashes or request.session.get("dashes_authenticated"))
+                and allowed_dashboards(request.user).filter(slug=slug).exists()
+            )
+            if allowed:
+                return view_func(request, *args, **kwargs)
+            if "text/html" in request.headers.get("Accept", ""):
+                return render(
+                    request,
+                    "tiqueue/dashes_denied.html",
+                    {"dashboards": allowed_dashboards(request.user), "requested_slug": slug},
+                    status=403,
+                )
+            return JsonResponse(
+                {"status": "error", "message": "Este painel não está liberado para o seu usuário."},
+                status=403,
+            )
+
+        return wrapped
+
+    return decorator
+
+
 DECISION_CENTER_ACTIONS_PAGE_SIZE = 10
 
 
@@ -1648,6 +1686,7 @@ def _it_bi_snapshot(period_key, company_key, attendant_key):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_POST
 def itBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -1703,6 +1742,7 @@ def itBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_POST
 def itBiRequestAiInsights(request):
     period_key, company_key, attendant_key = _it_bi_scope_from_source(request.POST)
@@ -1782,6 +1822,7 @@ def itBiRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_GET
 def itBiInsightPayloadApi(request):
     period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
@@ -1950,6 +1991,7 @@ def dashesCustomerDnaPage(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 def customerDnaPage(request):
     raw_customer_id = (request.GET.get("cliente") or "10832").strip()
     try:
@@ -1998,6 +2040,7 @@ def customerDnaPage(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaSearchApi(request):
     term = (request.GET.get("q") or "").strip()
@@ -2012,6 +2055,7 @@ def customerDnaSearchApi(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_POST
 def customerDnaPrepareInsights(request):
     raw_customer_id = (request.POST.get("customer_id") or "").strip()
@@ -2074,6 +2118,7 @@ def customerDnaPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_POST
 def customerDnaRequestAiInsights(request):
     raw_customer_id = (request.POST.get("customer_id") or "").strip()
@@ -2180,6 +2225,7 @@ def customerDnaRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaInsightPayloadApi(request, customer_id):
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
@@ -2209,6 +2255,7 @@ def customerDnaInsightPayloadApi(request, customer_id):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaExportPdf(request, customer_id):
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
@@ -2237,6 +2284,7 @@ def customerDnaExportPdf(request, customer_id):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_GET
 def itBiExportPdf(request):
     period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
@@ -2336,6 +2384,7 @@ def dashesTravelBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_POST
 def travelBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2394,6 +2443,7 @@ def travelBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_POST
 def travelBiRequestAiInsights(request):
     period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.POST)
@@ -2473,6 +2523,7 @@ def travelBiRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_GET
 def travelBiInsightPayloadApi(request):
     period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
@@ -2499,6 +2550,7 @@ def travelBiInsightPayloadApi(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_GET
 def travelBiExportPdf(request):
     period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
@@ -2603,6 +2655,7 @@ def dashesComprasBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_POST
 def comprasBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2656,6 +2709,7 @@ def comprasBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_POST
 def comprasBiRequestAiInsights(request):
     period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.POST)
@@ -2735,6 +2789,7 @@ def comprasBiRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_GET
 def comprasBiInsightPayloadApi(request):
     period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
@@ -2761,6 +2816,7 @@ def comprasBiInsightPayloadApi(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_GET
 def comprasBiExportPdf(request):
     period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
@@ -2864,6 +2920,7 @@ def dashesRomaneioBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_POST
 def romaneioBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2924,6 +2981,7 @@ def romaneioBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_POST
 def romaneioBiRequestAiInsights(request):
     period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.POST)
@@ -3003,6 +3061,7 @@ def romaneioBiRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_GET
 def romaneioBiInsightPayloadApi(request):
     period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
@@ -3029,6 +3088,7 @@ def romaneioBiInsightPayloadApi(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_GET
 def romaneioBiExportPdf(request):
     period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
