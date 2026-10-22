@@ -10,73 +10,16 @@ from xml.sax.saxutils import escape
 
 from django.utils import timezone
 
-
-def _text(value, fallback="-"):
-    if value is None or value == "":
-        return fallback
-    return str(value)
+from .bi_pdf import BiPdf, _text
 
 
 def build_compras_bi_pdf(dashboard, snapshot):
-    import io
-
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, Spacer, TableStyle
 
-    navy = colors.HexColor("#071821")
-    navy_soft = colors.HexColor("#0d2732")
-    green = colors.HexColor("#57c96d")
-    green_soft = colors.HexColor("#e8f7ea")
-    blue_soft = colors.HexColor("#edf5ff")
-    amber_soft = colors.HexColor("#fff5df")
-    red_soft = colors.HexColor("#fff0f0")
-    border = colors.HexColor("#d9e4e8")
-    muted = colors.HexColor("#647983")
-    body_color = colors.HexColor("#263c46")
-
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="BiTitle", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=20, leading=23, textColor=navy, spaceAfter=3))
-    styles.add(ParagraphStyle(name="BiSubtitle", parent=styles["BodyText"], fontName="Helvetica", fontSize=9, leading=12, textColor=muted))
-    styles.add(ParagraphStyle(name="BiSection", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=15, textColor=navy, spaceBefore=8, spaceAfter=7))
-    styles.add(ParagraphStyle(name="BiBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.5, leading=11.5, textColor=body_color))
-    styles.add(ParagraphStyle(name="BiSmall", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.4, leading=9.4, textColor=body_color))
-    styles.add(ParagraphStyle(name="BiMuted", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.5, leading=9.5, textColor=muted))
-    styles.add(ParagraphStyle(name="BiCardTitle", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8.5, leading=10.5, textColor=navy))
-    styles.add(ParagraphStyle(name="BiHead", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=7.3, leading=8.5, textColor=colors.white))
-
-    def paragraph(value, style="BiBody"):
-        return Paragraph(escape(_text(value)), styles[style])
-
-    def label_value(label, value, style="BiBody"):
-        return Paragraph(f"<b>{escape(label)}</b><br/>{escape(_text(value))}", styles[style])
-
-    def table(rows, widths, header=False, background=colors.white, repeat_rows=0, font_size=7.4):
-        built = Table(rows, colWidths=widths, repeatRows=repeat_rows, hAlign="LEFT")
-        commands = [
-            ("BACKGROUND", (0, 0), (-1, -1), background),
-            ("BOX", (0, 0), (-1, -1), .7, border),
-            ("INNERGRID", (0, 0), (-1, -1), .45, border),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("FONTSIZE", (0, 0), (-1, -1), font_size),
-        ]
-        if header:
-            commands.extend([
-                ("BACKGROUND", (0, 0), (-1, 0), navy_soft),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ])
-            for index in range(1, len(rows)):
-                if index % 2 == 0:
-                    commands.append(("BACKGROUND", (0, index), (-1, index), colors.HexColor("#f6f9fa")))
-        built.setStyle(TableStyle(commands))
-        return built
+    pdf = BiPdf()
+    styles, paragraph, label_value, table = pdf.styles, pdf.paragraph, pdf.label_value, pdf.table
+    green, green_soft, blue_soft = pdf.green, pdf.green_soft, pdf.blue_soft
 
     metrics = dashboard["metrics"]
     scope = dashboard["scope"]
@@ -243,63 +186,6 @@ def build_compras_bi_pdf(dashboard, snapshot):
                 Spacer(1, 8),
             ])
 
-    if ai:
-        story.append(Paragraph("Análise da IA", styles["BiSection"]))
-        story.extend([
-            table(
-                [[label_value("Situação geral", _text(ai.get("health")).title()),
-                  label_value("Modelo", f"{snapshot.ai_model or '-'} | {snapshot.ai_total_tokens} tokens")]],
-                [116 * mm, 60 * mm],
-                background=blue_soft,
-            ),
-            Spacer(1, 6),
-            paragraph(ai.get("executive_summary")),
-            Spacer(1, 6),
-            table(
-                [[label_value("Principal risco", ai.get("principal_risk")),
-                  label_value("Principal oportunidade", ai.get("principal_opportunity"))]],
-                [88 * mm, 88 * mm],
-                background=amber_soft,
-            ),
-            Spacer(1, 8),
-        ])
+    pdf.ai_section(story, ai, snapshot, blue_tones=("cost", "supplier"))
 
-        tones = {"positive": green_soft, "attention": amber_soft, "risk": red_soft,
-                 "cost": blue_soft, "supplier": blue_soft, "quality": amber_soft}
-        for insight in ai.get("insights") or []:
-            evidence = "; ".join(_text(item) for item in insight.get("evidence") or [])
-            card = table(
-                [[
-                    Paragraph(
-                        f"<b>{escape(_text(insight.get('title')))}</b><br/>{escape(_text(insight.get('summary')))}"
-                        f"<br/><font color='#647983'>Evidências: {escape(evidence)}</font>",
-                        styles["BiSmall"],
-                    ),
-                    label_value("Ação recomendada", insight.get("recommended_action"), "BiSmall"),
-                ]],
-                [116 * mm, 60 * mm],
-                background=tones.get(insight.get("type"), colors.white),
-            )
-            story.append(KeepTogether([card, Spacer(1, 5)]))
-
-        actions = ai.get("recommended_actions") or []
-        if actions:
-            rows = [[paragraph(str(index), "BiCardTitle"), paragraph(action)] for index, action in enumerate(actions, start=1)]
-            story.extend([Spacer(1, 3), table(rows, [12 * mm, 164 * mm], background=green_soft), Spacer(1, 8)])
-
-    def footer(canvas, document):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 7)
-        canvas.setFillColor(muted)
-        canvas.drawString(document.leftMargin, 8.5 * mm, f"BI de Compras | {_text(snapshot.scope_label)}")
-        canvas.drawRightString(A4[0] - document.rightMargin, 8.5 * mm, f"Página {canvas.getPageNumber()}")
-        canvas.restoreState()
-
-    buffer = io.BytesIO()
-    document = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        leftMargin=17 * mm, rightMargin=17 * mm, topMargin=15 * mm, bottomMargin=15 * mm,
-        title=f"BI de Compras - {_text(snapshot.scope_label)}",
-    )
-    document.build(story, onFirstPage=footer, onLaterPages=footer)
-    return buffer.getvalue()
+    return pdf.build(story, "BI de Compras", snapshot.scope_label)

@@ -7,6 +7,12 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
+from .bi_common import (
+    format_money as _format_money,
+    to_decimal as _number,
+    oracle_query,
+    oracle_query_many,
+)
 
 
 CUSTOMER_DNA_SQL = """
@@ -331,34 +337,12 @@ def _oracle_connection_vetor_safe():
 
 
 def _query(sql, params):
-    connection = _oracle_connection_safe()
-    cursor = None
-    try:
-        cursor = connection.cursor()
-        cursor.execute(sql, params)
-        columns = [column[0].lower() for column in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-    finally:
-        if cursor is not None:
-            cursor.close()
-        connection.close()
+    return oracle_query(_oracle_connection_safe, sql, params)
 
 
 def _query_many(statements, params):
-    connection = _oracle_connection_safe()
-    results = {}
-    try:
-        for name, sql in statements.items():
-            cursor = connection.cursor()
-            try:
-                cursor.execute(sql, params)
-                columns = [column[0].lower() for column in cursor.description]
-                results[name] = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            finally:
-                cursor.close()
-    finally:
-        connection.close()
-    return results
+    """Todas as consultas do DNA usam os mesmos parâmetros."""
+    return oracle_query_many(_oracle_connection_safe, statements, {name: params for name in statements})
 
 
 def _customer_code_params(customer_codes):
@@ -476,29 +460,10 @@ def format_cnpj_root(value):
     return f"{digits[:2]}.{digits[2:5]}.{digits[5:]}"
 
 
-def _number(value):
-    if value is None:
-        return Decimal("0")
-    return value if isinstance(value, Decimal) else Decimal(str(value))
-
-
 def _date_value(value):
     if isinstance(value, datetime):
         return value.date()
     return value if isinstance(value, date) else None
-
-
-def _format_money(value, compact=False):
-    amount = float(_number(value))
-    suffix = ""
-    if compact and abs(amount) >= 1_000_000:
-        amount /= 1_000_000
-        suffix = " Mi"
-    elif compact and abs(amount) >= 1_000:
-        amount /= 1_000
-        suffix = " mil"
-    formatted = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"R$ {formatted}{suffix}"
 
 
 def _format_weight(value):
