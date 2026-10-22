@@ -136,7 +136,6 @@ from django.views.decorators.http import require_GET
 from django import forms
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta, datetime
-from django.utils import timezone
 from django.utils.text import slugify
 import io
 import re
@@ -153,7 +152,6 @@ from .it_bi import (
     build_it_ai_payload,
     compute_deep_analytics,
     it_dashboard_fingerprint,
-    list_attendants,
     IT_BI_SYSTEM_PROMPT,
     _query as _sm_query,
 )
@@ -192,7 +190,7 @@ from .models import (
     CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
     ComprasBiInsightSnapshot,
 )
-from .models import Dashboard, DashboardAccess, DashAlert, DashDecisionAction, DashQuestion
+from .models import Dashboard, DashAlert, DashDecisionAction, DashQuestion
 from .decision_center import (
     capture_action_resolution,
     collect_dashboard_summaries,
@@ -3569,7 +3567,7 @@ def _portal_triage_meta(demand):
             "label": "Media",
             "css": "is-assumed",
             "score": 2000 - delta_minutes + base_score,
-            "hint": f"Prazo vence ainda hoje ou nas proximas horas.",
+            "hint": "Prazo vence ainda hoje ou nas proximas horas.",
         }
     return {
         "label": "Normal",
@@ -7794,7 +7792,6 @@ def manageProjects(request):
         elif form_id == "edit_project":
             project_id = request.POST.get("project_id")
             if project_id:
-                pf = ProjectForm(request.POST, prefix="edit")
                 # We'll update manually to keep a compact inline form.
                 name = (request.POST.get("name") or "").strip()
                 description = (request.POST.get("description") or "").strip()

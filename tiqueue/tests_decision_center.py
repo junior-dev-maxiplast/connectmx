@@ -20,7 +20,6 @@ from .models import (
     DashDecisionAction,
     Dashboard,
     DashboardAccess,
-    ItBiInsightSnapshot,
     RomaneioBiInsightSnapshot,
 )
 
