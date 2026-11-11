@@ -1,6 +1,5 @@
 from . import repositories as repository
 from . import validators as validator
-from django.db import transaction
 
 def userQueueSaveItem(request, data):
     validator.userQueueValidateIntegrity(data)

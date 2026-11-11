@@ -29,7 +29,6 @@ class CustomAuthBackend:
         return None
     
     def get_user(self, userId):
-        User = get_user_model()
 
         try: 
             return get_user_model().objects.get(pk=userId)

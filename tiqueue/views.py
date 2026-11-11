@@ -143,7 +143,6 @@ from django.views.decorators.http import require_GET
 from django import forms
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, timedelta, datetime
-from django.utils import timezone
 from django.utils.text import slugify
 import io
 import re
@@ -160,7 +159,6 @@ from .it_bi import (
     build_it_ai_payload,
     compute_deep_analytics,
     it_dashboard_fingerprint,
-    list_attendants,
     IT_BI_SYSTEM_PROMPT,
     _query as _sm_query,
 )
@@ -203,7 +201,7 @@ from .models import (
     CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
     ComprasBiInsightSnapshot,
 )
-from .models import Dashboard, DashboardAccess, DashAlert, DashDecisionAction, DashQuestion
+from .models import Dashboard, DashAlert, DashDecisionAction, DashQuestion
 from .models import RepresentativeGoal
 from .decision_center import (
     capture_action_resolution,
@@ -1300,6 +1298,168 @@ def _dashes_session_required(view_func):
     return wrapped
 
 
+def _dashes_panel_api(slug):
+    """Mesma regra da página do painel para as rotas que o JS dela chama
+    (preparar, IA, payload, PDF, busca).
+
+    Antes estas rotas só exigiam login: quem não tinha o painel liberado — um
+    solicitante do portal, por exemplo — baixava o PDF ou disparava a IA
+    chamando a URL direto. Sob /dashes/ vale também a sessão do Dashes; a rota
+    antiga /clientes/dna/ exige só a permissão no painel.
+    """
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped(request, *args, **kwargs):
+            in_dashes = request.path.startswith("/dashes/")
+            allowed = (
+                request.user.is_authenticated
+                and (not in_dashes or request.session.get("dashes_authenticated"))
+                and allowed_dashboards(request.user).filter(slug=slug).exists()
+            )
+            if allowed:
+                return view_func(request, *args, **kwargs)
+            if "text/html" in request.headers.get("Accept", ""):
+                return render(
+                    request,
+                    "tiqueue/dashes_denied.html",
+                    {"dashboards": allowed_dashboards(request.user), "requested_slug": slug},
+                    status=403,
+                )
+            return JsonResponse(
+                {"status": "error", "message": "Este painel não está liberado para o seu usuário."},
+                status=403,
+            )
+
+        return wrapped
+
+    return decorator
+
+# ----------------------------------------------- rotas comuns dos BIs (TI,
+# Viagens, Compras, Romaneios): pedir a IA, ver o payload e exportar o PDF
+# eram quatro cópias iguais de cada uma; o que muda por BI é só o recorte.
+
+def _bi_request_ai_insights(request, snapshot, system_prompt):
+    if snapshot is None or not snapshot.ai_payload:
+        return JsonResponse(
+            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
+            status=409,
+        )
+
+    # Mesma cota diaria do DNA: o teto e por usuario, nao por painel.
+    quota = _dashes_ai_quota(request.user)
+    if quota["blocked"]:
+        return JsonResponse(
+            {
+                "status": "error",
+                "code": "ai_daily_limit",
+                "message": DASHES_AI_LIMIT_MESSAGE,
+                "quota": {"limit": quota["limit"], "used": quota["used"]},
+            },
+            status=429,
+        )
+
+    runtime_config = get_openai_runtime_config()
+    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
+        return JsonResponse(
+            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
+            status=409,
+        )
+
+    quota_record = _consume_dashes_ai_quota(request.user)
+
+    snapshot.status = snapshot.STATUS_PROCESSING
+    snapshot.ai_model = runtime_config["model"]
+    snapshot.ai_requested_at = timezone.now()
+    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
+
+    # Campo "Adicional": pergunta a mais, respondida só com os dados do recorte.
+    extra = ai_additional.clean(request.POST.get("adicional"))
+    try:
+        ai_result = generate_customer_insights(
+            ai_additional.extend(snapshot.ai_payload, extra),
+            runtime_config=runtime_config,
+            system_prompt=ai_additional.prompt(system_prompt, extra),
+        )
+    except Exception as exc:
+        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
+            request_count=models.F("request_count") - 1
+        )
+        if not isinstance(exc, OpenAIInsightError):
+            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
+        snapshot.status = snapshot.STATUS_ERROR
+        snapshot.ai_error = str(exc)
+        snapshot.ai_completed_at = timezone.now()
+        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
+        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
+
+    usage = ai_result["usage"]
+    snapshot.status = snapshot.STATUS_COMPLETED
+    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
+    snapshot.ai_response_id = ai_result["response_id"]
+    snapshot.ai_model = ai_result["model"]
+    snapshot.ai_input_tokens = usage["input_tokens"]
+    snapshot.ai_output_tokens = usage["output_tokens"]
+    snapshot.ai_total_tokens = usage["total_tokens"]
+    snapshot.ai_error = None
+    snapshot.ai_completed_at = timezone.now()
+    snapshot.save()
+
+    return JsonResponse(
+        {
+            "status": "ok",
+            "snapshot_id": snapshot.id,
+            "ai_status": snapshot.status,
+            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
+        }
+    )
+
+
+def _bi_insight_payload(snapshot):
+    if snapshot is None:
+        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
+    return JsonResponse(
+        {
+            "snapshot_id": snapshot.id,
+            "scope": snapshot.scope_label,
+            "status": snapshot.status,
+            "request": snapshot.ai_payload,
+            "response": snapshot.ai_response,
+            "metadata": {
+                "model": snapshot.ai_model,
+                "total_tokens": snapshot.ai_total_tokens,
+                "requested_at": snapshot.ai_requested_at,
+                "completed_at": snapshot.ai_completed_at,
+                "error": snapshot.ai_error,
+            },
+        },
+        json_dumps_params={"ensure_ascii": False, "indent": 2},
+    )
+
+
+def _bi_export_pdf(snapshot, *, load_dashboard, build_pdf, source_label, filename_prefix):
+    """PDF de um BI. `load_dashboard(snapshot)` recarrega os números no mesmo
+    recorte do snapshot: sem isso o PDF juntaria a análise de um filtro com os
+    números de outro."""
+    if snapshot is None or not snapshot.ai_payload:
+        return HttpResponse(
+            "Gere os indicadores deste recorte antes de exportar o PDF.",
+            status=409,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    try:
+        dashboard = load_dashboard(snapshot)
+    except Exception as exc:
+        return HttpResponse(f"Não foi possível consultar o {source_label}: {exc}", status=503)
+
+    pdf_bytes = build_pdf(dashboard, snapshot)
+    filename = f"{filename_prefix}-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 DECISION_CENTER_ACTIONS_PAGE_SIZE = 10
 
 
@@ -1662,6 +1822,7 @@ def _it_bi_snapshot(period_key, company_key, attendant_key):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_POST
 def itBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -1717,109 +1878,18 @@ def itBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_POST
 def itBiRequestAiInsights(request):
-    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.POST)
-
-    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return JsonResponse(
-            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
-            status=409,
-        )
-
-    # Mesma cota diaria do DNA: o teto e por usuario, nao por painel.
-    quota = _dashes_ai_quota(request.user)
-    if quota["blocked"]:
-        return JsonResponse(
-            {
-                "status": "error",
-                "code": "ai_daily_limit",
-                "message": DASHES_AI_LIMIT_MESSAGE,
-                "quota": {"limit": quota["limit"], "used": quota["used"]},
-            },
-            status=429,
-        )
-
-    runtime_config = get_openai_runtime_config()
-    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
-        return JsonResponse(
-            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
-            status=409,
-        )
-
-    quota_record = _consume_dashes_ai_quota(request.user)
-
-    snapshot.status = ItBiInsightSnapshot.STATUS_PROCESSING
-    snapshot.ai_model = runtime_config["model"]
-    snapshot.ai_requested_at = timezone.now()
-    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
-
-    try:
-        extra = ai_additional.clean(request.POST.get("adicional"))
-        ai_result = generate_customer_insights(
-            ai_additional.extend(snapshot.ai_payload, extra),
-            runtime_config=runtime_config,
-            system_prompt=ai_additional.prompt(IT_BI_SYSTEM_PROMPT, extra),
-        )
-    except Exception as exc:
-        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
-            request_count=models.F("request_count") - 1
-        )
-        if not isinstance(exc, OpenAIInsightError):
-            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
-        snapshot.status = ItBiInsightSnapshot.STATUS_ERROR
-        snapshot.ai_error = str(exc)
-        snapshot.ai_completed_at = timezone.now()
-        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
-        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
-
-    usage = ai_result["usage"]
-    snapshot.status = ItBiInsightSnapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
-    snapshot.ai_response_id = ai_result["response_id"]
-    snapshot.ai_model = ai_result["model"]
-    snapshot.ai_input_tokens = usage["input_tokens"]
-    snapshot.ai_output_tokens = usage["output_tokens"]
-    snapshot.ai_total_tokens = usage["total_tokens"]
-    snapshot.ai_error = None
-    snapshot.ai_completed_at = timezone.now()
-    snapshot.save()
-
-    return JsonResponse(
-        {
-            "status": "ok",
-            "snapshot_id": snapshot.id,
-            "ai_status": snapshot.status,
-            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
-        }
-    )
+    snapshot = _it_bi_snapshot(*_it_bi_scope_from_source(request.POST))
+    return _bi_request_ai_insights(request, snapshot, IT_BI_SYSTEM_PROMPT)
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_GET
 def itBiInsightPayloadApi(request):
-    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
-    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
-    if snapshot is None:
-        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
-    return JsonResponse(
-        {
-            "snapshot_id": snapshot.id,
-            "scope": snapshot.scope_label,
-            "status": snapshot.status,
-            "request": snapshot.ai_payload,
-            "response": snapshot.ai_response,
-            "metadata": {
-                "model": snapshot.ai_model,
-                "total_tokens": snapshot.ai_total_tokens,
-                "requested_at": snapshot.ai_requested_at,
-                "completed_at": snapshot.ai_completed_at,
-                "error": snapshot.ai_error,
-            },
-        },
-        json_dumps_params={"ensure_ascii": False, "indent": 2},
-    )
+    return _bi_insight_payload(_it_bi_snapshot(*_it_bi_scope_from_source(request.GET)))
 
 
 
@@ -1908,8 +1978,9 @@ def _customer_dna_snapshot(customer_id, view_mode="individual", member_customer_
     ).first()
 
 
-@_dashes_access_required("customer-dna")
-def dashesCustomerDnaPage(request):
+def _render_customer_dna(request, url_base, extra_context=None):
+    """Tela do DNA do cliente. `url_base` escolhe as rotas que o JS chama:
+    "dashesCustomerDna" (painel do Dashes) ou "customerDna" (rota antiga)."""
     raw_customer_id = (request.GET.get("cliente") or "10832").strip()
     try:
         customer_id = int(raw_customer_id)
@@ -1949,78 +2020,40 @@ def dashesCustomerDnaPage(request):
             "dna_range_error": dna_range_error,
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
-            "dashes_mode": True,
-            "active_dash": "customer-dna",
-            "dashes_menu": allowed_dashboards(request.user),
-            # Sob /dashes/, e não sob /clientes/: uma conta exclusiva do Dashes
-            # é barrada pelo middleware fora deste prefixo, e a busca voltava
-            # como HTML de redirecionamento no lugar do JSON.
-            "dna_search_url": reverse("dashesCustomerDnaSearchApi"),
-            "dna_prepare_url": reverse("dashesCustomerDnaPrepareInsights"),
-            "dna_ai_url": reverse("dashesCustomerDnaRequestAiInsights"),
-            "dna_payload_url": reverse("dashesCustomerDnaInsightPayloadApi", args=[customer_id]),
-            "dna_pdf_url": reverse("dashesCustomerDnaExportPdf", args=[customer_id]),
-            "dna_page_url": reverse("dashesCustomerDnaPage"),
+            "dna_search_url": reverse(f"{url_base}SearchApi"),
+            "dna_prepare_url": reverse(f"{url_base}PrepareInsights"),
+            "dna_ai_url": reverse(f"{url_base}RequestAiInsights"),
+            "dna_payload_url": reverse(f"{url_base}InsightPayloadApi", args=[customer_id]),
+            "dna_pdf_url": reverse(f"{url_base}ExportPdf", args=[customer_id]),
+            "dna_page_url": reverse(f"{url_base}Page"),
             "dna_scope_query": _customer_dna_scope_query(view_mode, member_customer_id),
             "dna_ai_quota": _dashes_ai_quota(request.user),
             "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
+            **(extra_context or {}),
         },
     )
 
 
-@login_required
-def customerDnaPage(request):
-    raw_customer_id = (request.GET.get("cliente") or "10832").strip()
-    try:
-        customer_id = int(raw_customer_id)
-    except (TypeError, ValueError):
-        customer_id = 10832
-
-    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
-    period_key = (request.GET.get("periodo") or "all").strip()
-    range_start, range_end, dna_range_error = parse_dna_range(request.GET.get("inicio"), request.GET.get("fim"))
-    dashboard = None
-    data_error = None
-    try:
-        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id, period_key, range_start, range_end)
-        if dashboard and not dashboard["group"]["is_group_view"]:
-            view_mode, member_customer_id = "individual", None
-        if dashboard is None:
-            data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
-    except Exception as exc:
-        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
-
-    insight_snapshot = _customer_dna_snapshot(customer_id, view_mode, member_customer_id)
-
-    return render(
+@_dashes_access_required("customer-dna")
+def dashesCustomerDnaPage(request):
+    # Rotas sob /dashes/, e não sob /clientes/: uma conta exclusiva do Dashes
+    # é barrada pelo middleware fora deste prefixo, e a busca voltava como HTML
+    # de redirecionamento no lugar do JSON.
+    return _render_customer_dna(
         request,
-        "tiqueue/customer_dna.html",
-        {
-            "dashboard": dashboard,
-            "customer_id": customer_id,
-            "dna_view_mode": view_mode,
-            "dna_member_customer_id": member_customer_id,
-            "dna_period_key": period_key,
-            "dna_period_choices": period_choices(),
-            "dna_range_start": range_start.isoformat() if range_start else "",
-            "dna_range_end": range_end.isoformat() if range_end else "",
-            "dna_range_error": dna_range_error,
-            "data_error": data_error,
-            "insight_snapshot": insight_snapshot,
-            "dna_search_url": reverse("customerDnaSearchApi"),
-            "dna_prepare_url": reverse("customerDnaPrepareInsights"),
-            "dna_ai_url": reverse("customerDnaRequestAiInsights"),
-            "dna_payload_url": reverse("customerDnaInsightPayloadApi", args=[customer_id]),
-            "dna_pdf_url": reverse("customerDnaExportPdf", args=[customer_id]),
-            "dna_page_url": reverse("customerDnaPage"),
-            "dna_scope_query": _customer_dna_scope_query(view_mode, member_customer_id),
-            "dna_ai_quota": _dashes_ai_quota(request.user),
-            "dna_ai_limit_message": DASHES_AI_LIMIT_MESSAGE,
-        },
+        "dashesCustomerDna",
+        {"dashes_mode": True, "active_dash": "customer-dna", "dashes_menu": allowed_dashboards(request.user)},
     )
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
+def customerDnaPage(request):
+    return _render_customer_dna(request, "customerDna")
+
+
+@login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaSearchApi(request):
     term = (request.GET.get("q") or "").strip()
@@ -2035,6 +2068,7 @@ def customerDnaSearchApi(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_POST
 def customerDnaPrepareInsights(request):
     raw_customer_id = (request.POST.get("customer_id") or "").strip()
@@ -2097,6 +2131,7 @@ def customerDnaPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_POST
 def customerDnaRequestAiInsights(request):
     raw_customer_id = (request.POST.get("customer_id") or "").strip()
@@ -2208,6 +2243,7 @@ def customerDnaRequestAiInsights(request):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaInsightPayloadApi(request, customer_id):
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
@@ -2237,6 +2273,7 @@ def customerDnaInsightPayloadApi(request, customer_id):
 
 
 @login_required
+@_dashes_panel_api("customer-dna")
 @require_GET
 def customerDnaExportPdf(request, customer_id):
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
@@ -2265,31 +2302,16 @@ def customerDnaExportPdf(request, customer_id):
 
 
 @login_required
+@_dashes_panel_api("ti-bi")
 @require_GET
 def itBiExportPdf(request):
-    period_key, company_key, attendant_key = _it_bi_scope_from_source(request.GET)
-    snapshot = _it_bi_snapshot(period_key, company_key, attendant_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return HttpResponse(
-            "Gere os indicadores deste recorte antes de exportar o PDF.",
-            status=409,
-            content_type="text/plain; charset=utf-8",
-        )
-
-    try:
-        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
-        # análise de um filtro com os números de outro.
-        dashboard = load_it_dashboard(
-            snapshot.period_key, snapshot.company_key, snapshot.attendant_key
-        )
-    except Exception as exc:
-        return HttpResponse(f"Não foi possível consultar o SM: {exc}", status=503)
-
-    pdf_bytes = build_it_bi_pdf(dashboard, snapshot)
-    filename = f"connectmx-bi-ti-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return _bi_export_pdf(
+        _it_bi_snapshot(*_it_bi_scope_from_source(request.GET)),
+        load_dashboard=lambda s: load_it_dashboard(s.period_key, s.company_key, s.attendant_key),
+        build_pdf=build_it_bi_pdf,
+        source_label="SM",
+        filename_prefix="connectmx-bi-ti",
+    )
 
 
 # ------------------------------------------------------------ BI de Viagens --
@@ -2364,6 +2386,7 @@ def dashesTravelBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_POST
 def travelBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2422,137 +2445,31 @@ def travelBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_POST
 def travelBiRequestAiInsights(request):
-    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.POST)
-
-    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return JsonResponse(
-            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
-            status=409,
-        )
-
-    # Mesma cota diaria do DNA e do BI do TI: o teto e por usuario, nao por painel.
-    quota = _dashes_ai_quota(request.user)
-    if quota["blocked"]:
-        return JsonResponse(
-            {
-                "status": "error",
-                "code": "ai_daily_limit",
-                "message": DASHES_AI_LIMIT_MESSAGE,
-                "quota": {"limit": quota["limit"], "used": quota["used"]},
-            },
-            status=429,
-        )
-
-    runtime_config = get_openai_runtime_config()
-    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
-        return JsonResponse(
-            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
-            status=409,
-        )
-
-    quota_record = _consume_dashes_ai_quota(request.user)
-
-    snapshot.status = TravelBiInsightSnapshot.STATUS_PROCESSING
-    snapshot.ai_model = runtime_config["model"]
-    snapshot.ai_requested_at = timezone.now()
-    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
-
-    try:
-        extra = ai_additional.clean(request.POST.get("adicional"))
-        ai_result = generate_customer_insights(
-            ai_additional.extend(snapshot.ai_payload, extra),
-            runtime_config=runtime_config,
-            system_prompt=ai_additional.prompt(TRAVEL_BI_SYSTEM_PROMPT, extra),
-        )
-    except Exception as exc:
-        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
-            request_count=models.F("request_count") - 1
-        )
-        if not isinstance(exc, OpenAIInsightError):
-            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
-        snapshot.status = TravelBiInsightSnapshot.STATUS_ERROR
-        snapshot.ai_error = str(exc)
-        snapshot.ai_completed_at = timezone.now()
-        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
-        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
-
-    usage = ai_result["usage"]
-    snapshot.status = TravelBiInsightSnapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
-    snapshot.ai_response_id = ai_result["response_id"]
-    snapshot.ai_model = ai_result["model"]
-    snapshot.ai_input_tokens = usage["input_tokens"]
-    snapshot.ai_output_tokens = usage["output_tokens"]
-    snapshot.ai_total_tokens = usage["total_tokens"]
-    snapshot.ai_error = None
-    snapshot.ai_completed_at = timezone.now()
-    snapshot.save()
-
-    return JsonResponse(
-        {
-            "status": "ok",
-            "snapshot_id": snapshot.id,
-            "ai_status": snapshot.status,
-            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
-        }
-    )
+    snapshot = _travel_bi_snapshot(*_travel_bi_scope_from_source(request.POST))
+    return _bi_request_ai_insights(request, snapshot, TRAVEL_BI_SYSTEM_PROMPT)
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_GET
 def travelBiInsightPayloadApi(request):
-    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
-    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
-    if snapshot is None:
-        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
-    return JsonResponse(
-        {
-            "snapshot_id": snapshot.id,
-            "scope": snapshot.scope_label,
-            "status": snapshot.status,
-            "request": snapshot.ai_payload,
-            "response": snapshot.ai_response,
-            "metadata": {
-                "model": snapshot.ai_model,
-                "total_tokens": snapshot.ai_total_tokens,
-                "requested_at": snapshot.ai_requested_at,
-                "completed_at": snapshot.ai_completed_at,
-                "error": snapshot.ai_error,
-            },
-        },
-        json_dumps_params={"ensure_ascii": False, "indent": 2},
-    )
+    return _bi_insight_payload(_travel_bi_snapshot(*_travel_bi_scope_from_source(request.GET)))
 
 
 @login_required
+@_dashes_panel_api("viagens")
 @require_GET
 def travelBiExportPdf(request):
-    period_key, carrier_key, situation_key = _travel_bi_scope_from_source(request.GET)
-    snapshot = _travel_bi_snapshot(period_key, carrier_key, situation_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return HttpResponse(
-            "Gere os indicadores deste recorte antes de exportar o PDF.",
-            status=409,
-            content_type="text/plain; charset=utf-8",
-        )
-
-    try:
-        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
-        # analise de um filtro com os numeros de outro.
-        dashboard = load_travel_dashboard(
-            snapshot.period_key, snapshot.carrier_key, snapshot.situation_key
-        )
-    except Exception as exc:
-        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
-
-    pdf_bytes = build_travel_bi_pdf(dashboard, snapshot)
-    filename = f"connectmx-bi-viagens-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return _bi_export_pdf(
+        _travel_bi_snapshot(*_travel_bi_scope_from_source(request.GET)),
+        load_dashboard=lambda s: load_travel_dashboard(s.period_key, s.carrier_key, s.situation_key),
+        build_pdf=build_travel_bi_pdf,
+        source_label="ERP Senior",
+        filename_prefix="connectmx-bi-viagens",
+    )
 
 
 # ------------------------------------------------------------ BI de Compras --
@@ -2632,6 +2549,7 @@ def dashesComprasBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_POST
 def comprasBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2685,138 +2603,33 @@ def comprasBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_POST
 def comprasBiRequestAiInsights(request):
-    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.POST)
-
-    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return JsonResponse(
-            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
-            status=409,
-        )
-
-    # Mesma cota diaria do DNA e dos demais BIs: o teto e por usuario, nao por painel.
-    quota = _dashes_ai_quota(request.user)
-    if quota["blocked"]:
-        return JsonResponse(
-            {
-                "status": "error",
-                "code": "ai_daily_limit",
-                "message": DASHES_AI_LIMIT_MESSAGE,
-                "quota": {"limit": quota["limit"], "used": quota["used"]},
-            },
-            status=429,
-        )
-
-    runtime_config = get_openai_runtime_config()
-    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
-        return JsonResponse(
-            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
-            status=409,
-        )
-
-    quota_record = _consume_dashes_ai_quota(request.user)
-
-    snapshot.status = ComprasBiInsightSnapshot.STATUS_PROCESSING
-    snapshot.ai_model = runtime_config["model"]
-    snapshot.ai_requested_at = timezone.now()
-    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
-
-    try:
-        extra = ai_additional.clean(request.POST.get("adicional"))
-        ai_result = generate_customer_insights(
-            ai_additional.extend(snapshot.ai_payload, extra),
-            runtime_config=runtime_config,
-            system_prompt=ai_additional.prompt(COMPRAS_BI_SYSTEM_PROMPT, extra),
-        )
-    except Exception as exc:
-        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
-            request_count=models.F("request_count") - 1
-        )
-        if not isinstance(exc, OpenAIInsightError):
-            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
-        snapshot.status = ComprasBiInsightSnapshot.STATUS_ERROR
-        snapshot.ai_error = str(exc)
-        snapshot.ai_completed_at = timezone.now()
-        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
-        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
-
-    usage = ai_result["usage"]
-    snapshot.status = ComprasBiInsightSnapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
-    snapshot.ai_response_id = ai_result["response_id"]
-    snapshot.ai_model = ai_result["model"]
-    snapshot.ai_input_tokens = usage["input_tokens"]
-    snapshot.ai_output_tokens = usage["output_tokens"]
-    snapshot.ai_total_tokens = usage["total_tokens"]
-    snapshot.ai_error = None
-    snapshot.ai_completed_at = timezone.now()
-    snapshot.save()
-
-    return JsonResponse(
-        {
-            "status": "ok",
-            "snapshot_id": snapshot.id,
-            "ai_status": snapshot.status,
-            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
-        }
-    )
+    snapshot = _compras_bi_snapshot(*_compras_bi_scope_from_source(request.POST))
+    return _bi_request_ai_insights(request, snapshot, COMPRAS_BI_SYSTEM_PROMPT)
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_GET
 def comprasBiInsightPayloadApi(request):
-    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
-    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
-    if snapshot is None:
-        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
-    return JsonResponse(
-        {
-            "snapshot_id": snapshot.id,
-            "scope": snapshot.scope_label,
-            "status": snapshot.status,
-            "request": snapshot.ai_payload,
-            "response": snapshot.ai_response,
-            "metadata": {
-                "model": snapshot.ai_model,
-                "total_tokens": snapshot.ai_total_tokens,
-                "requested_at": snapshot.ai_requested_at,
-                "completed_at": snapshot.ai_completed_at,
-                "error": snapshot.ai_error,
-            },
-        },
-        json_dumps_params={"ensure_ascii": False, "indent": 2},
-    )
+    return _bi_insight_payload(_compras_bi_snapshot(*_compras_bi_scope_from_source(request.GET)))
 
 
 @login_required
+@_dashes_panel_api("compras")
 @require_GET
 def comprasBiExportPdf(request):
-    period_key, view_key, fornecedor_key, filial_key, familia_key = _compras_bi_scope_from_source(request.GET)
-    snapshot = _compras_bi_snapshot(period_key, view_key, fornecedor_key, filial_key, familia_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return HttpResponse(
-            "Gere os indicadores deste recorte antes de exportar o PDF.",
-            status=409,
-            content_type="text/plain; charset=utf-8",
-        )
-
-    try:
-        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
-        # analise de um filtro com os numeros de outro.
-        dashboard = load_compras_dashboard(
-            snapshot.period_key, snapshot.view_key, snapshot.fornecedor_key,
-            snapshot.filial_key, snapshot.familia_key,
-        )
-    except Exception as exc:
-        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
-
-    pdf_bytes = build_compras_bi_pdf(dashboard, snapshot)
-    filename = f"connectmx-bi-compras-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return _bi_export_pdf(
+        _compras_bi_snapshot(*_compras_bi_scope_from_source(request.GET)),
+        load_dashboard=lambda s: load_compras_dashboard(
+            s.period_key, s.view_key, s.fornecedor_key, s.filial_key, s.familia_key
+        ),
+        build_pdf=build_compras_bi_pdf,
+        source_label="ERP Senior",
+        filename_prefix="connectmx-bi-compras",
+    )
 
 
 # ----------------------------------------------------------- BI de Romaneios --
@@ -2894,6 +2707,7 @@ def dashesRomaneioBiPage(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_POST
 def romaneioBiPrepareInsights(request):
     """Calcula os indicadores do recorte e guarda o payload - nao chama a IA."""
@@ -2954,137 +2768,33 @@ def romaneioBiPrepareInsights(request):
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_POST
 def romaneioBiRequestAiInsights(request):
-    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.POST)
-
-    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return JsonResponse(
-            {"status": "error", "message": "Gere primeiro os indicadores deste recorte."},
-            status=409,
-        )
-
-    # Mesma cota diaria dos demais paineis do Dashes: o teto e por usuario, nao por painel.
-    quota = _dashes_ai_quota(request.user)
-    if quota["blocked"]:
-        return JsonResponse(
-            {
-                "status": "error",
-                "code": "ai_daily_limit",
-                "message": DASHES_AI_LIMIT_MESSAGE,
-                "quota": {"limit": quota["limit"], "used": quota["used"]},
-            },
-            status=429,
-        )
-
-    runtime_config = get_openai_runtime_config()
-    if not runtime_config["enabled"] or not runtime_config["api_key_configured"]:
-        return JsonResponse(
-            {"status": "error", "message": "Configure e ative a OpenAI em Sistema - Configuracoes."},
-            status=409,
-        )
-
-    quota_record = _consume_dashes_ai_quota(request.user)
-
-    snapshot.status = RomaneioBiInsightSnapshot.STATUS_PROCESSING
-    snapshot.ai_model = runtime_config["model"]
-    snapshot.ai_requested_at = timezone.now()
-    snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
-
-    try:
-        extra = ai_additional.clean(request.POST.get("adicional"))
-        ai_result = generate_customer_insights(
-            ai_additional.extend(snapshot.ai_payload, extra),
-            runtime_config=runtime_config,
-            system_prompt=ai_additional.prompt(ROMANEIO_BI_SYSTEM_PROMPT, extra),
-        )
-    except Exception as exc:
-        DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
-            request_count=models.F("request_count") - 1
-        )
-        if not isinstance(exc, OpenAIInsightError):
-            exc = OpenAIInsightError(f"Falha inesperada ao processar os insights: {exc}")
-        snapshot.status = RomaneioBiInsightSnapshot.STATUS_ERROR
-        snapshot.ai_error = str(exc)
-        snapshot.ai_completed_at = timezone.now()
-        snapshot.save(update_fields=["status", "ai_error", "ai_completed_at", "updated_at"])
-        return JsonResponse({"status": "error", "message": str(exc)}, status=502)
-
-    usage = ai_result["usage"]
-    snapshot.status = RomaneioBiInsightSnapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
-    snapshot.ai_response_id = ai_result["response_id"]
-    snapshot.ai_model = ai_result["model"]
-    snapshot.ai_input_tokens = usage["input_tokens"]
-    snapshot.ai_output_tokens = usage["output_tokens"]
-    snapshot.ai_total_tokens = usage["total_tokens"]
-    snapshot.ai_error = None
-    snapshot.ai_completed_at = timezone.now()
-    snapshot.save()
-
-    return JsonResponse(
-        {
-            "status": "ok",
-            "snapshot_id": snapshot.id,
-            "ai_status": snapshot.status,
-            "quota": {"limit": quota["limit"], "used": quota_record.request_count},
-        }
-    )
+    snapshot = _romaneio_bi_snapshot(*_romaneio_bi_scope_from_source(request.POST))
+    return _bi_request_ai_insights(request, snapshot, ROMANEIO_BI_SYSTEM_PROMPT)
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_GET
 def romaneioBiInsightPayloadApi(request):
-    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
-    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
-    if snapshot is None:
-        return JsonResponse({"status": "error", "message": "Nenhum payload preparado."}, status=404)
-    return JsonResponse(
-        {
-            "snapshot_id": snapshot.id,
-            "scope": snapshot.scope_label,
-            "status": snapshot.status,
-            "request": snapshot.ai_payload,
-            "response": snapshot.ai_response,
-            "metadata": {
-                "model": snapshot.ai_model,
-                "total_tokens": snapshot.ai_total_tokens,
-                "requested_at": snapshot.ai_requested_at,
-                "completed_at": snapshot.ai_completed_at,
-                "error": snapshot.ai_error,
-            },
-        },
-        json_dumps_params={"ensure_ascii": False, "indent": 2},
-    )
+    return _bi_insight_payload(_romaneio_bi_snapshot(*_romaneio_bi_scope_from_source(request.GET)))
 
 
 @login_required
+@_dashes_panel_api("romaneios")
 @require_GET
 def romaneioBiExportPdf(request):
-    period_key, branch_key, stage_key, matricula_key = _romaneio_bi_scope_from_source(request.GET)
-    snapshot = _romaneio_bi_snapshot(period_key, branch_key, stage_key, matricula_key)
-    if snapshot is None or not snapshot.ai_payload:
-        return HttpResponse(
-            "Gere os indicadores deste recorte antes de exportar o PDF.",
-            status=409,
-            content_type="text/plain; charset=utf-8",
-        )
-
-    try:
-        # Recarrega no mesmo recorte do snapshot: sem isso o PDF juntaria a
-        # analise de um filtro com os numeros de outro.
-        dashboard = load_romaneio_dashboard(
-            snapshot.period_key, snapshot.branch_key, snapshot.stage_key, snapshot.matricula_key,
-        )
-    except Exception as exc:
-        return HttpResponse(f"Nao foi possivel consultar o ERP Senior: {exc}", status=503)
-
-    pdf_bytes = build_romaneio_bi_pdf(dashboard, snapshot)
-    filename = f"connectmx-bi-romaneios-{slugify(snapshot.scope_label) or 'recorte'}.pdf"
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return response
+    return _bi_export_pdf(
+        _romaneio_bi_snapshot(*_romaneio_bi_scope_from_source(request.GET)),
+        load_dashboard=lambda s: load_romaneio_dashboard(
+            s.period_key, s.branch_key, s.stage_key, s.matricula_key
+        ),
+        build_pdf=build_romaneio_bi_pdf,
+        source_label="ERP Senior",
+        filename_prefix="connectmx-bi-romaneios",
+    )
 
 
 
@@ -3598,7 +3308,7 @@ def _portal_triage_meta(demand):
             "label": "Media",
             "css": "is-assumed",
             "score": 2000 - delta_minutes + base_score,
-            "hint": f"Prazo vence ainda hoje ou nas proximas horas.",
+            "hint": "Prazo vence ainda hoje ou nas proximas horas.",
         }
     return {
         "label": "Normal",
@@ -4776,10 +4486,13 @@ def portalLoginPage(request):
     """Dedicated sign-in page for portal requesters.
 
     Separate from the internal ConnectMX login: same credentials, but its own
-    entry point and always lands the person on the requester portal.
+    entry point. Requesters land on the portal; support staff land on the
+    internal panel, where they work the queue.
     """
+    landing = lambda user: "index" if user.is_support_staff else "portalDemandPage"
+
     if request.user.is_authenticated:
-        return redirect("portalDemandPage")
+        return redirect(landing(request.user))
 
     error_message = None
     redirect_to = request.POST.get(REDIRECT_FIELD_NAME) or request.GET.get(REDIRECT_FIELD_NAME) or ""
@@ -4796,7 +4509,7 @@ def portalLoginPage(request):
                 require_https=request.is_secure(),
             ):
                 return redirect(redirect_to)
-            return redirect("portalDemandPage")
+            return redirect(landing(user))
         error_message = "Usuário ou senha inválidos."
 
     return render(
@@ -7893,6 +7606,16 @@ def _parse_iso_date(raw_value):
         return None
 
 
+def _parse_hhmm_time(raw_value):
+    raw_value = (raw_value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return datetime.strptime(raw_value, "%H:%M").time()
+    except ValueError:
+        return None
+
+
 def _parse_user_id(raw_value):
     raw_value = str(raw_value or "").strip()
     return int(raw_value) if raw_value.isdigit() else None
@@ -8021,7 +7744,6 @@ def manageProjects(request):
         elif form_id == "edit_project":
             project_id = request.POST.get("project_id")
             if project_id:
-                pf = ProjectForm(request.POST, prefix="edit")
                 # We'll update manually to keep a compact inline form.
                 name = (request.POST.get("name") or "").strip()
                 description = (request.POST.get("description") or "").strip()
@@ -8036,14 +7758,19 @@ def manageProjects(request):
                     if project_obj:
                         project_obj.name = name
                         project_obj.description = description or None
-                        project_obj.developer_id = int(developer_id) if developer_id.isdigit() else None
-                        project_obj.status = status
+                        # Formulário montado à mão: tudo que vem do POST é validado aqui,
+                        # senão uma data ou um id inválido derrubava o save com 500.
+                        project_obj.developer = (
+                            User.objects.filter(pk=int(developer_id)).first() if developer_id.isdigit() else None
+                        )
+                        if status in dict(Project.STATUS_CHOICES):
+                            project_obj.status = status
                         project_obj.color = color
-                        project_obj.start_date = start_date or None
-                        project_obj.end_date = end_date or None
+                        project_obj.start_date = _parse_iso_date(start_date)
+                        project_obj.end_date = _parse_iso_date(end_date)
                         project_obj.save()
                         valid_participants = [int(pid) for pid in participants_ids if str(pid).isdigit()]
-                        project_obj.participants.set(valid_participants)
+                        project_obj.participants.set(User.objects.filter(pk__in=valid_participants))
         elif form_id == "roadmap":
             roadmap_form = ProjectRoadmapItemForm(request.POST, prefix="roadmap")
             if roadmap_form.is_valid():
@@ -8064,10 +7791,11 @@ def manageProjects(request):
                     item.title = title
                     item.responsible = responsible
                     item.description = description or None
-                    item.status = status
-                    item.start_date = start_date or None
-                    item.end_date = end_date or None
-                    if sort_order not in (None, ""):
+                    if status in dict(ProjectRoadmapItem.STATUS_CHOICES):
+                        item.status = status
+                    item.start_date = _parse_iso_date(start_date)
+                    item.end_date = _parse_iso_date(end_date)
+                    if str(sort_order or "").strip().lstrip("-").isdigit():
                         item.sort_order = int(sort_order)
                     item.save()
                     _sync_roadmap_item_to_kanban(item)
@@ -9406,13 +9134,12 @@ def projectRoadmapItemUpdate(request, project_id, item_id):
     return JsonResponse({"status": "ok", "item": _serialize_roadmap_item(item)})
 
 
-@login_required
-@require_POST
-def projectRoadmapItemConclude(request, project_id, item_id):
+def _set_roadmap_item_done(project_id, item_id, conclude):
+    """Conclui (conclude=True) ou reabre o item e devolve o progresso do projeto."""
     project = get_object_or_404(Project, pk=project_id)
     item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
-    if item.status != "done":
-        item.status = "done"
+    if (item.status == "done") != conclude:
+        item.status = "done" if conclude else "doing"
         item.save(update_fields=["status"])
         _sync_roadmap_item_to_kanban(item)
 
@@ -9428,30 +9155,18 @@ def projectRoadmapItemConclude(request, project_id, item_id):
             "item": _serialize_roadmap_item(item),
         }
     )
+
+
+@login_required
+@require_POST
+def projectRoadmapItemConclude(request, project_id, item_id):
+    return _set_roadmap_item_done(project_id, item_id, conclude=True)
 
 
 @login_required
 @require_POST
 def projectRoadmapItemReopen(request, project_id, item_id):
-    project = get_object_or_404(Project, pk=project_id)
-    item = get_object_or_404(ProjectRoadmapItem, pk=item_id, project=project)
-    if item.status == "done":
-        item.status = "doing"
-        item.save(update_fields=["status"])
-        _sync_roadmap_item_to_kanban(item)
-
-    total = ProjectRoadmapItem.objects.filter(project=project).count()
-    done = ProjectRoadmapItem.objects.filter(project=project, status="done").count()
-    progress_pct = int(round((done / total) * 100)) if total else 0
-    return JsonResponse(
-        {
-            "status": "ok",
-            "done": done,
-            "total": total,
-            "progress_pct": progress_pct,
-            "item": _serialize_roadmap_item(item),
-        }
-    )
+    return _set_roadmap_item_done(project_id, item_id, conclude=False)
 
 
 @login_required
@@ -10752,28 +10467,10 @@ def createQueueItemInline(request):
         if str(value).isdigit()
     ]
 
-    def _parse_date(v):
-        v = (v or "").strip()
-        if not v:
-            return None
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except ValueError:
-            return None
-
-    def _parse_time(v):
-        v = (v or "").strip()
-        if not v:
-            return None
-        try:
-            return datetime.strptime(v, "%H:%M").time()
-        except ValueError:
-            return None
-
-    d_real_date_start = _parse_date(request.POST.get("d_real_date_start"))
-    d_real_time_start = _parse_time(request.POST.get("d_real_time_start"))
-    d_real_date_end = _parse_date(request.POST.get("d_real_date_end"))
-    t_real_time_end = _parse_time(request.POST.get("t_real_time_end"))
+    d_real_date_start = _parse_iso_date(request.POST.get("d_real_date_start"))
+    d_real_time_start = _parse_hhmm_time(request.POST.get("d_real_time_start"))
+    d_real_date_end = _parse_iso_date(request.POST.get("d_real_date_end"))
+    t_real_time_end = _parse_hhmm_time(request.POST.get("t_real_time_end"))
 
     item = userQueue.objects.create(
         user_code=user_code,
@@ -10921,33 +10618,15 @@ def updateQueueItem(request, id):
 def updateQueueGanttRange(request, id):
     item = get_object_or_404(userQueue, n_register=id, user_code=request.user.userId)
 
-    def _parse_date(val):
-        val = (val or "").strip()
-        if not val:
-            return None
-        try:
-            return date.fromisoformat(val)
-        except ValueError:
-            return None
-
-    def _parse_time(val):
-        val = (val or "").strip()
-        if not val:
-            return None
-        try:
-            return datetime.strptime(val, "%H:%M").time()
-        except ValueError:
-            return None
-
-    item.d_real_date_start = _parse_date(request.POST.get("d_real_date_start"))
-    item.d_real_date_end = _parse_date(request.POST.get("d_real_date_end"))
+    item.d_real_date_start = _parse_iso_date(request.POST.get("d_real_date_start"))
+    item.d_real_date_end = _parse_iso_date(request.POST.get("d_real_date_end"))
     update_fields = ["d_real_date_start", "d_real_date_end"]
 
     if "d_real_time_start" in request.POST:
-        item.d_real_time_start = _parse_time(request.POST.get("d_real_time_start"))
+        item.d_real_time_start = _parse_hhmm_time(request.POST.get("d_real_time_start"))
         update_fields.append("d_real_time_start")
     if "t_real_time_end" in request.POST:
-        item.t_real_time_end = _parse_time(request.POST.get("t_real_time_end"))
+        item.t_real_time_end = _parse_hhmm_time(request.POST.get("t_real_time_end"))
         update_fields.append("t_real_time_end")
 
     item.save(update_fields=update_fields)

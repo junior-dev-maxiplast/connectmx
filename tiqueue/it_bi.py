@@ -8,8 +8,7 @@ mesmas variáveis de ambiente da sincronização de tarefas da fila de demandas.
 
 import json
 import os
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import datetime
 
 # Periodo e vocabulario comum dos paineis do Dashes, nao regra do SM: o BI de
 # Viagens usa exatamente os mesmos recortes.
@@ -19,6 +18,13 @@ from .bi_periods import (
     period_choices,
     resolve_period,
     series_label,
+)
+from .bi_common import (
+    display_datetime as _display_datetime,
+    format_decimal as _format_decimal,
+    format_int as _format_int,
+    share as _share,
+    to_int as _int,
 )
 
 
@@ -172,23 +178,6 @@ def _query_many(statements, params):
 
 # ------------------------------------------------------------------ helpers --
 
-def _number(value):
-    if value is None:
-        return Decimal("0")
-    return value if isinstance(value, Decimal) else Decimal(str(value))
-
-
-def _int(value):
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _format_int(value):
-    return f"{_int(value):,}".replace(",", ".")
-
-
 def _format_duration(seconds):
     """Segundos em texto curto: '3d 4h', '5h 12min', '48min'."""
     total = int(float(seconds or 0))
@@ -204,27 +193,11 @@ def _format_duration(seconds):
     return f"{minutes}min"
 
 
-def _format_decimal(value, places=1):
-    return f"{float(value or 0):.{places}f}".replace(".", ",")
-
-
-def _display_datetime(value):
-    if isinstance(value, datetime):
-        return value.strftime("%d/%m/%Y %H:%M")
-    if isinstance(value, date):
-        return value.strftime("%d/%m/%Y")
-    return "-"
-
-
 def _attendant_name(login):
     login = (login or "").strip()
     if not login:
         return "Sem atendente"
     return ATTENDANT_NAMES.get(login, login)
-
-
-def _share(part, total):
-    return round(float(_number(part) / _number(total) * 100), 1) if _number(total) else 0.0
 
 
 def resolve_company(raw_value):

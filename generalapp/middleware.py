@@ -29,6 +29,8 @@ class RequireLoginMiddleware:
         "/sede/",
         "/almoco/",
         "/logistica/",
+        # Fotos dos pneus, exibidas nas telas de /logistica/ (ver tiqueue/media.py).
+        "/media/tires/",
         # API do ConnectMX Mobile: cliente nativo, sem sessão. A autorização é a
         # chave em X-ConnectMX-Key, conferida em hqbooking/mobile_api.py.
         "/api/mobile/",

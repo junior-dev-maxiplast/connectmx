@@ -21,7 +21,6 @@ O cadastro de viagem tem duas armadilhas que moldam todo este módulo:
 import hashlib
 import json
 from datetime import date, datetime
-from decimal import Decimal
 
 # Uma fábrica de conexão só para o ERP: o DNA do Cliente já resolve o driver
 # (oracledb com fallback para cx_Oracle) e as variáveis de ambiente.
@@ -30,6 +29,19 @@ from .customer_dna import _oracle_connection_safe as _erp_connection
 # Período é vocabulário comum dos painéis do Dashes, não regra da frota: o BI do
 # TI usa exatamente os mesmos recortes.
 from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
+from .bi_common import (
+    display_date as _display_date,
+    display_datetime as _display_datetime,
+    format_decimal as _format_decimal,
+    format_duration_days as _format_days,
+    format_int as _format_int,
+    format_money as _format_money,
+    share as _share,
+    to_float as _float,
+    to_int as _int,
+    oracle_query,
+    oracle_query_many,
+)
 
 
 # ------------------------------------------------------------- saneamento --
@@ -131,71 +143,14 @@ HOUR_BLOCKS = [
 # ----------------------------------------------------------------- acesso --
 
 def _query(sql, params=None):
-    connection = _erp_connection()
-    cursor = None
-    try:
-        cursor = connection.cursor()
-        cursor.execute(sql, params or {})
-        columns = [column[0].lower() for column in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-    finally:
-        if cursor is not None:
-            cursor.close()
-        connection.close()
+    return oracle_query(_erp_connection, sql, params)
 
 
 def _query_many(statements, params):
-    """Roda várias agregações em uma conexão só."""
-    connection = _erp_connection()
-    results = {}
-    try:
-        for name, sql in statements.items():
-            cursor = connection.cursor()
-            try:
-                cursor.execute(sql, params.get(name, {}))
-                columns = [column[0].lower() for column in cursor.description]
-                results[name] = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            finally:
-                cursor.close()
-    finally:
-        connection.close()
-    return results
+    return oracle_query_many(_erp_connection, statements, params)
 
 
 # ---------------------------------------------------------------- helpers --
-
-def _number(value):
-    if value is None:
-        return Decimal("0")
-    return value if isinstance(value, Decimal) else Decimal(str(value))
-
-
-def _int(value):
-    try:
-        return int(float(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _float(value):
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _format_int(value):
-    return f"{_int(value):,}".replace(",", ".")
-
-
-def _format_decimal(value, places=1):
-    text = f"{_float(value):,.{places}f}"
-    return text.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
-
-
-def _format_money(value):
-    return f"R$ {_format_decimal(value, 2)}"
-
 
 def _format_km(value):
     return f"{_format_int(value)} km"
@@ -203,40 +158,6 @@ def _format_km(value):
 
 def _format_liters(value):
     return f"{_format_decimal(value, 0)} L"
-
-
-def _format_days(value):
-    """Dias fracionários em texto curto: '3d 4h', '18h 30min', '45min'."""
-    total_minutes = int(round(_float(value) * 24 * 60))
-    if total_minutes <= 0:
-        return "-"
-    hours, minutes = divmod(total_minutes, 60)
-    days, hours = divmod(hours, 24)
-    if days:
-        return f"{days}d {hours}h" if hours else f"{days}d"
-    if hours:
-        return f"{hours}h {minutes}min" if minutes else f"{hours}h"
-    return f"{minutes}min"
-
-
-def _display_date(value):
-    if isinstance(value, datetime):
-        return value.strftime("%d/%m/%Y")
-    if isinstance(value, date):
-        return value.strftime("%d/%m/%Y")
-    return "-"
-
-
-def _display_datetime(value):
-    if isinstance(value, datetime):
-        return value.strftime("%d/%m/%Y %H:%M")
-    if isinstance(value, date):
-        return value.strftime("%d/%m/%Y")
-    return "-"
-
-
-def _share(part, total):
-    return round(float(_number(part) / _number(total) * 100), 1) if _number(total) else 0.0
 
 
 def _ratio(part, total):
@@ -2082,8 +2003,8 @@ def build_travel_ai_payload(dashboard, fingerprint, deep=None):
             "advance_bands": (deep or {}).get("advance_bands"),
         },
         "data_quality_notes": [
-            f"Data em branco no cadastro é gravada como 1900-12-31, não como nulo; tudo antes de "
-            f"1901 foi tratado como não informado.",
+            "Data em branco no cadastro é gravada como 1900-12-31, não como nulo; tudo antes de "
+            "1901 foi tratado como não informado.",
             f"KM rodado só entra nos indicadores entre {limits['km_min']} e {limits['km_max']} km: "
             f"fora disso a base tem chegada menor que saída e hodômetro digitado no lugar da diferença.",
             f"Duração só é considerada entre 0 e {limits['duration_max']} dias — acima disso o que "

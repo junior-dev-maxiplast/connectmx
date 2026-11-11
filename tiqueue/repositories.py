@@ -2,6 +2,7 @@ from .models import (userQueue,
                      concludedTasks,
                      PortalDemand)
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.db.models import F
 from django.db.models import Max
 from django.utils import timezone
@@ -23,7 +24,7 @@ def userQueueSaveInDatabase(request, data):
 def moveQueueItemUp(request, ref_id):
     with transaction.atomic():
         user_code = request.user.userId
-        newPosition = userQueue.objects.get(n_register=ref_id, user_code=user_code)
+        newPosition = get_object_or_404(userQueue, n_register=ref_id, user_code=user_code)
         oldPosition = (
             userQueue.objects.filter(user_code=user_code, n_queue_position__lt=newPosition.n_queue_position)
             .order_by("-n_queue_position")
@@ -38,7 +39,7 @@ def moveQueueItemUp(request, ref_id):
 def moveQueueItemDown(request, ref_id):
     with transaction.atomic():
         user_code = request.user.userId
-        newPosition = userQueue.objects.get(n_register=ref_id, user_code=user_code)
+        newPosition = get_object_or_404(userQueue, n_register=ref_id, user_code=user_code)
         oldPosition = (
             userQueue.objects.filter(user_code=user_code, n_queue_position__gt=newPosition.n_queue_position)
             .order_by("n_queue_position")
@@ -53,7 +54,7 @@ def moveQueueItemDown(request, ref_id):
 def deleteQueueItem(request, ref_id):
     with transaction.atomic():
         user_code = request.user.userId
-        objectToDelete = userQueue.objects.get(n_register=ref_id, user_code=user_code)
+        objectToDelete = get_object_or_404(userQueue, n_register=ref_id, user_code=user_code)
         position = objectToDelete.n_queue_position
         PortalDemand.objects.filter(linked_queue_item=objectToDelete).update(
             status=PortalDemand.STATUS_PENDING,
@@ -70,7 +71,7 @@ def deleteQueueItem(request, ref_id):
 def endQueueItem(request, ref_id):
     with transaction.atomic():
         user_code = request.user.userId
-        objectCurrent = userQueue.objects.get(n_register=ref_id, user_code=user_code)
+        objectCurrent = get_object_or_404(userQueue, n_register=ref_id, user_code=user_code)
         position = objectCurrent.n_queue_position
         updateQueuePositions(user_code, position)
         linked_portal_demands = list(PortalDemand.objects.filter(linked_queue_item=objectCurrent))

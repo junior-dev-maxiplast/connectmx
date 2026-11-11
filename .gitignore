@@ -56,3 +56,5 @@ Thumbs.db
 REGISTRO_ECONODATA.md
 tiqueue/data/representative_goals.json
 tiqueue/data/representative_names.json
+# Saída do collectstatic em produção (STATIC_ROOT)
+/static/

@@ -3,11 +3,7 @@ from xml.sax.saxutils import escape
 
 from django.utils import timezone
 
-
-def _text(value, fallback="-"):
-    if value is None or value == "":
-        return fallback
-    return str(value)
+from .bi_pdf import _text
 
 
 def _pct(value):

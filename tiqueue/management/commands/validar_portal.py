@@ -15,7 +15,6 @@ O objetivo é responder duas perguntas, com evidência: o que já está pronto p
 substituir o SM, e o que ainda falta construir.
 """
 
-import io
 from datetime import timedelta
 
 from django.conf import settings

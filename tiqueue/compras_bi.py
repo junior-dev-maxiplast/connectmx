@@ -41,74 +41,36 @@ nunca descartados da contagem total de linhas.
 
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import datetime
 
 from .customer_dna import _oracle_connection_safe as _erp_connection
 from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
+from .bi_common import (
+    display_date as _display_date,
+    format_decimal as _format_decimal,
+    format_int as _format_int,
+    format_money as _format_money,
+    resolve_branch,
+    share as _share,
+    to_float as _float,
+    to_int as _int,
+    oracle_query,
+    oracle_query_many,
+    branches_from_rows,
+)
 
 
 # ----------------------------------------------------------------- acesso --
 
 def _query(sql, params=None):
-    connection = _erp_connection()
-    cursor = None
-    try:
-        cursor = connection.cursor()
-        cursor.execute(sql, params or {})
-        columns = [column[0].lower() for column in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-    finally:
-        if cursor is not None:
-            cursor.close()
-        connection.close()
+    return oracle_query(_erp_connection, sql, params)
 
 
 def _query_many(statements, params):
-    """Roda várias agregações em uma conexão só."""
-    connection = _erp_connection()
-    results = {}
-    try:
-        for name, sql in statements.items():
-            cursor = connection.cursor()
-            try:
-                cursor.execute(sql, params.get(name, {}))
-                columns = [column[0].lower() for column in cursor.description]
-                results[name] = [dict(zip(columns, row)) for row in cursor.fetchall()]
-            finally:
-                cursor.close()
-    finally:
-        connection.close()
-    return results
+    return oracle_query_many(_erp_connection, statements, params)
 
 
 # ---------------------------------------------------------------- helpers --
-
-def _int(value):
-    try:
-        return int(float(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _float(value):
-    try:
-        return float(value or 0)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _format_int(value):
-    return f"{_int(value):,}".replace(",", ".")
-
-
-def _format_decimal(value, places=1):
-    text = f"{_float(value):,.{places}f}"
-    return text.replace(",", "\x00").replace(".", ",").replace("\x00", ".")
-
-
-def _format_money(value):
-    return f"R$ {_format_decimal(value, 2)}"
-
 
 def _format_quantity(value):
     """Quantidade com separador de milhar — inteira quando o ERP manda um
@@ -123,18 +85,6 @@ def _format_days(value):
     if value is None:
         return "-"
     return f"{_format_decimal(value, 1)} dias"
-
-
-def _display_date(value):
-    if isinstance(value, datetime):
-        return value.strftime("%d/%m/%Y")
-    if isinstance(value, date):
-        return value.strftime("%d/%m/%Y")
-    return "-"
-
-
-def _share(part, total):
-    return round(_float(part) / _float(total) * 100, 1) if _float(total) else 0.0
 
 
 # ------------------------------------------------------------- vocabulário --
@@ -226,32 +176,7 @@ def list_branches():
         ORDER BY TOTAL DESC
         """
     )
-    single_company = len({_int(row.get("empresa")) for row in rows}) <= 1
-    branches = []
-    for row in rows:
-        empresa = _int(row.get("empresa"))
-        filial = _int(row.get("filial"))
-        branches.append(
-            {
-                "key": f"{empresa}-{filial}",
-                "empresa": empresa,
-                "filial": filial,
-                "label": f"Filial {filial}" if single_company else f"Empresa {empresa} / Filial {filial}",
-                "total": _int(row.get("total")),
-            }
-        )
-    return branches
-
-
-def resolve_branch(raw_value, available=None):
-    value = (raw_value or "all").strip()
-    if not value or value == "all":
-        return {"key": "all", "label": "Todas as filiais", "empresa": None, "filial": None}
-    catalog = {item["key"]: item for item in (available or [])}
-    item = catalog.get(value)
-    if item is None:
-        return {"key": "all", "label": "Todas as filiais", "empresa": None, "filial": None}
-    return {"key": item["key"], "label": item["label"], "empresa": item["empresa"], "filial": item["filial"]}
+    return branches_from_rows(rows)
 
 
 def list_familias():

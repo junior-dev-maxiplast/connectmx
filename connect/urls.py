@@ -16,15 +16,15 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
+
+from tiqueue.media import protected_media
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Arquivos enviados passam pelo Django para checar quem pode ver cada um,
+    # em produção e em desenvolvimento (ver tiqueue/media.py).
+    path('media/<path:path>', protected_media, name='protected_media'),
     path('', include('tiqueue.urls')),
     path('', include('generalapp.urls')),
     path('', include('hqbooking.urls')),
 ]
-
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
