@@ -1,0 +1,53 @@
+{# Card "Leitura da IA" (mapa, carteira, ficha e gerencial). Espera insight, insight_url, insight_fields (campos do recorte), ai_ready e ai_quota. #}
+<article class="mx-card mx-insight" id="mxInsight">
+    <div class="mx-card-head">
+        <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-spark"/></svg></span>
+        <div>
+            <p class="mx-card-title">Leitura da IA</p>
+            <p class="mx-card-sub">{% if insight %}Gerada em {{ insight.created_at|date:"d/m/Y H:i" }}{% if insight.by %} por {{ insight.by }}{% endif %}{% if insight.stale %} · pode estar desatualizada{% endif %}{% else %}OpenAI · lê só os números desta tela{% endif %}</p>
+        </div>
+    </div>
+    {% if insight %}
+    {% with r=insight.response %}
+    <p class="mx-insight-summary">{{ r.resumo }}</p>
+    {% if r.pergunta_adicional %}
+    <div class="mx-ai-answer">
+        <p class="mx-ai-answer-question"><span>Adicional</span>{{ r.pergunta_adicional }}</p>
+        <p class="mx-ai-answer-text">{{ r.resposta_adicional }}</p>
+    </div>
+    {% endif %}
+    <div class="mx-insight-cols">
+        {% if r.o_que_explica %}<div><h4>O que explica o resultado</h4><ul>{% for text in r.o_que_explica %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.destaques %}<div><h4>Destaques</h4><ul>{% for text in r.destaques %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.pontos_fortes %}<div><h4>Pontos fortes</h4><ul>{% for text in r.pontos_fortes %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.alertas %}<div><h4>Alertas</h4><ul>{% for text in r.alertas %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.riscos %}<div><h4>Riscos</h4><ul>{% for text in r.riscos %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.acoes %}<div><h4>Ações sugeridas</h4><ul>{% for text in r.acoes %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.decisoes %}<div><h4>Decisões sugeridas</h4><ul>{% for text in r.decisoes %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if r.proximos_passos %}<div><h4>Próximos passos</h4><ul>{% for text in r.proximos_passos %}<li>{{ text }}</li>{% endfor %}</ul></div>{% endif %}
+    </div>
+    {% if r.abordagem %}<h4>Abordagem sugerida para o representante</h4><p class="mx-insight-quote">{{ r.abordagem }}</p>{% endif %}
+    {% endwith %}
+    <p class="mx-insight-meta">Texto gerado por IA a partir dos números do ConnectMX{% if insight.model %} ({{ insight.model }}){% endif %}. Confira antes de usar com o cliente.</p>
+    {% else %}
+    <p class="mx-empty-note">Peça à IA uma leitura do que está nesta tela: resumo, destaques, alertas e ações para o comercial.</p>
+    {% endif %}
+    {% if ai_ready %}
+    <form method="post" action="{{ insight_url }}" class="mx-ai-form" data-mx-busy="Gerando a leitura…">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        {% for name, value in insight_fields.items %}{% if value != None and value != "" %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}{% endfor %}
+        <label class="mx-ai-extra">
+            <span class="mx-ai-extra-label">Adicional <small>opcional</small></span>
+            <textarea class="mx-input" name="adicional" rows="2" maxlength="500" placeholder="Uma pergunta ou instrução a mais. Ex.: Qual foi o produto que mais gerou perdas?"></textarea>
+            <span class="mx-hint">A IA responde com base nas informações desta tela; se elas não bastarem, ela avisa.</span>
+        </label>
+        <div class="mx-actions-row">
+            <button class="mx-btn{% if insight %} mx-btn-ghost{% endif %}" type="submit"{% if ai_quota.blocked %} disabled{% endif %}><svg class="mx-ico"><use href="#mx-i-spark"/></svg>{% if insight %}Gerar de novo{% else %}Gerar leitura{% endif %}</button>
+            <span class="mx-hint">{% if ai_quota.limit != None %}Restam {{ ai_quota.remaining }} de {{ ai_quota.limit }} análises de IA hoje.{% else %}Usa uma análise de IA; fica guardada para quem abrir a tela depois.{% endif %}</span>
+        </div>
+    </form>
+    {% else %}
+    <div class="mx-actions-row"><span class="mx-hint">IA desligada: ative a OpenAI em Sistema → Configurações.</span></div>
+    {% endif %}
+</article>

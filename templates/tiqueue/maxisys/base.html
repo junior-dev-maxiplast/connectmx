@@ -1,0 +1,211 @@
+{% load static %}<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ shell_title }}{% endblock %} | MaxiSys</title>
+    <script src="{% static '/js/theme.js' %}"></script>
+    <script>try { if (localStorage.getItem('mx_sidebar') === 'collapsed') document.documentElement.classList.add('mx-rail'); } catch (error) {}</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static '/style/maxisys.css' %}?v=20">
+    {% block head %}{% endblock %}
+</head>
+<body class="mx-body">
+    <div class="mx-rainbow" aria-hidden="true"></div>
+
+    <svg class="mx-sprite" aria-hidden="true" focusable="false">
+        <symbol id="mx-i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></symbol>
+        <symbol id="mx-i-dna" viewBox="0 0 24 24"><path d="M7 3c0 6 10 6 10 12s-10 6-10 6"/><path d="M17 3c0 6-10 6-10 12"/><path d="M8.5 7h7M8.5 17h7M10 12h4"/></symbol>
+        <symbol id="mx-i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.6 2.5-6.2 5.5-6.2s5.5 2.6 5.5 6.2"/><path d="M15 4.6a3.2 3.2 0 0 1 0 6.2M17.6 14c1.8.8 2.9 2.9 2.9 6"/></symbol>
+        <symbol id="mx-i-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/><path d="M12 8v4l3 2"/></symbol>
+        <symbol id="mx-i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+        <symbol id="mx-i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+        <symbol id="mx-i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+        <symbol id="mx-i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+        <symbol id="mx-i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
+        <symbol id="mx-i-panel" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14"/></symbol>
+        <symbol id="mx-i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+        <symbol id="mx-i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></symbol>
+        <symbol id="mx-i-close" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17"/></symbol>
+        <symbol id="mx-i-chart" viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/></symbol>
+        <symbol id="mx-i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M14.5 9.5c-.4-.9-1.3-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.9 2.5 2-1 2-2.5 2c-1.2 0-2.2-.6-2.6-1.6M12 6.5v1.5M12 16v1.5"/></symbol>
+        <symbol id="mx-i-scale" viewBox="0 0 24 24"><path d="M12 4v16M7 20h10"/><path d="M5 8h14"/><path d="m5 8-2.5 6a3 3 0 0 0 5 0Zm14 0-2.5 6a3 3 0 0 0 5 0Z"/></symbol>
+        <symbol id="mx-i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></symbol>
+        <symbol id="mx-i-box" viewBox="0 0 24 24"><path d="M12 3 4 7v10l8 4 8-4V7Z"/><path d="m4 7 8 4 8-4M12 11v10"/></symbol>
+        <symbol id="mx-i-truck" viewBox="0 0 24 24"><path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></symbol>
+        <symbol id="mx-i-star" viewBox="0 0 24 24"><path d="m12 4 2.4 5 5.4.6-4 3.7 1.1 5.4L12 16l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6Z"/></symbol>
+        <symbol id="mx-i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19h18.4Z"/><path d="M12 10v4M12 16.8v.2"/></symbol>
+        <symbol id="mx-i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6Z"/></symbol>
+        <symbol id="mx-i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.2"/></symbol>
+        <symbol id="mx-i-user-plus" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.3"/><path d="M4 20c0-3.8 2.7-6.5 6-6.5 1.5 0 2.9.5 4 1.5"/><path d="M18 14v6M15 17h6"/></symbol>
+        <symbol id="mx-i-user-off" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.3"/><path d="M4 20c0-3.8 2.7-6.5 6-6.5"/><path d="m15.5 15.5 5 5M20.5 15.5l-5 5"/></symbol>
+        <symbol id="mx-i-layers" viewBox="0 0 24 24"><path d="M12 4 20 8.2 12 12.4 4 8.2Z"/><path d="m4 12.5 8 4.1 8-4.1M4 16.7l8 4.1 8-4.1"/></symbol>
+        <symbol id="mx-i-calendar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/></symbol>
+        <symbol id="mx-i-map" viewBox="0 0 24 24"><path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6 9 4Z"/><path d="M9 4v14M15 6v14"/></symbol>
+        <symbol id="mx-i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.1-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.9 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.4"/></symbol>
+        <symbol id="mx-i-spark" viewBox="0 0 24 24"><path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.3l-1.9-5.5-5.6-1.9L10.1 9 12 3.5Z"/><path d="M18.5 16.5v4M16.5 18.5h4"/></symbol>
+        <symbol id="mx-i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+        <symbol id="mx-i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></symbol>
+        <symbol id="mx-i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+    </svg>
+
+    <div class="mx-shell" id="mxShell">
+        <aside class="mx-sidebar" id="mxSidebar" aria-label="Navegação principal">
+            <a class="mx-brand" href="{% url 'dashesHome' %}" aria-label="Início do MaxiSys Dashes">
+                <span class="mx-brand-word">MaxiPlast</span>
+                <svg class="mx-brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 2.5c2 2.2 2 5.3 0 7.5-2-2.2-2-5.3 0-7.5Z" fill="#f6c700"/>
+                    <path d="M21.5 12c-2.2 2-5.3 2-7.5 0 2.2-2 5.3-2 7.5 0Z" fill="#00a6e2"/>
+                    <path d="M12 21.5c-2-2.2-2-5.3 0-7.5 2 2.2 2 5.3 0 7.5Z" fill="#e2333a"/>
+                    <path d="M2.5 12c2.2-2 5.3-2 7.5 0-2.2 2-5.3 2-7.5 0Z" fill="#7cc242"/>
+                </svg>
+                <small class="mx-brand-sub">embalagens</small>
+            </a>
+            <nav class="mx-nav">
+                <a class="mx-nav-item" href="{% url 'dashesHome' %}">
+                    <svg class="mx-ico"><use href="#mx-i-home"/></svg><span class="mx-nav-text">Início</span>
+                </a>
+                <details class="mx-nav-group" open>
+                    <summary class="mx-nav-item">
+                        <svg class="mx-ico"><use href="#mx-i-chart"/></svg><span class="mx-nav-text">Comercial</span>
+                        <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                    </summary>
+                    {% if shell_can_customer_dna %}
+                    <a class="mx-nav-item mx-nav-sub{% if shell_active == 'customer-dna' %} is-active{% endif %}" href="{{ shell_customer_dna_url }}"{% if shell_active == 'customer-dna' %} aria-current="page"{% endif %}>
+                        <svg class="mx-ico"><use href="#mx-i-dna"/></svg><span class="mx-nav-text">DNA do Cliente</span>
+                    </a>
+                    {% endif %}
+                    {% if shell_can_rep_dna %}
+                    <a class="mx-nav-item mx-nav-sub{% if shell_active == 'representative-dna' %} is-active{% endif %}" href="{{ shell_rep_dna_url }}"{% if shell_active == 'representative-dna' %} aria-current="page"{% endif %}>
+                        <svg class="mx-ico"><use href="#mx-i-users"/></svg><span class="mx-nav-text">DNA de Representantes</span>
+                    </a>
+                    {% endif %}
+                    {% if shell_can_legacy_dna %}
+                    <a class="mx-nav-item mx-nav-sub" href="{{ shell_legacy_dna_url }}">
+                        <svg class="mx-ico"><use href="#mx-i-history"/></svg><span class="mx-nav-text">DNA (versão anterior)</span>
+                    </a>
+                    {% endif %}
+                </details>
+                <details class="mx-nav-group">
+                    <summary class="mx-nav-item">
+                        <svg class="mx-ico"><use href="#mx-i-grid"/></svg><span class="mx-nav-text">Painéis</span>
+                        <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                    </summary>
+                    {% for dash in dashes_menu %}
+                        {% if dash.slug != 'representative-dna' and dash.slug != 'customer-dna' %}
+                        <a class="mx-nav-item mx-nav-sub" href="{% url dash.url_name %}">
+                            <svg class="mx-ico" viewBox="0 0 24 24">{{ dash.icon_path|safe }}</svg><span class="mx-nav-text">{{ dash.name }}</span>
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                </details>
+            </nav>
+            <div class="mx-sidebar-footer">
+                <button type="button" class="mx-collapse" id="mxCollapse" data-mx-collapse aria-label="Recolher menu lateral" title="Recolher menu">
+                    <svg class="mx-ico"><use href="#mx-i-panel"/></svg>
+                </button>
+            </div>
+        </aside>
+        <div class="mx-scrim" id="mxScrim" data-mx-scrim hidden></div>
+
+        <div class="mx-main">
+            <header class="mx-topbar">
+                <div class="mx-topbar-left">
+                    <button type="button" class="mx-icon-btn mx-menu-btn" id="mxMenu" data-mx-menu aria-label="Abrir menu"><svg class="mx-ico"><use href="#mx-i-menu"/></svg></button>
+                    <div>
+                        <span class="mx-kicker">MaxiSys</span>
+                        <h1 class="mx-title">{{ shell_title }}</h1>
+                    </div>
+                </div>
+                <div class="mx-topbar-right">
+                    <button type="button" class="mx-icon-btn" id="mxTheme" data-mx-theme aria-label="Alternar tema claro e escuro" title="Alternar tema">
+                        <svg class="mx-ico mx-ico-sun"><use href="#mx-i-sun"/></svg>
+                        <svg class="mx-ico mx-ico-moon"><use href="#mx-i-moon"/></svg>
+                    </button>
+                    <span class="mx-icon-btn" aria-hidden="true"><svg class="mx-ico"><use href="#mx-i-bell"/></svg></span>
+                    <details class="mx-user">
+                        <summary>
+                            <span class="mx-avatar">{{ shell_user_initial }}</span>
+                            <span class="mx-user-name">{{ shell_user_name }}</span>
+                            <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                        </summary>
+                        <div class="mx-user-menu">
+                            <a href="{% url 'index' %}">Voltar ao ConnectMX</a>
+                            <form method="post" action="{% url 'dashesLogoutPage' %}">{% csrf_token %}<button type="submit">Encerrar sessão</button></form>
+                        </div>
+                    </details>
+                </div>
+            </header>
+            <nav class="mx-tabs" aria-label="Páginas abertas">
+                {% if shell_can_customer_dna %}
+                <a class="mx-tab{% if shell_active == 'customer-dna' %} is-active{% endif %}" href="{{ shell_customer_dna_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-dna"/></svg>DNA do Cliente
+                </a>
+                {% endif %}
+                {% if shell_can_rep_dna %}
+                <a class="mx-tab{% if shell_active == 'representative-dna' %} is-active{% endif %}" href="{{ shell_rep_dna_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-users"/></svg>DNA de Representantes
+                </a>
+                {% endif %}
+                {% if shell_can_map %}
+                <a class="mx-tab{% if shell_active == 'customer-map' %} is-active{% endif %}" href="{{ shell_map_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-map"/></svg>Mapa de Clientes
+                </a>
+                {% endif %}
+                {% if shell_can_portfolio %}
+                <a class="mx-tab{% if shell_active == 'customer-portfolio' %} is-active{% endif %}" href="{{ shell_portfolio_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-chart"/></svg>Carteira de Clientes
+                </a>
+                {% endif %}
+                {% if shell_can_management %}
+                <a class="mx-tab{% if shell_active == 'management-cockpit' %} is-active{% endif %}" href="{{ shell_management_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-pulse"/></svg>Painel Gerencial
+                </a>
+                {% endif %}
+                {% if shell_can_agenda %}
+                <a class="mx-tab{% if shell_active == 'sales-agenda' %} is-active{% endif %}" href="{{ shell_agenda_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Agenda Comercial
+                </a>
+                {% endif %}
+                {% if shell_can_sales_panel %}
+                <a class="mx-tab{% if shell_active == 'sales-panel' %} is-active{% endif %}" href="{{ shell_sales_panel_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-coin"/></svg>Vendas
+                </a>
+                {% endif %}
+                {% if shell_can_receivables_panel %}
+                <a class="mx-tab{% if shell_active == 'receivables-panel' %} is-active{% endif %}" href="{{ shell_receivables_panel_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-scale"/></svg>Contas a Receber
+                </a>
+                {% endif %}
+                {% if shell_can_service_panel %}
+                <a class="mx-tab{% if shell_active == 'service-panel' %} is-active{% endif %}" href="{{ shell_service_panel_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-truck"/></svg>Entregas
+                </a>
+                {% endif %}
+                {% if shell_can_quality_panel %}
+                <a class="mx-tab{% if shell_active == 'quality-panel' %} is-active{% endif %}" href="{{ shell_quality_panel_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-shield"/></svg>Qualidade
+                </a>
+                {% endif %}
+            </nav>
+            <main class="mx-content">
+                {% if messages %}
+                <div class="mx-messages">
+                    {% for message in messages %}
+                    <div class="mx-alert{% if message.level_tag == 'error' %} is-bad{% elif message.level_tag == 'success' %} is-good{% elif message.level_tag == 'warning' %} is-warn{% else %} is-info{% endif %}" role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">
+                        <svg class="mx-ico"><use href="#mx-i-{% if message.level_tag == 'error' or message.level_tag == 'warning' %}alert{% else %}info{% endif %}"/></svg><div>{{ message }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="{% static '/js/maxisysShell.js' %}?v=3"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

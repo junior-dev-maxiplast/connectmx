@@ -1,0 +1,148 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<p class="mx-hint"><a href="{{ portfolio_url }}"><svg class="mx-ico" style="width: 12px; height: 12px; vertical-align: -2px"><use href="#mx-i-arrow-left"/></svg> Carteira de Clientes</a></p>
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível abrir a ficha.</strong><br>{{ data_error }}</div></div>
+{% else %}
+{% with c=customer %}
+<div class="mx-page-head">
+    <div>
+        <h2>{{ c.name }}</h2>
+        <p>Código {{ c.code }}{% if c.cnpj %} · CNPJ {{ c.cnpj }}{% endif %} · {{ c.place }} · {{ c.rep_name }} · {{ c.segment_label }}{% if c.segment.source == "ia" %} <span class="mx-source is-ai" title="Sugerido pela IA (confiança {{ c.segment.confidence }})">IA</span>{% endif %}{% if loaded_at %} · dados das {{ loaded_at|date:"H:i" }}{% endif %}</p>
+    </div>
+    {% if shell_can_dna_link %}<a class="mx-btn mx-btn-ghost" href="{{ dna_url }}"><svg class="mx-ico"><use href="#mx-i-dna"/></svg>Abrir DNA completo</a>{% endif %}
+</div>
+
+<div class="mx-toolbar">
+    <div class="mx-toolbar-group" role="group" aria-label="Período">
+        <span class="mx-toolbar-label">Período</span>
+        {% for choice in period_choices %}<a class="mx-chip{% if window.key == choice.key %} is-active{% endif %}" href="{{ page_url }}?periodo={{ choice.key }}">{{ choice.label }}</a>{% endfor %}
+    </div>
+</div>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Relação<small>{{ window.label }} · {{ window.range_label }}</small></h3>
+    <div class="mx-grid mx-grid-hero">
+        <article class="mx-card">
+            <div class="mx-hero">
+                <div class="mx-hero-avatar" aria-hidden="true">{{ c.name|slice:":1" }}</div>
+                <div class="mx-hero-main">
+                    <h3>{{ c.trade_name|default:c.name }}</h3>
+                    <div class="mx-hero-meta">
+                        {% if c.rfm %}<span class="mx-badge {{ c.rfm.tone }}" title="{{ c.rfm.description }}">{{ c.rfm.label }}</span>{% endif %}
+                        <span class="mx-badge {{ c.rhythm.tone }}">{{ c.rhythm.label }}</span>
+                        {% if m.irregular %}<span class="mx-badge is-bad">Receita: {{ m.irregular.0.situacao }}</span>{% endif %}
+                        {% if c.margin_tone == "is-bad" %}<span class="mx-badge is-bad">Margem negativa</span>{% endif %}
+                    </div>
+                    {% if c.rfm %}<div class="mx-hero-meta">{{ c.rfm.description }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="mx-hero-facts">
+                <div class="mx-fact"><span>Cliente desde</span><strong>{{ first_purchase_display }}</strong><small>na base de 24 meses</small></div>
+                <div class="mx-fact"><span>Última compra</span><strong>{{ c.last_purchase_display }}</strong><small>{% if c.days_since != None %}há {{ c.days_since }} dias{% else %}-{% endif %}</small></div>
+                <div class="mx-fact"><span>Ritmo de compra</span><strong>{% if c.rhythm.typical_days %}a cada ~{{ c.rhythm.typical_days }} dias{% else %}sem histórico{% endif %}</strong><small>{% if c.rhythm.next_purchase_display %}{% if c.rhythm.overdue_days %}próxima atrasada {{ c.rhythm.overdue_days }} dias{% else %}próxima prevista {{ c.rhythm.next_purchase_display }}{% endif %}{% else %}uma compra só{% endif %}</small></div>
+                <div class="mx-fact"><span>Ranking de lucro</span><strong>{% if c.profit_position %}{{ c.profit_position }}º de {{ active_count }}{% else %}sem compra no período{% endif %}</strong><small>tendência: {{ c.momentum.label|lower }}</small></div>
+            </div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head">
+                <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span>
+                <div><p class="mx-card-title">Resultado no período</p><p class="mx-card-sub">Comparado com a mediana do segmento{% if benchmark %} ({{ benchmark.customers }} clientes de {{ c.segment_label }}){% endif %}</p></div>
+            </div>
+            <div class="mx-hero-facts">
+                <div class="mx-fact"><span>Faturamento</span><strong>{{ c.net_display }}</strong><small><span class="mx-delta {{ c.growth_tone }}">{{ c.growth_display }}</span> contra o ano anterior</small></div>
+                <div class="mx-fact"><span>Lucro bruto</span><strong>{{ c.profit_display }}</strong><small>sem impostos − CPV</small></div>
+                <div class="mx-fact"><span>Margem</span><strong>{{ c.margin_display }}</strong><small>{% if margin_vs_segment %}<span class="mx-delta {{ margin_vs_segment.tone }}">{{ margin_vs_segment.text }}</span>{% else %}sem mediana do segmento{% endif %}</small></div>
+                <div class="mx-fact"><span>Preço médio</span><strong>{{ c.fator_display }}/kg</strong><small>{% if fator_vs_segment %}<span class="mx-delta {{ fator_vs_segment.tone }}">{{ fator_vs_segment.text }}</span>{% else %}sem mediana do segmento{% endif %}</small></div>
+                <div class="mx-fact"><span>Volume</span><strong>{{ c.kg_display }}</strong><small>{{ item.notes }} nota(s) · {{ item.active_months }} mês(es) com compra</small></div>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-chart"/></svg>Evolução<small>Últimos 24 meses</small></h3>
+    <article class="mx-card">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span><div><p class="mx-card-title">Faturamento e lucro bruto por mês</p><p class="mx-card-sub">Os dois em reais, no mesmo eixo</p></div></div>
+        <div class="mx-chart" id="mxProfileChart" role="img" aria-label="Faturamento e lucro bruto por mês"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturamento</span><span><i class="is-line" style="background: var(--mx-chart-2)"></i>Lucro bruto</span></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Mix e venda cruzada<small>Últimos 12 meses</small></h3>
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">O que compra</p><p class="mx-card-sub">Grupos de produto pelo faturamento</p></div></div>
+            {% for row in mix %}
+            <div class="mx-bar-row">
+                <span title="{{ row.group }}">{{ row.group }}</span>
+                <div class="mx-progress" role="img" aria-label="{{ row.share_display }}"><i style="width: {{ row.share }}%"></i></div>
+                <b>{{ row.net_display }}</b>
+            </div>
+            {% empty %}
+            <p class="mx-empty-note">Sem compra nos últimos 12 meses.</p>
+            {% endfor %}
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-target"/></svg></span><div><p class="mx-card-title">Venda cruzada</p><p class="mx-card-sub">{% if cross.peers %}O que os {{ cross.peers }} clientes de {{ c.segment_label }} compram e este não{% else %}Precisa de segmento com 5 clientes ou mais{% endif %}</p></div></div>
+            {% if cross.items %}
+            <ul class="mx-list">
+                {% for row in cross.items %}
+                <li><div class="mx-list-main"><strong>{{ row.group }}</strong><small>{{ row.adoption_display }} do segmento compra ({{ row.buyers }} cliente{{ row.buyers|pluralize }}) · compra típica de {{ row.median_display }} em 12 meses</small></div><span class="mx-badge is-info">oportunidade</span></li>
+                {% endfor %}
+            </ul>
+            {% elif cross.peers %}
+            <p class="mx-empty-note">O cliente já compra o que a maioria do segmento compra.</p>
+            {% elif not c.segment %}
+            <p class="mx-empty-note">Cliente sem segmento. Classifique os segmentos na Carteira de Clientes (IA) para ver as oportunidades.</p>
+            {% else %}
+            <p class="mx-empty-note">Poucos clientes de {{ c.segment_label }} para comparar.</p>
+            {% endif %}
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-grid"/></svg>Mercado<small>Econodata · dados guardados no ConnectMX: abrir a tela não gasta tokens</small></h3>
+    {% include "tiqueue/maxisys/_market_card.html" %}
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Leitura da IA<small>Preparação para falar com o cliente</small></h3>
+    {% include "tiqueue/maxisys/_intel_insight.html" %}
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Lucro bruto = faturamento sem impostos × margem; margem = 1 − CPV ÷ faturamento sem impostos (CPV do E210MVP). Preço médio = faturamento ÷ kg.</li>
+        <li>Segmento: o ramo do ERP ou, sem ele, o sugerido pela IA. A mediana do segmento usa os clientes que compraram no período.</li>
+        <li>Ritmo de compra: o intervalo típico entre os meses com compra (mediana, 24 meses). A próxima compra prevista é a última mais esse intervalo.</li>
+        <li>Venda cruzada: grupos de produto comprados por pelo menos 30% dos clientes do segmento nos últimos 12 meses, que este cliente não comprou.</li>
+    </ul>
+</details>
+{{ series|json_script:"mxProfileSeries" }}
+{% endwith %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script>
+(() => {
+    const series = JSON.parse(document.getElementById('mxProfileSeries').textContent);
+    window.MXCharts.bars(document.getElementById('mxProfileChart'), {
+        label: 'Faturamento e lucro bruto por mês',
+        labels: series.map((row) => row.label),
+        series: [{ name: 'Faturamento', values: series.map((row) => row.revenue), color: '--mx-chart-1' }],
+        line: { name: 'Lucro bruto', values: series.map((row) => row.profit), color: '--mx-chart-2' },
+        format: window.MXCharts.money,
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

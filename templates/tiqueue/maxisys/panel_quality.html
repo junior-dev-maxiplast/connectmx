@@ -1,0 +1,262 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Qualidade</h2>
+        <p>Reclamações e devoluções de clientes, e as causas que mais pesam · ERP Senior{% if payload %} · dados das {{ payload.loaded_at }}{% endif %}</p>
+    </div>
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div id="mxMonths"></div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique num mês, gravidade, problema, máquina, setor ou cliente para filtrar a página; Ctrl + clique soma itens à seleção. O filtro de cliente vale para reclamações e devoluções.</p>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <div class="mx-kpi-hero">
+            <article class="mx-card mx-reveal" style="--i: 0; --mx-kpi-accent: var(--mx-chart-1)"><div class="mx-kpi-label">Reclamações (<span data-period>12 meses</span>)</div><div class="mx-kpi-value" id="kpiComplaints">–</div><div class="mx-kpi-foot"><span class="mx-delta" id="kpiComplaintsDelta">–</span><span id="kpiComplaintsCompare">contra os 12 meses anteriores</span></div></article>
+            <article class="mx-card mx-reveal" style="--i: 1; --mx-kpi-accent: var(--mx-bad)"><div class="mx-kpi-label">Graves</div><div class="mx-kpi-value" id="kpiGrave">–</div><div class="mx-kpi-foot"><span id="kpiGraveFoot">–</span></div></article>
+            <article class="mx-card mx-reveal" style="--i: 2; --mx-kpi-accent: var(--mx-cat-2)"><div class="mx-kpi-label">Devoluções (<span data-period>12 meses</span>)</div><div class="mx-kpi-value" id="kpiReturns">–</div><div class="mx-kpi-foot"><span class="mx-delta" id="kpiReturnsDelta">–</span><span id="kpiReturnsFoot">–</span></div></article>
+            <article class="mx-card mx-reveal" style="--i: 3; --mx-kpi-accent: var(--mx-warn)"><div class="mx-kpi-label">Devolução sobre faturamento</div><div class="mx-kpi-value" id="kpiReturnRate">–</div><div class="mx-kpi-foot"><span>valor devolvido ÷ faturamento líquido, <span data-period>12 meses</span></span></div></article>
+            <article class="mx-card mx-reveal" style="--i: 4; --mx-kpi-accent: var(--mx-cat-7)"><div class="mx-kpi-label">Clientes com ocorrência</div><div class="mx-kpi-value" id="kpiCustomers">–</div><div class="mx-kpi-foot"><span>reclamação ou devolução em <span data-period>12 meses</span></span></div></article>
+            <article class="mx-card mx-reveal" style="--i: 5; --mx-kpi-accent: var(--mx-cat-3)"><div class="mx-kpi-label">Reclamações por R$ 1 milhão</div><div class="mx-kpi-value" id="kpiRate">–</div><div class="mx-kpi-foot"><span>de faturamento, <span data-period>12 meses</span></span></div></article>
+        </div>
+        <article class="mx-card mx-reveal" style="--i: 6; display: grid; place-content: center; text-align: center">
+            <div class="mx-kpi-label">Dias sem reclamação grave</div>
+            <div class="mx-big-days" id="kpiDaysSince">–</div>
+            <p class="mx-hint" id="kpiDaysFoot">–</p>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 7">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Reclamações por mês</p><p class="mx-card-sub">24 meses, pela gravidade · clique num mês para filtrar (Ctrl soma meses)</p></div></div>
+            <div id="chartComplaints"></div>
+            <div class="mx-legend" id="severityLegend"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 8">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span><div><p class="mx-card-title">Devoluções por mês</p><p class="mx-card-sub">Valor devolvido · a dica mostra a parte do faturamento · clique num mês para filtrar</p></div></div>
+            <div id="chartReturns"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 9">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Pareto dos problemas</p><p class="mx-card-sub">Reclamações de <span data-period>12 meses</span> · em laranja os poucos que somam 80%</p></div></div>
+            <div id="rankProblems"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 10">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">Máquinas e recursos</p><p class="mx-card-sub">Onde o problema nasceu, <span data-period>12 meses</span></p></div></div>
+            <div id="rankMachines"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 11"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Setor causador</p><p class="mx-card-sub">Valor devolvido, <span data-period>12 meses</span></p></div></div><div id="donutSectors"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 12"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Motivos de devolução</p><p class="mx-card-sub">Valor devolvido, <span data-period>12 meses</span></p></div></div><div id="rankReturnProblems"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 13"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Clientes com mais ocorrências</p><p class="mx-card-sub">Reclamações + devoluções, <span data-period>12 meses</span> · ↗ ficha</p></div></div><div id="rankCustomers"></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 14">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Mapa de calor dos problemas</p><p class="mx-card-sub">Os 8 maiores problemas, mês a mês (<span data-period>12 meses</span>) · mais escuro = mais reclamações</p></div></div>
+        <div class="mx-table-wrap"><table class="mx-heat" id="heatProblems"></table></div>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Reclamações: cadastro de reclamações de clientes (USU_TRECCLI), pela data da reclamação, com gravidade leve, média ou grave e o recurso (máquina) de origem.</li>
+        <li>Devoluções: cadastro de devoluções (USU_TDEVCLI), pela data e pelo valor devolvido, com o problema e o setor causador.</li>
+        <li>Devolução sobre faturamento: valor devolvido ÷ faturamento líquido de devolução no mesmo período (regras do DNA).</li>
+        <li>Pareto: problemas do mais frequente ao menos frequente; em destaque os que, somados, chegam a 80% das reclamações.</li>
+    </ul>
+</details>
+
+{{ payload|json_script:"mxPanelData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script>
+(() => {
+    const L = window.MXLive;
+    const fmt = L.fmt;
+    const data = JSON.parse(document.getElementById('mxPanelData').textContent);
+    const profileUrl = (code) => '{{ profile_url_template }}'.replace('__code__', code);
+    const customer = (code) => data.names.customers[code] || { name: `Cliente ${code}`, place: '' };
+    const severityLabel = Object.fromEntries(data.severity.map((item) => [item.key, item.label]));
+    const severityColor = { L: 'color-mix(in oklab, var(--mx-div-neg-2) 35%, var(--mx-card))', M: 'color-mix(in oklab, var(--mx-div-neg-2) 65%, var(--mx-card))', G: '--mx-div-neg-2' };
+    const filter = L.crossFilter({
+        labels: { m: 'Mês', s: 'Gravidade', p: 'Problema', q: 'Máquina', c: 'Cliente', rs: 'Setor', rp: 'Motivo da devolução' },
+        names: { m: (value) => L.monthLabel(value), s: severityLabel, c: Object.fromEntries(Object.entries(data.names.customers).map(([code, info]) => [code, info.name])) },
+        chips: '#mxFilterBar',
+    });
+    L.monthPicker(document.getElementById('mxMonths'), { months: data.months, filter, dimension: 'm', title: 'Meses', allLabel: 'Últimos 12 meses' });
+    const monthKeys = data.months.map((month) => month.key);
+    const defaultKeys = monthKeys.slice(-12);
+    // Período: os meses escolhidos ou os últimos 12; a comparação é com os mesmos meses do ano anterior.
+    const periodOf = (state) => {
+        const picked = L.chosen(state.m).map(Number).sort((a, b) => a - b);
+        const list = picked.length ? picked : defaultKeys;
+        return {
+            picked: picked.length > 0, list, keys: new Set(list), previous: new Set(list.map((key) => key - 12)),
+            label: !picked.length ? '12 meses' : picked.length === 1 ? L.monthLabel(picked[0]) : `${picked.length} meses escolhidos`,
+        };
+    };
+    const complaintKeys = ['s', 'p', 'q', 'c'];
+    const returnKeys = { c: 'c', rs: 's', rp: 'p' };
+    const complaintsFor = (state, skip) => data.complaints.filter((row) => complaintKeys.every((key) => key === skip || L.pass(state, key, row[key])));
+    const returnsFor = (state, skip) => data.returns.filter((row) => Object.entries(returnKeys).every(([key, field]) => key === skip || L.pass(state, key, row[field])));
+    const selectMonth = (key, index, event) => filter.toggle('m', monthKeys[index], event);
+
+    document.getElementById('severityLegend').replaceChildren(...data.severity.map((item) => {
+        const span = document.createElement('span');
+        const swatch = document.createElement('i');
+        swatch.style.background = L.paint(severityColor[item.key]);
+        span.append(swatch, document.createTextNode(item.label));
+        return span;
+    }));
+
+    const complaintsChart = L.columns(document.getElementById('chartComplaints'), { height: 230, format: fmt.int, stacked: true, maxBar: 18, onSelect: selectMonth });
+    const returnsChart = L.columns(document.getElementById('chartReturns'), { height: 230, format: fmt.money, maxBar: 18, onSelect: selectMonth });
+    const problems = L.ranking(document.getElementById('rankProblems'), { format: fmt.int, limit: 12, onSelect: (key, item, event) => filter.toggle('p', key, event) });
+    const machines = L.ranking(document.getElementById('rankMachines'), { format: fmt.int, limit: 10, color: '--mx-cat-7', onSelect: (key, item, event) => filter.toggle('q', key, event) });
+    const sectors = L.donut(document.getElementById('donutSectors'), { format: fmt.money, centerLabel: 'devolvido', onSelect: (key, item, event) => filter.toggle('rs', key, event) });
+    const returnProblems = L.ranking(document.getElementById('rankReturnProblems'), { format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: (key, item, event) => filter.toggle('rp', key, event) });
+    const customers = L.ranking(document.getElementById('rankCustomers'), { format: fmt.int, limit: 10, color: '--mx-cat-3', onSelect: (key, item, event) => filter.toggle('c', key, event) });
+    const defaultSet = new Set(defaultKeys);
+    const sectorOrder = [...L.group(data.returns.filter((row) => defaultSet.has(row.m)), 's', ['v']).entries()].sort((a, b) => b[1].v - a[1].v).map(([key]) => key);
+
+    const days = data.days_since_grave;
+    L.whenVisible(document.getElementById('kpiDaysSince'), () => L.count(document.getElementById('kpiDaysSince'), days, fmt.int, 1600));
+    document.getElementById('kpiDaysFoot').textContent = data.last_grave ? `última grave em ${new Date(`${data.last_grave}T12:00:00`).toLocaleDateString('pt-BR')}` : 'nenhuma grave em 24 meses';
+
+    const counter = (rows, key) => { const map = new Map(); rows.forEach((row) => map.set(row[key], (map.get(row[key]) || 0) + 1)); return map; };
+
+    function render(state) {
+        const period = periodOf(state);
+        const inPeriod = (row) => period.keys.has(row.m);
+        const inPrevious = (row) => period.previous.has(row.m);
+        document.querySelectorAll('[data-period]').forEach((node) => { node.textContent = period.label; });
+        document.getElementById('kpiComplaintsCompare').textContent = period.picked ? 'contra os mesmos meses do ano anterior' : 'contra os 12 meses anteriores';
+        const complaints = complaintsFor(state);
+        const returns = returnsFor(state);
+        const now = complaints.filter(inPeriod);
+        const before = complaints.filter(inPrevious);
+        L.count(document.getElementById('kpiComplaints'), now.length, fmt.int);
+        const change = before.length ? now.length / before.length - 1 : null;
+        const delta = document.getElementById('kpiComplaintsDelta');
+        delta.textContent = fmt.signedPct(change);
+        delta.className = `mx-delta ${change == null ? '' : change <= 0 ? 'is-up' : 'is-down'}`;
+        const graves = now.filter((row) => row.s === 'G').length;
+        L.count(document.getElementById('kpiGrave'), graves, fmt.int);
+        document.getElementById('kpiGraveFoot').textContent = `${fmt.pct(now.length ? graves / now.length : 0, 0)} das reclamações de ${period.label}`;
+
+        const returnsNow = returns.filter(inPeriod);
+        const returnsBefore = returns.filter(inPrevious);
+        const value = returnsNow.reduce((acc, row) => acc + (row.v || 0), 0);
+        const valueBefore = returnsBefore.reduce((acc, row) => acc + (row.v || 0), 0);
+        L.count(document.getElementById('kpiReturns'), value, fmt.money);
+        const returnChange = valueBefore ? value / valueBefore - 1 : null;
+        const returnDelta = document.getElementById('kpiReturnsDelta');
+        returnDelta.textContent = fmt.signedPct(returnChange);
+        returnDelta.className = `mx-delta ${returnChange == null ? '' : returnChange <= 0 ? 'is-up' : 'is-down'}`;
+        document.getElementById('kpiReturnsFoot').textContent = `${fmt.int(returnsNow.length)} devolução(ões)`;
+        // O faturamento existe por mês, sem as outras dimensões: as taxas valem sem filtro ou só com o de mês.
+        const revenue = period.list.reduce((acc, key) => acc + (data.revenue[key] || 0), 0);
+        const onlyMonths = Object.keys(state).every((key) => key === 'm');
+        L.count(document.getElementById('kpiReturnRate'), !state.c && !state.rs && !state.rp && revenue ? value / revenue : null, (number) => fmt.pct(number, 2));
+        L.count(document.getElementById('kpiCustomers'), new Set([...now.map((row) => row.c), ...returnsNow.map((row) => row.c)]).size, fmt.int);
+        L.count(document.getElementById('kpiRate'), onlyMonths && revenue ? now.length / (revenue / 1e6) : null, (number) => fmt.dec(number, 2));
+
+        const marked = period.picked ? period.list.map((key) => monthKeys.indexOf(key)).filter((index) => index >= 0) : null;
+        const byMonth = (rows, severity) => data.months.map((month) => rows.filter((row) => row.m === month.key && (!severity || row.s === severity)).length);
+        complaintsChart.update({
+            labels: data.months.map((month) => month.label), keys: monthKeys, highlight: marked,
+            series: data.severity.map((item) => ({ name: item.label, color: severityColor[item.key], values: byMonth(complaints, item.key) })),
+        });
+        const returnValues = data.months.map((month) => returns.filter((row) => row.m === month.key).reduce((acc, row) => acc + (row.v || 0), 0));
+        returnsChart.update({
+            labels: data.months.map((month) => month.label), keys: monthKeys, highlight: marked,
+            series: [{ name: 'Devolvido', color: '--mx-cat-2', values: returnValues }],
+            extra: (index) => { const monthRevenue = data.revenue[data.months[index].key]; return monthRevenue ? [`${fmt.pct(returnValues[index] / monthRevenue, 2)} do faturamento do mês`] : []; },
+        });
+
+        const problemCounts = [...counter(complaintsFor(state, 'p').filter(inPeriod), 'p').entries()].sort((a, b) => b[1] - a[1]);
+        const problemTotal = problemCounts.reduce((acc, [, count]) => acc + count, 0) || 1;
+        let running = 0;
+        problems.update(problemCounts.map(([key, count]) => {
+            const startShare = running / problemTotal;
+            running += count;
+            return { key, label: key, value: count, color: startShare < 0.8 ? '--mx-cat-2' : '--mx-chart-3', sub: `${fmt.pct(count / problemTotal, 0)} · acumulado ${fmt.pct(running / problemTotal, 0)}` };
+        }), state.p);
+        machines.update([...counter(complaintsFor(state, 'q').filter(inPeriod), 'q').entries()].sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, label: key, value: count })), state.q);
+
+        const sectorTotals = L.group(returnsFor(state, 'rs').filter(inPeriod), 's', ['v']);
+        const sectorKeys = [...sectorOrder, ...[...sectorTotals.keys()].filter((key) => !sectorOrder.includes(key))];
+        sectors.update(sectorKeys.filter((key) => sectorTotals.has(key)).slice(0, 7).map((key) => ({ key, label: key, value: sectorTotals.get(key).v, color: L.categorical(sectorKeys.indexOf(key)) })), state.rs);
+        returnProblems.update([...L.group(returnsFor(state, 'rp').filter(inPeriod), 'p', ['v']).entries()].sort((a, b) => b[1].v - a[1].v).map(([key, entry]) => ({ key, label: key, value: entry.v })), state.rp);
+
+        const occurrences = new Map();
+        complaintsFor(state, 'c').filter(inPeriod).forEach((row) => { const entry = occurrences.get(row.c) || { complaints: 0, returns: 0, value: 0 }; entry.complaints += 1; occurrences.set(row.c, entry); });
+        returnsFor(state, 'c').filter(inPeriod).forEach((row) => { const entry = occurrences.get(row.c) || { complaints: 0, returns: 0, value: 0 }; entry.returns += 1; entry.value += row.v || 0; occurrences.set(row.c, entry); });
+        customers.update([...occurrences.entries()].filter(([code]) => code != null).sort((a, b) => (b[1].complaints + b[1].returns) - (a[1].complaints + a[1].returns)).map(([code, entry]) => ({
+            key: code, label: customer(code).name, value: entry.complaints + entry.returns, href: profileUrl(code),
+            sub: `${entry.complaints} reclamação(ões) · ${entry.returns} devolução(ões) de ${fmt.money(entry.value)}`,
+        })), state.c);
+
+        // Mapa de calor: problemas × meses do período, sobre as reclamações filtradas.
+        const heatMonths = data.months.filter((month) => period.keys.has(month.key));
+        const top = [...counter(now, 'p').entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([key]) => key);
+        const cells = top.map((problem) => heatMonths.map((month) => now.filter((row) => row.p === problem && row.m === month.key).length));
+        const values = cells.flat().filter((count) => count > 0).sort((a, b) => a - b);
+        const breaks = [0.2, 0.4, 0.6, 0.8].map((q) => values[Math.min(values.length - 1, Math.floor(q * values.length))] || 0);
+        const table = document.getElementById('heatProblems');
+        table.replaceChildren();
+        const head = table.createTHead().insertRow();
+        const corner = document.createElement('th');
+        corner.textContent = 'Problema';
+        head.appendChild(corner);
+        heatMonths.forEach((month) => { const th = document.createElement('th'); th.textContent = month.label; head.appendChild(th); });
+        const body = table.createTBody();
+        top.forEach((problem, rowIndex) => {
+            const tr = body.insertRow();
+            const th = document.createElement('th');
+            th.className = 'is-row';
+            th.scope = 'row';
+            th.textContent = problem;
+            th.title = problem;
+            tr.appendChild(th);
+            cells[rowIndex].forEach((count, columnIndex) => {
+                const td = tr.insertCell();
+                td.textContent = count || '';
+                if (count) td.className = `is-seq-${1 + breaks.filter((edge) => count > edge).length}`;
+                td.title = `${problem} · ${heatMonths[columnIndex].label}: ${count} reclamação(ões)`;
+                td.style.animation = L.reduceMotion ? 'none' : `mx-pop .45s cubic-bezier(.2,.8,.2,1) ${Math.min((rowIndex * 12 + columnIndex) * 8, 700)}ms both`;
+            });
+        });
+        if (!top.length) { const tr = body.insertRow(); const td = tr.insertCell(); td.textContent = 'Sem reclamações neste filtro.'; td.colSpan = heatMonths.length + 1; }
+    }
+
+    filter.subscribe(render);
+    render(filter.get());
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{% static '/style/mainQueue.css' %}">
     <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    {% include 'partials/maxisys_head.html' %}
 </head>
 <body class="support-portal-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
@@ -121,6 +122,18 @@
                     </form>
 
                     <div class="ticket-toolbar-actions">
+                        <form method="GET" action="{% url 'portalDemandsExport' %}" class="ticket-export-form" aria-label="Exportar chamados">
+                            <select name="status" class="queue-select ticket-select" aria-label="Status a exportar">
+                                <option value="abertos" selected>Abertos</option>
+                                <option value="concluidos">Conclu&iacute;dos</option>
+                                <option value="cancelados">Cancelados</option>
+                                <option value="todos">Todos</option>
+                            </select>
+                            <input type="date" name="inicio" aria-label="Abertos a partir de">
+                            <input type="date" name="fim" aria-label="Abertos at&eacute;">
+                            <button type="submit" name="formato" value="csv" class="queue-secondary-btn ticket-btn-sm">CSV</button>
+                            <button type="submit" name="formato" value="xlsx" class="queue-secondary-btn ticket-btn-sm">Excel</button>
+                        </form>
                         <button type="button" id="selectAllTicketsBtn" class="queue-secondary-btn ticket-btn-sm">Marcar pendentes</button>
                         <form id="bulkAssumeForm" method="POST" action="{% url 'portalDemandBulkAssume' %}" class="ticket-bulk-form">
                             {% csrf_token %}
@@ -169,6 +182,7 @@
                                         <td class="ticket-col-subject">
                                             <a href="{{ ticket.detail_url }}" class="ticket-protocol" onclick="event.stopPropagation()">{{ ticket.protocol }}</a>
                                             <span class="ticket-subject">{{ ticket.title }}</span>
+ {% if ticket.possible_duplicate_protocol %}<span class="ticket-dup-flag" title="Há um chamado aberto com assunto parecido">Possível duplicado de {{ ticket.possible_duplicate_protocol }}</span>{% endif %}
                                         </td>
                                         <td class="ticket-col-person" title="{{ ticket.requester_display }}">
                                             <div class="ticket-person">

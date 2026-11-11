@@ -1,0 +1,7 @@
+{# Etiquetas dos filtros por clique (telas montadas no servidor). Espera filter_chips e clear_filters_url. #}
+{% if filter_chips %}
+<div class="mx-filter-bar" role="group" aria-label="Filtros ativos">
+    {% for chip in filter_chips %}<a class="mx-chip is-active mx-filter-chip" href="{{ chip.remove_url }}" title="{{ chip.title }}" aria-label="Tirar o filtro {{ chip.label }} ({{ chip.title }})"><span class="mx-filter-chip-key">{{ chip.label }}: </span><span class="mx-filter-chip-value">{{ chip.text }}</span><span class="mx-filter-chip-x"> ×</span></a>{% endfor %}
+    {% if filter_chips|length > 1 %}<a class="mx-chip mx-filter-chip" href="{{ clear_filters_url }}">Limpar filtros</a>{% endif %}
+</div>
+{% endif %}

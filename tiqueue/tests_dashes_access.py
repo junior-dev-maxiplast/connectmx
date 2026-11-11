@@ -77,7 +77,8 @@ class DashesAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.client.session.get("dashes_authenticated"))
-        self.assertTemplateUsed(response, "tiqueue/customer_dna.html")
+        # O item "DNA do Cliente" do catálogo abre a versão nova (migration 0086).
+        self.assertTemplateUsed(response, "tiqueue/maxisys/customer_dna_v2.html")
 
     # ----------------------------------------------------------- autorizacao --
 
@@ -143,7 +144,8 @@ class DashesAccessTests(TestCase):
 
         response = self.client.get(reverse("dashesHome"))
 
-        self.assertRedirects(response, self.dna_url, fetch_redirect_response=False)
+        # Vai para a rota do item do catálogo (hoje a versão nova do DNA).
+        self.assertRedirects(response, reverse(self.dna.url_name), fetch_redirect_response=False)
 
     def test_anonymous_is_sent_to_the_dashes_login(self):
         response = self.client.get(self.dna_url)

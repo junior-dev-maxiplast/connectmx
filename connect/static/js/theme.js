@@ -1,4 +1,7 @@
 (function () {
+    // O cabeçalho MaxiSys (partials/maxisys_head.html) também carrega este
+    // arquivo; em telas que já o carregavam, a segunda execução não faz nada.
+    if (window.ConnectMXTheme) return;
     const STORAGE_KEY = "connectmx_theme";
     const FAVICON_HREF = "/static/assets/cmx-page.png";
 

@@ -1,0 +1,138 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Agenda Comercial</h2>
+        <p>Quem procurar nos próximos {{ horizon|default:7 }} dias e por quê · {% if rep_name %}{{ rep_name }}{% else %}todos os representantes{% endif %}{% if loaded_at %} · dados das {{ loaded_at|date:"H:i" }}{% endif %}</p>
+    </div>
+    {% if not data_error %}<a class="mx-btn mx-btn-ghost" href="{{ csv_url }}"><svg class="mx-ico"><use href="#mx-i-box"/></svg>Baixar para o Excel (CSV)</a>{% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar a agenda.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div class="mx-toolbar">
+    <form method="get" action="{{ page_url }}" class="mx-filters" aria-label="Representante">
+        <input type="hidden" name="dias" value="{{ horizon }}">
+        <span class="mx-toolbar-label">Representante</span>
+        <select class="mx-select" name="rep" aria-label="Representante" onchange="this.form.submit()">
+            <option value="">Todos</option>
+            {% for rep in rep_choices %}<option value="{{ rep.code }}"{% if rep_code == rep.code %} selected{% endif %}>{{ rep.name }}</option>{% endfor %}
+        </select>
+        <noscript><button class="mx-btn mx-btn-ghost" type="submit">Aplicar</button></noscript>
+    </form>
+    <div class="mx-toolbar-group" role="group" aria-label="Horizonte">
+        <span class="mx-toolbar-label">Horizonte</span>
+        {% for days in horizons %}<a class="mx-chip{% if horizon == days %} is-active{% endif %}" href="{{ page_url }}?{{ query_prefix }}dias={{ days }}">{{ days }} dias</a>{% endfor %}
+    </div>
+</div>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Resumo<small>{{ agenda.pending }} cliente(s) na fila · {{ agenda.snoozed }} já contatado(s) nos últimos 7 dias</small></h3>
+    <div class="mx-grid mx-grid-kpi">
+        <article class="mx-card">
+            <div class="mx-kpi-label">Compras previstas</div>
+            <div class="mx-kpi-value">{{ agenda.counts.due }}</div>
+            <div class="mx-kpi-foot"><span>pedido típico somado {{ expected_display }}</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Atrasados e em risco</div>
+            <div class="mx-kpi-value">{{ agenda.counts.late|add:agenda.counts.at_risk }}</div>
+            <div class="mx-kpi-foot"><span>{{ at_stake_display }} em pedidos típicos em jogo</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Venda cruzada</div>
+            <div class="mx-kpi-value">{{ agenda.counts.cross }}</div>
+            <div class="mx-kpi-foot"><span>clientes em dia com produto a oferecer</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Reativar</div>
+            <div class="mx-kpi-value">{{ agenda.counts.reactivate }}</div>
+            <div class="mx-kpi-foot"><span>sem compra há mais de 180 dias</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Contatos nos últimos 7 dias</div>
+            <div class="mx-kpi-value">{{ recent_contacts }}</div>
+            <div class="mx-kpi-foot"><span>{{ recent_orders }} com pedido fechado</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-star"/></svg>Prioridades<small>Ordem: pedido típico × urgência · quem já foi contatado aparece no fim, apagado</small></h3>
+    <article class="mx-card">
+        <div class="mx-toolbar-group" style="margin-bottom: 8px">{% for reason in reason_labels %}<span class="mx-badge {{ reason.tone }}">{{ reason.label }} · {{ reason.count }}</span>{% endfor %}</div>
+        {% if entries %}
+        <ol class="mx-agenda">
+            {% for entry in entries %}
+            <li class="{% if entry.snoozed %}is-snoozed{% endif %}">
+                <span class="mx-agenda-rank">{{ forloop.counter }}</span>
+                <div class="mx-agenda-main">
+                    <strong><a href="{{ profile_url_template|cut:'__code__/' }}{{ entry.code }}/">{{ entry.name }}</a></strong>
+                    <small>{{ entry.code }} · {{ entry.place }} · {{ entry.rep_name }} · {{ entry.segment_label }}{% if entry.segment.source == "ia" %} <span class="mx-source is-ai">IA</span>{% endif %}</small>
+                    <ul class="mx-agenda-reasons">
+                        {% for reason in entry.reasons %}<li><span class="mx-badge {{ reason.tone }}">{{ reason.label }}</span>{{ reason.text }}</li>{% endfor %}
+                    </ul>
+                </div>
+                <div class="mx-agenda-facts">
+                    Pedido típico <b>{{ entry.typical_display }}</b><br>
+                    Última compra <b>{{ entry.last_purchase_display }}</b>{% if entry.days_since != None %} (há {{ entry.days_since }} dias){% endif %}<br>
+                    {% if entry.rhythm.next_purchase_display and entry.rhythm.status != "inactive" %}Próxima prevista <b>{{ entry.rhythm.next_purchase_display }}</b><br>{% endif %}
+                    Lucro em 12 meses <b>{{ entry.profit_display }}</b> · margem <b>{{ entry.margin_display }}</b>
+                </div>
+                <form method="post" action="{{ contact_url }}" class="mx-agenda-form" data-mx-busy="Registrando…">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="hidden" name="cliente" value="{{ entry.code }}">
+                    <input type="hidden" name="nome" value="{{ entry.name }}">
+                    <input type="hidden" name="rep" value="{{ entry.rep_code|default_if_none:'' }}">
+                    <input type="hidden" name="motivo" value="{{ entry.primary.key }}">
+                    <select class="mx-select" name="resultado" aria-label="Resultado do contato com {{ entry.name }}" required>
+                        <option value="">Registrar contato…</option>
+                        {% for value, label in outcome_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                    </select>
+                    <input class="mx-input" type="text" name="nota" maxlength="300" placeholder="Observação (opcional)" aria-label="Observação do contato com {{ entry.name }}">
+                    <button type="submit" class="mx-btn mx-btn-ghost">Registrar</button>
+                    {% if entry.last_contact %}<div class="mx-agenda-last">Último contato {{ entry.last_contact.date|date:"d/m" }}: {{ entry.last_contact.outcome_label }}{% if entry.last_contact.by %} · {{ entry.last_contact.by }}{% endif %}{% if entry.last_contact.note %} · “{{ entry.last_contact.note }}”{% endif %}</div>{% endif %}
+                </form>
+            </li>
+            {% endfor %}
+        </ol>
+        {% if more %}<p class="mx-hint">Mostrando as {{ entries|length }} primeiras prioridades; mais {{ more }} no arquivo CSV.</p>{% endif %}
+        {% else %}
+        <p class="mx-empty-note">Nenhum cliente para procurar neste horizonte. Experimente 15 ou 30 dias.</p>
+        {% endif %}
+    </article>
+</section>
+
+{% if contacted %}
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-history"/></svg>Já contatados<small>Saem da fila por 7 dias depois do registro</small></h3>
+    <article class="mx-card">
+        <ul class="mx-list">
+            {% for entry in contacted %}
+            <li>
+                <div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ entry.code }}/">{{ entry.name }}</a></strong><small>{{ entry.place }} · {{ entry.rep_name }} · estava na agenda por: {{ entry.primary.label|lower }}</small></div>
+                <span class="mx-badge {% if entry.last_contact.outcome == 'pedido' %}is-good{% elif entry.last_contact.outcome == 'sem_interesse' %}is-bad{% else %}is-info{% endif %}">{{ entry.last_contact.outcome_label }}</span>
+                <span class="mx-list-value">{{ entry.last_contact.date|date:"d/m" }}{% if entry.last_contact.by %} · {{ entry.last_contact.by }}{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </article>
+</section>
+{% endif %}
+
+<details class="mx-notes">
+    <summary>Como a agenda é montada</summary>
+    <ul>
+        <li>Compra prevista: o intervalo típico entre os meses com compra (mediana dos últimos 24 meses) somado à última compra cai dentro do horizonte.</li>
+        <li>Atrasado: passou de 1,25 vez o próprio intervalo sem comprar; risco de parada: mais de 2 vezes. A urgência cresce com o atraso.</li>
+        <li>Venda cruzada: grupos de produto que pelo menos 30% dos clientes do mesmo segmento compram e este cliente não (últimos 12 meses).</li>
+        <li>Reativar: sem compra há mais de 180 dias. Quem tem o CNPJ baixado, inapto, suspenso ou nulo na Receita (já conferido na Econodata) não entra.</li>
+        <li>Pedido típico: o faturamento médio de um mês com compra nos últimos 24 meses. Registrar o contato tira o cliente da fila por 7 dias e deixa o resultado visível para o time.</li>
+    </ul>
+</details>
+{% endif %}
+{% endblock %}

@@ -2362,3 +2362,269 @@ class DashQuestion(models.Model):
 
     def __str__(self):
         return f"{self.source_slug}: {self.question[:50]}"
+
+
+class RepresentativeGoal(models.Model):
+    """Meta de venda (kg) de um representante, por mês, unidade e família.
+
+    Origem: tabelas digitadas no PBIX "2. ORÇAMENTO 2026" (ver
+    `tiqueue/representative_goals.py`). `rep_code` é o código principal do
+    representante no ERP (E090REP.CODREP); códigos que o PBIX consolida no
+    mesmo representante são resolvidos em `commercial_dna.REPRESENTATIVE_ALIASES`.
+    """
+
+    UNIT_CHOICES = [
+        (1, "Matriz"),
+        (2, "Ráfia"),
+        (3, "Big Bag"),
+        (4, "Serafina"),
+        (5, "Adesivado"),
+        (7, "São Paulo"),
+    ]
+
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    unit_code = models.PositiveSmallIntegerField(choices=UNIT_CHOICES)
+    rep_code = models.PositiveIntegerField(db_index=True)
+    rep_name = models.CharField(max_length=160, blank=True)
+    family = models.CharField(max_length=80, help_text="Grupo de produto do orçamento (ex.: BOBINA MONO IMPRESSO).")
+    group_code = models.PositiveSmallIntegerField(blank=True, null=True)
+    weight_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    source = models.CharField(max_length=40, default="pbix-orcamento-2026")
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["year", "month", "rep_code", "unit_code", "family"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["year", "month", "unit_code", "rep_code", "family"],
+                name="uniq_representative_goal_period_unit_family",
+            )
+        ]
+        indexes = [models.Index(fields=["rep_code", "year"], name="repgoal_rep_year_idx")]
+
+    def __str__(self):
+        return f"{self.rep_code} {self.month:02d}/{self.year} {self.family}: {self.weight_kg} kg"
+
+
+class EconodataEmpresa(models.Model):
+    """Dado da Econodata guardado por CNPJ, para nunca pagar duas vezes pelo mesmo dado.
+
+    `dados` é o retorno da API para a empresa (só os campos pedidos, que é o que
+    se paga); as colunas ao lado são cópias dos campos mais usados, para filtrar e
+    agrupar sem abrir o JSON. `campos` lista os dot-paths já comprados: uma nova
+    consulta só acontece quando falta algum deles ou quando o dado venceu
+    (ECONODATA_CACHE_DAYS). Ver `tiqueue/econodata.py`.
+    """
+
+    cnpj = models.CharField(max_length=14, unique=True, help_text="14 posições, sem máscara (aceita CNPJ alfanumérico).")
+    raiz = models.CharField(max_length=8, db_index=True)
+    encontrado = models.BooleanField(default=True)
+    dados = models.JSONField(default=dict, blank=True)
+    campos = models.JSONField(default=list, blank=True)
+    situacao = models.CharField(max_length=20, blank=True)
+    nivel_atividade = models.CharField(max_length=20, blank=True)
+    cnae_codigo = models.CharField(max_length=20, blank=True, db_index=True)
+    cnae_descricao = models.CharField(max_length=255, blank=True)
+    tipo_unidade = models.CharField(max_length=10, blank=True)
+    enquadramento_porte = models.CharField(max_length=40, blank=True)
+    porte = models.CharField(max_length=20, blank=True)
+    data_abertura = models.DateField(blank=True, null=True)
+    capital_social = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True)
+    faturamento_grupo = models.DecimalField(max_digits=18, decimal_places=2, blank=True, null=True)
+    funcionarios_grupo = models.PositiveIntegerField(blank=True, null=True)
+    qtd_filiais = models.PositiveIntegerField(blank=True, null=True)
+    consultado_em = models.DateTimeField()
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["cnpj"]
+
+    def __str__(self):
+        return f"{self.cnpj} {self.cnae_codigo or ''}".strip()
+
+
+class EconodataConsulta(models.Model):
+    """Auditoria de cada chamada à API da Econodata (inclusive estimativas grátis).
+
+    É a base do teto mensal (ECONODATA_MONTHLY_TOKENS) e o que se confere com o
+    extrato da Econodata: `tokens_cobrados` vem do header X-Tokens-Charged.
+    """
+
+    criado_em = models.DateTimeField(auto_now_add=True)
+    usuario = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, blank=True, null=True, related_name="econodata_consultas")
+    origem = models.CharField(max_length=60, blank=True, help_text="Comando ou tela que disparou a chamada.")
+    endpoint = models.CharField(max_length=80)
+    estimativa = models.BooleanField(default=False)
+    quantidade = models.PositiveIntegerField(default=0, help_text="CNPJs ou contagens pedidos.")
+    encontrados = models.PositiveIntegerField(default=0)
+    tokens_estimados = models.PositiveIntegerField(blank=True, null=True)
+    tokens_cobrados = models.PositiveIntegerField(default=0)
+    status_code = models.PositiveSmallIntegerField(blank=True, null=True)
+    sucesso = models.BooleanField(default=False)
+    erro = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-criado_em", "-id"]
+        indexes = [models.Index(fields=["criado_em"], name="econodata_consulta_data_idx")]
+
+    def __str__(self):
+        kind = "estimativa" if self.estimativa else "consulta"
+        return f"{self.criado_em:%d/%m/%Y %H:%M} {self.endpoint} ({kind}, {self.tokens_cobrados} tokens)"
+
+
+class EconodataContagem(models.Model):
+    """Contagem de mercado (calc_list) guardada por filtro, para medir o potencial de um território."""
+
+    chave = models.CharField(max_length=64, unique=True, help_text="SHA-256 dos filtros normalizados.")
+    filtros = models.JSONField(default=dict)
+    total = models.PositiveIntegerField(default=0)
+    consultado_em = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-consultado_em"]
+
+    def __str__(self):
+        return f"{self.total} empresas ({self.chave[:8]})"
+
+
+class IbgeMalha(models.Model):
+    """Desenho do mapa (GeoJSON) obtido uma vez da API pública de malhas do IBGE.
+
+    `chave` "BR" guarda as 27 UFs; o código IBGE de uma UF ("41") guarda os
+    municípios dela. As coordenadas são arredondadas (~100 m) para a tela abrir leve.
+    """
+
+    chave = models.CharField(max_length=40, unique=True)
+    geojson = models.JSONField(default=dict)
+    origem = models.URLField(max_length=300)
+    obtida_em = models.DateTimeField()
+
+    class Meta:
+        ordering = ["chave"]
+
+    def __str__(self):
+        return f"Malha IBGE {self.chave}"
+
+
+class CustomerSegmentGuess(models.Model):
+    """Ramo de atividade sugerido pela IA para o cliente que está sem ramo no ERP."""
+
+    CONFIDENCE_CHOICES = [("alta", "Alta"), ("media", "Média"), ("baixa", "Baixa")]
+
+    customer_code = models.BigIntegerField(unique=True)
+    customer_name = models.CharField(max_length=240, blank=True)
+    sector_code = models.CharField(max_length=5, blank=True, help_text="Código do ramo (E026RAM); vazio quando a IA respondeu OUTROS.")
+    sector_name = models.CharField(max_length=80)
+    confidence = models.CharField(max_length=5, choices=CONFIDENCE_CHOICES, default="media")
+    reason = models.CharField(max_length=240, blank=True)
+    source = models.CharField(max_length=10, default="ia")
+    ai_model = models.CharField(max_length=80, blank=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, blank=True, null=True, related_name="segment_guesses")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["customer_code"]
+
+    def __str__(self):
+        return f"{self.customer_code}: {self.sector_name} ({self.confidence})"
+
+
+class CustomerIntelInsight(models.Model):
+    """Leitura da IA (OpenAI) do mapa, da carteira ou de um cliente, guardada para não pagar de novo."""
+
+    SCOPE_CHOICES = [
+        ("map", "Mapa de clientes"),
+        ("portfolio", "Carteira de clientes"),
+        ("customer", "Ficha do cliente"),
+        ("management", "Painel gerencial"),
+    ]
+    STATUS_COMPLETED = "completed"
+    STATUS_ERROR = "error"
+    STATUS_CHOICES = [(STATUS_COMPLETED, "Concluída"), (STATUS_ERROR, "Erro")]
+
+    scope = models.CharField(max_length=12, choices=SCOPE_CHOICES)
+    scope_key = models.CharField(max_length=160, help_text="Recorte (período e filtros) ou o código do cliente.")
+    period_key = models.CharField(max_length=12, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_COMPLETED)
+    payload = models.JSONField(default=dict)
+    response = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    ai_model = models.CharField(max_length=80, blank=True)
+    input_tokens = models.PositiveIntegerField(default=0)
+    output_tokens = models.PositiveIntegerField(default=0)
+    total_tokens = models.PositiveIntegerField(default=0)
+    requested_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, blank=True, null=True, related_name="intel_insights")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["scope", "scope_key", "created_at"], name="intel_insight_scope_idx")]
+
+    def __str__(self):
+        return f"{self.get_scope_display()} {self.scope_key} ({self.created_at:%d/%m/%Y %H:%M})"
+
+
+class EconodataProspect(models.Model):
+    """Empresa parecida com os melhores clientes, achada na Econodata (search_list)."""
+
+    STATUS_CHOICES = [("novo", "Novo"), ("em_contato", "Em contato"), ("descartado", "Descartado"), ("cliente", "Virou cliente")]
+
+    cnpj = models.CharField(max_length=14, unique=True)
+    raiz = models.CharField(max_length=8, db_index=True)
+    razao_social = models.CharField(max_length=255)
+    nome_fantasia = models.CharField(max_length=255, blank=True)
+    cidade = models.CharField(max_length=80, blank=True)
+    uf = models.CharField(max_length=2, blank=True, db_index=True)
+    cnae_codigo = models.CharField(max_length=20, blank=True)
+    cnae_descricao = models.CharField(max_length=255, blank=True)
+    enquadramento_porte = models.CharField(max_length=40, blank=True)
+    nivel_atividade = models.CharField(max_length=20, blank=True)
+    segmento_codigo = models.CharField(max_length=5, blank=True, help_text="Ramo do ERP usado na busca.")
+    segmento_nome = models.CharField(max_length=80, blank=True)
+    filtros = models.JSONField(default=dict)
+    ja_cliente = models.BooleanField(default=False)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="novo")
+    dados = models.JSONField(default=dict)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criado_em", "razao_social"]
+
+    def __str__(self):
+        return f"{self.razao_social} ({self.cidade}/{self.uf})"
+
+
+class SalesAgendaContact(models.Model):
+    """Contato registrado pela Agenda Comercial: quem foi procurado, quando e no que deu.
+
+    Fecha o ciclo da agenda: o cliente contatado sai da lista de prioridades por
+    alguns dias e o resultado fica visível para o time.
+    """
+
+    OUTCOME_CHOICES = [
+        ("pedido", "Pedido fechado"),
+        ("orcamento", "Orçamento enviado"),
+        ("retornar", "Retornar depois"),
+        ("nao_atendeu", "Não atendeu"),
+        ("sem_interesse", "Sem interesse agora"),
+        ("visita", "Visita feita"),
+    ]
+
+    customer_code = models.BigIntegerField(db_index=True)
+    customer_name = models.CharField(max_length=240, blank=True)
+    rep_code = models.IntegerField(blank=True, null=True)
+    reason = models.CharField(max_length=40, blank=True, help_text="Por que estava na agenda (compra prevista, atraso, venda cruzada, reativação).")
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES)
+    note = models.CharField(max_length=300, blank=True)
+    user = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, blank=True, null=True, related_name="agenda_contacts")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["customer_code", "created_at"], name="agenda_contact_customer_idx")]
+
+    def __str__(self):
+        return f"{self.customer_code}: {self.get_outcome_display()} ({self.created_at:%d/%m/%Y})"

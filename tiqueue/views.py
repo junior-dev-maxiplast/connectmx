@@ -129,6 +129,13 @@ import json
 import unicodedata
 import hmac
 import threading
+import csv
+import logging
+
+from django.conf import settings
+from django.core.mail import send_mail
+from django.http import HttpResponseForbidden
+from openpyxl import Workbook
 from django.db import transaction, models, IntegrityError
 from django.db.models import Avg, Case, When, IntegerField, Value, Count, Q, F, Prefetch, Sum, DecimalField, Exists, OuterRef
 from django.db.models.functions import Coalesce
@@ -185,12 +192,17 @@ from .compras_bi import (
 from .compras_bi_pdf import build_compras_bi_pdf
 from .decision_center_pdf import build_decision_center_pdf
 from .bi_periods import period_choices
-from .customer_dna import load_customer_dna, prepare_customer_insights, search_customers
+from .customer_dna import load_customer_dna, parse_dna_range, prepare_customer_insights, search_customers
+from . import ai_additional
+from . import page_filters
+from . import commercial_dna
+from . import econodata
 from .models import (
     CustomerInsightSnapshot, ItBiInsightSnapshot, TravelBiInsightSnapshot, RomaneioBiInsightSnapshot,
     ComprasBiInsightSnapshot,
 )
 from .models import Dashboard, DashAlert, DashDecisionAction, DashQuestion
+from .models import RepresentativeGoal
 from .decision_center import (
     capture_action_resolution,
     collect_dashboard_summaries,
@@ -1361,11 +1373,13 @@ def _bi_request_ai_insights(request, snapshot, system_prompt):
     snapshot.ai_requested_at = timezone.now()
     snapshot.save(update_fields=["status", "ai_model", "ai_requested_at", "updated_at"])
 
+    # Campo "Adicional": pergunta a mais, respondida só com os dados do recorte.
+    extra = ai_additional.clean(request.POST.get("adicional"))
     try:
         ai_result = generate_customer_insights(
-            snapshot.ai_payload,
+            ai_additional.extend(snapshot.ai_payload, extra),
             runtime_config=runtime_config,
-            system_prompt=system_prompt,
+            system_prompt=ai_additional.prompt(system_prompt, extra),
         )
     except Exception as exc:
         DashesAiUsage.objects.filter(pk=quota_record.pk, request_count__gt=0).update(
@@ -1381,7 +1395,7 @@ def _bi_request_ai_insights(request, snapshot, system_prompt):
 
     usage = ai_result["usage"]
     snapshot.status = snapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
     snapshot.ai_response_id = ai_result["response_id"]
     snapshot.ai_model = ai_result["model"]
     snapshot.ai_input_tokens = usage["input_tokens"]
@@ -1975,10 +1989,11 @@ def _render_customer_dna(request, url_base, extra_context=None):
 
     view_mode, member_customer_id = _customer_dna_scope_from_request(request)
     period_key = (request.GET.get("periodo") or "all").strip()
+    range_start, range_end, dna_range_error = parse_dna_range(request.GET.get("inicio"), request.GET.get("fim"))
     dashboard = None
     data_error = None
     try:
-        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id, period_key)
+        dashboard = load_customer_dna(customer_id, view_mode, member_customer_id, period_key, range_start, range_end)
         if dashboard and not dashboard["group"]["is_group_view"]:
             view_mode, member_customer_id = "individual", None
         if dashboard is None:
@@ -2000,6 +2015,9 @@ def _render_customer_dna(request, url_base, extra_context=None):
             # URL na mao.
             "dna_period_key": period_key,
             "dna_period_choices": period_choices(),
+            "dna_range_start": range_start.isoformat() if range_start else "",
+            "dna_range_end": range_end.isoformat() if range_end else "",
+            "dna_range_error": dna_range_error,
             "data_error": data_error,
             "insight_snapshot": insight_snapshot,
             "dna_search_url": reverse(f"{url_base}SearchApi"),
@@ -2160,7 +2178,12 @@ def customerDnaRequestAiInsights(request):
     snapshot.save(update_fields=["status", "ai_provider", "ai_model", "ai_requested_at", "updated_at"])
 
     try:
-        ai_result = generate_customer_insights(snapshot.ai_payload, runtime_config=runtime_config)
+        extra = ai_additional.clean(request.POST.get("adicional"))
+        ai_result = generate_customer_insights(
+            ai_additional.extend(snapshot.ai_payload, extra),
+            runtime_config=runtime_config,
+            system_prompt=ai_additional.prompt(None, extra),
+        )
     except Exception as exc:
         # Devolve a cota: o teto existe para controlar consumo de IA, e uma
         # chamada que falhou nao entregou analise nenhuma ao usuario.
@@ -2185,7 +2208,7 @@ def customerDnaRequestAiInsights(request):
 
     usage = ai_result["usage"]
     snapshot.status = CustomerInsightSnapshot.STATUS_COMPLETED
-    snapshot.ai_response = ai_result["response"]
+    snapshot.ai_response = ai_additional.attach(ai_result["response"], extra)
     snapshot.ai_response_id = ai_result["response_id"]
     snapshot.ai_model = ai_result["model"]
     snapshot.ai_input_tokens = usage["input_tokens"]
@@ -3829,7 +3852,7 @@ def _portal_log_event(
     to_attendant=None,
     related_message=None,
 ):
-    return PortalDemandLog.objects.create(
+    log = PortalDemandLog.objects.create(
         demand=demand,
         actor=actor,
         actor_name=(actor_name or (_queue_collaborator_display_name(actor) if actor else None)),
@@ -3840,20 +3863,104 @@ def _portal_log_event(
         to_attendant=to_attendant,
         related_message=related_message,
     )
+    # Quem agiu não recebe aviso da própria ação; o solicitante só é avisado
+    # dos eventos que mudam o andamento para ele.
+    if event_type in PORTAL_REQUESTER_EVENTS and demand.requester_id != getattr(actor, "pk", None):
+        title = PORTAL_REQUESTER_EVENTS[event_type]
+        _portal_notify(demand.requester, demand, title, summary)
+    return log
+
+
+logger = logging.getLogger(__name__)
+
+# Eventos que avisam o solicitante. A conclusão tem aviso próprio (`_portal_notify`
+# em `_complete_portal_demand`), por isso não entra aqui.
+PORTAL_REQUESTER_EVENTS = {
+    PortalDemandLog.EVENT_ASSUMED: "Seu chamado foi assumido",
+    PortalDemandLog.EVENT_TRANSFERRED: "Seu chamado foi transferido",
+    PortalDemandLog.EVENT_WAITING: "Aguardando sua resposta",
+    PortalDemandLog.EVENT_RESUMED: "Seu chamado voltou ao atendimento",
+    PortalDemandLog.EVENT_REOPENED: "Seu chamado foi reaberto",
+    PortalDemandLog.EVENT_CANCELLED: "Seu chamado foi cancelado",
+}
+
+
+_PORTAL_DUPLICATE_WINDOW = timedelta(days=30)
+
+
+def _portal_flag_possible_duplicates(tickets):
+    """Marca, na fila, chamado aberto que parece repetir outro chamado aberto de
+    qualquer solicitante nos últimos 30 dias. Título igual, ou dois termos em
+    comum, já basta para o atendente olhar: é um sinal, não um veredito."""
+    tickets = list(tickets or [])
+    if not tickets:
+        return
+    since = timezone.now() - _PORTAL_DUPLICATE_WINDOW
+    open_demands = list(PortalDemand.objects.filter(status__in=PortalDemand.OPEN_STATUSES, created_at__gte=since))
+    tokens_by_id = {demand.id: set(_portal_similarity_tokens(demand.title)) for demand in open_demands}
+    for ticket in tickets:
+        ticket.possible_duplicate_protocol = ""
+        if ticket.status not in PortalDemand.OPEN_STATUSES:
+            continue
+        mine = tokens_by_id.get(ticket.id) or set(_portal_similarity_tokens(ticket.title))
+        title_key = (ticket.title or "").strip().lower()
+        for other in open_demands:
+            if other.id == ticket.id:
+                continue
+            same_title = (other.title or "").strip().lower() == title_key
+            if same_title or len(mine & tokens_by_id[other.id]) >= 2:
+                ticket.possible_duplicate_protocol = other.protocol
+                break
+
+
+def _portal_demand_link(demand):
+    base = getattr(settings, "CONNECTMX_PUBLIC_URL", "")
+    return f"{base}{demand.get_absolute_url()}" if demand else base
+
+
+def _portal_send_email(recipient, demand, title, message=""):
+    """E-mail do aviso. Falha de SMTP não pode derrubar a ação do usuário: o
+    aviso continua no sino e o erro vai para o log."""
+    if not getattr(settings, "PORTAL_EMAIL_NOTIFICATIONS", False) or not getattr(recipient, "email", ""):
+        return False
+    subject = f"[ConnectMX] {title}" + (f" · {demand.protocol}" if demand else "")
+    body = "\n\n".join(part for part in [message, f"Acompanhe: {_portal_demand_link(demand)}" if demand else ""] if part)
+    try:
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [recipient.email], fail_silently=False)
+        return True
+    except Exception:
+        logger.exception("Falha ao enviar aviso de chamado do portal por e-mail")
+        return False
 
 
 def _portal_notify(recipient, demand, title, message=""):
-    """Aviso pessoal no sino do portal. `demand` pode ser None (aviso geral do
-    TI, fase futura) — por isso fica separado de `_portal_log_event`, que é
-    sempre preso a uma demanda."""
+    """Aviso pessoal no sino do portal e, se o destinatário tem e-mail, por
+    e-mail. `demand` pode ser None (aviso geral do TI, fase futura) — por isso
+    fica separado de `_portal_log_event`, que é sempre preso a uma demanda."""
     if not recipient:
         return None
-    return PortalNotification.objects.create(
+    notification = PortalNotification.objects.create(
         recipient=recipient,
         demand=demand,
         title=(title or "").strip()[:180],
         message=(message or "").strip()[:255] or None,
     )
+    _portal_send_email(recipient, demand, title, message)
+    return notification
+
+
+def _portal_notify_reply(demand, message, actor):
+    """Resposta nova no chamado: o atendente avisa o solicitante; o solicitante
+    avisa o atendente responsável. Nota interna não sai do time."""
+    if message.is_internal:
+        return None
+    if message.author_role == PortalDemandMessage.ROLE_ATTENDANT:
+        if demand.requester_id == getattr(actor, "pk", None):
+            return None
+        return _portal_notify(demand.requester, demand, "Nova resposta da equipe de TI", message.message or "")
+    if demand.assigned_to_id and demand.assigned_to_id != getattr(actor, "pk", None):
+        return _portal_notify(demand.assigned_to, demand, "Nova resposta do solicitante", message.message or "")
+    return None
 
 
 def _portal_next_queue_position(owner_user):
@@ -5521,7 +5628,9 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             # Reabrir é a única ação de ciclo de vida que o solicitante também
             # controla: é ele quem sabe se o problema voltou.
             is_requester = getattr(demand, "requester_id", None) == getattr(request.user, "id", None)
-            allowed = _portal_can_attend(request.user) or (workflow_action == "reopen" and is_requester)
+            allowed = _portal_can_attend(request.user) or (
+                workflow_action in {"reopen", "requester_cancel"} and is_requester
+            )
             if not allowed:
                 workflow_error_message = "Somente atendentes podem alterar o ciclo de vida da demanda."
             else:
@@ -5540,6 +5649,19 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                         changed, workflow_error_message = _cancel_portal_demand(locked_demand, request.user)
                         if changed:
                             return redirect(f"{locked_demand.get_absolute_url()}?workflow=cancelled#conversation")
+                    elif workflow_action == "requester_cancel":
+                        if locked_demand.status != PortalDemand.STATUS_PENDING:
+                            workflow_error_message = "Só é possível cancelar enquanto nenhum atendente tiver assumido o chamado."
+                        else:
+                            reason = (request.POST.get("cancel_reason") or "").strip()
+                            if len(reason) < 5:
+                                workflow_error_message = "Informe o motivo do cancelamento (mínimo de 5 caracteres)."
+                            else:
+                                changed, workflow_error_message = _cancel_portal_demand(
+                                    locked_demand, request.user, reason=reason
+                                )
+                                if changed:
+                                    return redirect(f"{locked_demand.get_absolute_url()}?workflow=cancelled#conversation")
                     elif workflow_action == "wait":
                         changed, workflow_error_message = _wait_portal_demand(locked_demand, request.user)
                         if changed:
@@ -5601,6 +5723,7 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                                 and locked_demand.status == PortalDemand.STATUS_WAITING
                             ):
                                 _resume_portal_demand(locked_demand, request.user, by_requester=True)
+                            _portal_notify_reply(locked_demand, message, request.user)
                             _create_portal_attachments(
                                 locked_demand,
                                 request.FILES.getlist("attachments"),
@@ -5653,6 +5776,9 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             "can_transfer_here": _portal_can_attend(request.user) and demand.status not in set(PortalDemand.CLOSED_STATUSES),
             "can_manage_workflow": _portal_can_attend(request.user) and demand.status in set(PortalDemand.OPEN_STATUSES),
             "can_wait_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_ASSUMED,
+            "can_cancel_by_requester": (
+                demand.requester_id == request.user.pk and demand.status == PortalDemand.STATUS_PENDING
+            ),
             "can_resume_here": _portal_can_attend(request.user) and demand.status == PortalDemand.STATUS_WAITING,
             "can_reopen_here": (
                 demand.status == PortalDemand.STATUS_COMPLETED
@@ -6327,6 +6453,7 @@ def portalPendingDemandsPage(request):
         _sync_portal_critical_notifications()
         context.update(_portal_ticket_list_context(request))
         context["header_stats"] = _portal_ticket_header_stats()
+        _portal_flag_possible_duplicates(context.get("tickets"))
     else:
         context.update(
             {
@@ -6347,6 +6474,100 @@ def portalPendingDemandsPage(request):
     context["assumed_flag"] = request.GET.get("assumed") == "1"
     context["bulk_assumed_flag"] = request.GET.get("bulk_assumed") == "1"
     return render(request, "tiqueue/portal_pending_demands.html", context)
+
+
+_PORTAL_EXPORT_COLUMNS = [
+    "Protocolo", "Título", "Solicitante", "Empresa", "Status", "Prioridade",
+    "Responsável", "Aberto em", "Assumido em", "Concluído em", "Tipo", "Grupo",
+]
+
+
+def _portal_export_queryset(request):
+    """Recorte da exportação: status (abertos, concluídos, cancelados ou todos) e
+    datas de abertura, inclusivas. Devolve (queryset, erro)."""
+    queryset = PortalDemand.objects.select_related(
+        "requester", "assigned_to", "company", "task_group", "task_type"
+    )
+    status_key = (request.GET.get("status") or "abertos").strip()
+    if status_key == "abertos":
+        queryset = queryset.filter(status__in=PortalDemand.OPEN_STATUSES)
+    elif status_key == "concluidos":
+        queryset = queryset.filter(status=PortalDemand.STATUS_COMPLETED)
+    elif status_key == "cancelados":
+        queryset = queryset.filter(status=PortalDemand.STATUS_CANCELLED)
+    try:
+        start_raw = (request.GET.get("inicio") or "").strip()
+        end_raw = (request.GET.get("fim") or "").strip()
+        if start_raw:
+            queryset = queryset.filter(created_at__date__gte=date.fromisoformat(start_raw))
+        if end_raw:
+            queryset = queryset.filter(created_at__date__lte=date.fromisoformat(end_raw))
+    except ValueError:
+        return None, "Datas inválidas. Use o formato AAAA-MM-DD."
+    return queryset.order_by("created_at", "id"), None
+
+
+def _portal_export_rows(queryset):
+    priority_map = userQueue.default_field_option_map(userQueue.FIELD_PRIORITY)
+
+    def when(value):
+        return timezone.localtime(value).strftime("%d/%m/%Y %H:%M") if value else ""
+
+    rows = []
+    for demand in queryset:
+        rows.append([
+            demand.protocol,
+            demand.title,
+            _queue_collaborator_display_name(demand.requester) if demand.requester_id else "",
+            getattr(demand.company, "name", "") if demand.company_id else "",
+            _portal_status_meta(demand.status)["label"],
+            priority_map.get(demand.priority_level or "", {}).get("label", demand.priority_level or ""),
+            _queue_collaborator_display_name(demand.assigned_to) if demand.assigned_to_id else "",
+            when(demand.created_at),
+            when(demand.assumed_at),
+            when(demand.completed_at),
+            getattr(demand.task_type, "name", "") if demand.task_type_id else "",
+            getattr(demand.task_group, "name", "") if demand.task_group_id else "",
+        ])
+    return rows
+
+
+@login_required
+@require_GET
+def portalDemandsExport(request):
+    """Exporta a fila do portal em CSV (separador ;, abre certo no Excel) ou XLSX.
+    Só atendentes exportam: é a mesma visão da Entrada de Chamados."""
+    if not _portal_can_attend(request.user):
+        return HttpResponseForbidden("Somente atendentes podem exportar chamados.")
+    queryset, error = _portal_export_queryset(request)
+    if error:
+        return HttpResponse(error, status=400, content_type="text/plain; charset=utf-8")
+    rows = _portal_export_rows(queryset)
+    stamp = timezone.localtime().strftime("%Y%m%d-%H%M")
+
+    if (request.GET.get("formato") or "csv").strip().lower() == "xlsx":
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Chamados"
+        sheet.append(_PORTAL_EXPORT_COLUMNS)
+        for row in rows:
+            sheet.append(row)
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="chamados-{stamp}.xlsx"'
+        return response
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="chamados-{stamp}.csv"'
+    response.write("﻿")  # BOM: o Excel reconhece os acentos
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(_PORTAL_EXPORT_COLUMNS)
+    writer.writerows(rows)
+    return response
 
 
 @login_required
@@ -6802,7 +7023,7 @@ def _complete_portal_demand(demand, actor_user):
     return True, None
 
 
-def _cancel_portal_demand(demand, actor_user):
+def _cancel_portal_demand(demand, actor_user, reason=None):
     if demand.status in set(PortalDemand.CLOSED_STATUSES):
         return False, "Somente demandas ativas podem ser canceladas."
 
@@ -6819,7 +7040,10 @@ def _cancel_portal_demand(demand, actor_user):
         demand,
         PortalDemandLog.EVENT_CANCELLED,
         actor=actor_user,
-        summary=f"Demanda cancelada por {_queue_collaborator_display_name(actor_user)}.",
+        summary=(
+            f"Demanda cancelada por {_queue_collaborator_display_name(actor_user)}."
+            + (f" Motivo: {reason}" if reason else "")
+        ),
         to_attendant=demand.assigned_to if demand.assigned_to_id else None,
     )
     _sync_portal_critical_notifications()
@@ -12830,3 +13054,208 @@ def dataModelerGenerateOracleSql(request):
         lines.append("-- Nenhuma tabela/campo encontrado para gerar SQL.")
 
     return JsonResponse({"status": "ok", "sql": "\n".join(lines)})
+
+
+# ---------------------------------------------------------------------------
+# DNA comercial v2 (padrão visual MaxiSys): DNA do Cliente e DNA de Representantes.
+# Cálculos em `commercial_dna.py`, portados dos PBIX de Vendas e Orçamento 2026.
+# ---------------------------------------------------------------------------
+
+def _maxisys_shell(request, active, title):
+    menu = list(allowed_dashboards(request.user))
+    slugs = {dash.slug for dash in menu}
+    user = request.user
+    display_name = user.get_full_name() or user.username
+    return {
+        "dashes_menu": menu,
+        "shell_active": active,
+        "shell_title": title,
+        "shell_user_name": display_name,
+        "shell_user_initial": (user.first_name or user.username or "?")[:1].upper(),
+        # A versão nova e a anterior do DNA do Cliente dividem a mesma
+        # permissão (`customer-dna`): a anterior segue no ar pela IA e o PDF.
+        "shell_can_customer_dna": "customer-dna" in slugs,
+        "shell_can_rep_dna": "representative-dna" in slugs,
+        "shell_can_legacy_dna": "customer-dna" in slugs,
+        "shell_can_map": "customer-map" in slugs,
+        "shell_can_portfolio": "customer-portfolio" in slugs,
+        "shell_can_management": "management-cockpit" in slugs,
+        "shell_can_agenda": "sales-agenda" in slugs,
+        "shell_can_sales_panel": "sales-panel" in slugs,
+        "shell_can_receivables_panel": "receivables-panel" in slugs,
+        "shell_can_service_panel": "service-panel" in slugs,
+        "shell_can_quality_panel": "quality-panel" in slugs,
+        "shell_customer_dna_url": reverse("dashesCustomerDnaV2Page"),
+        "shell_rep_dna_url": reverse("dashesRepresentativeDnaPage"),
+        "shell_legacy_dna_url": reverse("dashesCustomerDnaPage"),
+        "shell_map_url": reverse("dashesCustomerMapPage"),
+        "shell_portfolio_url": reverse("dashesCustomerPortfolioPage"),
+        "shell_management_url": reverse("dashesManagementPage"),
+        "shell_agenda_url": reverse("dashesSalesAgendaPage"),
+        "shell_sales_panel_url": reverse("dashesSalesPanel"),
+        "shell_receivables_panel_url": reverse("dashesReceivablesPanel"),
+        "shell_service_panel_url": reverse("dashesServicePanel"),
+        "shell_quality_panel_url": reverse("dashesQualityPanel"),
+    }
+
+
+def _commercial_period_from_request(request):
+    period_key = (request.GET.get("periodo") or commercial_dna.DEFAULT_PERIOD).strip()
+    range_start, range_end, range_error = parse_dna_range(request.GET.get("inicio"), request.GET.get("fim"))
+    return period_key, range_start, range_end, range_error
+
+
+@_dashes_access_required("customer-dna")
+def dashesCustomerDnaV2Page(request):
+    raw_customer_id = (request.GET.get("cliente") or "10832").strip()
+    customer_id = int(raw_customer_id) if raw_customer_id.isdigit() else 10832
+    view_mode, member_customer_id = _customer_dna_scope_from_request(request)
+    period_key, range_start, range_end, range_error = _commercial_period_from_request(request)
+
+    dashboard = None
+    data_error = None
+    try:
+        dashboard = commercial_dna.load_customer_dna_v2(
+            customer_id, view_mode, member_customer_id, period_key, range_start, range_end,
+            groups=page_filters.values(request.GET, "grupo"),
+        )
+        if dashboard is None:
+            data_error = f"Nenhum faturamento elegível foi encontrado para o cliente {customer_id}."
+        elif not dashboard["group"]["is_group_view"]:
+            view_mode, member_customer_id = "individual", None
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
+
+    return render(
+        request,
+        "tiqueue/maxisys/customer_dna_v2.html",
+        {
+            **_maxisys_shell(request, "customer-dna", "DNA do Cliente"),
+            "filter_chips": page_filters.chips(request.path, request.GET, [("grupo", "Grupo de produto", [group.title() for group in page_filters.values(request.GET, "grupo")])]),
+            "clear_filters_url": page_filters.url_without(request.path, request.GET, "grupo"),
+            "dashboard": dashboard,
+            "customer_id": customer_id,
+            "data_error": data_error,
+            "dna_view_mode": view_mode,
+            "dna_member_customer_id": member_customer_id,
+            "dna_period_key": period_key,
+            "dna_period_choices": commercial_dna.PERIOD_CHOICES,
+            "dna_range_start": range_start.isoformat() if range_start else "",
+            "dna_range_end": range_end.isoformat() if range_end else "",
+            "dna_range_error": range_error,
+            "dna_search_url": reverse("dashesCustomerDnaSearchApi"),
+            "dna_page_url": reverse("dashesCustomerDnaV2Page"),
+            # Consultar a Econodata gasta tokens: só administradores veem o botão.
+            "econodata_can_enrich": _is_system_admin(request.user),
+            "econodata_enrich_url": reverse("dashesCustomerDnaEconodata"),
+            "econodata_tokens_left": (
+                commercial_dna.int_display(econodata.tokens_left_this_month()) if _is_system_admin(request.user) else None
+            ),
+        },
+    )
+
+
+@_dashes_access_required("customer-dna")
+def dashesCustomerDnaEconodata(request):
+    """Compra os dados da Econodata do cliente que está na tela (só administradores).
+
+    Só consulta o que falta no cache e respeita o teto mensal de tokens. Abrir o
+    DNA nunca chama a API; só este botão, que pede confirmação.
+    """
+    back = request.POST.get("next") or reverse("dashesCustomerDnaV2Page")
+    if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        back = reverse("dashesCustomerDnaV2Page")
+    if request.method != "POST":
+        return redirect(back)
+    if not _is_system_admin(request.user):
+        messages.error(request, "Só administradores podem consultar a Econodata, porque a consulta gasta tokens.")
+        return redirect(back)
+
+    profile = request.POST.get("perfil") or "basico"
+    raw_customer_id = (request.POST.get("cliente") or "").strip()
+    if profile not in econodata.PROFILES or not raw_customer_id.isdigit():
+        messages.error(request, "Consulta à Econodata inválida: escolha o cliente e o tipo de dado de novo.")
+        return redirect(back)
+
+    view_mode, member_customer_id = _customer_dna_scope_from_source(request.POST)
+    try:
+        cnpjs = commercial_dna.resolve_customer_cnpjs(int(raw_customer_id), view_mode, member_customer_id)
+    except Exception as exc:
+        messages.error(request, f"Não foi possível consultar o ERP Senior: {exc}")
+        return redirect(back)
+    if profile == "estrategico":
+        cnpjs = cnpjs[:1]  # faturamento e funcionários são do grupo: basta o CNPJ principal
+    if not cnpjs:
+        messages.error(request, "Este cliente não tem CNPJ no ERP para consultar na Econodata.")
+        return redirect(back)
+    try:
+        result = econodata.enrich(cnpjs, profile, confirm=True, user=request.user, origem="dna-cliente")
+    except econodata.EconodataError as exc:
+        messages.error(request, f"Econodata: {exc}")
+        return redirect(back)
+
+    label = econodata.PROFILES[profile]["label"]
+    if result["to_fetch"] == 0 and not result["invalid"]:
+        messages.info(request, f"Econodata ({label}): os dados já estavam guardados. Nada foi cobrado.")
+    elif result["to_fetch"] == 0:
+        messages.error(request, f"Econodata: nenhum CNPJ válido para consultar ({result['invalid']} com dígito verificador errado no ERP).")
+    else:
+        text = (
+            f"Econodata ({label}): {result['found']} empresa(s) encontrada(s), "
+            f"{result['not_found']} não encontrada(s), {result['charged_tokens']} tokens cobrados."
+        )
+        if result["invalid"]:
+            text += f" {result['invalid']} CNPJ(s) com dígito errado no ERP ficaram de fora."
+        messages.success(request, text)
+    return redirect(back)
+
+
+@_dashes_access_required("representative-dna")
+def dashesRepresentativeDnaPage(request):
+    period_key, range_start, range_end, range_error = _commercial_period_from_request(request)
+    window = commercial_dna.resolve_window(period_key, range_start, range_end)
+    raw_rep = (request.GET.get("representante") or "").strip()
+
+    dashboard = None
+    data_error = None
+    choices = []
+    rep_code = int(raw_rep) if raw_rep.isdigit() else None
+    try:
+        ranking = commercial_dna.company_ranking(window)
+        choices = commercial_dna.representative_choices(ranking)
+        if rep_code is None and choices:
+            rep_code = choices[0]["code"]
+        if rep_code is not None:
+            primary = commercial_dna.primary_rep(rep_code)
+            goals = list(RepresentativeGoal.objects.filter(rep_code=primary, year=date.today().year))
+            dashboard = commercial_dna.load_representative_dna(
+                primary, period_key, range_start, range_end, goals=goals,
+                groups=page_filters.values(request.GET, "grupo"),
+            )
+            if dashboard is None:
+                data_error = f"Nenhuma venda, carteira ou meta encontrada para o representante {rep_code}."
+        else:
+            data_error = "Nenhum representante com faturamento no período."
+    except Exception as exc:
+        data_error = f"Não foi possível consultar o ERP Senior: {exc}"
+
+    return render(
+        request,
+        "tiqueue/maxisys/representative_dna.html",
+        {
+            **_maxisys_shell(request, "representative-dna", "DNA de Representantes"),
+            "filter_chips": page_filters.chips(request.path, request.GET, [("grupo", "Grupo de produto", [group.title() for group in page_filters.values(request.GET, "grupo")])]),
+            "clear_filters_url": page_filters.url_without(request.path, request.GET, "grupo"),
+            "dashboard": dashboard,
+            "rep_code": commercial_dna.primary_rep(rep_code) if rep_code is not None else None,
+            "rep_choices": choices,
+            "data_error": data_error,
+            "dna_period_key": window["key"],
+            "dna_period_choices": commercial_dna.PERIOD_CHOICES,
+            "dna_range_start": range_start.isoformat() if range_start else "",
+            "dna_range_end": range_end.isoformat() if range_end else "",
+            "dna_range_error": range_error,
+            "dna_page_url": reverse("dashesRepresentativeDnaPage"),
+            "customer_page_url": reverse("dashesCustomerDnaV2Page"),
+        },
+    )

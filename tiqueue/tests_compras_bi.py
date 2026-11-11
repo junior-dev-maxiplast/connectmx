@@ -279,6 +279,34 @@ class ComprasBiPageTests(TestCase):
         self.assertEqual(response.json()["code"], "ai_daily_limit")
         ai_call.assert_not_called()
 
+    def test_ai_additional_question_goes_to_the_ai_and_is_saved(self):
+        self.sign_in()
+        schema = {"name": "x", "strict": True, "schema": {"type": "object", "additionalProperties": False,
+                                                          "required": ["executive_summary"], "properties": {"executive_summary": {"type": "string"}}}}
+        snapshot = ComprasBiInsightSnapshot.objects.create(
+            view_key="pagamento", period_key="12", fornecedor_key="all", filial_key="all", familia_key="all",
+            source_fingerprint="fp", ai_payload={"dados": {"x": 1}, "response_format": {"json_schema": schema}},
+        )
+        ai_answer = {"response": {"executive_summary": "Ok.", "resposta_adicional": "O fornecedor A."}, "response_id": "r1",
+                     "model": "gpt-teste", "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
+        config = {"enabled": True, "api_key_configured": True, "api_key": "teste", "model": "gpt-teste"}
+        with patch("tiqueue.views.get_openai_runtime_config", return_value=config), \
+                patch("tiqueue.views.generate_customer_insights", return_value=ai_answer) as ai_call:
+            response = self.client.post(reverse("comprasBiRequestAiInsights"),
+                                        {"periodo": "12", "aba": "pagamento", "fornecedor": "all",
+                                         "filial": "all", "familia": "all", "adicional": "Qual fornecedor atrasa mais?"})
+
+        self.assertEqual(response.status_code, 200)
+        sent = ai_call.call_args.args[0]
+        self.assertEqual(sent["instrucao_adicional"], "Qual fornecedor atrasa mais?")
+        self.assertIn("resposta_adicional", sent["response_format"]["json_schema"]["schema"]["required"])
+        self.assertIn("Instrução adicional", ai_call.call_args.kwargs["system_prompt"])
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.ai_response["pergunta_adicional"], "Qual fornecedor atrasa mais?")
+        self.assertEqual(snapshot.ai_response["resposta_adicional"], "O fornecedor A.")
+        # O payload preparado continua o mesmo para a próxima análise.
+        self.assertNotIn("instrucao_adicional", snapshot.ai_payload)
+
     def test_pdf_is_refused_before_the_indicators_exist(self):
         self.sign_in()
 

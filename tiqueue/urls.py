@@ -1,9 +1,10 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import views
+from . import intel_views, management_views, panel_views, views
 
 urlpatterns = [
+    path('portal/chamados/exportar/', views.portalDemandsExport, name='portalDemandsExport'),
 
     path('', views.index, name='index'),
     path('dashes/', views.dashesHomePage, name='dashesHome'),
@@ -16,6 +17,31 @@ urlpatterns = [
     path('dashes/entrar/', views.dashesLoginPage, name='dashesLoginPage'),
     path('dashes/sair/', views.dashesLogoutPage, name='dashesLogoutPage'),
     path('dashes/dna-cliente/', views.dashesCustomerDnaPage, name='dashesCustomerDnaPage'),
+    path('dashes/dna-cliente/v2/', views.dashesCustomerDnaV2Page, name='dashesCustomerDnaV2Page'),
+    path('dashes/dna-cliente/v2/econodata/', views.dashesCustomerDnaEconodata, name='dashesCustomerDnaEconodata'),
+    path('dashes/dna-representante/', views.dashesRepresentativeDnaPage, name='dashesRepresentativeDnaPage'),
+    # Inteligência de clientes: mapa, carteira e ficha (tiqueue/intel_views.py).
+    path('dashes/mapa-clientes/', intel_views.dashesCustomerMapPage, name='dashesCustomerMapPage'),
+    path('dashes/mapa-clientes/malha/<str:key>.json', intel_views.dashesCustomerMapGeo, name='dashesCustomerMapGeo'),
+    path('dashes/mapa-clientes/ia/', intel_views.dashesCustomerMapInsight, name='dashesCustomerMapInsight'),
+    path('dashes/mapa-clientes/econodata/', intel_views.dashesCustomerMapEconodata, name='dashesCustomerMapEconodata'),
+    path('dashes/carteira/', intel_views.dashesCustomerPortfolioPage, name='dashesCustomerPortfolioPage'),
+    path('dashes/carteira/ia/', intel_views.dashesCustomerPortfolioInsight, name='dashesCustomerPortfolioInsight'),
+    path('dashes/carteira/segmentos/', intel_views.dashesCustomerSegmentsClassify, name='dashesCustomerSegmentsClassify'),
+    path('dashes/carteira/reativacao/', intel_views.dashesCustomerReactivationCheck, name='dashesCustomerReactivationCheck'),
+    path('dashes/carteira/atualizar/', intel_views.dashesCustomerIntelRefresh, name='dashesCustomerIntelRefresh'),
+    path('dashes/cliente/<int:customer_code>/', intel_views.dashesCustomerProfilePage, name='dashesCustomerProfilePage'),
+    path('dashes/cliente/<int:customer_code>/ia/', intel_views.dashesCustomerProfileInsight, name='dashesCustomerProfileInsight'),
+    # Painel Gerencial e Agenda Comercial (tiqueue/management_views.py).
+    path('dashes/gerencial/', management_views.dashesManagementPage, name='dashesManagementPage'),
+    path('dashes/gerencial/ia/', management_views.dashesManagementInsight, name='dashesManagementInsight'),
+    path('dashes/agenda/', management_views.dashesSalesAgendaPage, name='dashesSalesAgendaPage'),
+    path('dashes/agenda/contato/', management_views.dashesSalesAgendaContact, name='dashesSalesAgendaContact'),
+    # Painéis-padrão animados (tiqueue/panel_views.py).
+    path('dashes/vendas/', panel_views.dashesSalesPanel, name='dashesSalesPanel'),
+    path('dashes/financeiro/', panel_views.dashesReceivablesPanel, name='dashesReceivablesPanel'),
+    path('dashes/entregas/', panel_views.dashesServicePanel, name='dashesServicePanel'),
+    path('dashes/qualidade/', panel_views.dashesQualityPanel, name='dashesQualityPanel'),
     path('dashes/bi-ti/', views.dashesItBiPage, name='dashesItBiPage'),
     path('dashes/bi-ti/insights/preparar/', views.itBiPrepareInsights, name='itBiPrepareInsights'),
     path('dashes/bi-ti/insights/solicitar-ia/', views.itBiRequestAiInsights, name='itBiRequestAiInsights'),

@@ -1,0 +1,382 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Painel Gerencial</h2>
+        <p>O resultado da empresa em meses fechados: o que mudou, por quê e o que vem pela frente · ERP Senior{% if loaded_at %} · dados das {{ loaded_at|date:"H:i" }}{% endif %}</p>
+    </div>
+    {% if is_admin and not data_error %}
+    <form method="post" action="{{ refresh_url }}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="mx-btn mx-btn-ghost" title="Os números ficam guardados por 30 minutos"><svg class="mx-ico"><use href="#mx-i-refresh"/></svg>Reler o ERP</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div class="mx-toolbar">
+    <div class="mx-toolbar-group" role="group" aria-label="Período">
+        <span class="mx-toolbar-label">Período</span>
+        {% for choice in period_links %}<a class="mx-chip{% if choice.active %} is-active{% endif %}" href="{{ choice.url }}">{{ choice.label }}</a>{% endfor %}
+    </div>
+    <span class="mx-hint">{{ window.range_label }} contra {{ window.previous_range_label }}</span>
+</div>
+<div id="mxMonths"></div>
+{% include "tiqueue/maxisys/_filter_chips.html" %}
+<p class="mx-filter-hint">Clique num grupo, num representante ou num mês (nos botões e no mapa de calor) para filtrar a página inteira; Ctrl + clique soma à seleção e a página abre ao soltar o Ctrl.</p>
+{{ month_picker|json_script:"mxMonthPicker" }}
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Indicadores<small>{{ window.label }} · variação contra o mesmo período do ano anterior</small></h3>
+    <div class="mx-grid mx-grid-kpi">
+        {% for kpi in kpis %}
+        <article class="mx-card">
+            <div class="mx-kpi-label">{{ kpi.label }}</div>
+            <div class="mx-kpi-value">{{ kpi.value }}</div>
+            <div class="mx-kpi-foot"><span class="mx-delta {{ kpi.delta.tone }}">{{ kpi.delta.display }}</span><span>{{ kpi.foot }}</span></div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-chart"/></svg>Ponte do faturamento<small>{{ revenue_change }} ({{ revenue_change_pct }}): de onde veio a diferença</small></h3>
+    <article class="mx-card">
+        <div class="mx-chart mx-chart-tall" id="mxRevenueBridge" role="img" aria-label="Ponte do faturamento entre os dois períodos"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-3)"></i>Total do período</span><span><i style="background: var(--mx-div-pos-2)"></i>Aumentou</span><span><i style="background: var(--mx-div-neg-2)"></i>Diminuiu</span></div>
+        <details class="mx-notes">
+            <summary>Ver os números da ponte</summary>
+            <div class="mx-table-wrap"><table class="mx-table mx-table-compact">
+                <thead><tr><th scope="col">Efeito</th><th scope="col">O que é</th><th scope="col" class="is-num">Valor</th><th scope="col" class="is-num">Peso na variação</th></tr></thead>
+                <tbody>{% for row in revenue_rows %}<tr><td class="is-strong">{{ row.label }}</td><td>{{ row.detail }}</td><td class="is-num"><span class="mx-delta {{ row.tone }}">{{ row.value_display }}</span></td><td class="is-num">{{ row.share_display }}</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </details>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Ponte do lucro bruto<small>{{ profit_change }} ({{ profit_change_pct }}): preço, custo, volume, mix e clientes</small></h3>
+    <article class="mx-card">
+        <div class="mx-chart mx-chart-tall" id="mxProfitBridge" role="img" aria-label="Ponte do lucro bruto entre os dois períodos"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-3)"></i>Lucro bruto do período</span><span><i style="background: var(--mx-div-pos-2)"></i>Aumentou o lucro</span><span><i style="background: var(--mx-div-neg-2)"></i>Reduziu o lucro</span></div>
+        <details class="mx-notes">
+            <summary>Ver os números da ponte</summary>
+            <div class="mx-table-wrap"><table class="mx-table mx-table-compact">
+                <thead><tr><th scope="col">Efeito</th><th scope="col">O que é</th><th scope="col" class="is-num">Valor</th><th scope="col" class="is-num">Peso na variação</th></tr></thead>
+                <tbody>{% for row in profit_rows %}<tr><td class="is-strong">{{ row.label }}</td><td>{{ row.detail }}</td><td class="is-num"><span class="mx-delta {{ row.tone }}">{{ row.value_display }}</span></td><td class="is-num">{{ row.share_display }}</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </details>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Retenção de receita<small>Quanto da receita do ano anterior continua, cresce ou foi perdida</small></h3>
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card">
+            <div class="mx-retention-stats">
+                <div class="mx-fact"><span>NRR</span><strong>{{ retention_display.nrr }}</strong><small>receita de hoje dos clientes antigos</small></div>
+                <div class="mx-fact"><span>GRR</span><strong>{{ retention_display.grr }}</strong><small>sem contar quem comprou mais</small></div>
+                <div class="mx-fact"><span>Clientes mantidos</span><strong>{{ retention_display.logo }}</strong><small>{{ retention.retained }} de {{ retention.retained|add:retention.lost }}</small></div>
+            </div>
+            <div class="mx-chart" id="mxRetentionChart" role="img" aria-label="Fluxo de receita por cliente"></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Quem mexeu na receita</p><p class="mx-card-sub">Clique para abrir a ficha do cliente</p></div></div>
+            <div class="mx-flow-lists">
+                <div><h4>Perdidos (ano anterior)</h4><ul class="mx-list">{% for row in flows.lost %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div><h4>Novos</h4><ul class="mx-list">{% for row in flows.new %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div><h4>Compraram mais</h4><ul class="mx-list">{% for row in flows.expansion %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div><h4>Compraram menos</h4><ul class="mx-list">{% for row in flows.contraction %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Matriz de rentabilidade<small>Cada bolha é um cliente: faturamento × margem, tamanho = lucro bruto</small></h3>
+    <div class="mx-grid mx-grid-map">
+        <article class="mx-card">
+            <div class="mx-chart" id="mxMatrixChart" role="img" aria-label="Clientes por faturamento e margem"></div>
+            <p class="mx-hint">Linhas de referência: faturamento mediano ({{ matrix.net_reference }}) e margem da empresa ({{ matrix.margin_reference }}). Escala de faturamento logarítmica; margens fora de −30% a 80% ficam na borda, tracejadas.{% if matrix.total_points > 400 %} Mostrando os 400 maiores de {{ matrix.total_points }}.{% endif %}</p>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Quadrantes</p><p class="mx-card-sub">Clientes, faturamento e parte do lucro de cada grupo</p></div></div>
+            <div class="mx-quadrants">
+                {% for row in matrix.quadrants %}
+                <div class="mx-quadrant">
+                    <strong>{{ row.label }}</strong>
+                    <span><b>{{ row.count }}</b> cliente{{ row.count|pluralize }} · {{ row.net_display }}</span>
+                    <span>lucro {{ row.profit_display }} · <b>{{ row.profit_share_display }}</b> do lucro</span>
+                    <span>{{ row.description }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-box"/></svg>Produtos<small>Rentabilidade por grupo e a margem mês a mês</small></h3>
+    <article class="mx-card">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Rentabilidade por grupo de produto</p><p class="mx-card-sub">Pelo lucro bruto · a barra mostra quanto cada grupo mudou o lucro contra o ano anterior</p></div></div>
+        <div class="mx-table-wrap">
+            <table class="mx-table mx-table-compact">
+                <thead><tr><th scope="col">Grupo</th><th scope="col" class="is-num">Faturamento</th><th scope="col" class="is-num">Cresc.</th><th scope="col" class="is-num">Lucro bruto</th><th scope="col" class="is-num">Margem</th><th scope="col" class="is-num">Preço/kg</th><th scope="col" class="is-num">Custo/kg</th><th scope="col" class="is-num">Variação do lucro</th><th scope="col"><span class="mx-sr-only">Gráfico da variação</span></th></tr></thead>
+                <tbody>
+                    {% for row in groups %}
+                    <tr>
+                        <td class="is-strong"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ row.key }}">{{ row.group }}</button></td>
+                        <td class="is-num">{{ row.net }}</td>
+                        <td class="is-num"><span class="mx-delta {{ row.growth_tone }}">{{ row.growth }}</span></td>
+                        <td class="is-num is-strong">{{ row.profit }}</td>
+                        <td class="is-num">{{ row.margin }}<span class="mx-cell-sub mx-delta {{ row.margin_delta.tone }}">{{ row.margin_delta.display }}</span></td>
+                        <td class="is-num">{{ row.price_kg }}</td>
+                        <td class="is-num">{{ row.cost_kg }}</td>
+                        <td class="is-num"><span class="mx-delta {{ row.profit_change_tone }}">{{ row.profit_change }}</span></td>
+                        <td><div class="mx-divbar" aria-hidden="true"><i class="is-{{ row.bar_side }}" style="width: {{ row.bar }}%"></i></div></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+    <article class="mx-card" style="margin-top: 14px">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Mapa de calor da margem</p><p class="mx-card-sub">Os {{ heatmap.rows|length }} maiores grupos, mês a mês · vermelho abaixo e azul acima da margem da empresa ({{ heatmap.reference }})</p></div></div>
+        <div class="mx-table-wrap">
+            <table class="mx-heat">
+                <thead><tr><th scope="col">Grupo</th>{% for month in heatmap.months %}<th scope="col">{% if month.param %}<button type="button" class="mx-filter-cell" data-mx-filter="meses" data-mx-value="{{ month.param }}" data-mx-drop="periodo">{{ month.label }}</button>{% else %}{{ month.label }}{% endif %}</th>{% endfor %}</tr></thead>
+                <tbody>{% for row in heatmap.rows %}<tr><th scope="row" class="is-row" title="{{ row.group }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ row.key }}">{{ row.group }}</button></th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+            </table>
+        </div>
+        <div class="mx-heat-legend"><span><i style="background: var(--mx-div-neg-2)"></i>7,5 p.p. ou mais abaixo</span><span><i style="background: var(--mx-div-neg-1)"></i>abaixo</span><span><i style="background: var(--mx-div-mid)"></i>perto da margem da empresa</span><span><i style="background: var(--mx-div-pos-1)"></i>acima</span><span><i style="background: var(--mx-div-pos-2)"></i>7,5 p.p. ou mais acima</span></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Sazonalidade e próximos meses<small>Faturamento por mês, projeção simples e carteira a faturar</small></h3>
+    <article class="mx-card">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Faturamento por mês (R$ milhões)</p><p class="mx-card-sub">Azul mais escuro = mês mais forte, em cinco faixas · mês em andamento só com contorno</p></div></div>
+            <div class="mx-table-wrap">
+                <table class="mx-heat">
+                    <thead><tr><th scope="col">Ano</th>{% for month in seasonality.months %}<th scope="col">{{ month }}</th>{% endfor %}</tr></thead>
+                    <tbody>{% for row in seasonality.rows %}<tr><th scope="row" class="is-row">{{ row.year }}</th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                </table>
+            </div>
+    </article>
+    <article class="mx-card" style="margin-top: 14px">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-truck"/></svg></span><div><p class="mx-card-title">Próximos {{ forecast.rows|length }} meses</p><p class="mx-card-sub">Carteira a faturar {{ forecast.backlog_total }}{% if forecast.has_overdue %} (atrasada {{ forecast.overdue }}){% endif %} · crescimento recente {{ forecast.growth }}{% if management_filtered %} · empresa toda: a carteira a faturar não se divide por representante e grupo{% endif %}</p></div></div>
+        <div class="mx-grid mx-grid-2">
+            <div>
+                <div class="mx-chart" id="mxForecastChart" role="img" aria-label="Projeção e carteira a faturar dos próximos meses"></div>
+                <div class="mx-legend"><span><i style="background: var(--mx-chart-2)"></i>Já faturado</span><span><i style="background: var(--mx-chart-1)"></i>Carteira a faturar</span><span><i class="is-line" style="background: var(--mx-text)"></i>Projeção</span></div>
+            </div>
+            <div class="mx-table-wrap"><table class="mx-table mx-table-compact">
+                <thead><tr><th scope="col">Mês</th><th scope="col" class="is-num">Ano anterior</th><th scope="col" class="is-num">Projeção</th><th scope="col" class="is-num">Carteira</th><th scope="col" class="is-num">Coberto pela carteira</th></tr></thead>
+                <tbody>{% for row in forecast.rows %}<tr><td class="is-strong">{{ row.label }}{% if row.billed %}<span class="mx-cell-sub">faturado até hoje {{ row.billed }}</span>{% endif %}</td><td class="is-num">{{ row.last_year }}</td><td class="is-num">{{ row.projected }}</td><td class="is-num">{{ row.backlog }}</td><td class="is-num">{{ row.coverage }}</td></tr>{% endfor %}</tbody>
+            </table></div>
+        </div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Representantes<small>Resultado no período e meta de kg do orçamento {{ goal_year }} ({{ goal_label }})</small></h3>
+    <article class="mx-card">
+        <div class="mx-table-wrap">
+            <table class="mx-table mx-table-compact">
+                <thead><tr><th scope="col">Representante</th><th scope="col" class="is-num">Faturamento</th><th scope="col" class="is-num">Partic.</th><th scope="col" class="is-num">Cresc.</th><th scope="col" class="is-num">Lucro bruto</th><th scope="col" class="is-num">Margem</th><th scope="col" class="is-num">Clientes</th><th scope="col">Meta de kg no ano</th></tr></thead>
+                <tbody>
+                    {% for rep in reps %}
+                    <tr>
+                        <td class="is-strong">{% if rep.code != None %}<button type="button" class="mx-filter-cell" data-mx-filter="rep" data-mx-value="{{ rep.code }}">{{ rep.name }}</button>{% else %}{{ rep.name }}{% endif %}</td>
+                        <td class="is-num">{{ rep.net }}</td>
+                        <td class="is-num">{{ rep.share }}</td>
+                        <td class="is-num"><span class="mx-delta {{ rep.growth_tone }}">{{ rep.growth }}</span></td>
+                        <td class="is-num">{{ rep.profit }}</td>
+                        <td class="is-num">{{ rep.margin }}</td>
+                        <td class="is-num">{{ rep.customers }}<span class="mx-cell-sub">+{{ rep.new_customers }} / −{{ rep.lost_customers }}</span></td>
+                        <td>{% if rep.goal != "sem meta" %}<div class="mx-goal-meta"><span>{{ rep.billed }} de {{ rep.goal }}</span><span class="mx-badge {{ rep.attainment_tone }}">{{ rep.attainment }}</span></div><div class="mx-progress"><i style="width: {{ rep.attainment_width }}%"></i></div>{% else %}<span class="mx-muted">sem meta no orçamento</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="mx-hint">Meta: kg do orçamento {{ goal_year }} somados até o último mês fechado; realizado: kg faturado no mesmo intervalo. O DNA de Representantes soma também a carteira a faturar do mês.</p>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-scale"/></svg>Simulador de cenários<small>E se o preço, o volume ou o custo mudarem? Calcula na hora, sobre o período escolhido</small></h3>
+    <article class="mx-card">
+        <div class="mx-sim">
+            <div>
+                <div class="mx-slider"><label for="mxSimPrice">Preço médio <output id="mxSimPriceOut">0%</output></label><input id="mxSimPrice" type="range" min="-10" max="15" step="0.5" value="0"><small>reajuste ou desconto sobre o preço de venda</small></div>
+                <div class="mx-slider"><label for="mxSimVolume">Volume (kg) <output id="mxSimVolumeOut">0%</output></label><input id="mxSimVolume" type="range" min="-20" max="20" step="1" value="0"><small>mais ou menos kg vendidos, com o mesmo mix</small></div>
+                <div class="mx-slider"><label for="mxSimCost">Custo por kg (CPV) <output id="mxSimCostOut">0%</output></label><input id="mxSimCost" type="range" min="-10" max="20" step="0.5" value="0"><small>resina, energia e conversão</small></div>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxSimReset">Voltar ao realizado</button>
+            </div>
+            <div>
+                <div class="mx-sim-results">
+                    <div class="mx-fact"><span>Faturamento</span><strong id="mxSimNet">–</strong><small id="mxSimNetDelta"></small></div>
+                    <div class="mx-fact"><span>Lucro bruto</span><strong id="mxSimProfit">–</strong><small id="mxSimProfitDelta"></small></div>
+                    <div class="mx-fact"><span>Margem bruta</span><strong id="mxSimMargin">–</strong><small id="mxSimMarginDelta"></small></div>
+                    <div class="mx-fact"><span>Lucro por kg</span><strong id="mxSimUnit">–</strong><small id="mxSimUnitDelta"></small></div>
+                </div>
+                <p class="mx-sim-note" id="mxSimNote" aria-live="polite"></p>
+            </div>
+        </div>
+        <p class="mx-hint">Modelo simples: impostos proporcionais ao preço, custo proporcional ao volume, mix constante. Serve para ordem de grandeza, não para orçamento.</p>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Leitura da IA<small>Resumo executivo dos cálculos desta página · {{ window.label }}</small></h3>
+    {% include "tiqueue/maxisys/_intel_insight.html" %}
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Meses fechados: o mês corrente fica fora das comparações. Faturamento líquido de devolução e lucro bruto (faturamento sem impostos − CPV do E210MVP), as regras do DNA. Itens sem CPV no ERP (cerca de 2% do faturamento) recebem o custo pela relação custo ÷ faturamento sem impostos da empresa.</li>
+        <li>Pontes: cada cliente × grupo de produto é comparado com ele mesmo no ano anterior. Volume = variação de kg ao preço (ou lucro por kg) médio anterior; mix = troca entre clientes e produtos de preço diferente; preço = variação do preço por kg no mesmo cliente e produto; custo = variação do CPV por kg. Clientes e produtos que só existem em um dos períodos aparecem separados. A soma dos efeitos fecha exatamente a diferença.</li>
+        <li>Retenção: NRR = faturamento atual dos clientes que já compravam ÷ faturamento deles no ano anterior; GRR faz a mesma conta sem contar o que eles compraram a mais.</li>
+        <li>Matriz: referências na mediana do faturamento dos clientes e na margem da empresa no período.</li>
+        <li>Projeção: o mesmo mês do ano anterior × o crescimento dos últimos 6 meses fechados. É estatística simples, não meta. Carteira: quantidade em aberto dos pedidos × preço do pedido, pelo mês de entrega; a carteira atrasada entra no mês corrente.</li>
+        <li>Simulador: faturamento × (1 + preço) × (1 + volume); custo × (1 + volume) × (1 + custo por kg); impostos acompanham o preço.</li>
+    </ul>
+</details>
+
+{{ charts|json_script:"mxManagementCharts" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
+<script>
+(() => {
+    // Botões de mês: clique abre o mês; Ctrl + clique soma meses (abre ao soltar o Ctrl).
+    const picker = JSON.parse(document.getElementById('mxMonthPicker').textContent);
+    const toParam = (key) => `${Math.floor(key / 12)}-${String((key % 12) + 1).padStart(2, '0')}`;
+    window.MXLive.monthPicker(document.getElementById('mxMonths'), {
+        months: picker.months, selected: picker.selected, title: 'Meses fechados', allLabel: false,
+        hint: 'Clique escolhe o mês · Ctrl + clique soma meses · Shift + clique faz um intervalo · compara com os mesmos meses do ano anterior',
+        onApply: (keys) => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('periodo');
+            if (keys.length) url.searchParams.set('meses', keys.map(toParam).join(','));
+            else url.searchParams.delete('meses');
+            window.location.href = url.toString();
+        },
+    });
+})();
+</script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script>
+(() => {
+    const charts = JSON.parse(document.getElementById('mxManagementCharts').textContent);
+    const money = window.MXCharts.money;
+    const pct = (value, signed) => `${signed && value > 0 ? '+' : ''}${(value * 100).toFixed(1).replace('.', ',')}%`;
+    const bridge = (id, data) => window.MXCharts.waterfall(document.getElementById(id), {
+        label: id,
+        start: { label: data.start_label, value: data.start },
+        steps: data.steps,
+        end: { label: data.end_label, value: data.end },
+        format: money,
+        height: 320,
+    });
+    bridge('mxRevenueBridge', charts.revenue_bridge);
+    bridge('mxProfitBridge', charts.profit_bridge);
+    window.MXCharts.waterfall(document.getElementById('mxRetentionChart'), {
+        label: 'Fluxo de receita por cliente',
+        start: { label: charts.retention.start_label, value: charts.retention.start },
+        steps: charts.retention.steps,
+        end: { label: charts.retention.end_label, value: charts.retention.end },
+        format: money,
+        height: 260,
+    });
+
+    const matrix = charts.matrix;
+    window.MXCharts.scatter(document.getElementById('mxMatrixChart'), {
+        label: 'Matriz de rentabilidade',
+        points: matrix.points.map((point) => ({
+            x: point.x, y: point.y, size: point.size, label: point.name, sub: point.place,
+            href: charts.profile_url_template.replace('__code__', point.code),
+        })),
+        refX: matrix.net_reference,
+        refY: matrix.margin_reference,
+        yMin: -0.3,
+        yMax: 0.8,
+        xFormat: money,
+        yFormat: (value) => pct(value),
+        quadrants: ['Nicho', 'Estrelas', 'Revisar', 'Volume'],
+        height: 380,
+    });
+
+    const forecast = charts.forecast;
+    window.MXCharts.bars(document.getElementById('mxForecastChart'), {
+        label: 'Próximos meses',
+        labels: forecast.labels,
+        stacked: true,
+        series: [
+            { name: 'Já faturado', values: forecast.billed.map((value) => value || 0), color: '--mx-chart-2' },
+            { name: 'Carteira a faturar', values: forecast.backlog, color: '--mx-chart-1' },
+        ],
+        target: { name: 'Projeção', values: forecast.projected, color: '--mx-text' },
+        format: money,
+        height: 220,
+    });
+
+    // Simulador de cenários: recalcula a cada movimento dos controles.
+    const sim = charts.simulator;
+    const inputs = { price: 'mxSimPrice', volume: 'mxSimVolume', cost: 'mxSimCost' };
+    const read = (key) => Number(document.getElementById(inputs[key]).value) / 100;
+    const setText = (id, text) => { document.getElementById(id).textContent = text; };
+    const delta = (now, base) => (base ? pct(now / base - 1, true) : '–');
+    function simulate() {
+        const p = read('price');
+        const v = read('volume');
+        const c = read('cost');
+        Object.entries(inputs).forEach(([key, id]) => {
+            const value = Number(document.getElementById(id).value);
+            setText(`${id}Out`, `${value > 0 ? '+' : ''}${String(value).replace('.', ',')}%`);
+        });
+        const net = sim.net * (1 + p) * (1 + v);
+        const tsi = sim.tsi * (1 + p) * (1 + v);
+        const cost = sim.cost * (1 + v) * (1 + c);
+        const profit = tsi - cost;
+        const margin = tsi ? profit / tsi : 0;
+        const baseMargin = sim.tsi ? sim.profit / sim.tsi : 0;
+        const kg = sim.kg * (1 + v);
+        setText('mxSimNet', money(net, true));
+        setText('mxSimNetDelta', `${delta(net, sim.net)} contra o realizado`);
+        setText('mxSimProfit', money(profit, true));
+        setText('mxSimProfitDelta', `${delta(profit, sim.profit)} · ${profit >= sim.profit ? '+' : '−'}${money(Math.abs(profit - sim.profit), true)}`);
+        setText('mxSimMargin', pct(margin));
+        setText('mxSimMarginDelta', `${((margin - baseMargin) * 100 >= 0 ? '+' : '')}${((margin - baseMargin) * 100).toFixed(1).replace('.', ',')} p.p.`);
+        setText('mxSimUnit', `${money(kg ? profit / kg : 0)}/kg`);
+        setText('mxSimUnitDelta', `antes ${money(sim.kg ? sim.profit / sim.kg : 0)}/kg`);
+        // Quanto de preço segura o lucro do realizado com este volume e este custo.
+        const neededPrice = (sim.profit + sim.cost * (1 + v) * (1 + c)) / (sim.tsi * (1 + v)) - 1;
+        const unitMargin = sim.tsi * (1 + p) - sim.cost * (1 + c);
+        const neededVolume = unitMargin > 0 ? sim.profit / unitMargin - 1 : null;
+        const parts = [`Para manter o lucro bruto do realizado com este volume e este custo, o preço precisa variar ${pct(neededPrice, true)}.`];
+        if (neededVolume !== null) parts.push(`Com este preço e este custo, o volume precisaria variar ${pct(neededVolume, true)}.`);
+        else parts.push('Com este preço e este custo, nenhum volume dá lucro: o custo passa o preço sem impostos.');
+        setText('mxSimNote', parts.join(' '));
+    }
+    Object.values(inputs).forEach((id) => document.getElementById(id).addEventListener('input', simulate));
+    document.getElementById('mxSimReset').addEventListener('click', () => {
+        Object.values(inputs).forEach((id) => { document.getElementById(id).value = 0; });
+        simulate();
+    });
+    simulate();
+})();
+</script>
+{% endif %}
+{% endblock %}

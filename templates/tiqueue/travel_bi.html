@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="{% static '/style/itBi.css' %}">
     <link rel="stylesheet" href="{% static '/style/travelBi.css' %}">
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+    {% include 'partials/maxisys_head.html' %}
 </head>
 <body class="travelbi">
     {% include 'partials/dashes_sidebar.html' %}
@@ -64,6 +65,7 @@
                     <input type="hidden" name="periodo" value="{{ dashboard.scope.period.key }}">
                     <input type="hidden" name="frota" value="{{ dashboard.scope.carrier.key }}">
                     <input type="hidden" name="situacao" value="{{ dashboard.scope.situation.key }}">
+                    <input type="text" name="adicional" class="mx-ai-extra-inline" maxlength="500" placeholder="Adicional: pergunta para a IA (opcional)" aria-label="Adicional: pergunta ou instrução para a IA, respondida com as informações da tela" title="Ex.: Qual foi o produto que mais gerou perdas? A IA responde com base nas informações da tela.">
                     <button type="submit" class="bi-btn is-ai{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="biAiButton"
                             {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
                         <span>✦</span>{% if insight_snapshot.ai_response %}Atualizar análise IA{% else %}Pedir análise à IA{% endif %}
@@ -108,6 +110,7 @@
                     <span class="bi-health is-{{ insight_snapshot.ai_response.health }}">{{ insight_snapshot.ai_response.health|title }}</span>
                     <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
                 </div>
+                {% if insight_snapshot.ai_response.pergunta_adicional %}<div class="mx-ai-answer"><p class="mx-ai-answer-question"><span>Adicional</span>{{ insight_snapshot.ai_response.pergunta_adicional }}</p><p class="mx-ai-answer-text">{{ insight_snapshot.ai_response.resposta_adicional }}</p></div>{% endif %}
 
                 <div class="bi-grid is-2" style="margin-top: 13px;">
                     <div class="bi-callout is-red"><span>Principal risco</span><strong>{{ insight_snapshot.ai_response.principal_risk }}</strong></div>
@@ -319,7 +322,7 @@
                         <tbody>
                         {% for item in dashboard.carriers %}
                             <tr>
-                                <td><div class="bi-cell"><strong>{{ item.label }}</strong><small>{{ item.cnpj|default:item.name }}</small></div></td>
+                                <td><div class="bi-cell"><strong>{% if item.code != None %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="frota" data-mx-value="{{ item.code }}">{{ item.label }}</button>{% else %}{{ item.label }}{% endif %}</strong><small>{{ item.cnpj|default:item.name }}</small></div></td>
                                 <td class="is-num">{{ item.trips_display }}</td>
                                 <td class="is-num">{{ item.share_pct }}%</td>
                                 <td class="is-num">{{ item.km_display }}</td>
@@ -754,7 +757,7 @@
                     <div class="bi-bars">
                         {% for item in dashboard.situations %}
                         <div class="bi-bar">
-                            <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
+                            <div class="bi-bar-head"><strong><button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="situacao" data-mx-value="{% if item.label == 'Finalizada' %}F{% else %}A{% endif %}">{{ item.label }}</button></strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="{% if item.label == 'Finalizada' %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
                         {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
@@ -885,5 +888,6 @@
         wire('biAiForm', 'biAiButton', aiUrl, 'Analisando...');
     })();
     </script>
+<script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
 </body>
 </html>
