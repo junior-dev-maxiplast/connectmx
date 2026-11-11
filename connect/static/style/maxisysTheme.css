@@ -1,0 +1,493 @@
+/* Padrão visual MaxiSys aplicado às telas do ConnectMX interno e do Dashes.
+
+   Carregado por último em cada página (partials/maxisys_head.html), depois do
+   CSS próprio da tela. Em vez de reescrever cada folha de estilo, ele:
+   1. aponta as variáveis de cada módulo para a paleta MaxiSys (maxisys.css),
+      nos dois temas — o que a tela já pintava com variável muda sozinho;
+   2. troca fonte, fundo, barras de rolagem e caixas de seleção;
+   3. desloca o conteúdo pela largura do novo menu lateral;
+   4. alinha os componentes mais repetidos que tinham cor fixa.
+   Os seletores usam html[data-theme] (o theme.js sempre define o atributo)
+   para ganhar dos blocos "html[data-theme=dark] ..." de cada módulo. */
+
+:root { --mx-accent-deep: #b45f06; }
+html[data-theme="dark"] { --mx-accent-deep: #f5a524; }
+
+/* ---------- 1. Variáveis dos módulos ---------- */
+
+/* theme.css / mainQueue.css (telas internas) */
+html[data-theme] {
+    --page-bg: var(--mx-bg);
+    --page-text: var(--mx-text);
+    --title-text: var(--mx-text);
+    --muted-text: var(--mx-muted);
+    --surface-1: var(--mx-card);
+    --surface-2: var(--mx-card-2);
+    --surface-border: var(--mx-border);
+    --surface-shadow: var(--mx-shadow);
+    --surface-solid: var(--mx-card);
+    --surface-card: var(--mx-card);
+    --surface-soft: var(--mx-card-2);
+    --line-soft: var(--mx-border);
+    --text-strong: var(--mx-text);
+    --text-soft: var(--mx-muted);
+    --accent: var(--mx-accent);
+    --accent-2: #f5a524;
+    /* O conteúdo das telas internas (.queue_main) e a largura das colunas do
+       kanban usam --sidebar-collapsed: agora ele é a largura do menu MaxiSys. */
+    --sidebar-collapsed: var(--mx-side-w);
+    --sidebar-expanded: var(--mx-side-w);
+
+    /* Painéis do Dashes (BI do TI, Romaneios, Viagens, Compras, Central) e DNA anterior */
+    --bi-bg: var(--mx-bg);
+    --bi-surface: var(--mx-card);
+    --bi-surface-2: var(--mx-card-2);
+    --bi-border: var(--mx-border);
+    --bi-text: var(--mx-text);
+    --bi-muted: var(--mx-muted);
+    --bi-green: var(--mx-good);
+    --bi-blue: var(--mx-chart-1);
+    --bi-amber: var(--mx-warn);
+    --bi-red: var(--mx-bad);
+    --dna-bg: var(--mx-bg);
+    --dna-surface: var(--mx-card);
+    --dna-surface-2: var(--mx-card-2);
+    --dna-border: var(--mx-border);
+    --dna-text: var(--mx-text);
+    --dna-muted: var(--mx-muted);
+    --dna-green: var(--mx-good);
+    --dna-blue: var(--mx-chart-1);
+    --dna-amber: var(--mx-warn);
+    --dashes-bg: var(--mx-bg);
+    --dashes-surface: var(--mx-card);
+    --dashes-border: var(--mx-border);
+    --dashes-muted: var(--mx-muted);
+    --dashes-green: var(--mx-accent);
+
+    /* Logística (hqbooking): refeições, romaneios, pneus */
+    --bg: var(--mx-bg);
+    --text: var(--mx-text);
+    --card: var(--mx-card);
+    --border: var(--mx-border);
+}
+
+/* Manutenção, Connect UI e Pneus: mesma família de nomes */
+html[data-theme] body.mtn,
+html[data-theme] .cx,
+html[data-theme] .tirelog {
+    --mt-accent: var(--mx-accent);
+    --mt-accent-soft: var(--mx-accent-soft);
+    --mt-accent-deep: var(--mx-accent-deep);
+    --mt-info: var(--mx-info);
+    --mt-info-soft: var(--mx-info-bg);
+    --mt-warning: var(--mx-warn);
+    --mt-warning-soft: var(--mx-warn-bg);
+    --mt-danger: var(--mx-bad);
+    --mt-danger-soft: var(--mx-bad-bg);
+    --mt-soft: var(--mx-card-2);
+    --mt-soft-2: var(--mx-icon-bg);
+    --mt-radius: 8px;
+    --cx-accent: var(--mx-accent);
+    --cx-accent-soft: var(--mx-accent-soft);
+    --cx-accent-deep: var(--mx-accent-deep);
+    --cx-info: var(--mx-info);
+    --cx-info-soft: var(--mx-info-bg);
+    --cx-warning: var(--mx-warn);
+    --cx-warning-soft: var(--mx-warn-bg);
+    --cx-danger: var(--mx-bad);
+    --cx-danger-soft: var(--mx-bad-bg);
+    --cx-soft: var(--mx-card-2);
+    --cx-soft-2: var(--mx-icon-bg);
+    --cx-radius: 8px;
+    --tl-accent: var(--mx-accent);
+    --tl-accent-soft: var(--mx-accent-soft);
+    --tl-accent-deep: var(--mx-accent-deep);
+    --tl-info: var(--mx-info);
+    --tl-info-soft: var(--mx-info-bg);
+    --tl-warning: var(--mx-warn);
+    --tl-warning-soft: var(--mx-warn-bg);
+    --tl-danger: var(--mx-bad);
+    --tl-danger-soft: var(--mx-bad-bg);
+    --tl-soft: var(--mx-card-2);
+    --tl-soft-2: var(--mx-icon-bg);
+    --tl-radius: 8px;
+}
+
+/* Minhas demandas e detalhe da demanda */
+html[data-theme] .md-page,
+html[data-theme] .dd-page {
+    --md-ink: var(--mx-text);
+    --md-text: var(--mx-text);
+    --md-muted: var(--mx-muted);
+    --md-faint: var(--mx-faint);
+    --md-line: var(--mx-border);
+    --md-line-strong: var(--mx-faint);
+    --md-primary: var(--mx-accent);
+    --md-primary-hover: var(--mx-accent-deep);
+    --md-surface: var(--mx-card);
+    --md-input: var(--mx-card);
+    --md-hover: var(--mx-card-2);
+    --dd-ink: var(--mx-text);
+    --dd-text: var(--mx-text);
+    --dd-muted: var(--mx-muted);
+    --dd-line: var(--mx-border);
+    --dd-line-strong: var(--mx-faint);
+    --dd-primary: var(--mx-accent);
+    --dd-primary-hover: var(--mx-accent-deep);
+    --dd-surface: var(--mx-card);
+    --dd-surface-input: var(--mx-card);
+    --dd-canvas: var(--mx-bg);
+    --dd-bubble-other: var(--mx-card);
+    --dd-bubble-team: var(--mx-info-bg);
+    --dd-bubble-mine: #1f4f66;
+    --dd-event: var(--mx-card-2);
+}
+
+/* Portal de chamados (atendente e solicitante) */
+html[data-theme] body.support-portal-body,
+html[data-theme] body.support-admin-queue-body {
+    --support-text-strong: var(--mx-text);
+    --support-text-body: var(--mx-text);
+    --support-text-muted: var(--mx-muted);
+    --support-text-soft: var(--mx-faint);
+    --support-surface: var(--mx-card);
+    --support-surface-alt: var(--mx-card-2);
+}
+
+/* ---------- 2. Base ---------- */
+
+html[data-theme] body {
+    background: var(--mx-bg);
+    color: var(--mx-text);
+    font-family: var(--mx-font);
+    -webkit-font-smoothing: antialiased;
+}
+html[data-theme] body button,
+html[data-theme] body input,
+html[data-theme] body select,
+html[data-theme] body textarea { font-family: inherit; }
+
+html[data-theme] * { scrollbar-color: rgba(31, 79, 102, 0.45) transparent; }
+html[data-theme="dark"] * { scrollbar-color: rgba(196, 212, 223, 0.32) transparent; }
+html[data-theme] *::-webkit-scrollbar-track { background: transparent; }
+html[data-theme] *::-webkit-scrollbar-thumb { background: rgba(31, 79, 102, 0.4); border: 2px solid transparent; background-clip: padding-box; }
+html[data-theme] *::-webkit-scrollbar-thumb:hover { background: rgba(31, 79, 102, 0.6); background-clip: padding-box; }
+html[data-theme="dark"] *::-webkit-scrollbar-thumb { background: rgba(196, 212, 223, 0.28); background-clip: padding-box; }
+
+html[data-theme] input[type="checkbox"]:not([data-theme-switch]) { border-color: var(--mx-faint); background-color: var(--mx-card); }
+html[data-theme] input[type="checkbox"]:not([data-theme-switch]):hover,
+html[data-theme] input[type="checkbox"]:not([data-theme-switch]):focus-visible { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] input[type="checkbox"]:not([data-theme-switch]):checked { background-color: var(--mx-accent); border-color: var(--mx-accent); }
+html[data-theme] .theme-switch input:checked + .theme-slider { background: var(--mx-accent-soft); border-color: var(--mx-accent); }
+
+/* ---------- 3. Deslocamento pelo menu lateral ---------- */
+
+html[data-theme] body .queue_main,
+html[data-theme] body .mt-shell,
+html[data-theme] body .dna-page:not(.dna-page-dashes) { margin-left: calc(var(--mx-side-w) + 16px); transition: margin-left .18s ease; }
+html[data-theme] body .bi-page,
+html[data-theme] body .dc-page,
+html[data-theme] body .dna-page-dashes { margin-left: var(--mx-side-w); min-height: calc(100vh - 92px); transition: margin-left .18s ease; }
+
+@media (max-width: 900px) {
+    html[data-theme] body .queue_main,
+    html[data-theme] body .mt-shell,
+    html[data-theme] body .dna-page { margin-left: 16px; margin-right: 16px; }
+    html[data-theme] body .bi-page,
+    html[data-theme] body .dc-page { margin-left: 0; }
+}
+
+@media print {
+    .mx-sidebar, .mx-appbar, .mx-scrim { display: none !important; }
+    html[data-theme] body .queue_main,
+    html[data-theme] body .mt-shell,
+    html[data-theme] body .dna-page,
+    html[data-theme] body .bi-page,
+    html[data-theme] body .dc-page { margin-left: 0; }
+}
+
+/* ---------- 4. Componentes repetidos ---------- */
+
+/* Botões das telas internas (mainQueue.css pintava de verde fixo). */
+html[data-theme] .queue-primary-btn {
+    background: var(--mx-accent);
+    border: 1px solid var(--mx-accent);
+    color: #fff;
+    border-radius: 7px;
+    font-weight: 600;
+    box-shadow: none;
+}
+html[data-theme] .queue-primary-btn:hover:not(:disabled) { background: var(--mx-accent-deep); border-color: var(--mx-accent-deep); }
+html[data-theme] .queue-secondary-btn {
+    background: var(--mx-card);
+    border: 1px solid var(--mx-border);
+    color: var(--mx-text);
+    border-radius: 7px;
+    box-shadow: none;
+}
+html[data-theme] .queue-secondary-btn:hover:not(:disabled) { border-color: var(--mx-faint); background: var(--mx-card-2); }
+
+/* Campos */
+html[data-theme] .queue-input-sm,
+html[data-theme] .queue-select,
+html[data-theme] .table-input {
+    background: var(--mx-card);
+    border: 1px solid var(--mx-border);
+    border-radius: 7px;
+    color: var(--mx-text);
+}
+html[data-theme] .queue-input-sm:focus,
+html[data-theme] .queue-select:focus,
+html[data-theme] .table-input:focus,
+html[data-theme] .queue_main input:focus,
+html[data-theme] .queue_main select:focus,
+html[data-theme] .queue_main textarea:focus {
+    outline: none;
+    border-color: var(--mx-accent);
+    box-shadow: 0 0 0 3px var(--mx-accent-soft);
+}
+
+/* Cards e títulos das telas internas */
+html[data-theme] .queue_main .queue-dashboard-card,
+html[data-theme] .queue_main .checklist-card {
+    background: var(--mx-card);
+    border: 1px solid var(--mx-border);
+    border-radius: 8px;
+    box-shadow: var(--mx-shadow);
+    backdrop-filter: none;
+}
+html[data-theme] .headerTitle h1 { color: var(--mx-text); font-weight: 800; letter-spacing: -0.01em; }
+
+/* ---------- 5. Portal de chamados: barra superior no padrão MaxiSys ---------- */
+/* O selo de papel (Solicitante azul / Atendente roxo) continua: é informação, não enfeite. */
+html[data-theme] .support-topbar {
+    background: var(--mx-header);
+    border-bottom: 1px solid var(--mx-border);
+    backdrop-filter: none;
+    padding: 9px 22px;
+    font-family: var(--mx-font);
+}
+html[data-theme] .support-topbar::before {
+    background: linear-gradient(90deg, #f6c700 0%, #7cc242 22%, #00a6e2 48%, #6d5bd0 72%, #e2333a 100%);
+}
+html[data-theme] .support-brand .mx-portal-mark {
+    display: grid; place-items: center; width: 36px; height: 36px; padding: 0;
+    border-radius: 9px; background: linear-gradient(135deg, #25596f, #10293a);
+}
+html[data-theme] .support-brand .mx-portal-mark svg { width: 20px; height: 20px; }
+html[data-theme] .support-brand .mx-portal-kicker {
+    color: var(--mx-accent); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+}
+html[data-theme] .support-brand .mx-portal-title { color: var(--mx-text); font-size: 15px; font-weight: 700; line-height: 1.2; }
+html[data-theme] .support-top-actions .support-btn-secondary,
+html[data-theme] .support-topbar.is-staff .support-top-actions .support-btn-secondary { color: var(--mx-muted); border-radius: 6px; }
+html[data-theme] .support-top-actions .support-btn-secondary:hover,
+html[data-theme] .support-topbar.is-staff .support-top-actions .support-btn-secondary:hover { background: var(--mx-icon-bg); color: var(--mx-text); }
+html[data-theme] .support-top-actions .support-btn-secondary.is-active,
+html[data-theme] .support-topbar.is-staff .support-top-actions .support-btn-secondary.is-active {
+    background: var(--mx-accent-soft); color: var(--mx-accent-deep); box-shadow: inset 0 -2px 0 var(--mx-accent);
+}
+
+/* ---------- 6. Logística de pneus: dentro do shell MaxiSys ---------- */
+/* O menu e a barra MaxiSys vêm de partials/sidebar.html; a barra própria do
+   módulo vira a sub-navegação da tela (Painel, Frota, Estoque...). */
+html[data-theme] body.tirelog .tl-topbar {
+    position: static; height: auto; margin-left: var(--mx-side-w); padding: 14px 20px 0;
+    background: transparent; border: 0; box-shadow: none; backdrop-filter: none;
+}
+html[data-theme] body.tirelog .tl-topbar .tl-brand,
+html[data-theme] body.tirelog .tl-topbar .theme-toggle { display: none; }
+html[data-theme] body.tirelog .tl-nav a.is-active { box-shadow: inset 0 -2px 0 var(--mx-accent); }
+html[data-theme] body.tirelog .tl-shell { margin: 0 0 0 var(--mx-side-w); transition: margin-left .18s ease; }
+@media (max-width: 900px) {
+    html[data-theme] body.tirelog .tl-topbar,
+    html[data-theme] body.tirelog .tl-shell { margin-left: 0; }
+}
+
+/* ---------- 7. Botões e estados ativos que eram verde fixo ---------- */
+/* Ação principal e seleção passam ao laranja do MaxiSys. Verde continua só onde
+   significa "concluído" (ex.: .queue-action-btn.action-done, .roadmap-done-btn). */
+html[data-theme] .cx-btn.is-primary,
+html[data-theme] .mt-btn.is-primary,
+html[data-theme] .tl-btn.is-primary,
+html[data-theme] .portallogin-submit,
+html[data-theme] .formFields button,
+html[data-theme] #addNewitentoQueueButton {
+    background: var(--mx-accent);
+    border-color: var(--mx-accent);
+    color: #fff;
+    box-shadow: none;
+}
+html[data-theme] .cx-btn.is-primary:hover,
+html[data-theme] .mt-btn.is-primary:hover,
+html[data-theme] .tl-btn.is-primary:hover,
+html[data-theme] .portallogin-submit:hover,
+html[data-theme] .formFields button:hover,
+html[data-theme] #addNewitentoQueueButton:hover { background: var(--mx-accent-deep); border-color: var(--mx-accent-deep); filter: none; }
+
+html[data-theme] .queue-icon-btn.is-active,
+html[data-theme] #queuePageRoot .queue-icon-btn.is-active,
+html[data-theme] .demand-tab-btn.is-active,
+html[data-theme] .dashboard-calendar-nav-btn.is-current {
+    background: var(--mx-accent-soft);
+    border-color: var(--mx-accent);
+    color: var(--mx-accent-deep);
+}
+html[data-theme] .hub-tool-btn:hover { background: var(--mx-accent-soft); border-color: var(--mx-accent); }
+html[data-theme] .queue-icon-btn-badge { background: var(--mx-accent); color: #fff; }
+
+/* ---------- 8. Painéis do Dashes, DNA anterior e login do Dashes ---------- */
+/* Os BIs foram desenhados só no escuro: as tintas translúcidas funcionam nos
+   dois temas, mas o fundo da página, o modal e os estados ativos eram cor fixa. */
+html[data-theme] .bi-page,
+html[data-theme] .dc-page,
+html[data-theme] .dna-page { background: var(--mx-bg); }
+html[data-theme] .bi-filter.is-active,
+html[data-theme] .dna-scope-switch a.is-active {
+    background: var(--mx-accent-soft); color: var(--mx-accent-deep); box-shadow: inset 0 0 0 1px var(--mx-accent);
+}
+html[data-theme] .bi-btn.is-ai.is-ready,
+html[data-theme] .dna-insight-btn.is-ready,
+html[data-theme] .bi-limit-close,
+html[data-theme] .dna-limit-close,
+html[data-theme] .dna-range-filter button,
+html[data-theme] .dashes-login-form > button {
+    background: var(--mx-accent); border-color: var(--mx-accent); color: #fff; box-shadow: none;
+}
+html[data-theme] .bi-limit-modal,
+html[data-theme] .dna-limit-modal { background: var(--mx-card); color: var(--mx-text); border: 1px solid var(--mx-border); }
+html[data-theme] .dna-search,
+html[data-theme] .dna-search-results { background: var(--mx-card); border-color: var(--mx-border); }
+html[data-theme] .dna-search { box-shadow: none; }
+html[data-theme] .dna-search kbd { background: var(--mx-card-2); }
+html[data-theme] .dna-group-filter select,
+html[data-theme] .dna-group-filter select option,
+html[data-theme] .dna-range-filter input[type="date"] { background: var(--mx-card); color: var(--mx-text); border-color: var(--mx-border); }
+html[data-theme] .dna-avatar,
+html[data-theme] .dna-result-avatar { background: linear-gradient(135deg, #25596f, #10293a); color: #fff; box-shadow: none; }
+html[data-theme] .dashes-toast { background: var(--mx-card); color: var(--mx-text); border: 1px solid var(--mx-border); font-family: var(--mx-font); }
+html[data-theme] .dashes-toast.is-error { background: var(--mx-bad-bg); color: var(--mx-bad); }
+html[data-theme] .dashes-toast.is-success { background: var(--mx-good-bg); color: var(--mx-good); }
+html[data-theme] .dashes-login-body { background: var(--mx-bg); font-family: var(--mx-font); }
+html[data-theme] .dashes-login-showcase { background: linear-gradient(160deg, #25596f 0%, #1a4257 45%, #10293a 100%); }
+html[data-theme] .dashes-login-panel { background: var(--mx-card); border-left-color: var(--mx-border); }
+html[data-theme] .dashes-login-form input { background: var(--mx-card); border-color: var(--mx-border); color: var(--mx-text); }
+html[data-theme] .dashes-login-form input:focus { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] .dashes-login-brand > span { background: linear-gradient(135deg, #25596f, #10293a); color: #fff; }
+html[data-theme] .dashes-denied-shell { background: var(--mx-bg); }
+
+/* ---------- 9. Telas de login (ConnectMX, Portal e Dashes) ---------- */
+/* O painel de marca usa o degradê do menu MaxiSys, sem o brilho verde antigo. */
+html[data-theme] .portallogin-brand { background: linear-gradient(160deg, #25596f 0%, #1a4257 45%, #10293a 100%); }
+html[data-theme] .portallogin-glow,
+html[data-theme] .portallogin-brand::after { display: none; }
+html[data-theme] .portallogin-logo { background: rgba(255, 255, 255, 0.14); }
+html[data-theme] .formFields input {
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 7px; color: var(--mx-text);
+}
+html[data-theme] .formFields input:focus { outline: none; border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+
+/* Login do Dashes: texto claro sobre o degradê (o título herdava a cor do tema). */
+html[data-theme] .dashes-login-showcase { color: rgba(255, 255, 255, 0.92); }
+html[data-theme] .dashes-login-showcase :is(h1, h2, h3, strong, .dashes-login-brand, .dashes-login-message) { color: #fff; }
+html[data-theme] .dashes-login-showcase p { color: rgba(255, 255, 255, 0.78); }
+html[data-theme] .dashes-login-showcase .dashes-login-kicker { color: var(--mx-accent); }
+
+/* ---------- 10. Sede, almoço e romaneios (hqbooking) ---------- */
+html[data-theme] .hq-button:not(.hq-button-secondary) { background: var(--mx-accent); color: #fff; border-radius: 7px; }
+html[data-theme] .hq-button:not(.hq-button-secondary):hover { background: var(--mx-accent-deep); }
+html[data-theme] .hq-button.hq-button-secondary { background: var(--mx-card); color: var(--mx-text); border: 1px solid var(--mx-border); border-radius: 7px; }
+html[data-theme] .hqb-tab-btn.is-active { background: var(--mx-accent-soft); color: var(--mx-accent-deep); border-color: var(--mx-accent); }
+html[data-theme] .hqb-mini-btn { background: var(--mx-card); color: var(--mx-text); border-color: var(--mx-border); }
+
+/* ---------- 11. Detalhes de marca que eram verde fixo nas telas internas ---------- */
+html[data-theme] .kanban-col-head,
+html[data-theme] .queue-general-page .kanban-col-head { border-left-color: var(--mx-accent); }
+html[data-theme] .dashboard-home-hero { background: var(--mx-card); border: 1px solid var(--mx-border); box-shadow: var(--mx-shadow); }
+html[data-theme] .dashboard-hero-notice { background: var(--mx-info-bg); border-color: transparent; color: var(--mx-info); }
+
+/* ---------- 12. Minha fila e pop-ups de demanda ---------- */
+/* A "central de comando" da Minha fila era sempre escura; no padrão MaxiSys ela
+   segue o tema claro/escuro como as demais telas. */
+html[data-theme] #queuePageRoot .queue-command-bar,
+html[data-theme] #queuePageRoot .queue_main .queue,
+html[data-theme] #queuePageRoot .queue { background: var(--mx-card); border-color: var(--mx-border); box-shadow: var(--mx-shadow); }
+html[data-theme] #queuePageRoot .queue-command-title,
+html[data-theme] #queuePageRoot .queue-dashboard-value,
+html[data-theme] #queuePageRoot .queue-desc-text,
+html[data-theme] #queuePageRoot .queue-progress-meta,
+html[data-theme] #queuePageRoot .queue-time-total-val,
+html[data-theme] #queuePageRoot .queue table td { color: var(--mx-text); }
+html[data-theme] #queuePageRoot .queue-dashboard-label,
+html[data-theme] #queuePageRoot .queue-time-total,
+html[data-theme] #queuePageRoot .queue table th { color: var(--mx-muted); }
+html[data-theme] #queuePageRoot .queue-command-bar .queue-select,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-date,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-search,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-check,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-secondary-btn,
+html[data-theme] #queuePageRoot .queue-icon-btn,
+html[data-theme] #queuePageRoot .queue-dashboard-card {
+    background: var(--mx-card); border-color: var(--mx-border); color: var(--mx-text); color-scheme: inherit;
+}
+html[data-theme] #queuePageRoot .queue-command-bar .queue-select option { background-color: var(--mx-card); color: var(--mx-text); }
+html[data-theme] #queuePageRoot .queue-command-bar .queue-search::placeholder { color: var(--mx-faint); }
+html[data-theme] #queuePageRoot .queue-command-bar .queue-secondary-btn:hover,
+html[data-theme] #queuePageRoot .queue-icon-btn:hover { background: var(--mx-card-2); }
+html[data-theme] #queuePageRoot .queue-command-bar .queue-select:focus,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-date:focus,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-search:focus { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] #queuePageRoot .queue-command-bar .queue-check:hover,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-select:hover,
+html[data-theme] #queuePageRoot .queue-command-bar .queue-date:hover { border-color: var(--mx-faint); }
+html[data-theme] #queuePageRoot .queue-command-row-filters { border-top-color: var(--mx-border); }
+html[data-theme] #queuePageRoot .queue-icon-btn.is-active { background: var(--mx-accent-soft); border-color: var(--mx-accent); color: var(--mx-accent-deep); }
+html[data-theme] #queuePageRoot .queue table th { background: var(--mx-card-2); border-color: var(--mx-border); }
+html[data-theme] #queuePageRoot .queue table td { border-color: var(--mx-border); }
+html[data-theme] #queuePageRoot .queue table tbody tr:nth-child(even) td { background: var(--mx-card-2); }
+html[data-theme] #queuePageRoot .queue table tbody tr:hover td { background: var(--mx-accent-soft); }
+html[data-theme] #queuePageRoot .queue-progress-bar { background: var(--mx-icon-bg); border-color: var(--mx-border); }
+
+html[data-theme] .formNewItemMain,
+html[data-theme] #popUpFormNewItem,
+html[data-theme] #popUpFormEditItem { background: var(--mx-card); border: 1px solid var(--mx-border); color: var(--mx-text); }
+html[data-theme] #popUpFormNewItem .modal-title,
+html[data-theme] #popUpFormEditItem .modal-title,
+html[data-theme] #popUpFormEditItem label { color: var(--mx-text); }
+html[data-theme] #popUpFormNewItem .modal-grid .field label { color: var(--mx-muted); }
+html[data-theme] #popUpFormNewItem .modal-grid input,
+html[data-theme] #popUpFormNewItem .modal-grid select,
+html[data-theme] #popUpFormNewItem .modal-grid textarea,
+html[data-theme] #popUpFormEditItem input,
+html[data-theme] #popUpFormEditItem select,
+html[data-theme] #popUpFormEditItem textarea { background: var(--mx-card); border: 1px solid var(--mx-border); color: var(--mx-text); color-scheme: inherit; }
+html[data-theme] #popUpFormNewItem .modal-grid input:focus,
+html[data-theme] #popUpFormNewItem .modal-grid select:focus,
+html[data-theme] #popUpFormNewItem .modal-grid textarea:focus,
+html[data-theme] #popUpFormEditItem input:focus,
+html[data-theme] #popUpFormEditItem select:focus { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+
+/* ---------- 13. Formulários em modal (.modal-grid), usados em várias telas ---------- */
+/* Eram desenhados sobre o modal escuro: texto branco fixo e campo translúcido. */
+html[data-theme] .modal-title,
+html[data-theme] .modal-grid .field label { color: var(--mx-text); }
+html[data-theme] .modal-grid .field label { color: var(--mx-muted); }
+html[data-theme] .modal-close { background: var(--mx-card-2); color: var(--mx-text); border: 1px solid var(--mx-border); }
+html[data-theme] .modal-close:hover { background: var(--mx-icon-bg); }
+html[data-theme] .modal-grid input,
+html[data-theme] .modal-grid select,
+html[data-theme] .modal-grid textarea { background: var(--mx-card); border: 1px solid var(--mx-border); color: var(--mx-text); color-scheme: inherit; }
+html[data-theme] .modal-grid input::placeholder,
+html[data-theme] .modal-grid textarea::placeholder { color: var(--mx-faint); }
+html[data-theme] .modal-grid input:focus,
+html[data-theme] .modal-grid select:focus,
+html[data-theme] .modal-grid textarea:focus { outline: none; border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] .settings-card-heading span { color: var(--mx-accent); }
+html[data-theme] .modal-header { border-bottom-color: var(--mx-border); }
+html[data-theme] .modal-actions { border-top-color: var(--mx-border); }
+
+/* Seletor Lista / Board / Gantt (Minha fila) */
+html[data-theme] .queue-view-tabs { background: var(--mx-icon-bg); border-color: var(--mx-border); }
+html[data-theme] .queue-view-tab { color: var(--mx-muted); }
+html[data-theme] .queue-view-tab:hover { color: var(--mx-text); }
+html[data-theme] .queue-view-tab.is-active { background: var(--mx-card); color: var(--mx-accent-deep); box-shadow: inset 0 -2px 0 var(--mx-accent); }

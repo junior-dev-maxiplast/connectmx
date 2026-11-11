@@ -8438,3 +8438,36 @@ html[data-theme="dark"] .aichat-quick { background: #1b2338; border-color: rgba(
 html[data-theme="dark"] .aichat-quick:hover { background: #3f7fbd; color: #fff; }
 html[data-theme="dark"] .aichat-resolved { background: #17362a; color: #9fe0bd; }
 html[data-theme="dark"] .aichat-resolved small { color: rgba(159, 224, 189, 0.75); }
+
+/* ===================== Fila: possível duplicado e exportação ===================== */
+.ticket-dup-flag {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(214, 137, 16, 0.14);
+    color: #9a5b00;
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+.ticket-export-form {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.ticket-export-form input[type="date"] {
+    min-height: 32px;
+    padding: 0 8px;
+    border: 1px solid rgba(28, 58, 92, 0.2);
+    border-radius: 8px;
+    background: #fff;
+    color: #111b21;
+    font: inherit;
+    font-size: 12px;
+}
+
+html[data-theme="dark"] .ticket-dup-flag { background: rgba(230, 170, 70, 0.16); color: #f2c07a; }
+html[data-theme="dark"] .ticket-export-form input[type="date"] { background: #1f2c34; color: #e9edef; border-color: rgba(255, 255, 255, 0.14); }

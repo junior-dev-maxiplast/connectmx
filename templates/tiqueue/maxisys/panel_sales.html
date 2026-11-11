@@ -1,0 +1,417 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Painel de Vendas</h2>
+        <p>Faturamento do dia, do mês e do ano, com pedidos recebidos e a meta de volume · ERP Senior</p>
+    </div>
+    {% if not data_error %}
+    <div class="mx-toolbar-group">
+        <span class="mx-month-nav">
+            {% if previous_month %}<a class="mx-btn mx-btn-ghost" href="{{ page_url }}?mes={{ previous_month }}" aria-label="Mês anterior">‹</a>{% endif %}
+            <strong>{{ payload.month.label }}</strong>
+            {% if next_month %}<a class="mx-btn mx-btn-ghost" href="{{ page_url }}?mes={{ next_month }}" aria-label="Mês seguinte">›</a>{% endif %}
+        </span>
+        {% if payload.month.is_current %}
+        <label class="mx-live-status" id="mxLiveStatus"><input type="checkbox" id="mxLiveToggle" checked><span class="mx-live-pulse" aria-hidden="true"></span>Ao vivo · <span id="mxLiveStamp">{{ payload.loaded_at }}</span></label>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div id="mxMonths"></div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique em qualquer barra, fatia ou linha para filtrar a página inteira; clique de novo para tirar. Ctrl + clique soma itens à seleção.</p>
+
+<section class="mx-section">
+    <div class="mx-kpi-hero">
+        <article class="mx-card mx-reveal" style="--i: 0; --mx-kpi-accent: var(--mx-chart-1)">
+            <div class="mx-kpi-label">Faturamento {% if payload.month.multi %}no período{% else %}no mês{% endif %}</div>
+            <div class="mx-kpi-value" id="kpiNet">–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" id="kpiNetDelta">–</span><span id="kpiNetFoot">contra o mesmo período do ano anterior</span></div>
+            <div id="kpiNetSpark"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 1; --mx-kpi-accent: var(--mx-cat-3)">
+            <div class="mx-kpi-label">Projeção {% if payload.month.multi %}do período{% else %}do mês{% endif %}</div>
+            <div class="mx-kpi-value" id="kpiProjection">–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" id="kpiProjectionDelta">–</span><span id="kpiProjectionFoot">no ritmo dos dias úteis</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 2; --mx-kpi-accent: var(--mx-cat-2)">
+            <div class="mx-kpi-label">Pedidos recebidos</div>
+            <div class="mx-kpi-value" id="kpiIntake">–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" id="kpiBookToBill">–</span><span>pedidos ÷ faturamento (book-to-bill)</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 3; --mx-kpi-accent: var(--mx-cat-7)">
+            <div class="mx-kpi-label">Volume faturado</div>
+            <div class="mx-kpi-value" id="kpiKg">–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" id="kpiKgDelta">–</span><span>contra o ano anterior</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 4; --mx-kpi-accent: var(--mx-cat-4)">
+            <div class="mx-kpi-label">Clientes atendidos</div>
+            <div class="mx-kpi-value" id="kpiCustomers">–</div>
+            <div class="mx-kpi-foot"><span id="kpiTicket">–</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 5; --mx-kpi-accent: var(--mx-cat-5)">
+            <div class="mx-kpi-label">Preço médio</div>
+            <div class="mx-kpi-value" id="kpiPrice">–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" id="kpiPriceDelta">–</span><span>faturamento ÷ kg</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" style="--i: 6">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Faturamento acumulado {% if payload.month.multi %}no período{% else %}no mês{% endif %}</p><p class="mx-card-sub">{% if payload.month.multi %}Mês a mês, contra os mesmos meses do ano anterior{% else %}Dia a dia, contra o mesmo mês do ano anterior{% endif %} · passe o mouse ou use as setas</p></div></div>
+            <div id="chartCumulative"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>{{ payload.month.label }}</span><span><i class="is-line" style="background: var(--mx-chart-2)"></i>{{ payload.month.previous_label }}</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 7">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-target"/></svg></span><div><p class="mx-card-title">Meta de volume {% if payload.month.multi %}do período{% else %}do mês{% endif %}</p><p class="mx-card-sub">Orçamento {{ payload.month.label }} em kg</p></div></div>
+            <div id="chartGoal"></div>
+            <p class="mx-sim-note" id="goalNote" aria-live="polite"></p>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" style="--i: 8">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div>{% if payload.month.multi %}<p class="mx-card-title">Faturamento por mês</p><p class="mx-card-sub">Os meses escolhidos contra os mesmos meses do ano anterior</p>{% else %}<p class="mx-card-title">Faturamento por dia</p><p class="mx-card-sub">Fim de semana em cinza · a dica mostra o mesmo dia do ano anterior</p>{% endif %}</div></div>
+            <div id="chartDaily"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 9">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Calendário de faturamento</p><p class="mx-card-sub">Últimas 26 semanas, empresa toda · mais escuro = dia mais forte</p></div></div>
+            <div id="chartCalendar"></div>
+            <div class="mx-calendar-legend"><span>menos</span><i style="background: var(--mx-card-2)"></i><i style="background: var(--mx-seq-1)"></i><i style="background: var(--mx-seq-2)"></i><i style="background: var(--mx-seq-3)"></i><i style="background: var(--mx-seq-4)"></i><i style="background: var(--mx-seq-5)"></i><span>mais</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 10">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Representantes</p><p class="mx-card-sub">Faturamento {% if payload.month.multi %}no período{% else %}no mês{% endif %} e variação contra o ano anterior</p></div></div>
+            <div id="rankReps"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 11">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Grupos de produto</p><p class="mx-card-sub">Participação no faturamento {% if payload.month.multi %}do período{% else %}do mês{% endif %}</p></div></div>
+            <div id="donutGroups"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 12">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-home"/></svg></span><div><p class="mx-card-title">Filiais</p><p class="mx-card-sub">De onde saiu a nota fiscal</p></div></div>
+            <div id="rankBranches"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 13">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title">Clientes {% if payload.month.multi %}do período{% else %}do mês{% endif %}</p><p class="mx-card-sub">Os maiores faturamentos · ↗ abre a ficha</p></div></div>
+            <div id="rankCustomers"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 14">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-map"/></svg></span><div><p class="mx-card-title">Estados</p><p class="mx-card-sub">Faturamento por UF do cliente</p></div></div>
+            <div id="rankStates"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 15">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Últimos 12 meses</p><p class="mx-card-sub">Faturamento contra o mesmo mês do ano anterior · clique num mês para abri-lo; Ctrl + clique soma meses</p></div><span class="mx-card-aside" id="monthlyNote"></span></div>
+        <div id="chartMonthly"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Este ano</span><span><i style="background: var(--mx-chart-3)"></i>Ano anterior</span></div>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Faturamento: notas emitidas de transações que contam como venda, líquido de devolução, sem clientes do grupo (as regras do DNA). A comparação usa o mesmo mês do ano anterior até o mesmo dia.</li>
+        <li>Projeção: faturamento do mês ÷ dias úteis já passados × dias úteis do mês (segunda a sexta, sem feriados).</li>
+        <li>Pedidos recebidos: quantidade pedida × preço dos pedidos emitidos no mês. Book-to-bill acima de 1 indica carteira crescendo.</li>
+        <li>Meta de volume: kg do orçamento do mês por representante. Ela não se divide por grupo, filial ou cliente: com esses filtros o medidor mostra só o realizado.</li>
+        <li>O gráfico de 12 meses filtra por representante, grupo e filial. O calendário mostra a empresa toda.</li>
+    </ul>
+</details>
+
+{{ payload|json_script:"mxPanelData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script>
+(() => {
+    const L = window.MXLive;
+    const fmt = L.fmt;
+    let data = JSON.parse(document.getElementById('mxPanelData').textContent);
+    // Um mês: fatos por dia (d). Vários meses: fatos somados por mês (mo); y 1 = ano anterior até a
+    // mesma data e y 2 = o resto do mês corrente no ano anterior.
+    const multi = !!data.month.multi;
+    const profileUrl = (code) => '{{ profile_url_template }}'.replace('__code__', code);
+    const customerName = (code) => (data.names.customers[code] || {}).name || `Cliente ${code}`;
+    const names = () => ({
+        r: data.names.reps,
+        f: data.names.branches,
+        c: Object.fromEntries(Object.entries(data.names.customers).map(([code, info]) => [code, info.name])),
+    });
+    const filter = L.crossFilter({
+        labels: { r: 'Representante', g: 'Grupo', f: 'Filial', u: 'UF', c: 'Cliente' },
+        names: names(),
+        chips: '#mxFilterBar',
+    });
+    const toParam = (key) => `${Math.floor(key / 12)}-${String((key % 12) + 1).padStart(2, '0')}`;
+    const openMonths = (keys) => { if (keys.length) window.location.href = `{{ page_url }}?mes=${keys.map(toParam).join(',')}${window.location.hash}`; };
+    const picker = L.monthPicker(document.getElementById('mxMonths'), {
+        months: data.available_months, selected: data.selected_months, onApply: openMonths, allLabel: false, title: 'Meses',
+        hint: 'Clique abre o mês · Ctrl + clique soma meses (abre ao soltar o Ctrl) · Shift + clique faz um intervalo · até 12 meses',
+    });
+
+    // Cor de cada grupo fixa pelo tamanho no período (a cor segue o grupo, não a posição no filtro).
+    let groupColors = {};
+    function assignColors() {
+        const totals = L.group(data.facts.filter((fact) => fact.y === 0), 'g', ['n']);
+        groupColors = {};
+        [...totals.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([key], index) => { groupColors[key] = index < 7 ? L.categorical(index) : '--mx-chart-3'; });
+    }
+    assignColors();
+
+    const today = data.month.today || data.business.days;
+    const isLastYearToDate = (fact) => (multi ? fact.y === 1 : fact.y === 1 && fact.d <= today);
+    const pick = (rows, state, skip, allowed) => rows.filter((row) => Object.keys(state).every((key) => key === skip || (allowed && !allowed.includes(key)) || L.pass(state, key, row[key])));
+    const pct = (now, before) => (before ? now / before - 1 : null);
+    const sumBy = (rows, key) => { const map = new Map(); rows.forEach((row) => map.set(row[key], (map.get(row[key]) || 0) + (row.n || 0))); return map; };
+    const tone = (node, value, upIsGood = true) => {
+        node.classList.remove('is-up', 'is-down');
+        if (value == null || Math.abs(value) < 0.0005) return;
+        node.classList.add((value > 0) === upIsGood ? 'is-up' : 'is-down');
+    };
+    const toggle = (key) => (value, item, event) => filter.toggle(key, value, event);
+
+    const cumulative = L.line(document.getElementById('chartCumulative'), { height: 250, format: fmt.money });
+    const daily = L.columns(document.getElementById('chartDaily'), { height: 220, format: fmt.money, maxBar: multi ? 30 : 22 });
+    const goal = L.gauge(document.getElementById('chartGoal'), { label: 'Meta de volume', caption: '', good: 1, warn: 0.85, max: 1.2 });
+    const calendar = L.calendar(document.getElementById('chartCalendar'), { format: fmt.money });
+    const reps = L.ranking(document.getElementById('rankReps'), { format: fmt.money, limit: 10, onSelect: toggle('r') });
+    const groups = L.donut(document.getElementById('donutGroups'), { format: fmt.money, centerLabel: multi ? 'no período' : 'no mês', onSelect: (key, item, event) => { if (key !== '__outros') filter.toggle('g', key, event); } });
+    const branches = L.ranking(document.getElementById('rankBranches'), { format: fmt.money, limit: 8, color: '--mx-cat-3', onSelect: toggle('f') });
+    const customers = L.ranking(document.getElementById('rankCustomers'), { format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: toggle('c') });
+    const states = L.ranking(document.getElementById('rankStates'), { format: fmt.money, limit: 10, color: '--mx-cat-7', onSelect: toggle('u') });
+    // Clique num mês do gráfico de 12 meses abre o mês; Ctrl + clique soma (como nos botões de mês).
+    const monthly = L.columns(document.getElementById('chartMonthly'), {
+        height: 240, format: fmt.money, maxBar: 30,
+        onSelect: (key, index, event) => picker.choose(data.months[index].key, event),
+    });
+
+    function rankingItems(dimension, state, label, sub, href) {
+        const now = L.group(pick(data.facts.filter((fact) => fact.y === 0), state, dimension), dimension, ['n', 'k']);
+        const before = L.group(pick(data.facts.filter(isLastYearToDate), state, dimension), dimension, ['n']);
+        const total = [...now.values()].reduce((acc, value) => acc + value.n, 0) || 1;
+        return [...now.entries()].sort((a, b) => b[1].n - a[1].n).map(([key, value]) => {
+            const change = pct(value.n, (before.get(key) || {}).n);
+            return {
+                key, value: value.n, label: label(key), href: href ? href(key) : null,
+                sub: `${fmt.pct(value.n / total, 0)} do total · ${change == null ? 'novo no período' : `${fmt.signedPct(change)} contra o ano anterior`}${sub ? ` · ${sub(key, value)}` : ''}`,
+            };
+        });
+    }
+
+    function renderProjection(totals, previousMonth, current) {
+        const projectionNode = document.getElementById('kpiProjection');
+        const projectionDelta = document.getElementById('kpiProjectionDelta');
+        const foot = document.getElementById('kpiProjectionFoot');
+        const closed = (text) => {
+            L.count(projectionNode, totals.n, fmt.money);
+            projectionDelta.textContent = text;
+            projectionDelta.classList.remove('is-up', 'is-down');
+            foot.textContent = `${data.month.previous_label}: ${fmt.money(previousMonth.n)}`;
+        };
+        if (multi) {
+            const info = data.month.current_key != null ? data.business.months.find((month) => month.key === data.month.current_key) : null;
+            if (!info || !info.elapsed) { closed('meses fechados'); return; }
+            const running = current.filter((fact) => fact.mo === info.key).reduce((acc, fact) => acc + fact.n, 0);
+            const projection = totals.n - running + running / info.elapsed * info.total;
+            L.count(projectionNode, projection, fmt.money);
+            const change = pct(projection, previousMonth.n);
+            projectionDelta.textContent = fmt.signedPct(change);
+            tone(projectionDelta, change);
+            foot.textContent = `contra ${data.month.previous_label} · ${info.label} com ${info.elapsed} de ${info.total} dias úteis`;
+            return;
+        }
+        if (data.month.is_current && data.business.elapsed) {
+            const projection = totals.n / data.business.elapsed * data.business.total;
+            L.count(projectionNode, projection, fmt.money);
+            const change = pct(projection, previousMonth.n);
+            projectionDelta.textContent = fmt.signedPct(change);
+            tone(projectionDelta, change);
+            foot.textContent = `contra ${data.month.previous_label} fechado · ${data.business.elapsed} de ${data.business.total} dias úteis`;
+        } else closed('mês fechado');
+    }
+
+    function render(state) {
+        const current = pick(data.facts.filter((fact) => fact.y === 0), state);
+        const lastYear = pick(data.facts.filter((fact) => fact.y !== 0), state);
+        const lastYearToDate = lastYear.filter(isLastYearToDate);
+        const totals = L.sum(current, ['n', 'k']);
+        const previous = L.sum(lastYearToDate, ['n', 'k']);
+        const previousMonth = L.sum(lastYear, ['n']);
+        const intake = L.sum(pick(data.intake.filter((fact) => fact.y === 0), state, null, ['r', 'f', 'u', 'c']), ['v', 'k', 'o']);
+
+        L.count(document.getElementById('kpiNet'), totals.n, fmt.money);
+        const netChange = pct(totals.n, previous.n);
+        const netDelta = document.getElementById('kpiNetDelta');
+        netDelta.textContent = fmt.signedPct(netChange);
+        tone(netDelta, netChange);
+        const days = multi ? [] : Array.from({ length: data.business.days }, (_, index) => index + 1);
+        const byDay = days.map((day) => current.filter((fact) => fact.d === day).reduce((acc, fact) => acc + fact.n, 0));
+        const nowByMonth = multi ? sumBy(current, 'mo') : null;
+        const beforeByMonth = multi ? sumBy(lastYear, 'mo') : null;
+        let running = 0;
+        L.sparkline(document.getElementById('kpiNetSpark'), multi
+            ? data.selected_months.map((key) => (running += nowByMonth.get(key) || 0))
+            : byDay.slice(0, today).map((value) => (running += value)), '--mx-chart-1');
+
+        renderProjection(totals, previousMonth, current);
+
+        L.count(document.getElementById('kpiIntake'), intake.v, fmt.money);
+        const ratio = totals.n ? intake.v / totals.n : null;
+        const btb = document.getElementById('kpiBookToBill');
+        btb.textContent = ratio == null ? '–' : `${fmt.dec(ratio, 2)}×`;
+        tone(btb, ratio == null ? null : ratio - 1);
+
+        L.count(document.getElementById('kpiKg'), totals.k, fmt.kg);
+        const kgChange = pct(totals.k, previous.k);
+        const kgDelta = document.getElementById('kpiKgDelta');
+        kgDelta.textContent = fmt.signedPct(kgChange);
+        tone(kgDelta, kgChange);
+
+        const customerCount = new Set(current.map((fact) => fact.c)).size;
+        L.count(document.getElementById('kpiCustomers'), customerCount, fmt.int);
+        document.getElementById('kpiTicket').textContent = customerCount ? `ticket médio ${fmt.money(totals.n / customerCount)} por cliente` : '–';
+
+        const price = totals.k ? totals.n / totals.k : null;
+        const previousPrice = previous.k ? previous.n / previous.k : null;
+        L.count(document.getElementById('kpiPrice'), price, (value) => `${fmt.moneyFull(value)}/kg`);
+        const priceChange = pct(price, previousPrice);
+        const priceDelta = document.getElementById('kpiPriceDelta');
+        priceDelta.textContent = fmt.signedPct(priceChange);
+        tone(priceDelta, priceChange);
+
+        // Acumulado: dia a dia (um mês) ou mês a mês (vários).
+        if (multi) {
+            let sumNow = 0;
+            let sumBefore = 0;
+            cumulative.update({
+                labels: data.selected_months.map((key) => L.monthLabel(key)),
+                series: [
+                    { name: 'Este período', color: '--mx-chart-1', area: true, values: data.selected_months.map((key) => (sumNow += nowByMonth.get(key) || 0)) },
+                    { name: 'Ano anterior', color: '--mx-chart-2', dashed: true, markers: false, values: data.selected_months.map((key) => (sumBefore += beforeByMonth.get(key) || 0)) },
+                ],
+            });
+        } else {
+            let sumNow = 0;
+            let sumBefore = 0;
+            const lastYearByDay = days.map((day) => lastYear.filter((fact) => fact.d === day).reduce((acc, fact) => acc + fact.n, 0));
+            cumulative.update({
+                labels: days.map(String),
+                series: [
+                    { name: data.month.label, color: '--mx-chart-1', area: true, values: days.map((day, index) => (day <= today ? (sumNow += byDay[index]) : null)) },
+                    { name: data.month.previous_label, color: '--mx-chart-2', dashed: true, markers: false, values: lastYearByDay.map((value) => (sumBefore += value)) },
+                ],
+            });
+            daily.update({
+                labels: days.map(String),
+                series: [{ name: data.month.label, color: '--mx-chart-1', values: byDay }],
+                colors: days.map((day) => (data.business.weekend.includes(day) ? '--mx-chart-3' : null)),
+                extra: (index) => [`${data.month.previous_label}: ${fmt.money(lastYearByDay[index])}`],
+            });
+        }
+        if (multi) {
+            daily.update({
+                labels: data.selected_months.map((key) => L.monthLabel(key)),
+                series: [
+                    { name: 'Este ano', color: '--mx-chart-1', values: data.selected_months.map((key) => nowByMonth.get(key) || 0) },
+                    { name: 'Ano anterior', color: '--mx-chart-3', values: data.selected_months.map((key) => beforeByMonth.get(key) || 0) },
+                ],
+                extra: (index) => { const key = data.selected_months[index]; const change = pct(nowByMonth.get(key) || 0, beforeByMonth.get(key) || 0); return change == null ? [] : [`${fmt.signedPct(change)} contra o ano anterior`]; },
+            });
+        }
+
+        // Meta de volume: só existe por representante (soma das metas dos meses escolhidos).
+        const blocked = ['g', 'f', 'u', 'c'].some((key) => state[key]);
+        const pickedReps = L.chosen(state.r);
+        const goalKg = pickedReps.length ? pickedReps.reduce((acc, rep) => acc + (data.goals[rep] || 0), 0) : Object.values(data.goals).reduce((acc, value) => acc + (value || 0), 0);
+        const note = document.getElementById('goalNote');
+        if (!blocked && goalKg) {
+            const attainment = totals.k / goalKg;
+            const pace = data.month.is_current && data.business.total ? data.business.elapsed / data.business.total : 1;
+            goal.update(attainment, `${fmt.kg(totals.k)} de ${fmt.kg(goalKg)}${data.month.is_current ? ` · ritmo esperado ${fmt.pct(pace, 0)}` : ''}`,
+                { target: pace, toneRatio: pace ? attainment / pace : attainment });
+            const left = Math.max(goalKg - totals.k, 0);
+            const remainingDays = Math.max(data.business.total - data.business.elapsed, 0);
+            note.textContent = data.month.is_current
+                ? (left <= 0 ? `Meta de volume ${multi ? 'do período' : 'do mês'} batida.` : `Faltam ${fmt.kg(left)} em ${remainingDays} ${remainingDays === 1 ? 'dia útil' : 'dias úteis'}: ${fmt.kg(remainingDays ? left / remainingDays : left)} por dia útil.`)
+                : `${multi ? 'Período fechado' : 'Mês fechado'} com ${fmt.pct(totals.k / goalKg, 0)} da meta.`;
+        } else {
+            goal.update(null, blocked ? 'a meta é por representante: tire os outros filtros' : 'sem meta no orçamento', { target: null });
+            note.textContent = blocked ? 'Com filtro de grupo, filial, UF ou cliente o medidor não tem meta para comparar.' : '';
+        }
+
+        reps.update(rankingItems('r', state, (key) => data.names.reps[key] || (key === 'null' ? 'Sem representante' : `Representante ${key}`)), state.r);
+        branches.update(rankingItems('f', state, (key) => data.names.branches[key] || key), state.f);
+        customers.update(rankingItems('c', state, customerName, (key) => (data.names.customers[key] || {}).place || '', profileUrl), state.c);
+        states.update(rankingItems('u', state, (key) => (key === 'EX' ? 'Exterior' : key)), state.u);
+
+        const groupTotals = L.group(pick(data.facts.filter((fact) => fact.y === 0), state, 'g'), 'g', ['n']);
+        const sorted = [...groupTotals.entries()].sort((a, b) => b[1].n - a[1].n);
+        const items = sorted.slice(0, 7).map(([key, value]) => ({ key, label: key, value: value.n, color: groupColors[key] || '--mx-chart-3' }));
+        const others = sorted.slice(7).reduce((acc, [, value]) => acc + value.n, 0);
+        if (others > 0) items.push({ key: '__outros', label: `Outros (${sorted.length - 7})`, value: others, color: '--mx-chart-3' });
+        groups.update(items, state.g);
+
+        const monthlyFilter = Object.fromEntries(Object.entries(state).filter(([key]) => ['r', 'g', 'f'].includes(key)));
+        const ignored = Object.keys(state).filter((key) => !['r', 'g', 'f'].includes(key));
+        document.getElementById('monthlyNote').textContent = ignored.length ? 'sem o filtro de UF e cliente' : '';
+        const byMonth = L.group(pick(data.monthly, monthlyFilter), 'm', ['n']);
+        monthly.update({
+            labels: data.months.map((month) => month.label),
+            keys: data.months.map((month) => toParam(month.key)),
+            highlight: multi ? data.months.map((month, index) => (data.selected_months.includes(month.key) ? index : -1)).filter((index) => index >= 0) : null,
+            series: [
+                { name: 'Este ano', color: '--mx-chart-1', values: data.months.map((month) => (byMonth.get(month.key) || {}).n || 0) },
+                { name: 'Ano anterior', color: '--mx-chart-3', values: data.months.map((month) => (byMonth.get(month.key - 12) || {}).n || 0) },
+            ],
+        });
+    }
+
+    calendar.update(data.calendar.map((day) => ({ date: day.date, value: day.value })));
+    filter.subscribe(render);
+    render(filter.get());
+
+    if (data.month.is_current) {
+        const status = document.getElementById('mxLiveStatus');
+        const toggleLive = document.getElementById('mxLiveToggle');
+        toggleLive.addEventListener('change', () => status.classList.toggle('is-off', !toggleLive.checked));
+        L.live({
+            url: `{{ page_url }}?mes={{ month_key }}&formato=json`, every: 180000, toggle: '#mxLiveToggle', stamp: '#mxLiveStamp',
+            onData: (next) => {
+                data = next;
+                Object.entries(names()).forEach(([key, map]) => Object.entries(map).forEach(([value, name]) => filter.setName(key, value, name)));
+                calendar.update(data.calendar.map((day) => ({ date: day.date, value: day.value })));
+                render(filter.get());
+            },
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

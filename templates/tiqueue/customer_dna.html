@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="{% static '/style/customerDna.css' %}?v=7">
     {% if dashes_mode %}<link rel="stylesheet" href="{% static '/style/dashes.css' %}">{% endif %}
     <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,500,600,700" rel="stylesheet">
+    {% include 'partials/maxisys_head.html' %}
 </head>
 <body>
     {% if dashes_mode %}
@@ -50,6 +51,7 @@
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
                         <input type="hidden" name="view" value="{{ dna_view_mode }}">
                         <input type="hidden" name="unidade" value="{{ dna_member_customer_id|default:'' }}">
+                        <input type="text" name="adicional" class="mx-ai-extra-inline" maxlength="500" placeholder="Adicional: pergunta para a IA (opcional)" aria-label="Adicional: pergunta ou instrução para a IA, respondida com as informações da tela" title="Ex.: Qual foi o produto que mais gerou perdas? A IA responde com base nas informações da tela.">
                         <button type="submit" class="dna-insight-btn{% if insight_snapshot and not dna_ai_quota.blocked %} is-ready{% endif %}" id="requestAiButton"
                                 {% if dna_ai_quota.blocked %}data-ai-blocked="1" title="Limite diário de análises atingido"{% elif not insight_snapshot %}disabled title="Gere primeiro os indicadores"{% endif %}>
                             <span class="dna-insight-spark">✦</span>
@@ -81,14 +83,19 @@
                     <strong>{% if dna_view_mode == 'group' %}Grupo econ&ocirc;mico{% else %}Cliente individual{% endif %}</strong>
                 </div>
                 <nav class="dna-scope-switch" aria-label="Modo de visualiza&ccedil;&atilde;o do DNA">
-                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&periodo={{ dashboard.period.key }}"{% if dna_view_mode != 'group' %} class="is-active"{% endif %}>Cliente</a>
-                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view=group&periodo={{ dashboard.period.key }}"{% if dna_view_mode == 'group' %} class="is-active"{% endif %}>Grupo econ&ocirc;mico</a>
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&{{ dashboard.period.query }}"{% if dna_view_mode != 'group' %} class="is-active"{% endif %}>Cliente</a>
+                    <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view=group&{{ dashboard.period.query }}"{% if dna_view_mode == 'group' %} class="is-active"{% endif %}>Grupo econ&ocirc;mico</a>
                 </nav>
                 {% if dna_view_mode == 'group' %}
                     <form method="get" class="dna-group-filter">
                         <input type="hidden" name="cliente" value="{{ customer_id }}">
                         <input type="hidden" name="view" value="group">
-                        <input type="hidden" name="periodo" value="{{ dashboard.period.key }}">
+                        {% if dashboard.period.key == 'range' %}
+                            <input type="hidden" name="inicio" value="{{ dna_range_start }}">
+                            <input type="hidden" name="fim" value="{{ dna_range_end }}">
+                        {% else %}
+                            <input type="hidden" name="periodo" value="{{ dashboard.period.key }}">
+                        {% endif %}
                         <label for="dnaGroupMember">Unidade do grupo</label>
                         <select id="dnaGroupMember" name="unidade" onchange="this.form.submit()">
                             <option value="">Todas as {{ dashboard.group.members_count }} unidades - raiz CNPJ {{ dashboard.group.root_display }}</option>
@@ -110,6 +117,15 @@
                         <a href="{{ dna_page_url }}?cliente={{ customer_id }}&view={{ dna_view_mode }}&unidade={{ dna_member_customer_id|default:'' }}&periodo={{ choice.key }}"{% if choice.key == dashboard.period.key %} class="is-active"{% endif %}>{{ choice.label }}</a>
                     {% endfor %}
                 </nav>
+                <form method="get" class="dna-range-filter" aria-label="Per&iacute;odo personalizado">
+                    <input type="hidden" name="cliente" value="{{ customer_id }}">
+                    <input type="hidden" name="view" value="{{ dna_view_mode }}">
+                    <input type="hidden" name="unidade" value="{{ dna_member_customer_id|default:'' }}">
+                    <label>De <input type="date" name="inicio" value="{{ dna_range_start }}" max="{% now 'Y-m-d' %}"></label>
+                    <label>At&eacute; <input type="date" name="fim" value="{{ dna_range_end }}" max="{% now 'Y-m-d' %}"></label>
+                    <button type="submit">Aplicar</button>
+                </form>
+                {% if dna_range_error %}<p class="dna-range-error" role="alert">{{ dna_range_error }}</p>{% endif %}
             </section>
         {% endif %}
 
@@ -226,6 +242,7 @@
                             <small>{{ insight_snapshot.ai_model }} · {{ insight_snapshot.ai_total_tokens }} tokens</small>
                         </div>
                         <p>{{ insight_snapshot.ai_response.executive_summary }}</p>
+                        {% if insight_snapshot.ai_response.pergunta_adicional %}<div class="mx-ai-answer"><p class="mx-ai-answer-question"><span>Adicional</span>{{ insight_snapshot.ai_response.pergunta_adicional }}</p><p class="mx-ai-answer-text">{{ insight_snapshot.ai_response.resposta_adicional }}</p></div>{% endif %}
                         <div class="dna-ai-priorities">
                             <article><span>Principal oportunidade</span><strong>{{ insight_snapshot.ai_response.principal_opportunity }}</strong></article>
                             <article><span>Principal atenção</span><strong>{{ insight_snapshot.ai_response.principal_attention }}</strong></article>

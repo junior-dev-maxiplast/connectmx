@@ -1,0 +1,383 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>DNA de Representantes</h2>
+        <p>Meta, carteira de clientes e desempenho com as regras do painel de <strong>Orçamento 2026</strong> · ERP Senior</p>
+    </div>
+    <div class="mx-search" id="mxRepSearch" data-page-url="{{ dna_page_url }}" data-period="{% if dashboard %}{{ dashboard.period.query }}{% else %}periodo={{ dna_period_key }}{% endif %}">
+        <label class="mx-search-box">
+            <svg class="mx-ico"><use href="#mx-i-search"/></svg>
+            <input id="mxRepSearchInput" type="search" placeholder="Buscar representante por nome ou código" autocomplete="off" aria-label="Buscar representante">
+            <kbd>Ctrl K</kbd>
+        </label>
+        <div class="mx-search-results" id="mxRepSearchResults" hidden></div>
+    </div>
+</div>
+
+<div class="mx-toolbar">
+    <div class="mx-toolbar-group" role="group" aria-label="Período">
+        <span class="mx-toolbar-label">Período</span>
+        {% for key, label in dna_period_choices %}
+            <a class="mx-chip{% if dna_period_key == key %} is-active{% endif %}" href="{{ dna_page_url }}?representante={{ rep_code|default:'' }}&periodo={{ key }}">{{ label }}</a>
+        {% endfor %}
+    </div>
+    <form method="get" class="mx-range" aria-label="Período personalizado">
+        <input type="hidden" name="representante" value="{{ rep_code|default:'' }}">
+        <label>De <input class="mx-input" type="date" name="inicio" value="{{ dna_range_start }}"></label>
+        <label>até <input class="mx-input" type="date" name="fim" value="{{ dna_range_end }}"></label>
+        <button type="submit" class="mx-btn mx-btn-ghost">Aplicar</button>
+    </form>
+</div>
+{% if dna_range_error %}<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg>{{ dna_range_error }}</div>{% endif %}
+{% include "tiqueue/maxisys/_filter_chips.html" %}
+{% if data_error %}
+    <div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar este DNA.</strong><br>{{ data_error }}</div></div>
+{% endif %}
+
+{% if dashboard %}
+{% with r=dashboard.rep k=dashboard.kpis g=dashboard.goals cs=dashboard.customers_summary %}
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Representante<small>{{ dashboard.period.label }} · {{ dashboard.period.range_label }}</small></h3>
+    <div class="mx-grid mx-grid-hero">
+        <article class="mx-card">
+            <div class="mx-hero">
+                <div class="mx-hero-avatar" aria-hidden="true">{{ r.initial }}</div>
+                <div class="mx-hero-main">
+                    <h3>{{ r.name }}</h3>
+                    <div class="mx-hero-meta">{% if r.nickname %}{{ r.nickname }} · {% endif %}Código{{ r.codes|length|pluralize }} {{ r.codes_display }}</div>
+                    <div class="mx-hero-meta"><span class="mx-badge is-info">{{ r.team }}</span>{% if r.codes|length > 1 %} <span class="mx-badge">{{ r.codes|length }} códigos consolidados como no PBIX</span>{% endif %}</div>
+                    {% if shell_can_agenda or shell_can_map %}
+                    <div class="mx-hero-meta">
+                        {% if shell_can_agenda %}<a class="mx-btn mx-btn-ghost" href="{{ shell_agenda_url }}?rep={{ rep_code }}"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Agenda da semana</a>{% endif %}
+                        {% if shell_can_map %}<a class="mx-btn mx-btn-ghost" href="{{ shell_map_url }}?rep={{ rep_code }}"><svg class="mx-ico"><use href="#mx-i-map"/></svg>Território no mapa</a>{% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="mx-hero-facts">
+                <div class="mx-fact"><span>Curva ABC</span><strong class="mx-inline"><span class="mx-abc {% if dashboard.ranking.class != '–' %}is-{{ dashboard.ranking.class }}{% endif %}">{{ dashboard.ranking.class }}</span> {% if dashboard.ranking.position %}{{ dashboard.ranking.position }}º de {{ dashboard.ranking.reps_count }}{% endif %}</strong><small>acumulado {{ dashboard.ranking.cumulative_display }}</small></div>
+                <div class="mx-fact"><span>Participação</span><strong>{{ dashboard.ranking.share_display }}</strong><small>do faturamento sem impostos</small></div>
+                <div class="mx-fact"><span>Clientes ativos</span><strong>{{ cs.active }}</strong><small>{{ cs.new }} novo(s) · {{ cs.inactive }} sem compra</small></div>
+                <div class="mx-fact"><span>Concentração</span><strong>{{ cs.concentration.count }} cliente(s) = 80%</strong><small title="{{ cs.concentration.top_name }}">maior: {{ cs.concentration.share_top1 }}</small></div>
+            </div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head">
+                <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span>
+                <div><p class="mx-card-title">Carteira por curva de faturamento</p><p class="mx-card-sub">Posição de cada cliente no Pareto da empresa</p></div>
+            </div>
+            {% for letter, count in cs.class_counts.items %}
+                <div class="mx-bar-row">
+                    <span><span class="mx-abc is-{{ letter }}">{{ letter }}</span> Curva {{ letter }}</span>
+                    <div class="mx-progress"><i style="width: {% widthratio count cs.active|default:1 100 %}%; background: var(--mx-{% if letter == 'A' %}good{% elif letter == 'B' %}warn{% else %}bad{% endif %})"></i></div>
+                    <b>{{ count }}</b>
+                </div>
+            {% endfor %}
+            <p class="mx-card-sub" style="margin-top: 10px">A curva usa o faturamento sem impostos de todos os {{ cs.active }} clientes ativos contra a base inteira da empresa no período.</p>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Meta {{ g.year }}<small>Realizado = faturado líquido + carteira com entrega no mês</small></h3>
+    {% if g.has_goals %}
+    <div class="mx-grid mx-grid-3">
+        <article class="mx-card">
+            <div class="mx-kpi-label">Acumulado no ano (até {{ g.month.label }})</div>
+            <div class="mx-goal-figure"><strong>{{ g.ytd.pct_display }}</strong><span>da meta de {{ g.ytd.goal_display }}</span></div>
+            <div class="mx-progress mx-progress-lg is-accent" style="margin-top: 8px"><i style="width: {{ g.ytd.bar_pct }}%"></i></div>
+            <div class="mx-goal-meta"><span>Faturado {{ g.ytd.billed_display }} ({{ g.ytd.billed_pct_display }})</span><span>Carteira {{ g.ytd.to_bill_display }}</span></div>
+            <div class="mx-goal-meta"><span>Falta {{ g.ytd.gap_display }}</span><span>{% if g.has_overdue %}em atraso {{ g.overdue_to_bill_display }}{% endif %}</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Mês atual ({{ g.month.label }})</div>
+            <div class="mx-goal-figure"><strong>{{ g.month.pct_display }}</strong><span>da meta de {{ g.month.goal_display }}</span></div>
+            <div class="mx-progress mx-progress-lg is-accent" style="margin-top: 8px"><i style="width: {{ g.month.bar_pct }}%"></i></div>
+            <div class="mx-goal-meta"><span>Faturado + carteira {{ g.month.done_display }}</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Meta do ano</div>
+            <div class="mx-goal-figure"><strong>{{ g.year_total.goal_display }}</strong></div>
+            <div class="mx-goal-meta"><span>Atingido {{ g.year_total.pct_display }}</span><span>Esperado até aqui {{ g.year_total.expected_display }}</span></div>
+            {% for unit in g.units %}
+                <div class="mx-bar-row"><span>{{ unit.name }}</span><small>meta {{ unit.goal_display }}</small><b>{{ unit.pct_display }}</b></div>
+            {% endfor %}
+        </article>
+        <article class="mx-card mx-span-2">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Meta x realizado por mês</p><p class="mx-card-sub">Barras: faturado e carteira · traço: meta do mês</p></div></div>
+            <div class="mx-chart" id="mxGoalChart"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturado (kg líquido)</span><span><i style="background: var(--mx-chart-2)"></i>Carteira a faturar</span><span><i class="is-line" style="background: var(--mx-text)"></i>Meta</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Meta por família</p><p class="mx-card-sub">Ano inteiro · faturado + carteira</p></div></div>
+            {% for family in g.families %}
+                <div class="mx-bar-row">
+                    <span title="{{ family.name }}">{{ family.name }}<small> · {{ family.billed_display }} / {{ family.goal_display }}</small></span>
+                    <div class="mx-progress is-accent">{% if family.pct != None %}<i style="width: {{ family.pct }}%"></i>{% endif %}</div>
+                    <b>{% if family.without_goal %}<span class="mx-badge">sem meta</span>{% else %}{{ family.pct_display }}{% endif %}</b>
+                </div>
+            {% endfor %}
+        </article>
+    </div>
+    {% else %}
+        <div class="mx-alert is-info"><svg class="mx-ico"><use href="#mx-i-info"/></svg>Sem meta cadastrada para {{ g.year }} no PBIX de Orçamento para este representante.</div>
+    {% endif %}
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Faturamento<small>Comparação com {{ dashboard.period.previous_label }}</small></h3>
+    <div class="mx-grid mx-grid-kpi">
+        <article class="mx-card"><div class="mx-kpi-label">Faturamento líquido de devolução</div><div class="mx-kpi-value">{{ k.net_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net.tone }}">{{ k.deltas.net.display }}</span><span>ano anterior {{ k.previous_net_display }}</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Faturamento sem impostos</div><div class="mx-kpi-value">{{ k.net_of_taxes_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net_of_taxes.tone }}">{{ k.deltas.net_of_taxes.display }}</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Volume líquido</div><div class="mx-kpi-value">{{ k.weight_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.weight.tone }}">{{ k.deltas.weight.display }}</span><span>ano anterior {{ k.previous_weight_display }}</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Fator kg (R$/kg)</div><div class="mx-kpi-value">{{ k.fator_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.fator.tone }}">{{ k.deltas.fator.display }}</span><span>limpo {{ k.fator_clean_display }}</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Margem bruta (CPV)</div><div class="mx-kpi-value">{{ k.margin_display }}</div><div class="mx-kpi-foot">{% if k.cost_partial %}<span class="mx-badge is-warn">custo em {{ k.cost_coverage_display }} das vendas</span>{% else %}<span>sobre o faturamento sem impostos</span>{% endif %}</div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Pedidos faturados</div><div class="mx-kpi-value">{{ k.orders }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.orders.tone }}">{{ k.deltas.orders.display }}</span><span>{{ k.invoices }} NFs · ticket {{ k.ticket_display }}</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Devoluções</div><div class="mx-kpi-value">{{ k.returned_display }}</div><div class="mx-kpi-foot"><span>{{ k.returned_share_display }} do faturamento bruto</span></div></article>
+        <article class="mx-card"><div class="mx-kpi-label">Prazo médio de pagamento</div><div class="mx-kpi-value">{{ k.payment_days_display }}</div><div class="mx-kpi-foot"><span>ponderado pelo faturamento</span></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-dna"/></svg>Clientes da carteira<small>{{ cs.active }} com faturamento no período</small></h3>
+    <article class="mx-card">
+        <div class="mx-table-tools">
+            <input class="mx-input" id="mxCustomerFilter" type="search" placeholder="Filtrar cliente ou cidade" aria-label="Filtrar clientes">
+            <div class="mx-toolbar-group" role="group" aria-label="Filtrar por curva">
+                <button type="button" class="mx-chip is-active" data-class-filter="">Todos</button>
+                <button type="button" class="mx-chip" data-class-filter="A">Curva A</button>
+                <button type="button" class="mx-chip" data-class-filter="B">Curva B</button>
+                <button type="button" class="mx-chip" data-class-filter="C">Curva C</button>
+            </div>
+        </div>
+        <div class="mx-table-wrap">
+            <table class="mx-table" id="mxCustomerTable">
+                <thead>
+                    <tr>
+                        <th class="mx-col-name">Cliente</th><th>Classificação</th><th class="is-num">Nota</th><th class="is-num">Faturamento</th><th class="is-num">% rep.</th>
+                        <th class="is-num">Volume</th><th class="is-num">Fator kg</th><th class="is-num">Margem</th><th>Recorrência</th><th>Última compra</th><th>Orientação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in dashboard.customers %}
+                        <tr data-class="{{ row.letters.0|default:'' }}" data-search="{{ row.name|lower }} {{ row.location|lower }} {{ row.code }}">
+                            <td class="mx-col-name"><a href="{{ customer_page_url }}?cliente={{ row.code }}&{{ dashboard.period.query }}">{{ row.name }}</a><span class="mx-cell-sub">{{ row.code }} · {{ row.location }}{% if row.is_new %} · <span class="mx-badge is-good">novo</span>{% endif %}</span></td>
+                            <td><span class="mx-abc-row">{% for letter in row.letters %}<span class="mx-abc {% if letter %}is-{{ letter }}{% endif %}">{{ letter|default:"–" }}</span>{% endfor %}</span></td>
+                            <td class="is-num is-strong">{{ row.score_display }}</td>
+                            <td class="is-num is-strong">{{ row.revenue_display }}</td>
+                            <td class="is-num">{{ row.share_display }}</td>
+                            <td class="is-num">{{ row.weight_display }}</td>
+                            <td class="is-num">{{ row.fator_display }}</td>
+                            <td class="is-num">{{ row.margin_display }}</td>
+                            <td class="mx-nowrap">{{ row.recurrence_label }}</td>
+                            <td class="mx-nowrap">{{ row.last_purchase_display }}<span class="mx-cell-sub">{% if row.days_since != None %}há {{ row.days_since }} dias{% endif %}</span></td>
+                            <td class="mx-orientation-cell">{{ row.orientation }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="11" class="mx-empty">Nenhum cliente com faturamento no período.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-user-plus"/></svg>Clientes novos e sem compra</h3>
+    <div class="mx-grid mx-grid-3">
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-user-plus"/></svg></span><div><p class="mx-card-title">Clientes novos</p><p class="mx-card-sub">Primeira compra da história dentro do período</p></div><span class="mx-card-aside">{{ cs.new }}</span></div>
+            <ul class="mx-list">
+                {% for row in dashboard.new_customers %}
+                    <li><div class="mx-list-main"><strong><a class="mx-link" href="{{ customer_page_url }}?cliente={{ row.code }}&{{ dashboard.period.query }}">{{ row.name }}</a></strong><small>Primeira compra {{ row.first_purchase_display }} · {{ row.location }}</small></div><span class="mx-list-value">{{ row.revenue_display }}</span></li>
+                {% empty %}<li class="mx-empty">Nenhum cliente novo no período.</li>{% endfor %}
+            </ul>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-user-off"/></svg></span><div><p class="mx-card-title">Dias sem compra</p><p class="mx-card-sub">Clientes dos últimos 24 meses sem venda deste representante no período</p></div></div>
+            {% for band in dashboard.inactive.bands %}
+                <div class="mx-bar-row"><span>{{ band.label }}</span><div class="mx-progress"><i style="width: {% widthratio band.count cs.inactive|default:1 100 %}%; background: var(--mx-bad)"></i></div><b>{{ band.count }}</b></div>
+            {% endfor %}
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Para reativar</p><p class="mx-card-sub">Do mais recente ao mais antigo</p></div><span class="mx-card-aside">{{ cs.inactive }}</span></div>
+            <ul class="mx-list">
+                {% for row in dashboard.inactive.items|slice:":8" %}
+                    <li><div class="mx-list-main"><strong><a class="mx-link" href="{{ customer_page_url }}?cliente={{ row.code }}&periodo=24">{{ row.name }}</a></strong><small>Última compra {{ row.last_purchase_display }} · {{ row.location }}</small></div><span class="mx-badge{% if row.days > 180 %} is-bad{% elif row.days > 60 %} is-warn{% endif %}">{{ row.days }} dias</span></li>
+                {% empty %}<li class="mx-empty">Todos os clientes recentes compraram no período.</li>{% endfor %}
+            </ul>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-chart"/></svg>Evolução, mix e carteira de pedidos</h3>
+    <div class="mx-grid mx-grid-3">
+        <article class="mx-card mx-span-2">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span><div><p class="mx-card-title">Faturamento mensal</p><p class="mx-card-sub">Últimos 24 meses, contra o mesmo mês do ano anterior</p></div></div>
+            <div class="mx-chart" id="mxRevenueChart"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturamento</span><span><i class="is-line" style="background: var(--mx-chart-2)"></i>Ano anterior</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Mix por grupo</p><p class="mx-card-sub">{{ dashboard.mix.groups_count }} grupo(s) no período · clique num grupo para filtrar a página (Ctrl + clique soma)</p></div></div>
+            {% for group in dashboard.mix.groups %}
+                <div class="mx-bar-row"><span title="{{ group.name }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ group.key }}">{{ group.name }}</button><small> · {{ group.fator_display }}/kg</small></span><div class="mx-progress"><i style="width: {{ group.share }}%"></i></div><b>{{ group.share_display }}</b></div>
+            {% empty %}<div class="mx-empty">Sem vendas no período.</div>{% endfor %}
+        </article>
+        <article class="mx-card mx-span-2">
+            {% with p=dashboard.portfolio %}
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-truck"/></svg></span><div><p class="mx-card-title">Carteira a faturar</p><p class="mx-card-sub">{{ p.open_orders }} pedido(s) · {{ p.to_bill_kg_display }} · {{ p.to_bill_value_display }} · pronto {{ p.ready_share_display }}</p></div>{% if p.overdue_items %}<span class="mx-badge is-bad" style="margin-left:auto">{{ p.overdue_items }} atrasado(s) · {{ p.overdue_kg_display }}</span>{% endif %}</div>
+            <div class="mx-table-wrap">
+                <table class="mx-table">
+                    <thead><tr><th>Pedido</th><th>Cliente</th><th>Produto</th><th>Entrega</th><th class="is-num">A faturar</th><th class="is-num">Valor</th><th class="is-num">Pronto</th></tr></thead>
+                    <tbody>
+                        {% for item in p.items %}
+                            <tr>
+                                <td class="is-strong">{{ item.number }}</td>
+                                <td>{{ item.customer_name|default:item.customer }}</td>
+                                <td>{{ item.product_name }}</td>
+                                <td class="mx-nowrap">{{ item.delivery_display }}{% if item.is_overdue %} <span class="mx-badge is-bad">atrasado</span>{% endif %}</td>
+                                <td class="is-num">{{ item.to_bill_kg_display }}</td>
+                                <td class="is-num">{{ item.to_bill_value_display }}</td>
+                                <td class="is-num">{{ item.ready_pct }}%</td>
+                            </tr>
+                        {% empty %}<tr><td colspan="7" class="mx-empty">Nenhum item em aberto.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endwith %}
+        </article>
+        <article class="mx-card">
+            {% with p=dashboard.portfolio %}
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Entrada de pedidos</p><p class="mx-card-sub">Pedidos emitidos no período</p></div></div>
+            <div class="mx-goal-figure"><strong>{{ p.entered_kg_display }}</strong><span>{{ p.entered_orders }} pedido(s)</span></div>
+            <div class="mx-goal-meta"><span>Valor {{ p.entered_value_display }}</span><span>Fator {{ p.entered_fator_display }}/kg</span></div>
+            {% endwith %}
+        </article>
+    </div>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Representante: o da nota (E140NFV.CODREP) no faturamento e o do pedido (E120PED.CODREP) na carteira. Códigos que o PBIX consolida (ex.: 10048 e 10042) entram juntos.</li>
+        <li>Meta: tabelas digitadas no PBIX de Orçamento 2026, em kg por mês, unidade e família. Realizado do mês = kg faturado líquido de devolução + kg a faturar dos itens com entrega no mês (% META ATINGIDA do PBIX).</li>
+        <li>Classificação de cada cliente: faturamento (curva ABC da empresa), margem (CPV), lote (kg médio por mês com compra) e recorrência (meses do período ÷ meses com compra), com a orientação da matriz ABCD.</li>
+        <li>Clientes novos: primeira compra da história dentro do período. Sem compra: clientes que compraram com o representante nos últimos 24 meses e não compraram no período, com os dias desde a última compra (qualquer representante).</li>
+        <li>Curva ABC do representante: Pareto do faturamento sem impostos entre os representantes no período.</li>
+    </ul>
+</details>
+
+{{ dashboard.series|json_script:"mxSeriesData" }}
+{{ g.months|json_script:"mxGoalData" }}
+{% endwith %}
+{% endif %}
+{{ rep_choices|json_script:"mxRepChoices" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script>
+(() => {
+    const normalize = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+    // Busca de representante: a lista inteira já vem na página (são poucos).
+    const box = document.getElementById('mxRepSearch');
+    const input = document.getElementById('mxRepSearchInput');
+    const results = document.getElementById('mxRepSearchResults');
+    const choices = JSON.parse(document.getElementById('mxRepChoices').textContent);
+    const render = () => {
+        const term = normalize(input.value.trim());
+        const items = choices.filter((rep) => !term || normalize(`${rep.name} ${rep.nickname} ${rep.code}`).includes(term)).slice(0, 14);
+        results.replaceChildren();
+        if (!items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'mx-search-message';
+            empty.textContent = 'Nenhum representante encontrado.';
+            results.appendChild(empty);
+        }
+        items.forEach((rep) => {
+            const link = document.createElement('a');
+            link.className = 'mx-search-result';
+            link.href = `${box.dataset.pageUrl}?representante=${rep.code}&${box.dataset.period}`;
+            const badge = document.createElement('span');
+            badge.className = `mx-abc ${['A', 'B', 'C'].includes(rep.class) ? `is-${rep.class}` : ''}`;
+            badge.textContent = rep.class;
+            const info = document.createElement('span');
+            const name = document.createElement('strong');
+            name.textContent = rep.name;
+            const detail = document.createElement('small');
+            detail.textContent = `${rep.code}${rep.nickname ? ` · ${rep.nickname}` : ''} · ${rep.revenue_display} · ${rep.customers} cliente(s)`;
+            info.append(name, detail);
+            link.append(badge, info);
+            results.appendChild(link);
+        });
+        results.hidden = false;
+    };
+    input.addEventListener('input', render);
+    input.addEventListener('focus', render);
+    document.addEventListener('click', (event) => { if (!box.contains(event.target)) results.hidden = true; });
+    document.addEventListener('keydown', (event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); input.focus(); }
+        if (event.key === 'Escape') results.hidden = true;
+    });
+
+    // Filtro da tabela de clientes.
+    const table = document.getElementById('mxCustomerTable');
+    if (table) {
+        const filter = document.getElementById('mxCustomerFilter');
+        const buttons = document.querySelectorAll('[data-class-filter]');
+        let classFilter = '';
+        const apply = () => {
+            const term = normalize(filter.value.trim());
+            table.querySelectorAll('tbody tr[data-class]').forEach((row) => {
+                const visible = (!classFilter || row.dataset.class === classFilter) && (!term || normalize(row.dataset.search).includes(term));
+                row.hidden = !visible;
+            });
+        };
+        filter.addEventListener('input', apply);
+        buttons.forEach((button) => button.addEventListener('click', () => {
+            classFilter = button.dataset.classFilter;
+            buttons.forEach((other) => other.classList.toggle('is-active', other === button));
+            apply();
+        }));
+    }
+
+    if (!window.MXCharts) return;
+    const seriesNode = document.getElementById('mxSeriesData');
+    if (seriesNode) {
+        const series = JSON.parse(seriesNode.textContent);
+        MXCharts.bars(document.getElementById('mxRevenueChart'), {
+            label: 'Faturamento mensal',
+            labels: series.map((row) => row.label),
+            series: [{ name: 'Faturamento', values: series.map((row) => row.revenue), color: '--mx-chart-1' }],
+            line: { name: 'Ano anterior', values: series.map((row) => row.previous_revenue), color: '--mx-chart-2', dashed: true },
+            format: (value) => MXCharts.money(value, true),
+            extra: (i) => `Volume: <b>${MXCharts.kg(series[i].weight)}</b>`,
+        });
+    }
+    const goalNode = document.getElementById('mxGoalData');
+    const goalChart = document.getElementById('mxGoalChart');
+    if (goalNode && goalChart) {
+        const months = JSON.parse(goalNode.textContent);
+        MXCharts.bars(goalChart, {
+            label: 'Meta x realizado por mês',
+            labels: months.map((row) => row.label),
+            stacked: true,
+            series: [
+                { name: 'Faturado', values: months.map((row) => row.billed), color: '--mx-chart-1' },
+                { name: 'Carteira', values: months.map((row) => row.to_bill), color: '--mx-chart-2' },
+            ],
+            target: { name: 'Meta', values: months.map((row) => row.goal), color: '--mx-text' },
+            format: (value) => MXCharts.kg(value),
+            extra: (i) => `Atingido: <b>${months[i].pct_display}</b>`,
+        });
+    }
+})();
+</script>
+{% endblock %}

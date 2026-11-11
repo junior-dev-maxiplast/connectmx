@@ -1,0 +1,267 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Entregas (OTIF)</h2>
+        <p>Pedidos entregues no prazo e completos, atrasos e carteira vencida · ERP Senior{% if payload %} · dados das {{ payload.loaded_at }}{% endif %}</p>
+    </div>
+    {% if not data_error %}
+    <div class="mx-segment-toggle" role="group" aria-label="Medir por">
+        <button type="button" class="is-active" data-measure="items">Por item</button>
+        <button type="button" data-measure="kg">Por kg</button>
+    </div>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div id="mxMonths"></div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique num mês, faixa de atraso, representante, grupo ou filial para filtrar a página; Ctrl + clique soma itens à seleção.</p>
+
+<section class="mx-section">
+    <div class="mx-kpi-hero">
+        <article class="mx-card mx-reveal" style="--i: 0; --mx-kpi-accent: var(--mx-good)"><div class="mx-kpi-label">OTIF (<span data-period>3 meses</span>)</div><div class="mx-kpi-value" id="kpiOtif">–</div><div class="mx-kpi-foot"><span class="mx-delta" id="kpiOtifDelta">–</span><span id="kpiOtifCompare">em pontos contra os 3 meses anteriores</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 1; --mx-kpi-accent: var(--mx-chart-1)"><div class="mx-kpi-label">Entregue completo</div><div class="mx-kpi-value" id="kpiFull">–</div><div class="mx-kpi-foot"><span>com pelo menos 90% da quantidade</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 2; --mx-kpi-accent: var(--mx-cat-3)"><div class="mx-kpi-label">No prazo (dos completos)</div><div class="mx-kpi-value" id="kpiOnTime">–</div><div class="mx-kpi-foot"><span>nota emitida até a data prometida</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 3; --mx-kpi-accent: var(--mx-warn)"><div class="mx-kpi-label">Atraso médio</div><div class="mx-kpi-value" id="kpiDelay">–</div><div class="mx-kpi-foot"><span id="kpiDelayFoot">entre os itens atrasados</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 4; --mx-kpi-accent: var(--mx-cat-7)"><div class="mx-kpi-label">Lead time</div><div class="mx-kpi-value" id="kpiLead">–</div><div class="mx-kpi-foot"><span>do pedido à última nota</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 5; --mx-kpi-accent: var(--mx-bad)"><div class="mx-kpi-label">Carteira atrasada</div><div class="mx-kpi-value" id="kpiOverdue">–</div><div class="mx-kpi-foot"><span id="kpiOverdueFoot">–</span></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" style="--i: 6">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">OTIF por mês</p><p class="mx-card-sub">Pelo mês da entrega prometida · linha tracejada = referência de 95% · clique num mês para filtrar</p></div></div>
+            <div id="chartMonthly"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>OTIF</span><span><i class="is-line" style="background: var(--mx-chart-2)"></i>Entregue completo</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 7">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-target"/></svg></span><div><p class="mx-card-title">Nível de serviço</p><p class="mx-card-sub">OTIF de <span data-period>3 meses</span> · marca = 95%</p></div></div>
+            <div id="gaugeOtif"></div>
+            <p class="mx-sim-note" id="otifNote" aria-live="polite"></p>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 8">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-history"/></svg></span><div><p class="mx-card-title">Quando a entrega saiu</p><p class="mx-card-sub">Itens de <span data-period-range>12 meses</span> pela diferença entre a nota e a data prometida · clique para filtrar</p></div></div>
+        <div id="chartBuckets"></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 9"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Representantes</p><p class="mx-card-sub">OTIF de <span data-period-range>12 meses</span>, do pior para o melhor (20 itens ou mais)</p></div></div><div id="rankReps"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 10"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Grupos de produto</p><p class="mx-card-sub">OTIF de <span data-period-range>12 meses</span>, do pior para o melhor</p></div></div><div id="rankGroups"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 11"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-home"/></svg></span><div><p class="mx-card-title">Filiais</p><p class="mx-card-sub">OTIF de <span data-period-range>12 meses</span> por filial do pedido</p></div></div><div id="rankBranches"></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 12">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Itens atrasados em aberto</p><p class="mx-card-sub">A data prometida passou e ainda falta faturar · mais atrasados primeiro</p></div></div>
+        <div class="mx-table-wrap">
+            <table class="mx-table mx-table-compact mx-panel-table">
+                <thead><tr><th scope="col">Pedido/item</th><th scope="col">Cliente</th><th scope="col">Produto</th><th scope="col">Representante</th><th scope="col" class="is-num">Prometido para</th><th scope="col" class="is-num">Atraso</th><th scope="col" class="is-num">Em aberto</th></tr></thead>
+                <tbody id="overdueBody"></tbody>
+            </table>
+        </div>
+        <p class="mx-empty-note" id="overdueEmpty" hidden>Nenhum item atrasado neste filtro.</p>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Itens de pedido de venda com data de entrega prometida nos últimos 12 meses e já vencida; o mês corrente entra até ontem. Itens cancelados ficam fora.</li>
+        <li>Completo: faturado pelo menos 90% da quantidade pedida (menos o cancelado). OTIF: completo e com essa quantidade faturada até a data prometida. A data da nota fiscal é a data de entrega.</li>
+        <li>Item vencido sem entrega completa conta como falha: "ainda não entregue" (aberto) ou "entregue incompleto" (fechado com menos de 90%).</li>
+        <li>Lead time: dias da emissão do pedido até a última nota do item. Por kg: cada item pesa pelo seu peso pedido.</li>
+    </ul>
+</details>
+
+{{ payload|json_script:"mxPanelData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script>
+(() => {
+    const L = window.MXLive;
+    const fmt = L.fmt;
+    const data = JSON.parse(document.getElementById('mxPanelData').textContent);
+    const profileUrl = (code) => '{{ profile_url_template }}'.replace('__code__', code);
+    const bucketLabel = Object.fromEntries(data.buckets.map((bucket) => [bucket.key, bucket.label]));
+    const bucketColor = { early: '--mx-good', ontime: '--mx-good', d3: '--mx-cat-4', d7: '--mx-warn', d15: '--mx-div-neg-1', d30: '--mx-div-neg-2', d30p: '--mx-div-neg-2', short: '--mx-cat-7', open: '--mx-bad' };
+    let measure = 'items';
+    const filter = L.crossFilter({
+        labels: { m: 'Mês', b: 'Entrega', r: 'Representante', g: 'Grupo', f: 'Filial' },
+        names: { m: (value) => L.monthLabel(value), b: bucketLabel, r: data.names.reps, f: data.names.branches },
+        chips: '#mxFilterBar',
+    });
+    L.monthPicker(document.getElementById('mxMonths'), { months: data.months, filter, dimension: 'm', title: 'Mês prometido', allLabel: 'Todos os meses' });
+    const monthKeys = data.months.map((month) => month.key);
+    // O mês fica fora do `pick`: os indicadores comparam o período com os meses de antes.
+    const pick = (rows, state, skip) => rows.filter((row) => L.passAll(row, state, [skip, 'm']));
+    // Medida: itens (i, o, fu) ou kg (k, ko, e o "completo" aproximado pelo peso dos itens completos).
+    const totals = (rows) => {
+        const sum = L.sum(rows, ['i', 'o', 'fu', 'k', 'ko', 'ld', 'li', 'td', 'ti']);
+        const kgFull = rows.filter((row) => !['short', 'open'].includes(row.b)).reduce((acc, row) => acc + (row.k || 0), 0);
+        return measure === 'kg'
+            ? { total: sum.k, otif: sum.ko, full: kgFull, ...sum }
+            : { total: sum.i, otif: sum.o, full: sum.fu, ...sum };
+    };
+    const lastMonth = monthKeys[monthKeys.length - 1];
+    const monthOf = (iso) => { const [year, month] = iso.split('-').map(Number); return year * 12 + month - 1; };
+    // Período: os meses escolhidos ou os 3 últimos; comparação com o mesmo número de meses logo antes.
+    const periodOf = (state) => {
+        const picked = L.chosen(state.m).map(Number).sort((a, b) => a - b);
+        const recent = picked.length ? picked : [lastMonth - 2, lastMonth - 1, lastMonth];
+        const size = recent.length;
+        const previous = Array.from({ length: size }, (_, index) => recent[0] - size + index);
+        const label = picked.length === 1 ? L.monthLabel(picked[0]) : `${size} meses${picked.length ? ' escolhidos' : ''}`;
+        return {
+            picked: picked.length > 0, recent: new Set(recent), previous: new Set(previous), label,
+            compare: size === 1 ? 'em pontos contra o mês anterior' : `em pontos contra os ${size} meses anteriores`,
+            range: picked.length ? label : '12 meses',
+        };
+    };
+
+    const monthly = L.line(document.getElementById('chartMonthly'), { height: 250, format: (value) => fmt.pct(value, 0), onSelect: (key, index, event) => filter.toggle('m', monthKeys[index], event) });
+    const gauge = L.gauge(document.getElementById('gaugeOtif'), { good: 0.95, warn: 0.85, target: data.reference, format: (value) => fmt.pct(value, 1), label: 'OTIF' });
+    const buckets = L.columns(document.getElementById('chartBuckets'), { height: 220, format: (value) => (measure === 'kg' ? fmt.kg(value) : fmt.int(value)), maxBar: 54, onSelect: (key, index, event) => filter.toggle('b', key, event) });
+    const rankOptions = (key) => ({ format: (value) => fmt.pct(value, 1), limit: 12, onSelect: (value, item, event) => filter.toggle(key, value, event) });
+    const reps = L.ranking(document.getElementById('rankReps'), rankOptions('r'));
+    const groups = L.ranking(document.getElementById('rankGroups'), { ...rankOptions('g'), color: '--mx-cat-3' });
+    const branches = L.ranking(document.getElementById('rankBranches'), { ...rankOptions('f'), color: '--mx-cat-7' });
+
+    function ranking(rows, state, dimension, label) {
+        const grouped = new Map();
+        pick(rows, state, dimension).forEach((row) => {
+            const key = row[dimension];
+            if (key == null) return;
+            const list = grouped.get(key) || [];
+            list.push(row);
+            grouped.set(key, list);
+        });
+        return [...grouped.entries()].map(([key, list]) => {
+            const value = totals(list);
+            return { key, label: label(key), value: value.total ? value.otif / value.total : 0, items: value.i,
+                sub: `${fmt.int(value.i)} itens · ${fmt.int(value.i - value.o)} fora do OTIF` };
+        }).filter((item) => item.items >= (dimension === 'f' ? 1 : 20)).sort((a, b) => a.value - b.value);
+    }
+
+    function render(state) {
+        const period = periodOf(state);
+        document.querySelectorAll('[data-period]').forEach((node) => { node.textContent = period.label; });
+        document.querySelectorAll('[data-period-range]').forEach((node) => { node.textContent = period.range; });
+        document.getElementById('kpiOtifCompare').textContent = period.compare;
+        const rows = pick(data.facts, state);
+        const inRange = (row) => !period.picked || period.recent.has(row.m);
+        const recent = totals(rows.filter((row) => period.recent.has(row.m)));
+        const before = totals(rows.filter((row) => period.previous.has(row.m)));
+        const otif = recent.total ? recent.otif / recent.total : null;
+        const otifBefore = before.total ? before.otif / before.total : null;
+        L.count(document.getElementById('kpiOtif'), otif, (value) => fmt.pct(value, 1));
+        const delta = document.getElementById('kpiOtifDelta');
+        const points = otif != null && otifBefore != null ? (otif - otifBefore) * 100 : null;
+        delta.textContent = points == null ? '–' : `${points > 0 ? '+' : ''}${fmt.dec(points, 1)} p.p.`;
+        delta.className = `mx-delta ${points == null ? '' : points >= 0 ? 'is-up' : 'is-down'}`;
+        L.count(document.getElementById('kpiFull'), recent.total ? recent.full / recent.total : null, (value) => fmt.pct(value, 1));
+        L.count(document.getElementById('kpiOnTime'), recent.full ? recent.otif / recent.full : null, (value) => fmt.pct(value, 1));
+        L.count(document.getElementById('kpiDelay'), recent.li ? recent.ld / recent.li : null, (value) => fmt.days(value));
+        document.getElementById('kpiDelayFoot').textContent = `${fmt.int(recent.li)} item(ns) atrasado(s) em ${period.label}`;
+        L.count(document.getElementById('kpiLead'), recent.ti ? recent.td / recent.ti : null, (value) => fmt.days(value));
+        gauge.update(otif, otif == null ? 'sem itens no período' : `${fmt.int(recent.otif)} de ${fmt.int(recent.total)} ${measure === 'kg' ? 'kg' : 'itens'} no prazo e completos`);
+        const gap = otif == null ? null : data.reference - otif;
+        document.getElementById('otifNote').textContent = gap == null ? '' : gap > 0
+            ? `Faltam ${fmt.dec(gap * 100, 1)} p.p. para 95%: cerca de ${fmt.int(Math.ceil(gap * recent.total))} ${measure === 'kg' ? 'kg' : 'itens'} a mais no prazo em ${period.label}.`
+            : 'Acima da referência de 95%.';
+
+        // Carteira atrasada: com meses escolhidos, só os itens prometidos nesses meses.
+        const overdue = data.overdue.filter((row) => ['r', 'g', 'f'].every((key) => L.pass(state, key, row[key])) && (!period.picked || period.recent.has(monthOf(row.due))));
+        L.count(document.getElementById('kpiOverdue'), overdue.length, fmt.int);
+        document.getElementById('kpiOverdueFoot').textContent = `${fmt.kg(overdue.reduce((acc, row) => acc + row.kg, 0))} · ${fmt.money(overdue.reduce((acc, row) => acc + row.value, 0))} em aberto${period.picked ? ' · prometidos no período' : ''}`;
+
+        const byMonth = new Map();
+        rows.forEach((row) => { const list = byMonth.get(row.m) || []; list.push(row); byMonth.set(row.m, list); });
+        const monthValues = data.months.map((month) => totals(byMonth.get(month.key) || []));
+        const shares = monthValues.flatMap((value) => (value.total ? [value.otif / value.total, value.full / value.total] : []));
+        monthly.update({
+            min: Math.max(0, Math.floor((Math.min(data.reference, ...shares) - 0.05) * 20) / 20), max: 1,
+            labels: data.months.map((month) => month.label), keys: monthKeys,
+            marked: period.picked ? [...period.recent].map((key) => monthKeys.indexOf(key)) : [],
+            reference: data.reference, referenceLabel: '95%',
+            series: [
+                { name: 'OTIF', color: '--mx-chart-1', area: true, values: monthValues.map((value) => (value.total ? value.otif / value.total : null)) },
+                { name: 'Entregue completo', color: '--mx-chart-2', dashed: true, values: monthValues.map((value) => (value.total ? value.full / value.total : null)) },
+            ],
+            extra: (index) => [`${fmt.int(monthValues[index].i)} itens · ${fmt.kg(monthValues[index].k)}`],
+        });
+
+        const rangeFacts = data.facts.filter(inRange);
+        const byBucket = new Map();
+        pick(rangeFacts, state, 'b').forEach((row) => { const list = byBucket.get(row.b) || []; list.push(row); byBucket.set(row.b, list); });
+        const bucketTotals = data.buckets.map((bucket) => totals(byBucket.get(bucket.key) || []).total);
+        const allItems = bucketTotals.reduce((acc, value) => acc + value, 0) || 1;
+        buckets.update({
+            labels: data.buckets.map((bucket) => bucket.label), keys: data.buckets.map((bucket) => bucket.key),
+            series: [{ name: measure === 'kg' ? 'kg' : 'Itens', color: '--mx-chart-1', values: bucketTotals }],
+            colors: data.buckets.map((bucket) => bucketColor[bucket.key]),
+            highlight: L.chosen(state.b).map((key) => data.buckets.findIndex((bucket) => bucket.key === key)),
+            extra: (index) => [`${fmt.pct(bucketTotals[index] / allItems, 1)} do total`],
+        });
+
+        reps.update(ranking(rangeFacts, state, 'r', (key) => data.names.reps[key] || `Representante ${key}`), state.r);
+        groups.update(ranking(rangeFacts, state, 'g', (key) => key), state.g);
+        branches.update(ranking(rangeFacts, state, 'f', (key) => data.names.branches[key] || key), state.f);
+
+        const body = document.getElementById('overdueBody');
+        body.replaceChildren();
+        overdue.slice(0, 80).forEach((row, index) => {
+            const tr = document.createElement('tr');
+            tr.style.animationDelay = `${Math.min(index * 14, 500)}ms`;
+            const cell = (text, className) => { const td = document.createElement('td'); if (className) td.className = className; td.textContent = text; tr.appendChild(td); return td; };
+            cell(row.order);
+            const name = cell('', 'mx-col-name');
+            const info = data.names.customers[row.c] || { name: `Cliente ${row.c}`, place: '' };
+            const link = document.createElement('a');
+            link.href = profileUrl(row.c);
+            link.textContent = info.name;
+            const sub = document.createElement('span');
+            sub.className = 'mx-cell-sub';
+            sub.textContent = info.place;
+            name.append(link, sub);
+            cell(row.product || row.g);
+            cell(data.names.reps[row.r] || '-');
+            cell(new Date(`${row.due}T12:00:00`).toLocaleDateString('pt-BR'), 'is-num');
+            const late = cell('', 'is-num');
+            const badge = document.createElement('span');
+            badge.className = `mx-badge ${row.late > 15 ? 'is-bad' : 'is-warn'}`;
+            badge.textContent = `${row.late} dia${row.late === 1 ? '' : 's'}`;
+            late.appendChild(badge);
+            cell(`${fmt.kg(row.kg)} · ${fmt.money(row.value)}`, 'is-num');
+            body.appendChild(tr);
+        });
+        document.getElementById('overdueEmpty').hidden = overdue.length > 0;
+    }
+
+    document.querySelectorAll('[data-measure]').forEach((button) => button.addEventListener('click', () => {
+        measure = button.dataset.measure;
+        document.querySelectorAll('[data-measure]').forEach((other) => other.classList.toggle('is-active', other === button));
+        render(filter.get());
+    }));
+    filter.subscribe(render);
+    render(filter.get());
+})();
+</script>
+{% endif %}
+{% endblock %}

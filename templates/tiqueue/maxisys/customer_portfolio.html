@@ -1,0 +1,272 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Carteira de Clientes</h2>
+        <p>Quem mais dá lucro, quem está esfriando e quem vale reativar · ERP Senior{% if loaded_at %} · dados das {{ loaded_at|date:"H:i" }}{% endif %}</p>
+    </div>
+    {% if not data_error %}
+    <div class="mx-toolbar-group">
+        <label class="mx-search-box mx-search-inline">
+            <svg class="mx-ico"><use href="#mx-i-search"/></svg>
+            <input type="search" placeholder="Filtrar por cliente, cidade ou representante" data-mx-table-search="mxPortfolioTable" aria-label="Filtrar clientes da tabela">
+        </label>
+        {% if is_admin %}
+        <form method="post" action="{{ refresh_url }}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="mx-btn mx-btn-ghost" title="Os números ficam guardados por 30 minutos"><svg class="mx-ico"><use href="#mx-i-refresh"/></svg>Reler o ERP</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar a carteira.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div class="mx-toolbar">
+    <div class="mx-toolbar-group" role="group" aria-label="Período">
+        <span class="mx-toolbar-label">Período</span>
+        {% for choice in period_choices %}<a class="mx-chip{% if window.key == choice.key %} is-active{% endif %}" href="{{ page_url }}?periodo={{ choice.key }}&amp;visao={{ view }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ choice.label }}</a>{% endfor %}
+    </div>
+    <form method="get" action="{{ page_url }}" class="mx-filters" aria-label="Filtros da carteira">
+        <input type="hidden" name="periodo" value="{{ window.key }}">
+        <input type="hidden" name="visao" value="{{ view }}">
+        <select class="mx-select" name="uf" aria-label="UF" onchange="this.form.submit()">
+            <option value="">Todas as UFs</option>
+            {% for state in state_choices %}<option value="{{ state.code }}"{% if state.code in filters.state and filters.state|length == 1 %} selected{% endif %}>{{ state.name }}</option>{% endfor %}
+            <option value="EX"{% if "EX" in filters.state and filters.state|length == 1 %} selected{% endif %}>Exterior</option>{% if filters.state|length > 1 %}<option value="{{ filters.state|join:"," }}" selected>{{ filters.state|length }} UFs escolhidas</option>{% endif %}
+        </select>
+        <select class="mx-select" name="rep" aria-label="Representante" onchange="this.form.submit()">
+            <option value="">Todos os representantes</option>{% if filters.rep|length > 1 %}<option value="{{ filters.rep|join:"," }}" selected>{{ filters.rep|length }} representantes escolhidos</option>{% endif %}
+            {% for rep in rep_choices %}<option value="{{ rep.code }}"{% if rep.code in filters.rep and filters.rep|length == 1 %} selected{% endif %}>{{ rep.name }}</option>{% endfor %}
+        </select>
+        <select class="mx-select" name="segmento" aria-label="Segmento" onchange="this.form.submit()">
+            <option value="">Todos os segmentos</option>{% if filters.segment|length > 1 %}<option value="{{ filters.segment|join:"," }}" selected>{{ filters.segment|length }} segmentos escolhidos</option>{% endif %}
+            {% for segment in segment_choices %}<option value="{{ segment.code }}"{% if segment.code in filters.segment and filters.segment|length == 1 %} selected{% endif %}>{{ segment.name }} ({{ segment.count }})</option>{% endfor %}
+        </select>
+        <noscript><button class="mx-btn mx-btn-ghost" type="submit">Aplicar</button></noscript>
+    </form>
+</div>
+<p class="mx-filter-hint">Clique num representante ou segmento da tabela para filtrar a carteira; Ctrl + clique soma à seleção e a página abre ao soltar o Ctrl.</p>
+{% if filter_labels %}<p class="mx-hint">Filtrado por {{ filter_labels|join:" · " }} · <a href="{{ page_url }}?periodo={{ window.key }}&amp;visao={{ view }}">limpar filtros</a></p>{% endif %}
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Resumo<small>{{ window.label }} · {{ window.range_label }}</small></h3>
+    <div class="mx-grid mx-grid-kpi">
+        <article class="mx-card">
+            <div class="mx-kpi-label">Lucro bruto</div>
+            <div class="mx-kpi-value">{{ summary.profit_display }}</div>
+            <div class="mx-kpi-foot"><span>margem {{ summary.margin_display }} · faturamento {{ summary.net_display }}</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Concentração do lucro</div>
+            <div class="mx-kpi-value">{{ summary.top20_display }}</div>
+            <div class="mx-kpi-foot"><span>vem dos {{ summary.pareto.top20_count }} maiores (20% dos clientes) · {{ summary.pareto.count_for_80|default:"–" }} fazem 80%</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Margem negativa</div>
+            <div class="mx-kpi-value">{{ summary.negative_count }} cliente{{ summary.negative_count|pluralize }}</div>
+            <div class="mx-kpi-foot"><span>{{ summary.negative_net_display }} vendidos sem lucro · {{ summary.low_count }} abaixo de 5%{% if summary.suspect_count %} · {{ summary.suspect_count }} com custo zerado a conferir{% endif %}</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Clientes ativos</div>
+            <div class="mx-kpi-value">{{ summary.customers }}</div>
+            <div class="mx-kpi-foot"><span class="mx-delta {{ summary.growth_tone }}">{{ summary.growth_display }}</span><span>faturamento contra o ano anterior</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Ritmo de compra</div>
+            <div class="mx-kpi-value">{{ summary.at_risk_count }} em risco</div>
+            <div class="mx-kpi-foot"><span>{{ summary.late_count }} atrasado(s) em relação ao próprio ritmo</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-chart"/></svg>Análises<small>Concentração do lucro e segmentos de comportamento</small></h3>
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Curva de concentração do lucro</p><p class="mx-card-sub">% do lucro bruto acumulado (eixo vertical) pelos clientes do maior para o menor (eixo horizontal)</p></div></div>
+            <div class="mx-chart" id="mxParetoChart" role="img" aria-label="Curva de concentração do lucro"></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Segmentos RFM</p><p class="mx-card-sub">Recência, frequência e valor de quem comprou no período</p></div></div>
+            {% for row in summary.rfm %}
+            <div class="mx-bar-row" title="{{ row.description }}">
+                <span><button type="button" class="mx-badge mx-badge-btn {{ row.tone }}" data-mx-filter="rfm" data-mx-value="{{ row.key }}">{{ row.label }}</button></span>
+                <div class="mx-progress" role="img" aria-label="{{ row.count }} cliente(s)"><i style="width: {% widthratio row.count summary.rfm_customers|default:1 100 %}%"></i></div>
+                <b>{{ row.count }}</b>
+            </div>
+            {% endfor %}
+            <details class="mx-notes">
+                <summary>O que é cada segmento</summary>
+                <ul>{% for row in summary.rfm %}<li><strong>{{ row.label }}</strong> ({{ row.count }}): {{ row.description }}</li>{% endfor %}</ul>
+            </details>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-toolbar-group" role="tablist" aria-label="Visão da carteira">
+        {% for key, label in view_choices %}
+        <a class="mx-chip{% if view == key %} is-active{% endif %}" role="tab" aria-selected="{% if view == key %}true{% else %}false{% endif %}" href="{{ page_url }}?periodo={{ window.key }}&amp;visao={{ key }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ label }}{% if key == "risco" %}<span class="mx-chip-count">{{ at_risk_count }}</span>{% elif key == "reativacao" %}<span class="mx-chip-count">{{ reactivation_count }}</span>{% endif %}</a>
+        {% endfor %}
+    </div>
+    <article class="mx-card" style="margin-top: 10px">
+        <div class="mx-card-head">
+            <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span>
+            <div>
+                <p class="mx-card-title">{% if view == "risco" %}Clientes com risco de parar de comprar{% elif view == "reativacao" %}Inativos para reativar{% else %}Clientes mais lucrativos{% endif %}</p>
+                <p class="mx-card-sub">{% if view == "risco" %}Atrasados em relação ao próprio ritmo de compra, ou nos segmentos "Em risco" e "Não pode perder", pelo lucro{% elif view == "reativacao" %}Sem compra há mais de 180 dias, pelo lucro bruto dos últimos 24 meses{% else %}Pelo lucro bruto do período · clique no cabeçalho para ordenar{% endif %}</p>
+            </div>
+        </div>
+        {% if rfm_buttons %}
+        <div class="mx-rfm-filter" role="group" aria-label="Filtrar a carteira por segmento RFM">
+            <span class="mx-toolbar-label">RFM</span>
+            <a class="mx-chip{% if not filters.rfm %} is-active{% endif %}" href="{{ rfm_clear_url }}">Todos</a>
+            {% for row in rfm_buttons %}<button type="button" class="mx-chip mx-rfm-chip" data-mx-filter="rfm" data-mx-value="{{ row.key }}" title="{{ row.description }} · clique para filtrar, Ctrl + clique soma"><i class="mx-rfm-dot {{ row.tone }}" aria-hidden="true"></i>{{ row.label }}<span class="mx-chip-count">{{ row.count }}</span></button>{% endfor %}
+            <span class="mx-hint">Ctrl + clique soma segmentos</span>
+        </div>
+        {% endif %}
+        <div class="mx-table-wrap">
+            <table class="mx-table" id="mxPortfolioTable" data-mx-table data-page-size="50">
+                <thead>
+                    <tr>
+                        <th scope="col" class="mx-rank" data-sort="position" data-type="num">#</th>
+                        <th scope="col" class="mx-col-name" data-sort="name">Cliente</th>
+                        <th scope="col" data-sort="rep">Representante</th>
+                        <th scope="col" data-sort="segment">Segmento</th>
+                        {% if view == "reativacao" %}
+                        <th scope="col" class="is-num" data-sort="days" data-type="num">Última compra</th>
+                        <th scope="col" class="is-num" data-sort="hprofit" data-type="num">Lucro 24 meses</th>
+                        <th scope="col" class="is-num">Faturamento 24 meses</th>
+                        <th scope="col">Receita</th>
+                        {% else %}
+                        <th scope="col" class="is-num" data-sort="net" data-type="num">Faturamento</th>
+                        <th scope="col" class="is-num" data-sort="profit" data-type="num" aria-sort="descending">Lucro bruto</th>
+                        <th scope="col" class="is-num" data-sort="margin" data-type="num">Margem</th>
+                        <th scope="col" class="is-num" data-sort="growth" data-type="num">Cresc.</th>
+                        <th scope="col">RFM</th>
+                        {% endif %}
+                        <th scope="col">Ritmo de compra</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% spaceless %}
+                    {% for row in table_rows %}
+                    <tr data-position="{{ forloop.counter }}" data-name="{{ row.name }}" data-rep="{{ row.rep_name }}" data-segment="{{ row.segment_label }}"
+                        data-net="{{ row.net|default_if_none:'' }}" data-profit="{{ row.profit|default_if_none:'' }}" data-margin="{{ row.margin|default_if_none:'' }}"
+                        data-growth="{{ row.growth|default_if_none:'' }}" data-days="{{ row.days_since|default_if_none:'' }}" data-hprofit="{{ row.history_profit|default_if_none:'' }}"
+                        data-search="{{ row.name }} {{ row.trade_name }} {{ row.place }} {{ row.rep_name }} {{ row.segment_label }} {{ row.cnpj }}">
+                        <td class="mx-rank">{{ forloop.counter }}</td>
+                        <td class="mx-col-name"><a href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a><span class="mx-cell-sub">{{ row.code }} · {{ row.place }}</span></td>
+                        <td>{% if row.rep_code != None %}<button type="button" class="mx-filter-cell" data-mx-filter="rep" data-mx-value="{{ row.rep_code }}">{{ row.rep_name }}</button>{% else %}{{ row.rep_name }}{% endif %}</td>
+                        <td><button type="button" class="mx-filter-cell" data-mx-filter="segmento" data-mx-value="{{ row.segment.code|default:'none' }}">{{ row.segment_label }}</button>{% if row.segment.source == "ia" %} <span class="mx-source is-ai" title="Sugerido pela IA (confiança {{ row.segment.confidence }})">IA</span>{% endif %}</td>
+                        {% if view == "reativacao" %}
+                        <td class="is-num">{{ row.last_purchase_display }}<span class="mx-cell-sub">há {{ row.days_since }} dias</span></td>
+                        <td class="is-num is-strong">{{ row.history_profit_display }}</td>
+                        <td class="is-num">{{ row.history_net_display }}</td>
+                        <td>{% if row.receita %}<span class="mx-badge {% if row.receita.alerta %}is-bad{% elif row.receita.found %}is-good{% endif %}">{% if row.receita.found %}{{ row.receita.situacao|default:"sem situação" }}{% else %}não encontrado{% endif %}</span>{% else %}<span class="mx-muted">não conferido</span>{% endif %}</td>
+                        {% else %}
+                        <td class="is-num">{{ row.net_display }}</td>
+                        <td class="is-num is-strong">{{ row.profit_display }}</td>
+                        <td class="is-num"><span class="{% if row.margin_tone %}mx-badge {{ row.margin_tone }}{% endif %}"{% if row.margin_note %} title="{{ row.margin_note }}"{% endif %}>{{ row.margin_display }}{% if row.margin_note %} ?{% endif %}</span></td>
+                        <td class="is-num"><span class="mx-delta {{ row.growth_tone }}">{{ row.growth_display }}</span></td>
+                        <td>{% if row.rfm %}<button type="button" class="mx-badge mx-badge-btn {{ row.rfm.tone }}" data-mx-filter="rfm" data-mx-value="{{ row.rfm.key }}" title="{{ row.rfm.description }} (R{{ row.rfm.r }} F{{ row.rfm.f }} V{{ row.rfm.m }}) · clique para filtrar">{{ row.rfm.label }}</button>{% endif %}</td>
+                        {% endif %}
+                        <td><span class="mx-badge {{ row.rhythm.tone }}">{{ row.rhythm.label }}</span>{% if row.rhythm.typical_days %}<span class="mx-cell-sub">compra a cada ~{{ row.rhythm.typical_days }} dias{% if row.rhythm.next_purchase_display and row.rhythm.status != "inactive" %} · próxima {{ row.rhythm.next_purchase_display }}{% endif %}</span>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10" class="mx-empty-note">Nenhum cliente nesta visão com esses filtros.</td></tr>
+                    {% endfor %}
+                    {% endspaceless %}
+                </tbody>
+            </table>
+        </div>
+        <div class="mx-pager" data-mx-table-pager="mxPortfolioTable"></div>
+        {% if table_limited %}<p class="mx-hint">A tabela traz os {{ table_rows|length }} primeiros de {{ table_total }} clientes desta visão. Use os filtros de UF, representante ou segmento para ver os demais.</p>{% endif %}
+    </article>
+</section>
+
+{% if is_admin %}
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-shield"/></svg>Completar os dados<small>Só administradores · cada ação diz o que gasta</small></h3>
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-spark"/></svg></span><div><p class="mx-card-title">Segmento pela IA</p><p class="mx-card-sub">{{ unclassified_count }} cliente(s) com compra nos 24 meses estão sem ramo no ERP</p></div></div>
+            <p class="mx-empty-note">A IA lê o nome, a cidade, o que o cliente compra e o CNAE (quando já consultado) e escolhe um dos 33 ramos do ERP, com o nível de confiança. Não gasta tokens da Econodata. O ramo do ERP sempre vale mais que o da IA.</p>
+            <div class="mx-actions-row">
+                {% if unclassified_count and ai_ready %}
+                <form method="post" action="{{ classify_url }}" data-mx-busy="Classificando…">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="mx-btn"{% if ai_quota.blocked %} disabled{% endif %}><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Classificar os {{ classify_batch }} de maior faturamento</button>
+                </form>
+                <span class="mx-hint">Usa uma análise de IA por lote de 40 clientes.</span>
+                {% elif not ai_ready %}<span class="mx-hint">IA desligada: ative a OpenAI em Sistema → Configurações.</span>
+                {% else %}<span class="mx-hint">Todos os clientes com compra já têm segmento.</span>{% endif %}
+            </div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Situação dos inativos na Receita</p><p class="mx-card-sub">Antes de ligar, saber se a empresa ainda existe: CNPJ baixado sai da lista</p></div></div>
+            <p class="mx-empty-note">Confere na Econodata (perfil básico: CNAE, situação e nível de atividade) os {{ pending_status_count }} inativo(s) de maior lucro que ainda não foram consultados.</p>
+            <div class="mx-actions-row">
+                {% if pending_status_count and econodata_configured %}
+                <form method="post" action="{{ reactivation_url }}" data-mx-confirm="Conferir {{ pending_status_count }} inativo(s) na Econodata? Custo aproximado: {{ pending_status_tokens }} tokens (restam {{ econodata_tokens_left }} no teto do mês).">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="mx-btn mx-btn-ghost">Conferir {{ pending_status_count }} · ≈ {{ pending_status_tokens }} tokens</button>
+                </form>
+                {% elif not econodata_configured %}<span class="mx-hint">Integração desligada: preencha ECONODATA_API_KEY no arquivo connect/.env.</span>
+                {% else %}<span class="mx-hint">Os inativos de maior lucro já foram conferidos.</span>{% endif %}
+            </div>
+        </article>
+    </div>
+</section>
+{% endif %}
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Leitura da IA<small>{{ window.label }} · {% for key, label in view_choices %}{% if key == view %}{{ label }}{% endif %}{% endfor %}{% if filter_labels %} · {{ filter_labels|join:" · " }}{% endif %}</small></h3>
+    {% include "tiqueue/maxisys/_intel_insight.html" %}
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Lucro bruto = faturamento sem impostos × margem; margem = 1 − CPV ÷ faturamento sem impostos (CPV do movimento de estoque de saída, E210MVP), as mesmas regras do DNA.</li>
+        <li>Concentração: participação no lucro dos 20% maiores clientes e quantos clientes somam 80% do lucro.</li>
+        <li>RFM: notas de 1 a 5 por quintil, entre os clientes que compraram no período: recência (dias desde a última compra), frequência (notas fiscais) e valor (faturamento). "Novos" fizeram a primeira compra nos últimos 90 dias.</li>
+        <li>Ritmo de compra: o intervalo típico entre os meses com compra (mediana, nos 24 meses). Em dia até 1,25 vez o intervalo sem comprar; atrasado até 2 vezes; acima disso, risco de parada; mais de 180 dias, inativo.</li>
+        <li>Segmento: o ramo do cadastro do ERP; para quem está sem ramo, o ramo sugerido pela IA (marcado "IA").</li>
+    </ul>
+</details>
+
+{{ summary.pareto_chart|json_script:"mxParetoData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysTable.js' %}?v=1"></script>
+<script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
+<script>
+(() => {
+    const read = (id) => JSON.parse(document.getElementById(id).textContent);
+    const pareto = read('mxParetoData');
+    const percent = (value) => `${Math.round(value)}%`;
+    if (pareto.values.length) {
+        window.MXCharts.line(document.getElementById('mxParetoChart'), {
+            label: 'Curva de concentração do lucro',
+            labels: pareto.labels,
+            series: [{ name: 'Lucro acumulado', values: pareto.values, color: '--mx-chart-1', area: true }],
+            format: percent,
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -736,6 +736,10 @@ def _build_prazo_dashboard(data, period, fornecedor, branch, familia, view, forn
 
     familias_bars = _bucket_bars(data.get("familias") or [])
     origens_bars = _bucket_bars(data.get("origens") or [])
+    # A barra vem pela descrição da família; a chave do filtro é o código (catálogo "código - nome").
+    family_codes = {str(item["label"]).split(" - ", 1)[-1].strip().upper(): item["key"] for item in familias or []}
+    for item in familias_bars:
+        item["key"] = family_codes.get(str(item["label"]).strip().upper())
 
     fornecedores_rows = []
     for row in data.get("fornecedores") or []:

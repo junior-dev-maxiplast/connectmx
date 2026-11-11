@@ -3,7 +3,7 @@ import calendar
 import hashlib
 import json
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
@@ -691,6 +691,54 @@ def _filter_rows_by_period(rows, period, date_field):
     return rows
 
 
+DNA_RANGE_KEY = "range"
+# Até este tamanho a série é diária, o mesmo critério dos recortes de um mês.
+_DNA_DAILY_MAX_DAYS = 62
+
+
+def parse_dna_range(raw_start, raw_end):
+    """Lê o intervalo personalizado da querystring (`inicio` e `fim`, em ISO).
+
+    Devolve (inicio, fim, erro). Sem nenhuma das duas datas, devolve (None, None,
+    None): o filtro segue o recorte pronto. Com datas inválidas ou invertidas,
+    devolve a mensagem para mostrar na tela, e o recorte pronto continua valendo.
+    """
+    raw_start = (raw_start or "").strip()
+    raw_end = (raw_end or "").strip()
+    if not raw_start and not raw_end:
+        return None, None, None
+    try:
+        start = date.fromisoformat(raw_start)
+        end = date.fromisoformat(raw_end)
+    except ValueError:
+        return None, None, "Informe a data inicial e a final para aplicar o período personalizado."
+    if start > end:
+        return None, None, "A data inicial é posterior à data final."
+    return start, end, None
+
+
+def resolve_dna_range(start, end):
+    """Período personalizado no mesmo formato de `resolve_period`.
+
+    `start` e `end` são inclusivos, como o usuário escolhe. O campo `end` do
+    período é exclusivo, que é o que `_filter_rows_by_period` espera; por isso o
+    dia final entra por inteiro.
+    """
+    span_days = (end - start).days + 1
+    range_label = f"{start:%d/%m/%Y} a {end:%d/%m/%Y}"
+    return {
+        "key": DNA_RANGE_KEY,
+        "label": "Personalizado",
+        "range_label": range_label,
+        "full_label": f"Personalizado ({range_label})",
+        "months": None,
+        "start": start,
+        "end": end + timedelta(days=1),
+        "granularity": "day" if span_days <= _DNA_DAILY_MAX_DAYS else "month",
+        "query": f"inicio={start.isoformat()}&fim={end.isoformat()}",
+    }
+
+
 def _build_series(rows, period):
     """Serie de faturamento/volume/pedidos para os graficos de evolucao.
 
@@ -886,6 +934,8 @@ def _build_dashboard(rows, customer_id, complaint_rows=None, return_rows=None, c
             "full_label": period["full_label"],
             "granularity": series_granularity,
             "choices": period_choices(),
+            # Parâmetros de URL que mantêm este recorte nos links da tela.
+            "query": period.get("query", f"periodo={period['key']}"),
         },
         "series": series_rows,
         "products": product_rows,
@@ -1811,13 +1861,17 @@ def prepare_customer_insights(customer_id, view_mode="individual", member_custom
     }
 
 
-def load_customer_dna(customer_id, view_mode="individual", member_customer_id=None, period_key=None):
+def load_customer_dna(customer_id, view_mode="individual", member_customer_id=None, period_key=None, range_start=None, range_end=None):
     scope = _resolve_customer_scope(customer_id, view_mode, member_customer_id)
     sources = _load_customer_sources(scope["customer_codes"])
     # Default local "all" (nao o "12" padrao do bi_periods): quem nao mexe no
     # filtro -- inclusive o PDF, que nunca passa period_key -- continua vendo
     # o historico completo, como sempre viu.
-    period = resolve_period(period_key or "all")
+    if range_start and range_end:
+        period = resolve_dna_range(range_start, range_end)
+    else:
+        period = resolve_period(period_key or "all")
+        period = {**period, "query": f"periodo={period['key']}"}
     return _build_dashboard(
         _filter_rows_by_period(sources["sales"], period, "data_geracao"),
         customer_id,

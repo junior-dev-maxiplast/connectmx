@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
     <link rel="stylesheet" href="{% static '/style/demandDetail.css' %}?v=2">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    {% include 'partials/maxisys_head.html' %}
 </head>
 <body class="support-portal-body dd-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
@@ -108,6 +109,10 @@
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                                 Salvar como documentação
                             </button>
+                        {% endif %}
+
+                        {% if can_cancel_by_requester %}
+                            <button type="button" class="dd-btn dd-btn--ghost" data-open-modal="cancelRequesterModal">Cancelar chamado</button>
                         {% endif %}
 
                         {% if can_reopen_here and not can_manage_portal %}
@@ -630,7 +635,33 @@
         {% endif %}
 
         {% if can_reopen_here %}
-            <dialog id="reopenModal" class="dd-modal" data-focus="textarea">
+            <dialog id="cancelRequesterModal" class="dd-modal" data-focus="textarea">
+ <form method="POST" class="dd-form">
+ {% csrf_token %}
+ <input type="hidden" name="form_type" value="workflow">
+ <input type="hidden" name="workflow_action" value="requester_cancel">
+ <header class="dd-modal-head">
+ <div>
+ <span class="dd-kicker">Ciclo da demanda</span>
+ <h2>Cancelar chamado</h2>
+ </div>
+ <button type="button" class="dd-x" data-close-modal aria-label="Fechar">&times;</button>
+ </header>
+ <div class="dd-modal-body">
+ <p class="dd-muted-text">O chamado só pode ser cancelado enquanto nenhum atendente tiver assumido. Depois de assumido, peça ao atendente para encerrar.</p>
+ <div class="dd-field">
+ <label class="dd-label" for="cancelRequesterReason">Motivo</label>
+ <textarea id="cancelRequesterReason" name="cancel_reason" rows="3" required minlength="5" placeholder="Ex.: abri por engano; já resolvi sozinho."></textarea>
+ </div>
+ </div>
+ <footer class="dd-modal-foot">
+ <button type="button" class="dd-btn dd-btn--ghost" data-close-modal>Voltar</button>
+ <button type="submit" class="dd-btn dd-btn--primary">Cancelar chamado</button>
+ </footer>
+ </form>
+</dialog>
+
+<dialog id="reopenModal" class="dd-modal" data-focus="textarea">
                 <form method="POST" class="dd-form">
                     {% csrf_token %}
                     <input type="hidden" name="form_type" value="workflow">

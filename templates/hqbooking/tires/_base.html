@@ -9,8 +9,10 @@
     <link rel="stylesheet" href="{% static '/style/theme.css' %}">
     <link rel="stylesheet" href="{% static '/style/tireLogistics.css' %}">
     <link href="https://fonts.googleapis.com/css?family=Open Sans:400,600,700,800" rel="stylesheet">
+    {% include 'partials/maxisys_head.html' %}
 </head>
 <body class="tirelog">
+    {% include 'partials/sidebar.html' %}
     <header class="tl-topbar">
         <a class="tl-brand" href="{% url 'tires_dashboard' %}">
             <span class="tl-brand-mark">MX</span>

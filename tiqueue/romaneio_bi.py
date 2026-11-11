@@ -519,6 +519,8 @@ def _build_romaneio_dashboard(data, period, branch, stage, matricula, branches, 
             {
                 "code": code,
                 "label": STAGE_LABELS.get(code, STAGE_DEFAULT_LABEL),
+                # Só as etapas do filtro da tela viram botão de filtrar.
+                "filterable": code in {choice_code for _key, _label, choice_code in STAGE_CHOICES if choice_code is not None},
                 "total": total_stage,
                 "total_display": _format_int(total_stage),
                 "volumes": _int(row.get("volumes")),

@@ -1,0 +1,60 @@
+{# Card "Dados de mercado (Econodata)": só lê o cache. Espera `m` (econodata.market_view já formatado) e, para os botões, customer_id, dna_view_mode, dna_member_customer_id, econodata_can_enrich, econodata_enrich_url e econodata_tokens_left. #}
+<article class="mx-card">
+    <div class="mx-card-head">
+        <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span>
+        <div>
+            <p class="mx-card-title">Dados de mercado (Econodata)</p>
+            <p class="mx-card-sub">{% if m.main %}Consultado em {{ m.main.consulted_display }}{% else %}Ainda não consultado{% endif %}{% if m.total > 1 %} · {{ m.cached }} de {{ m.total }} unidade(s) com dados{% endif %}</p>
+        </div>
+    </div>
+    {% if m.main and m.main.found %}
+    <div class="mx-market-facts">
+        <div class="mx-fact"><span>Atividade principal (CNAE)</span><strong title="{{ m.main.cnae_descricao }}">{{ m.main.cnae_descricao|default:"-" }}</strong><small>{{ m.main.cnae_codigo|default:"-" }}</small></div>
+        <div class="mx-fact"><span>Situação na Receita</span><strong>{% if m.main.situacao %}<span class="mx-badge {% if m.main.situacao_alerta %}is-bad{% else %}is-good{% endif %}">{{ m.main.situacao }}</span>{% else %}-{% endif %}</strong><small>Nível de atividade: {{ m.main.nivel_atividade|default:"-" }}</small></div>
+        {% if m.main.unit_type_label or m.main.opened_display %}
+        <div class="mx-fact"><span>Unidade e abertura</span><strong>{{ m.main.unit_type_label|default:"-" }}</strong><small>{% if m.main.opened_display %}Aberta em {{ m.main.opened_display }}{% if m.main.years_display %} · {{ m.main.years_display }} anos{% endif %}{% else %}-{% endif %}</small></div>
+        {% endif %}
+        {% if m.main.size_label or m.main.capital_display %}
+        <div class="mx-fact"><span>Porte e capital social</span><strong>{{ m.main.size_label|default:"-" }}</strong><small>Capital {{ m.main.capital_display|default:"-" }}{% if m.main.porte and m.main.enquadramento_porte %} · {{ m.main.enquadramento_porte }}{% endif %}</small></div>
+        {% endif %}
+        {% if m.group_revenue_display %}
+        <div class="mx-fact"><span>Faturamento estimado do grupo</span><strong>{{ m.group_revenue_display }} / ano</strong><small title="Nosso faturamento do período, anualizado, ÷ faturamento estimado do grupo (matriz + filiais)">{% if m.share_display %}Nossa fatia: {{ m.share_display }}{% else %}matriz + filiais{% endif %}{% if m.group_revenue_source %} · fonte: {{ m.group_revenue_source }}{% endif %}</small></div>
+        {% endif %}
+        {% if m.main.headcount_display or m.main.qtd_filiais != None %}
+        <div class="mx-fact"><span>Funcionários e filiais</span><strong>{{ m.main.headcount_display|default:"-" }} funcionário(s)</strong><small>{% if m.main.qtd_filiais != None %}{{ m.main.qtd_filiais }} filial(is){% else %}-{% endif %}{% if m.main.funcionarios_fonte %} · fonte: {{ m.main.funcionarios_fonte }}{% endif %}</small></div>
+        {% endif %}
+    </div>
+    {% elif m.main %}
+    <p class="mx-market-empty">A Econodata não encontrou o CNPJ {{ m.main.cnpj }}. Nada foi cobrado e a resposta fica guardada por {{ m.cache_days }} dias.</p>
+    {% elif not m.valid %}
+    <p class="mx-market-empty">Sem CNPJ válido no ERP para consultar: a Econodata só traz dados de empresas.</p>
+    {% else %}
+    <p class="mx-market-empty">Ainda sem dados de mercado para este cliente.{% if not econodata_can_enrich %} Um administrador pode consultar, porque a consulta gasta tokens.{% endif %}</p>
+    {% endif %}
+    {% if m.irregular %}
+    <div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Situação irregular na Receita.</strong><br>{% for card in m.irregular %}{{ card.cnpj }}: {{ card.situacao }}{% if not forloop.last %} · {% endif %}{% endfor %}. Confira o cadastro antes de vender a prazo.</div></div>
+    {% endif %}
+    {% if m.invalid %}
+    <p class="mx-hint">CNPJ com dígito verificador errado no ERP, por isso fica fora da Econodata: {{ m.invalid|join:", " }}.</p>
+    {% endif %}
+    {% if econodata_can_enrich and m.valid %}
+    <div class="mx-market-actions">
+        {% if m.configured %}
+        {% for p in m.profiles %}
+        <form method="post" action="{{ econodata_enrich_url }}" data-mx-confirm="Consultar o perfil {{ p.label }} na Econodata? Custo aproximado: {{ p.approx_display }} tokens, só pelo que ainda não está guardado.">
+            {% csrf_token %}
+            <input type="hidden" name="cliente" value="{{ customer_id }}">
+            <input type="hidden" name="view" value="{{ dna_view_mode }}">
+            {% if dna_member_customer_id %}<input type="hidden" name="unidade" value="{{ dna_member_customer_id }}">{% endif %}
+            <input type="hidden" name="perfil" value="{{ p.key }}">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit" class="mx-btn{% if p.key != 'basico' %} mx-btn-ghost{% endif %}" title="{{ p.description }}"{% if not p.to_fetch %} disabled{% endif %}>{{ p.label }} · {% if p.to_fetch %}≈ {{ p.approx_display }} tokens{% else %}já guardado{% endif %}</button>
+        </form>
+        {% endfor %}
+        <span class="mx-hint">Visível só para administradores. Restam {{ econodata_tokens_left }} tokens no teto do mês; cada empresa fica guardada por {{ m.cache_days }} dias.</span>
+        {% else %}
+        <span class="mx-hint">Integração desligada: preencha ECONODATA_API_KEY no arquivo connect/.env.</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</article>

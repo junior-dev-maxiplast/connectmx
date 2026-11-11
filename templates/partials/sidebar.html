@@ -103,123 +103,145 @@
     </defs>
 </svg>
 
-<div class="sidebar">
-    <div class="sidebar_brand" aria-label="ConnectMX">
-        <img src="{% static 'assets/cmx.png' %}" class="brand_mark" alt="ConnectMX">
-        <div class="brand_text">ConnectMX</div>
-    </div>
+{# Menu lateral e barra superior no padrão MaxiSys (CSS em maxisys.css / maxisysTheme.css). #}
+<svg class="mx-sprite" aria-hidden="true" focusable="false">
+    <symbol id="mx-i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+    <symbol id="mx-i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+    <symbol id="mx-i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
+    <symbol id="mx-i-panel" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14"/></symbol>
+    <symbol id="mx-i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="mx-i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></symbol>
+</svg>
 
-    <div class="sidebar_search_wrap">
-        <button type="button" id="sidebarPaletteTrigger" class="sidebar_palette_trigger" aria-label="Buscar tela">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
-            <span class="sidebar_text">Buscar tela...</span>
-            <kbd class="sidebar_text">Ctrl K</kbd>
+<aside class="mx-sidebar is-fixed" id="mxSidebar" aria-label="Navegação principal">
+    {% csrf_token %}
+    <a class="mx-brand" href="{% url 'index' %}" aria-label="Início do ConnectMX">
+        <span class="mx-brand-word">MaxiPlast</span>
+        <svg class="mx-brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.5c2 2.2 2 5.3 0 7.5-2-2.2-2-5.3 0-7.5Z" fill="#f6c700"/>
+            <path d="M21.5 12c-2.2 2-5.3 2-7.5 0 2.2-2 5.3-2 7.5 0Z" fill="#00a6e2"/>
+            <path d="M12 21.5c-2-2.2-2-5.3 0-7.5 2 2.2 2 5.3 0 7.5Z" fill="#e2333a"/>
+            <path d="M2.5 12c2.2-2 5.3-2 7.5 0-2.2 2-5.3 2-7.5 0Z" fill="#7cc242"/>
+        </svg>
+        <small class="mx-brand-sub">embalagens</small>
+    </a>
+
+    <div class="mx-side-search">
+        <button type="button" id="sidebarPaletteTrigger" class="mx-side-search-btn" aria-label="Buscar tela" title="Buscar tela (Ctrl K)">
+            <svg class="mx-ico"><use href="#mx-i-search"/></svg><span>Buscar tela...</span><kbd>Ctrl K</kbd>
         </button>
     </div>
 
-    <div class="sidebar_theme" aria-label="Tema">
-        <div class="theme-toggle">
-            <span class="theme-icon" aria-hidden="true">&#9728;</span>
-            <label class="theme-switch" title="Alternar tema">
-                <input type="checkbox" data-theme-switch onchange="window.ConnectMXTheme && ConnectMXTheme.set(this.checked ? 'dark' : 'light')">
-                <span class="theme-slider"></span>
-            </label>
-            <span class="theme-icon" aria-hidden="true">&#9790;</span>
-            <span class="sidebar_text">Tema</span>
-        </div>
-    </div>
-
-    <ul class="sidebar_menu">
-        <li class="dropdown">
-            {% for group in nav_groups %}{% if group.flat %}
+    <nav class="mx-nav">
+        {% for group in nav_groups %}{% if group.flat %}
             {% for item in group.items %}
-            <div class="dropdown_button">
-                <a href="{{ item.url }}">
-                    <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="{{ group.tone }}">
-                        <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#{{ item.icon|default:group.icon }}"></use></svg>
-                        <span class="sidebar_text sidebar_primary_text">{{ item.label }}</span>
-                    </div>
+                <a class="mx-nav-item" href="{{ item.url }}" title="{{ item.label }}">
+                    <svg class="mx-ico"><use href="#{{ item.icon|default:group.icon }}"/></svg><span class="mx-nav-text">{{ item.label }}</span>
                 </a>
-            </div>
             {% endfor %}
-            {% endif %}{% endfor %}
+        {% endif %}{% endfor %}
 
-            <div class="sidebar_quick" id="sidebarQuickAccess" {% if not nav_favorites and not nav_recents %}hidden{% endif %}>
-                <div class="sidebar_quick_section" id="sidebarFavorites" {% if not nav_favorites %}hidden{% endif %}>
-                    <span class="sidebar_quick_label sidebar_text">Favoritos</span>
-                    <div id="sidebarFavoritesList">
-                        {% for item in nav_favorites %}
-                        <a href="{{ item.url }}" class="sidebar_quick_item" data-favorite-entry="{{ item.url_name }}" title="{{ item.label }} - {{ item.group }}">
+        <div class="mx-nav-quick" id="sidebarQuickAccess" {% if not nav_favorites and not nav_recents %}hidden{% endif %}>
+            <div id="sidebarFavorites" {% if not nav_favorites %}hidden{% endif %}>
+                <span class="mx-nav-label">Favoritos</span>
+                <div id="sidebarFavoritesList">
+                    {% for item in nav_favorites %}
+                        <a href="{{ item.url }}" class="mx-nav-item mx-nav-sub sidebar_quick_item" data-favorite-entry="{{ item.url_name }}" title="{{ item.label }} - {{ item.group }}">
                             <svg class="sidebar_star is-on" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star"></use></svg>
-                            <span class="sidebar_text">{{ item.label }}</span>
+                            <span class="mx-nav-text">{{ item.label }}</span>
                         </a>
-                        {% endfor %}
-                    </div>
+                    {% endfor %}
                 </div>
-
-                <div class="sidebar_quick_section" id="sidebarRecents" {% if not nav_recents %}hidden{% endif %}>
-                    <span class="sidebar_quick_label sidebar_text">Recentes</span>
-                    {% for item in nav_recents %}
-                    <a href="{{ item.url }}" class="sidebar_quick_item is-recent" title="{{ item.label }} - {{ item.group }}">
-                        <span class="sidebar_quick_dot" aria-hidden="true"></span>
-                        <span class="sidebar_text">{{ item.label }}</span>
+            </div>
+            <div id="sidebarRecents" {% if not nav_recents %}hidden{% endif %}>
+                <span class="mx-nav-label">Recentes</span>
+                {% for item in nav_recents %}
+                    <a href="{{ item.url }}" class="mx-nav-item mx-nav-sub sidebar_quick_item is-recent" title="{{ item.label }} - {{ item.group }}">
+                        <span class="mx-quick-dot" aria-hidden="true"></span><span class="mx-nav-text">{{ item.label }}</span>
                     </a>
-                    {% endfor %}
-                </div>
+                {% endfor %}
             </div>
+        </div>
 
-            {% for group in nav_groups %}{% if not group.flat %}
-            <div class="dropdown_button" onclick="toggleDrop(this)">
-                <div class="dropdownHeader sidebar_primary_header" data-sidebar-tone="{{ group.tone }}">
-                    <svg class="sidebar_icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#{{ group.icon }}"></use></svg>
-                    <span class="sidebar_text sidebar_primary_text">{{ group.label }}</span>
-                    <span class="sidebar_pointer" aria-hidden="true">&#x276F;</span>
-                </div>
-                <div class="dropdownItens">
+        {% for group in nav_groups %}{% if not group.flat %}
+            <div class="mx-nav-branch">
+                <button type="button" class="mx-nav-item mx-nav-toggle" aria-expanded="false" title="{{ group.label }}">
+                    <svg class="mx-ico"><use href="#{{ group.icon }}"/></svg>
+                    <span class="mx-nav-text">{{ group.label }}</span>
+                    <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                </button>
+                <div class="mx-nav-children">
                     {% for item in group.items %}
-                    <div class="sidebar_item_row">
-                        <button
-                            type="button"
-                            class="sidebar_star_btn"
-                            data-favorite-toggle="{{ item.url_name }}"
-                            data-label="{{ item.label }}"
-                            data-url="{{ item.url }}"
-                            data-group="{{ group.label }}"
-                            aria-pressed="{% if item.is_favorite %}true{% else %}false{% endif %}"
-                            title="{% if item.is_favorite %}Remover dos favoritos{% else %}Marcar como favorito{% endif %}"
-                        >
-                            <svg class="sidebar_star{% if item.is_favorite %} is-on{% endif %}" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star"></use></svg>
-                        </button>
-                        <a href="{{ item.url }}"><div class="dropdownIndividualItem"><span>{{ item.label }}</span></div></a>
-                    </div>
+                        <div class="mx-nav-row">
+                            <a class="mx-nav-item mx-nav-sub" href="{{ item.url }}" title="{{ item.label }}"><span class="mx-nav-text">{{ item.label }}</span></a>
+                            <button
+                                type="button"
+                                class="mx-star-btn"
+                                data-favorite-toggle="{{ item.url_name }}"
+                                data-label="{{ item.label }}"
+                                data-url="{{ item.url }}"
+                                data-group="{{ group.label }}"
+                                aria-pressed="{% if item.is_favorite %}true{% else %}false{% endif %}"
+                                title="{% if item.is_favorite %}Remover dos favoritos{% else %}Marcar como favorito{% endif %}"
+                            >
+                                <svg class="sidebar_star{% if item.is_favorite %} is-on{% endif %}" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-star"></use></svg>
+                            </button>
+                        </div>
                     {% endfor %}
                 </div>
             </div>
-            {% endif %}{% endfor %}
-        </li>
-    </ul>
+        {% endif %}{% endfor %}
+    </nav>
 
-    <div class="sidebar_footer">
-        {% if sidebar_system_version %}
-            <div class="sidebar_system_version" title="Versao em uso">
-                <span class="sidebar_text">Versao: {{ sidebar_system_version }}</span>
-            </div>
-        {% endif %}
-        <form method="POST" action="{% url 'logoutPage' %}">
-            {% csrf_token %}
-            <button type="submit" class="sidebar_logout_btn" title="Encerrar sessao">
-                <span class="sidebar_logout_icon" aria-hidden="true">&#x21AA;</span>
-                <span class="sidebar_text">Logoff</span>
-            </button>
-        </form>
+    <div class="mx-sidebar-footer">
+        {% if sidebar_system_version %}<span class="mx-sidebar-version" title="Versão em uso">Versão {{ sidebar_system_version }}</span>{% endif %}
+        <button type="button" class="mx-collapse" data-mx-collapse aria-label="Recolher menu lateral" title="Recolher menu">
+            <svg class="mx-ico"><use href="#mx-i-panel"/></svg>
+        </button>
     </div>
+</aside>
+<div class="mx-scrim" data-mx-scrim hidden></div>
+
+<div class="mx-appbar">
+    <header class="mx-topbar">
+        <div class="mx-topbar-left">
+            <button type="button" class="mx-icon-btn mx-menu-btn" data-mx-menu aria-label="Abrir menu"><svg class="mx-ico"><use href="#mx-i-menu"/></svg></button>
+            <div>
+                <span class="mx-kicker">MaxiSys</span>
+                <div class="mx-title" data-mx-appbar-title>{{ page_title|default:"" }}</div>
+            </div>
+        </div>
+        <div class="mx-topbar-right">
+            <button type="button" class="mx-icon-btn" data-mx-theme aria-label="Alternar tema claro e escuro" title="Alternar tema">
+                <svg class="mx-ico mx-ico-sun"><use href="#mx-i-sun"/></svg>
+                <svg class="mx-ico mx-ico-moon"><use href="#mx-i-moon"/></svg>
+            </button>
+            <details class="mx-user">
+                <summary>
+                    <span class="mx-avatar">{{ request.user.first_name|default:request.user.username|slice:":1"|upper }}</span>
+                    <span class="mx-user-name">{{ request.user.get_full_name|default:request.user.username }}</span>
+                    <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                </summary>
+                <div class="mx-user-menu">
+                    <form method="POST" action="{% url 'logoutPage' %}">
+                        {% csrf_token %}
+                        <button type="submit">Encerrar sessão</button>
+                    </form>
+                </div>
+            </details>
+        </div>
+    </header>
+    <nav class="mx-tabs" aria-label="Telas abertas">
+        <span class="mx-tab is-active" data-mx-current-tab><span data-mx-tab-label></span></span>
+        {% for item in nav_recents %}<a class="mx-tab" href="{{ item.url }}" data-mx-recent-tab>{{ item.label }}</a>{% endfor %}
+    </nav>
 </div>
 
 <script>
 (function () {
     "use strict";
 
-    var sidebar = document.querySelector(".sidebar");
+    var sidebar = document.getElementById("mxSidebar");
     if (!sidebar) return;
 
     function normalizePath(value) {
@@ -232,12 +254,17 @@
         }
     }
 
-    /* Marca o grupo e o item da tela aberta, e deixa o grupo expandido. */
+    function setBranch(branch, open) {
+        branch.classList.toggle("active", open);
+        var toggle = branch.querySelector(".mx-nav-toggle");
+        if (toggle) toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    /* Marca a tela aberta (o endereço mais longo que casa com o atual) e abre o grupo dela. */
     function applyCurrentState() {
         var currentPath = normalizePath(window.location.pathname);
         var best = null;
-
-        Array.prototype.forEach.call(sidebar.querySelectorAll("a[href]"), function (link) {
+        Array.prototype.forEach.call(sidebar.querySelectorAll("a.mx-nav-item[href]:not(.sidebar_quick_item)"), function (link) {
             var linkPath = normalizePath(link.getAttribute("href"));
             if (!linkPath || linkPath === "#") return;
             var exact = currentPath === linkPath;
@@ -245,34 +272,37 @@
             if (!exact && !nested) return;
             if (!best || linkPath.length > best.path.length) best = { link: link, path: linkPath };
         });
-
         if (!best) return;
-
-        var item = best.link.querySelector(".dropdownIndividualItem");
-        if (item) item.classList.add("is-current");
-        best.link.classList.add("is-current");
-
-        var button = best.link.closest(".dropdown_button");
-        if (button) {
-            button.classList.add("is-current");
-            if (button.querySelector(".dropdownItens")) button.classList.add("active");
+        best.link.classList.add("is-active");
+        best.link.setAttribute("aria-current", "page");
+        var branch = best.link.closest(".mx-nav-branch");
+        if (branch) {
+            branch.classList.add("is-current");
+            setBranch(branch, true);
         }
     }
 
+    /* Compatibilidade: telas antigas ainda podem chamar toggleDrop(elemento). */
     window.toggleDrop = function (element) {
-        element.classList.toggle("active");
+        var branch = element && element.closest ? element.closest(".mx-nav-branch") || element : element;
+        if (branch) setBranch(branch, !branch.classList.contains("active"));
     };
 
-    sidebar.addEventListener("mouseleave", function () {
-        Array.prototype.forEach.call(sidebar.querySelectorAll(".dropdown_button"), function (el) {
-            if (!el.classList.contains("is-current")) el.classList.remove("active");
-        });
+    sidebar.addEventListener("click", function (event) {
+        var toggle = event.target.closest(".mx-nav-toggle");
+        if (!toggle) return;
+        var branch = toggle.closest(".mx-nav-branch");
+        setBranch(branch, !branch.classList.contains("active"));
     });
 
     applyCurrentState();
 
-    /* ------------------------------------------------------------ favoritos -- */
+    /* A aba da tela atual já existe: não repete a tela aberta entre as recentes. */
+    document.querySelectorAll("[data-mx-recent-tab]").forEach(function (tab) {
+        if (normalizePath(tab.getAttribute("href")) === normalizePath(window.location.pathname)) tab.remove();
+    });
 
+    /* ------------------------------------------------------------ favoritos -- */
     var quickBox = document.getElementById("sidebarQuickAccess");
     var favoritesBox = document.getElementById("sidebarFavorites");
     var favoritesList = document.getElementById("sidebarFavoritesList");
@@ -293,13 +323,11 @@
 
     function addFavoriteEntry(data) {
         if (!favoritesList || favoritesList.querySelector('[data-favorite-entry="' + data.url_name + '"]')) return;
-
         var link = document.createElement("a");
         link.href = data.url;
-        link.className = "sidebar_quick_item";
+        link.className = "mx-nav-item mx-nav-sub sidebar_quick_item";
         link.setAttribute("data-favorite-entry", data.url_name);
         link.title = data.label + " - " + data.group;
-
         var star = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         star.setAttribute("class", "sidebar_star is-on");
         star.setAttribute("viewBox", "0 0 24 24");
@@ -307,11 +335,9 @@
         var use = document.createElementNS("http://www.w3.org/2000/svg", "use");
         use.setAttribute("href", "#icon-star");
         star.appendChild(use);
-
         var label = document.createElement("span");
-        label.className = "sidebar_text";
+        label.className = "mx-nav-text";
         label.textContent = data.label;
-
         link.appendChild(star);
         link.appendChild(label);
         favoritesList.appendChild(link);
@@ -326,13 +352,10 @@
     sidebar.addEventListener("click", function (event) {
         var button = event.target.closest("[data-favorite-toggle]");
         if (!button) return;
-
-        /* O botão vive dentro do item de menu: sem isto o clique navegaria. */
         event.preventDefault();
         event.stopPropagation();
         if (button.dataset.busy === "1") return;
         button.dataset.busy = "1";
-
         var urlName = button.getAttribute("data-favorite-toggle");
         fetch("{% url 'toggleFavoriteScreen' %}", {
             method: "POST",
@@ -342,19 +365,12 @@
             .then(function (response) { return response.ok ? response.json() : null; })
             .then(function (payload) {
                 if (!payload || payload.status !== "ok") return;
-
                 var star = button.querySelector(".sidebar_star");
                 if (star) star.classList.toggle("is-on", payload.is_favorite);
                 button.setAttribute("aria-pressed", payload.is_favorite ? "true" : "false");
                 button.title = payload.is_favorite ? "Remover dos favoritos" : "Marcar como favorito";
-
                 if (payload.is_favorite) {
-                    addFavoriteEntry({
-                        url_name: urlName,
-                        url: payload.url,
-                        label: payload.label,
-                        group: payload.group,
-                    });
+                    addFavoriteEntry({ url_name: urlName, url: payload.url, label: payload.label, group: payload.group });
                 } else {
                     removeFavoriteEntry(urlName);
                 }
@@ -371,5 +387,5 @@
     syncQuickVisibility();
 })();
 </script>
-
+<script src="{% static '/js/maxisysShell.js' %}?v=3"></script>
 {% include 'partials/command_palette.html' %}

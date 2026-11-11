@@ -10,10 +10,17 @@ Barra do portal. Dois modos:
 {% endcomment %}
 <header class="support-topbar{% if portal_topbar_focus %} is-focus{% endif %}{% if can_manage_portal %} is-staff{% endif %}">
     <div class="support-brand">
-        <img src="{% static 'assets/cmx.png' %}" alt="ConnectMX" class="support-brand-mark">
-        <div>
-            <strong>ConnectMX</strong>
-            <span>{{ portal_page_label|default:"Portal de Chamados" }}</span>
+        <span class="support-brand-mark mx-portal-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+                <path d="M12 2.5c2 2.2 2 5.3 0 7.5-2-2.2-2-5.3 0-7.5Z" fill="#f6c700"/>
+                <path d="M21.5 12c-2.2 2-5.3 2-7.5 0 2.2-2 5.3-2 7.5 0Z" fill="#00a6e2"/>
+                <path d="M12 21.5c-2-2.2-2-5.3 0-7.5 2 2.2 2 5.3 0 7.5Z" fill="#e2333a"/>
+                <path d="M2.5 12c2.2-2 5.3-2 7.5 0-2.2 2-5.3 2-7.5 0Z" fill="#7cc242"/>
+            </svg>
+        </span>
+        <div class="mx-portal-titles">
+            <strong class="mx-portal-kicker">MaxiSys</strong>
+            <span class="mx-portal-title">{{ portal_page_label|default:"Portal de Chamados" }}</span>
         </div>
         <span class="support-role-badge{% if can_manage_portal %} is-staff{% endif %}">{% if can_manage_portal %}Atendente{% else %}Solicitante{% endif %}</span>
     </div>

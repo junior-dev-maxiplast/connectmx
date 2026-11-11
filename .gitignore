@@ -51,3 +51,8 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Dados internos da empresa: ficam só no computador e no servidor (o repositório é público).
+REGISTRO_ECONODATA.md
+tiqueue/data/representative_goals.json
+tiqueue/data/representative_names.json

@@ -1,0 +1,421 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Mapa de Clientes</h2>
+        <p>Onde estão os clientes, quanto vendemos e quanto lucramos em cada região · ERP Senior{% if loaded_at %} · dados das {{ loaded_at|date:"H:i" }}{% endif %}</p>
+    </div>
+    {% if is_admin and not data_error %}
+    <form method="post" action="{{ refresh_url }}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="mx-btn mx-btn-ghost" title="Os números ficam guardados por 30 minutos"><svg class="mx-ico"><use href="#mx-i-refresh"/></svg>Reler o ERP</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o mapa.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div class="mx-toolbar">
+    <div class="mx-toolbar-group" role="group" aria-label="Período">
+        <span class="mx-toolbar-label">Período</span>
+        {% for choice in period_choices %}<a class="mx-chip{% if window.key == choice.key %} is-active{% endif %}" href="{{ page_url }}?periodo={{ choice.key }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">{{ choice.label }}</a>{% endfor %}
+    </div>
+    <form method="get" action="{{ page_url }}" class="mx-filters" aria-label="Filtros do mapa">
+        <input type="hidden" name="periodo" value="{{ window.key }}">
+        <select class="mx-select" name="rep" aria-label="Representante" onchange="this.form.submit()">
+            <option value="">Todos os representantes</option>{% if filters.rep|length > 1 %}<option value="{{ filters.rep|join:"," }}" selected>{{ filters.rep|length }} representantes escolhidos</option>{% endif %}
+            {% for rep in rep_choices %}<option value="{{ rep.code }}"{% if rep.code in filters.rep and filters.rep|length == 1 %} selected{% endif %}>{{ rep.name }}</option>{% endfor %}
+        </select>
+        <select class="mx-select" name="segmento" aria-label="Segmento" onchange="this.form.submit()">
+            <option value="">Todos os segmentos</option>{% if filters.segment|length > 1 %}<option value="{{ filters.segment|join:"," }}" selected>{{ filters.segment|length }} segmentos escolhidos</option>{% endif %}
+            {% for segment in segment_choices %}<option value="{{ segment.code }}"{% if segment.code in filters.segment and filters.segment|length == 1 %} selected{% endif %}>{{ segment.name }} ({{ segment.count }})</option>{% endfor %}
+        </select>
+        <noscript><button class="mx-btn mx-btn-ghost" type="submit">Aplicar</button></noscript>
+    </form>
+</div>
+{% if filter_labels %}<p class="mx-hint">Filtrado por {{ filter_labels|join:" · " }} · <a href="{{ page_url }}?periodo={{ window.key }}">limpar filtros</a></p>{% endif %}
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Resumo<small>{{ window.label }} · {{ window.range_label }}</small></h3>
+    <div class="mx-grid mx-grid-kpi">
+        <article class="mx-card">
+            <div class="mx-kpi-label">Faturamento líquido</div>
+            <div class="mx-kpi-value">{{ summary.net_display }}</div>
+            <div class="mx-kpi-foot"><span class="mx-delta {{ summary.growth_tone }}">{{ summary.growth_display }}</span><span>contra o mesmo período do ano anterior</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Lucro bruto</div>
+            <div class="mx-kpi-value">{{ summary.profit_display }}</div>
+            <div class="mx-kpi-foot"><span>margem {{ summary.margin_display }} sobre o faturamento sem impostos</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Clientes ativos</div>
+            <div class="mx-kpi-value">{{ summary.customers }}</div>
+            <div class="mx-kpi-foot"><span>{{ states_count }} UFs · {{ cities_count }} cidades</span></div>
+        </article>
+        <article class="mx-card">
+            <div class="mx-kpi-label">Volume</div>
+            <div class="mx-kpi-value">{{ summary.kg_display }}</div>
+            <div class="mx-kpi-foot"><span>líquido de devolução</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-map"/></svg>Mapa<small>Clique em uma UF para ver os municípios · passe o mouse para ver os números</small></h3>
+    <div class="mx-grid mx-grid-map">
+        <article class="mx-card">
+            <div class="mx-card-head">
+                <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pin"/></svg></span>
+                <div><p class="mx-card-title" id="mxMapTitle">Brasil por UF</p><p class="mx-card-sub" id="mxMapSub">Cor pelo indicador escolhido</p></div>
+                <button type="button" class="mx-btn mx-btn-ghost mx-card-aside" id="mxMapBack" hidden><svg class="mx-ico"><use href="#mx-i-arrow-left"/></svg>Brasil</button>
+            </div>
+            <div class="mx-toolbar-group mx-map-metrics" role="group" aria-label="Indicador do mapa">
+                {% for key, label in metric_choices %}<button type="button" class="mx-chip{% if metric == key %} is-active{% endif %}" data-mx-metric="{{ key }}" aria-pressed="{% if metric == key %}true{% else %}false{% endif %}">{{ label }}</button>{% endfor %}
+            </div>
+            <div class="mx-map" id="mxMap">
+                <div class="mx-map-canvas" data-mx-map-canvas></div>
+                <div class="mx-map-status" data-mx-map-status>Carregando o mapa…</div>
+                <div class="mx-map-legend" data-mx-map-legend></div>
+            </div>
+            {% if map_data.foreign %}<p class="mx-hint">Fora do mapa (exterior): {{ map_data.foreign.customers }} cliente(s), <span id="mxForeignNet"></span>.</p>{% endif %}
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head">
+                <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span>
+                <div><p class="mx-card-title" id="mxRankTitle">Ranking por UF</p><p class="mx-card-sub">Ordem do indicador do mapa · clique para abrir</p></div>
+            </div>
+            <div class="mx-table-wrap mx-scroll">
+                <table class="mx-table mx-table-compact" id="mxRankTable">
+                    <thead><tr><th scope="col">Local</th><th scope="col" class="is-num">Faturamento</th><th scope="col" class="is-num">Lucro bruto</th><th scope="col" class="is-num">Margem</th><th scope="col" class="is-num">Cresc.</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Regiões<small>Participação no faturamento do recorte</small></h3>
+    <div class="mx-region-strip">
+        {% for region in regions %}
+        <article class="mx-card mx-region">
+            <div class="mx-kpi-label">{{ region.name }}</div>
+            <strong>{{ region.net_display }}</strong>
+            <small>{{ region.customers }} cliente(s) · lucro {{ region.profit_display }} · margem {{ region.margin_display }}</small>
+            <small><span class="mx-delta {{ region.growth_tone }}">{{ region.growth_display }}</span> contra o ano anterior</small>
+            <div class="mx-progress" role="img" aria-label="{{ region.share_display }} do faturamento"><i style="width: {{ region.share }}%"></i></div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg><span id="mxDetailTitle">Clientes</span><small id="mxDetailSub">Brasil · pelo lucro bruto</small></h3>
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title" id="mxTopTitle">Mais lucrativos do Brasil</p><p class="mx-card-sub">Clique para abrir a ficha do cliente</p></div></div>
+            <ul class="mx-list" id="mxTopCustomers"></ul>
+        </article>
+        <article class="mx-card">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Onde perdemos clientes</p><p class="mx-card-sub">{{ lost.count }} cidade(s) sem compra no recorte, que somavam {{ lost.previous_display }} no ano anterior</p></div></div>
+            {% if lost.items %}
+            <ul class="mx-list">{% for city in lost.items %}<li><div class="mx-list-main"><strong>{{ city.name }}/{{ city.state }}</strong><small>ano anterior</small></div><span class="mx-list-value">{{ city.previous_display }}</span></li>{% endfor %}</ul>
+            {% else %}<p class="mx-empty-note">Nenhuma cidade perdida neste recorte.</p>{% endif %}
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Potencial e prospecção<small>Econodata · contagens e listas compradas ficam guardadas</small></h3>
+    <article class="mx-card">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title" id="mxPotentialTitle">Escolha uma UF no mapa</p><p class="mx-card-sub">Nossos clientes contra as empresas ativas do mesmo CNAE na UF, e empresas parecidas que ainda não compram</p></div></div>
+        <div id="mxPotentialBody"><p class="mx-empty-note">Clique em uma UF no mapa ou no ranking para ver o potencial dos segmentos em que mais vendemos lá.</p></div>
+    </article>
+    {% if is_admin %}
+    <form method="post" action="{{ econodata_url }}" id="mxEconodataForm" hidden>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="">
+        <input type="hidden" name="acao" value="">
+        <input type="hidden" name="uf" value="">
+        <input type="hidden" name="segmento" value="">
+    </form>
+    {% endif %}
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Leitura da IA<small>{{ window.label }}{% if filter_labels %} · {{ filter_labels|join:" · " }}{% endif %}</small></h3>
+    {% include "tiqueue/maxisys/_intel_insight.html" %}
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Faturamento: notas emitidas de transações que contam como venda, líquido de devolução (as mesmas regras do DNA). Lucro bruto = faturamento sem impostos × margem; margem = 1 − CPV ÷ faturamento sem impostos, com o CPV do movimento de estoque de saída (E210MVP).</li>
+        <li>Crescimento: o mesmo recorte um ano antes, cortado no mesmo dia do mês. Entram também os clientes que pararam de comprar, por isso uma área pode aparecer sem cliente e com queda de 100%.</li>
+        <li>Local do cliente: o município do CEP do cadastro (código IBGE do E008CEP). Desenho: malhas oficiais do IBGE, guardadas no ConnectMX.</li>
+        <li>Cores: um tom de azul, mais escuro onde o valor é maior, em cinco faixas com a mesma quantidade de áreas. Margem e crescimento usam vermelho abaixo e azul acima da referência (a margem média do recorte e o zero).</li>
+        <li>Potencial: empresas ativas na Econodata com o CNAE do segmento na UF. O CNAE vem dos clientes do segmento já consultados; sem eles, de uma tabela de referência por ramo do ERP. A busca de empresas parecidas pega as de nível de atividade alto ou médio.</li>
+    </ul>
+</details>
+
+{{ map_data|json_script:"mxMapData" }}
+{{ potential|json_script:"mxPotentialData" }}
+{{ top_customers|json_script:"mxTopData" }}
+{{ map_config|json_script:"mxMapConfig" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysMap.js' %}?v=1"></script>
+<script>
+(() => {
+    const read = (id) => JSON.parse(document.getElementById(id).textContent);
+    const data = read('mxMapData');
+    const potential = read('mxPotentialData');
+    const topCustomers = read('mxTopData');
+    const config = read('mxMapConfig');
+    const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+    const money = (value) => (value == null ? 'n/d' : `R$ ${compact.format(value)}`);
+    const pct = (value, signed) => (value == null ? '–' : `${signed && value > 0 ? '+' : ''}${(value * 100).toFixed(1).replace('.', ',')}%`);
+    const integer = (value) => (value == null ? '–' : Math.round(value).toLocaleString('pt-BR'));
+    const metrics = {
+        net: { label: 'Faturamento', kind: 'seq', value: (area) => area.net, format: money },
+        profit: { label: 'Lucro bruto', kind: 'seq', value: (area) => area.profit, format: money },
+        margin: { label: 'Margem', kind: 'div', value: (area) => area.margin, format: (value) => pct(value), reference: config.margin_reference || 0, step: 0.05 },
+        customers: { label: 'Clientes', kind: 'seq', value: (area) => area.customers, format: integer },
+        growth: { label: 'Crescimento', kind: 'div', value: (area) => area.growth, format: (value) => pct(value, true), reference: 0, step: 0.1 },
+    };
+    let metric = config.metric in metrics ? config.metric : 'net';
+    let view = { level: 'country', state: null, city: null };
+
+    const node = (tag, className, text) => {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text != null) element.textContent = text;
+        return element;
+    };
+    const profileUrl = (code) => config.profile_url_template.replace('__code__', code);
+    const foreign = document.getElementById('mxForeignNet');
+    if (foreign && data.foreign) foreign.textContent = money(data.foreign.net);
+
+    const map = window.MXMap.mount(document.getElementById('mxMap'), {
+        geoUrl: (key) => config.geo_url_template.replace('__key__', key),
+        data,
+        metric,
+        metrics,
+        stateNames: config.state_names,
+    });
+
+    function syncUrl() {
+        const url = new URL(window.location.href);
+        if (view.state) url.searchParams.set('uf', view.state); else url.searchParams.delete('uf');
+        url.searchParams.set('indicador', metric);
+        window.history.replaceState(null, '', url);
+        document.querySelectorAll('input[name="next"]').forEach((input) => { input.value = url.pathname + url.search; });
+    }
+
+    function rankingRows() {
+        if (view.level === 'country') {
+            return Object.values(data.states).map((area) => ({ key: area.sigla, label: area.sigla, sub: area.name, area, kind: 'state' }));
+        }
+        return Object.entries(data.cities)
+            .filter(([, area]) => area.state === view.state)
+            .map(([key, area]) => ({ key, label: area.name, sub: '', area, kind: 'city' }));
+    }
+
+    function renderRanking() {
+        const current = metrics[metric];
+        const body = document.querySelector('#mxRankTable tbody');
+        const rows = rankingRows().sort((a, b) => (current.value(b.area) ?? -Infinity) - (current.value(a.area) ?? -Infinity));
+        document.getElementById('mxRankTitle').textContent = view.level === 'country' ? 'Ranking por UF' : `Cidades de ${data.states[view.state].name}`;
+        body.replaceChildren();
+        rows.forEach((row) => {
+            const tr = node('tr', 'is-clickable');
+            if ((row.kind === 'city' && row.key === view.city) || (row.kind === 'state' && row.key === view.state)) tr.classList.add('is-selected');
+            tr.tabIndex = 0;
+            const name = node('td', 'is-strong', row.label);
+            const customers = row.area.customers ? `${integer(row.area.customers)} cliente${row.area.customers > 1 ? 's' : ''}` : 'perdemos os clientes daqui';
+            name.appendChild(node('span', 'mx-cell-sub', row.sub ? `${row.sub} · ${customers}` : customers));
+            tr.append(
+                name,
+                node('td', 'is-num', money(row.area.net)),
+                node('td', 'is-num', money(row.area.profit)),
+                node('td', 'is-num', pct(row.area.margin)),
+            );
+            const growth = node('td', 'is-num');
+            growth.appendChild(node('span', `mx-delta ${row.area.growth > 0 ? 'is-up' : row.area.growth < 0 ? 'is-down' : ''}`, pct(row.area.growth, true)));
+            tr.appendChild(growth);
+            const open = () => (row.kind === 'state' ? map.showState(row.key) : selectCity(row.key));
+            tr.addEventListener('click', open);
+            tr.addEventListener('keydown', (event) => { if (event.key === 'Enter') open(); });
+            body.appendChild(tr);
+        });
+    }
+
+    function renderCustomers() {
+        let list = topCustomers;
+        let title = 'Mais lucrativos do Brasil';
+        let sub = 'Brasil · pelo lucro bruto';
+        if (view.level === 'city' && data.cities[view.city]) {
+            const area = data.cities[view.city];
+            list = area.top; title = `Mais lucrativos em ${area.name}/${area.state}`;
+            sub = `${area.customers} cliente(s) · ${money(area.net)} · margem ${pct(area.margin)}`;
+        } else if (view.state) {
+            const area = data.states[view.state];
+            list = area.top; title = `Mais lucrativos em ${area.name}`;
+            sub = `${area.customers} cliente(s) · ${money(area.net)} · margem ${pct(area.margin)}`;
+        }
+        document.getElementById('mxTopTitle').textContent = title;
+        document.getElementById('mxDetailTitle').textContent = view.state ? `Clientes · ${view.level === 'city' ? data.cities[view.city].name : data.states[view.state].name}` : 'Clientes';
+        document.getElementById('mxDetailSub').textContent = sub;
+        const target = document.getElementById('mxTopCustomers');
+        target.replaceChildren();
+        if (!list.length) { target.appendChild(node('li', 'mx-empty-note', 'Sem cliente com compra neste recorte.')); return; }
+        list.forEach((customer) => {
+            const item = node('li');
+            const main = node('div', 'mx-list-main');
+            const link = node('a', 'mx-link', customer.name);
+            link.href = profileUrl(customer.code);
+            const strong = node('strong');
+            strong.appendChild(link);
+            main.append(strong, node('small', null, `${customer.city} · faturamento ${money(customer.net)} · margem ${pct(customer.margin)}`));
+            item.append(main, node('span', 'mx-list-value', money(customer.profit)));
+            target.appendChild(item);
+        });
+    }
+
+    function econodataAction(action, state, segment, label, tokens) {
+        const form = document.getElementById('mxEconodataForm');
+        if (!form) return;
+        form.elements.acao.value = action;
+        form.elements.uf.value = state;
+        form.elements.segmento.value = segment;
+        form.elements.next.value = window.location.pathname + window.location.search;
+        form.setAttribute('data-mx-confirm', `${label} Custo aproximado: ${tokens.toLocaleString('pt-BR')} tokens da Econodata (restam ${Number(config.tokens_left || 0).toLocaleString('pt-BR')} no teto do mês). A Econodata confere a estimativa antes de cobrar.`);
+        form.requestSubmit();
+    }
+
+    function renderPotential() {
+        const title = document.getElementById('mxPotentialTitle');
+        const body = document.getElementById('mxPotentialBody');
+        body.replaceChildren();
+        if (!view.state) {
+            title.textContent = 'Escolha uma UF no mapa';
+            body.appendChild(node('p', 'mx-empty-note', 'Clique em uma UF no mapa ou no ranking para ver o potencial dos segmentos em que mais vendemos lá.'));
+            return;
+        }
+        const state = data.states[view.state];
+        const info = potential[view.state] || { segments: [], prospects: [] };
+        title.textContent = `Potencial em ${state.name}`;
+        if (!info.segments.length) {
+            body.appendChild(node('p', 'mx-empty-note', 'Nenhum cliente da UF tem segmento ainda. Classifique os segmentos na Carteira de Clientes (IA) para medir o potencial.'));
+        } else {
+            const wrap = node('div', 'mx-table-wrap');
+            const table = node('table', 'mx-table');
+            const head = node('thead');
+            const headRow = node('tr');
+            ['Segmento', 'Nossos clientes', 'Faturamento', 'Empresas ativas', 'Penetração', ''].forEach((text, index) => headRow.appendChild(node('th', index && index < 5 ? 'is-num' : '', text)));
+            head.appendChild(headRow);
+            const tbody = node('tbody');
+            info.segments.forEach((segment) => {
+                const tr = node('tr');
+                const name = node('td', 'is-strong', segment.name);
+                name.appendChild(node('span', 'mx-cell-sub', segment.cnaes.length ? `CNAE ${segment.cnaes.join(', ')}` : 'sem CNAE de referência'));
+                tr.append(
+                    name,
+                    node('td', 'is-num', integer(segment.customers)),
+                    node('td', 'is-num', segment.net_display),
+                    node('td', 'is-num', segment.market == null ? '–' : integer(segment.market)),
+                    node('td', 'is-num', segment.penetration_display || '–'),
+                );
+                const actions = node('td', 'is-num');
+                if (config.is_admin && config.econodata_configured && segment.cnaes.length) {
+                    if (segment.market == null) {
+                        const count = node('button', 'mx-btn mx-btn-ghost', `Contar · ≈ ${config.count_tokens} tokens`);
+                        count.type = 'button';
+                        count.addEventListener('click', () => econodataAction('contar', view.state, segment.segment, `Contar as empresas ativas de ${segment.name} em ${state.name} na Econodata?`, config.count_tokens));
+                        actions.appendChild(count);
+                    }
+                    const search = node('button', 'mx-btn mx-btn-ghost', `Buscar ${config.prospect_size} parecidas · ≈ ${config.prospect_tokens.toLocaleString('pt-BR')} tokens`);
+                    search.type = 'button';
+                    search.addEventListener('click', () => econodataAction('prospectar', view.state, segment.segment, `Buscar ${config.prospect_size} empresas de ${segment.name} em ${state.name} na Econodata (atividade alta ou média)?`, config.prospect_tokens));
+                    actions.appendChild(search);
+                } else if (segment.prospects) {
+                    actions.textContent = `${segment.prospects} empresa(s) achada(s)`;
+                }
+                tr.appendChild(actions);
+                tbody.appendChild(tr);
+            });
+            table.append(head, tbody);
+            wrap.appendChild(table);
+            body.appendChild(wrap);
+            if (!config.is_admin) body.appendChild(node('p', 'mx-hint', 'Contar o mercado e buscar empresas gasta tokens da Econodata: só administradores fazem.'));
+        }
+        if (info.prospects.length) {
+            body.appendChild(node('h4', 'mx-section-label', `Empresas parecidas achadas (${info.prospects.length})`));
+            const list = node('ul', 'mx-list');
+            info.prospects.forEach((prospect) => {
+                const item = node('li');
+                const main = node('div', 'mx-list-main');
+                main.append(node('strong', null, prospect.name), node('small', null, `${prospect.city} · ${prospect.cnae || 'CNAE n/d'} · ${prospect.size || 'porte n/d'} · atividade ${prospect.activity || 'n/d'}`));
+                item.appendChild(main);
+                item.appendChild(node('span', `mx-badge ${prospect.customer ? 'is-info' : 'is-good'}`, prospect.customer ? 'já é cliente' : prospect.segment || 'novo'));
+                list.appendChild(item);
+            });
+            body.appendChild(list);
+        }
+    }
+
+    function updateHeader() {
+        const back = document.getElementById('mxMapBack');
+        back.hidden = view.level === 'country';
+        document.getElementById('mxMapTitle').textContent = view.level === 'country' ? 'Brasil por UF' : `${data.states[view.state].name} por município`;
+        document.getElementById('mxMapSub').textContent = view.level === 'country' ? 'Cor pelo indicador escolhido' : 'Municípios com cliente coloridos; contorno vermelho tracejado = perdemos os clientes';
+    }
+
+    function renderAll() {
+        updateHeader();
+        renderRanking();
+        renderCustomers();
+        renderPotential();
+        syncUrl();
+    }
+
+    function selectCity(key) {
+        view = { ...view, level: 'city', city: key };
+        renderAll();
+    }
+
+    map.onSelect((detail) => {
+        if (detail.level === 'country') view = { level: 'country', state: null, city: null };
+        else if (detail.level === 'state') view = { level: 'state', state: detail.state, city: null };
+        else view = { level: 'city', state: detail.state, city: detail.key };
+        renderAll();
+    });
+
+    document.getElementById('mxMapBack').addEventListener('click', () => map.showCountry());
+    document.querySelectorAll('[data-mx-metric]').forEach((button) => {
+        button.addEventListener('click', () => {
+            metric = button.dataset.mxMetric;
+            document.querySelectorAll('[data-mx-metric]').forEach((other) => {
+                other.classList.toggle('is-active', other === button);
+                other.setAttribute('aria-pressed', other === button ? 'true' : 'false');
+            });
+            map.setMetric(metric);
+            renderRanking();
+            syncUrl();
+        });
+    });
+
+    if (config.initial_state && data.states[config.initial_state]) map.showState(config.initial_state);
+    else map.showCountry();
+})();
+</script>
+{% endif %}
+{% endblock %}

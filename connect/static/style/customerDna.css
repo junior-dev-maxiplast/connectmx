@@ -299,6 +299,14 @@ body {
 .dna-group-filter select:focus { border-color: rgba(101,213,93,.65); box-shadow: 0 0 0 3px rgba(101,213,93,.1); }
 .dna-group-filter select option { color: #eef8f9; background: #0b222d; }
 
+/* Período personalizado: duas datas e um botão, ao lado dos recortes prontos. */
+.dna-range-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.dna-range-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--dna-muted); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.dna-range-filter input[type="date"] { min-width: 0; padding: 7px 9px; color: var(--dna-text); background: #0b222d; border: 1px solid var(--dna-border); border-radius: 7px; font: inherit; font-size: 9px; color-scheme: dark; outline: 0; }
+.dna-range-filter input[type="date"]:focus { border-color: rgba(101,213,93,.65); box-shadow: 0 0 0 3px rgba(101,213,93,.1); }
+.dna-range-filter button { padding: 7px 12px; color: #07151e; background: linear-gradient(135deg, var(--dna-green), #3cae64); border: 0; border-radius: 7px; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.dna-range-error { width: 100%; margin: 6px 0 0; color: #ff9aab; font-size: 10px; font-weight: 700; }
+
 @media (max-width: 1250px) {
     .dna-customer-hero { grid-template-columns: auto 1fr repeat(2, minmax(150px, .7fr)); }
     .dna-hero-fact:last-child { display: none; }

@@ -1,0 +1,283 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Contas a Receber</h2>
+        <p>Títulos em aberto, inadimplência e o ritmo dos recebimentos · ERP Senior{% if payload %} · dados das {{ payload.loaded_at }}{% endif %}</p>
+    </div>
+    {% if is_admin and not data_error %}
+    <form method="post" action="{{ refresh_url }}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="mx-btn mx-btn-ghost"><svg class="mx-ico"><use href="#mx-i-refresh"/></svg>Reler o ERP</button></form>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div id="mxMonths"></div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique num mês de vencimento, faixa, semana, cliente, representante ou portador para filtrar a página e a lista de títulos; Ctrl + clique soma itens à seleção.</p>
+
+<section class="mx-section">
+    <div class="mx-kpi-hero">
+        <article class="mx-card mx-reveal" style="--i: 0; --mx-kpi-accent: var(--mx-chart-1)"><div class="mx-kpi-label">Carteira a receber</div><div class="mx-kpi-value" id="kpiOpen">–</div><div class="mx-kpi-foot"><span id="kpiOpenFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 1; --mx-kpi-accent: var(--mx-div-neg-2)"><div class="mx-kpi-label">Vencido</div><div class="mx-kpi-value" id="kpiOverdue">–</div><div class="mx-kpi-foot"><span class="mx-badge" id="kpiOverduePct">–</span><span>da carteira (inadimplência)</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 2; --mx-kpi-accent: var(--mx-cat-4)"><div class="mx-kpi-label">Vence em 7 dias</div><div class="mx-kpi-value" id="kpiDue7">–</div><div class="mx-kpi-foot"><span id="kpiDue7Foot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 3; --mx-kpi-accent: var(--mx-cat-3)"><div class="mx-kpi-label">Prazo médio de recebimento</div><div class="mx-kpi-value" id="kpiTerm">–</div><div class="mx-kpi-foot"><span>da emissão ao pagamento, últimos 3 meses</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 4; --mx-kpi-accent: var(--mx-good)"><div class="mx-kpi-label">Pontualidade</div><div class="mx-kpi-value" id="kpiOnTime">–</div><div class="mx-kpi-foot"><span id="kpiDelay">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 5; --mx-kpi-accent: var(--mx-cat-7)"><div class="mx-kpi-label">Dias de faturamento na carteira (DSO)</div><div class="mx-kpi-value" id="kpiDso">–</div><div class="mx-kpi-foot"><span>carteira ÷ faturamento médio diário de 90 dias</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 6; --mx-kpi-accent: var(--mx-chart-3)"><div class="mx-kpi-label">Créditos de clientes</div><div class="mx-kpi-value" id="kpiCredits">–</div><div class="mx-kpi-foot"><span id="kpiCreditsFoot">devoluções e adiantamentos a compensar</span></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" style="--i: 7">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-history"/></svg></span><div><p class="mx-card-title">Aging da carteira</p><p class="mx-card-sub">Valor em aberto por faixa de vencimento · vermelho = vencido</p></div></div>
+            <div id="rankAging"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 8">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Inadimplência</p><p class="mx-card-sub">Vencido ÷ carteira · verde até 3%, amarelo até 6%</p></div></div>
+            <div id="gaugeOverdue"></div>
+            <p class="mx-sim-note" id="overdueNote" aria-live="polite"></p>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 9">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Recebimentos previstos</p><p class="mx-card-sub">Vencido e as próximas 12 semanas, pelo vencimento · clique numa semana para filtrar</p></div></div>
+            <div id="chartWeeks"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 10">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span><div><p class="mx-card-title">Recebido por mês</p><p class="mx-card-sub">Pago em dia e com atraso · empresa toda</p></div></div>
+            <div id="chartPaid"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-good)"></i>Em dia</span><span><i style="background: var(--mx-warn)"></i>Com atraso</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 11">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Maiores devedores</p><p class="mx-card-sub">Valor vencido · ↗ abre a ficha</p></div></div>
+            <div id="rankDebtors"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 12">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title">Por representante</p><p class="mx-card-sub">Carteira em aberto e quanto já venceu</p></div></div>
+            <div id="rankReps"></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 13">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Por portador</p><p class="mx-card-sub">Banco ou carteira própria</p></div></div>
+            <div id="donutHolders"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 14">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">Títulos</p><p class="mx-card-sub" id="titlesSub">Os mais antigos primeiro</p></div></div>
+        <div class="mx-table-wrap">
+            <table class="mx-table mx-table-compact mx-panel-table">
+                <thead><tr><th scope="col">Cliente</th><th scope="col">Título</th><th scope="col">Representante</th><th scope="col">Portador</th><th scope="col" class="is-num">Emissão</th><th scope="col" class="is-num">Vencimento</th><th scope="col">Situação</th><th scope="col" class="is-num">Em aberto</th></tr></thead>
+                <tbody id="titlesBody"></tbody>
+            </table>
+        </div>
+        <div class="mx-pager"><span id="titlesInfo"></span><button type="button" class="mx-btn mx-btn-ghost" id="titlesMore">Mostrar mais</button></div>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Carteira: títulos a receber em aberto (situação AB, AC e AP) de débito, como nota fiscal e substituição. Créditos do cliente (devolução, adiantamento, pagamento antecipado) aparecem à parte.</li>
+        <li>Vencimento: o prorrogado, quando existe; senão, o original. Aging contado a partir de hoje.</li>
+        <li>Prazo médio e pontualidade: títulos liquidados nos últimos 3 meses, ponderados pelo valor. Em dia = pago até o vencimento.</li>
+        <li>DSO: carteira ÷ (títulos emitidos nos últimos 90 dias ÷ 90). Só para a empresa toda, sem filtro.</li>
+    </ul>
+</details>
+
+{{ payload|json_script:"mxPanelData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script>
+(() => {
+    const L = window.MXLive;
+    const fmt = L.fmt;
+    const data = JSON.parse(document.getElementById('mxPanelData').textContent);
+    const today = new Date(`${data.today}T12:00:00`);
+    const profileUrl = (code) => '{{ profile_url_template }}'.replace('__code__', code);
+    const customer = (code) => data.customers[code] || { name: `Cliente ${code}`, place: '' };
+    const bucketLabel = Object.fromEntries(data.buckets.map((bucket) => [bucket.key, bucket.label]));
+    const bucketColor = { v90: '--mx-div-neg-2', v61: '--mx-div-neg-2', v31: '--mx-div-neg-1', v1: '--mx-div-neg-1', a7: '--mx-cat-4', a30: '--mx-div-pos-1', a60: '--mx-div-pos-2', a61: '--mx-div-pos-2' };
+    const dayMs = 86400000;
+    data.facts.forEach((fact) => {
+        const days = Math.round((new Date(`${fact.v}T12:00:00`) - today) / dayMs);
+        fact.w = days < 0 ? 'vencido' : `s${Math.floor(days / 7)}`;
+        const [year, month] = fact.v.split('-').map(Number);
+        fact.vm = year * 12 + month - 1;
+    });
+    const weekKeys = ['vencido', ...Array.from({ length: 12 }, (_, index) => `s${index}`)];
+    const weekLabel = (key) => {
+        if (key === 'vencido') return 'Vencido';
+        const index = Number(key.slice(1));
+        const start = new Date(today.getTime() + index * 7 * dayMs);
+        return start.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    };
+    const filter = L.crossFilter({
+        labels: { vm: 'Mês de vencimento', b: 'Vencimento', w: 'Semana', c: 'Cliente', r: 'Representante', p: 'Portador' },
+        names: {
+            vm: (value) => L.monthLabel(value),
+            b: bucketLabel,
+            w: Object.fromEntries(weekKeys.map((key) => [key, key === 'vencido' ? 'Vencido' : `a partir de ${weekLabel(key)}`])),
+            c: Object.fromEntries(Object.entries(data.customers).map(([code, info]) => [code, info.name])),
+            r: data.names.reps,
+            p: data.holders,
+        },
+        chips: '#mxFilterBar',
+    });
+    const pick = (state, skip) => data.facts.filter((fact) => L.passAll(fact, state, skip));
+    L.monthPicker(document.getElementById('mxMonths'), { months: [...new Set(data.facts.map((fact) => fact.vm))], filter, dimension: 'vm', title: 'Vencimento', allLabel: 'Todos' });
+
+    const aging = L.ranking(document.getElementById('rankAging'), { format: fmt.money, limit: 8, onSelect: (key, item, event) => filter.toggle('b', key, event) });
+    const gauge = L.gauge(document.getElementById('gaugeOverdue'), { lowerIsBetter: true, good: 0.03, warn: 0.06, max: 0.15, format: (value) => fmt.pct(value, 1), label: 'Inadimplência' });
+    const weeks = L.columns(document.getElementById('chartWeeks'), { height: 230, format: fmt.money, maxBar: 30, onSelect: (key, index, event) => filter.toggle('w', key, event) });
+    const paid = L.columns(document.getElementById('chartPaid'), { height: 230, format: fmt.money, stacked: true, maxBar: 30 });
+    const debtors = L.ranking(document.getElementById('rankDebtors'), { format: fmt.money, limit: 10, color: '--mx-div-neg-2', emptyText: 'Nenhum título vencido neste filtro.', onSelect: (key, item, event) => filter.toggle('c', key, event) });
+    const reps = L.ranking(document.getElementById('rankReps'), { format: fmt.money, limit: 10, onSelect: (key, item, event) => filter.toggle('r', key, event) });
+    const holders = L.donut(document.getElementById('donutHolders'), { format: fmt.money, centerLabel: 'em aberto', onSelect: (key, item, event) => filter.toggle('p', key, event) });
+    const holderOrder = [...L.group(data.facts, 'p', ['a']).entries()].sort((a, b) => b[1].a - a[1].a).map(([key]) => key);
+
+    // Prazo médio e pontualidade: últimos 3 meses fechados ou em curso.
+    const recent = data.paid.slice(-3);
+    const paidSum = recent.reduce((acc, month) => acc + month.paid, 0);
+    const term = paidSum ? recent.reduce((acc, month) => acc + month.term * month.paid, 0) / paidSum : null;
+    const delay = paidSum ? recent.reduce((acc, month) => acc + month.delay * month.paid, 0) / paidSum : null;
+    const onTime = paidSum ? recent.reduce((acc, month) => acc + month.on_time, 0) / paidSum : null;
+    L.count(document.getElementById('kpiTerm'), term, (value) => fmt.days(value));
+    L.count(document.getElementById('kpiOnTime'), onTime, (value) => fmt.pct(value, 0));
+    document.getElementById('kpiDelay').textContent = delay == null ? '–'
+        : delay < 0 ? `do valor pago em dia · em média ${fmt.dec(-delay, 1)} dia(s) antes do vencimento`
+            : `do valor pago em dia · atraso médio de ${fmt.dec(delay, 1)} dia(s)`;
+    const credits = data.credits.reduce((acc, credit) => acc + credit.value, 0);
+    L.count(document.getElementById('kpiCredits'), credits, fmt.money);
+    document.getElementById('kpiCreditsFoot').textContent = data.credits.map((credit) => `${credit.label}: ${fmt.money(credit.value)}`).join(' · ') || 'nenhum';
+    paid.update({
+        labels: data.paid.map((month) => month.label),
+        series: [
+            { name: 'Em dia', color: '--mx-good', values: data.paid.map((month) => month.on_time) },
+            { name: 'Com atraso', color: '--mx-warn', values: data.paid.map((month) => month.late) },
+        ],
+        extra: (index) => [`Prazo médio ${fmt.dec(data.paid[index].term, 0)} dias`, `Atraso médio ${fmt.dec(data.paid[index].delay, 1)} dia(s)`, `${fmt.int(data.paid[index].titles)} título(s)`],
+    });
+
+    let shown = 40;
+    function renderTable(rows) {
+        const body = document.getElementById('titlesBody');
+        body.replaceChildren();
+        const ordered = rows.slice().sort((a, b) => (a.v < b.v ? -1 : a.v > b.v ? 1 : b.a - a.a));
+        ordered.slice(0, shown).forEach((fact, index) => {
+            const tr = document.createElement('tr');
+            tr.style.animationDelay = `${Math.min(index * 12, 400)}ms`;
+            const info = customer(fact.c);
+            const cell = (text, className) => { const td = document.createElement('td'); if (className) td.className = className; td.textContent = text; tr.appendChild(td); return td; };
+            const name = cell('', 'mx-col-name');
+            const link = document.createElement('a');
+            link.href = profileUrl(fact.c);
+            link.textContent = info.name;
+            const sub = document.createElement('span');
+            sub.className = 'mx-cell-sub';
+            sub.textContent = `${fact.c} · ${info.place}`;
+            name.append(link, sub);
+            cell(fact.t);
+            cell(data.names.reps[fact.r] || '-');
+            cell(data.holders[fact.p] || fact.p);
+            cell(new Date(`${fact.e}T12:00:00`).toLocaleDateString('pt-BR'), 'is-num');
+            cell(new Date(`${fact.v}T12:00:00`).toLocaleDateString('pt-BR'), 'is-num');
+            const status = cell('');
+            const badge = document.createElement('span');
+            badge.className = `mx-badge ${fact.late ? (fact.late > 30 ? 'is-bad' : 'is-warn') : 'is-good'}`;
+            badge.textContent = fact.late ? `vencido há ${fact.late} dia${fact.late === 1 ? '' : 's'}` : bucketLabel[fact.b].replace('A vencer em ', 'vence em ');
+            status.appendChild(badge);
+            if (fact.renegotiated) { const tag = document.createElement('span'); tag.className = 'mx-cell-sub'; tag.textContent = 'prorrogado'; status.appendChild(tag); }
+            cell(fmt.moneyFull(fact.a), 'is-num is-strong');
+            body.appendChild(tr);
+        });
+        document.getElementById('titlesInfo').textContent = `Mostrando ${Math.min(shown, ordered.length)} de ${ordered.length} título(s) · ${fmt.moneyFull(ordered.reduce((acc, fact) => acc + fact.a, 0))}`;
+        document.getElementById('titlesMore').hidden = shown >= ordered.length;
+    }
+    document.getElementById('titlesMore').addEventListener('click', () => { shown += 60; renderTable(pick(filter.get())); });
+
+    function render(state) {
+        const rows = pick(state);
+        const open = rows.reduce((acc, fact) => acc + fact.a, 0);
+        const overdue = rows.filter((fact) => fact.b.startsWith('v')).reduce((acc, fact) => acc + fact.a, 0);
+        const due7 = rows.filter((fact) => fact.b === 'a7');
+        L.count(document.getElementById('kpiOpen'), open, fmt.money);
+        document.getElementById('kpiOpenFoot').textContent = `${fmt.int(rows.length)} título(s) de ${fmt.int(new Set(rows.map((fact) => fact.c)).size)} cliente(s)`;
+        L.count(document.getElementById('kpiOverdue'), overdue, fmt.money);
+        const share = open ? overdue / open : null;
+        const shareNode = document.getElementById('kpiOverduePct');
+        shareNode.textContent = fmt.pct(share, 1);
+        shareNode.className = `mx-badge ${share == null ? '' : share <= 0.03 ? 'is-good' : share <= 0.06 ? 'is-warn' : 'is-bad'}`;
+        L.count(document.getElementById('kpiDue7'), due7.reduce((acc, fact) => acc + fact.a, 0), fmt.money);
+        document.getElementById('kpiDue7Foot').textContent = `${fmt.int(due7.length)} título(s) nos próximos 7 dias`;
+        const unfiltered = !Object.keys(state).length;
+        L.count(document.getElementById('kpiDso'), unfiltered && data.daily_billing ? open / data.daily_billing : null, (value) => fmt.days(value));
+        gauge.update(open ? share : null, `${fmt.money(overdue)} vencido de ${fmt.money(open)}`);
+        const old = rows.filter((fact) => fact.b === 'v90' || fact.b === 'v61').reduce((acc, fact) => acc + fact.a, 0);
+        document.getElementById('overdueNote').textContent = overdue
+            ? `${fmt.pct(overdue ? old / overdue : 0, 0)} do vencido passou de 60 dias (${fmt.money(old)}). Maior atraso: ${Math.max(...rows.map((fact) => fact.late))} dias.`
+            : 'Nada vencido neste filtro.';
+
+        const byBucket = L.group(pick(state, 'b'), 'b', ['a']);
+        aging.update(data.buckets.map((bucket) => ({
+            key: bucket.key, label: bucket.label, value: (byBucket.get(bucket.key) || {}).a || 0, color: bucketColor[bucket.key],
+            sub: `${fmt.int(pick({ ...state, b: bucket.key }, null).length)} título(s)`,
+        })), state.b);
+
+        const byWeek = L.group(pick(state, 'w'), 'w', ['a']);
+        weeks.update({
+            labels: weekKeys.map(weekLabel), keys: weekKeys,
+            series: [{ name: 'A receber', color: '--mx-chart-1', values: weekKeys.map((key) => (byWeek.get(key) || {}).a || 0) }],
+            colors: weekKeys.map((key) => (key === 'vencido' ? '--mx-div-neg-2' : null)),
+            highlight: L.chosen(state.w).map((key) => weekKeys.indexOf(key)),
+        });
+
+        const overdueRows = pick(state, 'c').filter((fact) => fact.b.startsWith('v'));
+        const byDebtor = L.group(overdueRows, 'c', ['a']);
+        debtors.update([...byDebtor.entries()].sort((a, b) => b[1].a - a[1].a).map(([code, value]) => {
+            const items = overdueRows.filter((fact) => String(fact.c) === String(code));
+            return { key: code, label: customer(code).name, value: value.a, href: profileUrl(code), sub: `${items.length} título(s) · maior atraso ${Math.max(...items.map((fact) => fact.late))} dias` };
+        }), state.c);
+
+        const repRows = pick(state, 'r');
+        const byRep = L.group(repRows, 'r', ['a']);
+        const repOverdue = L.group(repRows.filter((fact) => fact.b.startsWith('v')), 'r', ['a']);
+        reps.update([...byRep.entries()].sort((a, b) => b[1].a - a[1].a).map(([code, value]) => ({
+            key: code, label: data.names.reps[code] || `Representante ${code}`, value: value.a,
+            sub: `vencido ${fmt.money((repOverdue.get(code) || {}).a || 0)} (${fmt.pct(value.a ? ((repOverdue.get(code) || {}).a || 0) / value.a : 0, 1)})`,
+        })), state.r);
+
+        const byHolder = L.group(pick(state, 'p'), 'p', ['a']);
+        holders.update(holderOrder.filter((key) => byHolder.has(key)).map((key, index) => ({
+            key, label: data.holders[key] || key, value: byHolder.get(key).a, color: L.categorical(holderOrder.indexOf(key)),
+        })), state.p);
+
+        shown = 40;
+        renderTable(rows);
+        document.getElementById('titlesSub').textContent = Object.keys(state).length ? 'Filtrados pela seleção acima · os mais antigos primeiro' : 'Os mais antigos primeiro';
+    }
+
+    filter.subscribe(render);
+    render(filter.get());
+})();
+</script>
+{% endif %}
+{% endblock %}

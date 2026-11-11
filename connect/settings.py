@@ -115,6 +115,21 @@ WSGI_APPLICATION = 'connect.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# E-mail dos avisos do portal. Sem DJANGO_EMAIL_BACKEND, o envio cai no console
+# (desenvolvimento). Em produção, configure o SMTP do servidor de e-mail.
+EMAIL_BACKEND = os.environ.get("DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = _env_bool("DJANGO_EMAIL_USE_TLS", default=False)
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "ConnectMX <noreply@maxiplast.com.br>")
+# Endereço público usado nos links dos e-mails, sem barra final.
+# Ex.: https://connectmx.maxiplast.com.br:8443
+CONNECTMX_PUBLIC_URL = os.environ.get("CONNECTMX_PUBLIC_URL", "").rstrip("/")
+PORTAL_EMAIL_NOTIFICATIONS = _env_bool("CONNECTMX_PORTAL_EMAIL", default=True)
+
 # Banco: SQLite por padrão (desenvolvimento). Em produção, DJANGO_DB_ENGINE=mysql
 # e as demais DJANGO_DB_* no .env. Sem isso, o sistema ignora o MySQL.
 DB_ENGINE = os.environ.get("DJANGO_DB_ENGINE", "sqlite").strip().lower()
