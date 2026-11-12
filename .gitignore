@@ -58,3 +58,6 @@ tiqueue/data/representative_goals.json
 tiqueue/data/representative_names.json
 # Saída do collectstatic em produção (STATIC_ROOT)
 /static/
+
+# Atualizações publicadas do app ConnectMX Mobile (manage.py publicar_app_mobile)
+/app_updates/

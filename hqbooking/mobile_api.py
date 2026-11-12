@@ -189,7 +189,7 @@ def mobile_romaneio_create(request):
                     "status": "error",
                     "message": (
                         "Não foi possível interpretar a leitura. "
-                        "Verifique se o código traz os 6 campos do romaneio, ou 7 com a metragem."
+                        "Verifique se o código traz os 6 campos do romaneio, 7 com a metragem ou 11 na etiqueta nova."
                     ),
                 },
                 status=400,

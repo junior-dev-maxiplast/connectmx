@@ -1,7 +1,7 @@
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from . import mobile_api, views
+from . import mobile_api, mobile_updates, views
 
 
 urlpatterns = [
@@ -9,6 +9,13 @@ urlpatterns = [
     path("api/mobile/v1/ping/", mobile_api.mobile_ping, name="mobile_api_ping"),
     path("api/mobile/v1/romaneios/", mobile_api.mobile_romaneio_list, name="mobile_api_romaneio_list"),
     path("api/mobile/v1/romaneios/enviar/", mobile_api.mobile_romaneio_create, name="mobile_api_romaneio_create"),
+    # Atualização remota do app (expo-updates): o app consulta o manifesto e baixa os arquivos.
+    path("api/mobile/atualizacoes/manifest", mobile_updates.update_manifest, name="mobile_update_manifest"),
+    path(
+        "api/mobile/atualizacoes/arquivos/<str:runtime_version>/<str:update_name>/<path:asset_path>",
+        mobile_updates.update_asset,
+        name="mobile_update_asset",
+    ),
     path("logistica/pneus/", include("hqbooking.tires.urls")),
     # Rota antiga do histórico, mantida para links já salvos.
     path(
