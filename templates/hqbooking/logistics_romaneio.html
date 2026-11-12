@@ -557,7 +557,7 @@
                 if (applied) {
                     setBarcodeReaderState("success");
                 } else {
-                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os campos do romaneio automaticamente (são 6, ou 7 com a metragem).");
+                    setBarcodeReaderState("error", "A leitura foi capturada, mas não foi possível separar os campos do romaneio automaticamente (são 6, 7 com a metragem ou 11 na etiqueta nova).");
                 }
             }, 900);
         }
@@ -1156,10 +1156,13 @@
         // campos deixar de ser recusada, como era antes desta mudança.
         const ROMANEIO_CAMPOS = 6;
         const ROMANEIO_CAMPOS_COM_METROS = 7;
+        // Etiqueta nova (nov/2026): os mesmos 7 campos, na mesma ordem, e mais 4 no fim, ignorados.
+        const ROMANEIO_CAMPOS_ESTENDIDO = 11;
+        const ROMANEIO_TAMANHOS = [ROMANEIO_CAMPOS_ESTENDIDO, ROMANEIO_CAMPOS_COM_METROS, ROMANEIO_CAMPOS];
 
         function mapRomaneioValues(values) {
             if (!Array.isArray(values)) return null;
-            if (values.length !== ROMANEIO_CAMPOS && values.length !== ROMANEIO_CAMPOS_COM_METROS) {
+            if (ROMANEIO_TAMANHOS.indexOf(values.length) === -1) {
                 return null;
             }
             return {
@@ -1169,7 +1172,7 @@
                 weight: values[3],
                 packageCode: values[4],
                 addressCode: values[5],
-                meters: values.length === ROMANEIO_CAMPOS_COM_METROS ? values[6] : "",
+                meters: values.length >= ROMANEIO_CAMPOS_COM_METROS ? values[6] : "",
             };
         }
 
@@ -1179,7 +1182,7 @@
             const splitters = [/\r?\n/, /\t/, /\//, /\|/, /;/];
             for (const splitter of splitters) {
                 const parts = source.split(splitter).map((item) => item.trim()).filter(Boolean);
-                if (parts.length === ROMANEIO_CAMPOS || parts.length === ROMANEIO_CAMPOS_COM_METROS) {
+                if (ROMANEIO_TAMANHOS.indexOf(parts.length) !== -1) {
                     return parts;
                 }
             }
@@ -1192,7 +1195,7 @@
             const mappedValues = mapRomaneioValues(values);
             if (!mappedValues) {
                 if (showAlert) {
-                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou os 6 dados do romaneio, ou 7 com a metragem.");
+                    alert("Não foi possível identificar os campos automaticamente. Verifique se a leitura enviou os 6 dados do romaneio, 7 com a metragem ou 11 na etiqueta nova.");
                 }
                 return false;
             }

@@ -128,6 +128,10 @@ DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "ConnectMX <nor
 # Endereço público usado nos links dos e-mails, sem barra final.
 # Ex.: https://connectmx.maxiplast.com.br:8443
 CONNECTMX_PUBLIC_URL = os.environ.get("CONNECTMX_PUBLIC_URL", "").rstrip("/")
+
+# Atualizações do app ConnectMX Mobile publicadas com `manage.py publicar_app_mobile`
+# (fora do git). Os links dos arquivos usam CONNECTMX_PUBLIC_URL quando existe.
+MOBILE_APP_UPDATES_DIR = os.environ.get("CONNECTMX_MOBILE_UPDATES_DIR") or os.path.join(BASE_DIR, "app_updates")
 PORTAL_EMAIL_NOTIFICATIONS = _env_bool("CONNECTMX_PORTAL_EMAIL", default=True)
 
 # Banco: SQLite por padrão (desenvolvimento). Em produção, DJANGO_DB_ENGINE=mysql
