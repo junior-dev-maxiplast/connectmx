@@ -10,6 +10,7 @@ from datetime import date
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -74,8 +75,23 @@ FAKE_PRECO_DATA = {
 }
 
 
+def as_grouping_rows(data):
+    """Os cinco quadros como a consulta única (GROUPING SETS) devolve: uma linha por grupo."""
+    rows = [{"grupo": "totals", **data["totals"][0]}]
+    rows += [{"grupo": "monthly", "serie": item["competencia"], "linhas": item["linhas"],
+              "prazo_medio": item["prazo_medio"], "prazo_meta": item["prazo_meta"]} for item in data["monthly"]]
+    rows += [{"grupo": "familias", "ds_familia": item["rotulo"], "linhas": item["linhas"],
+              "prazo_medio": item["prazo_medio"]} for item in data["familias"]]
+    rows += [{"grupo": "origens", "ds_origem": item["rotulo"], "linhas": item["linhas"],
+              "prazo_medio": item["prazo_medio"]} for item in data["origens"]]
+    rows += [{"grupo": "fornecedores", "fornecedor": item["codigo"], "nome": item["nome"], "linhas": item["linhas"],
+              "ordens": item["ordens"], "prazo_medio": item["prazo_medio"]} for item in data["fornecedores"]]
+    return rows
+
+
 def fake_query_many_prazo(statements, params):
-    return {name: FAKE_PRAZO_DATA.get(name, []) for name in statements}
+    data = {**FAKE_PRAZO_DATA, "agregados": as_grouping_rows(FAKE_PRAZO_DATA)}
+    return {name: data.get(name, []) for name in statements}
 
 
 def fake_query_many_preco(statements, params):
@@ -84,6 +100,9 @@ def fake_query_many_preco(statements, params):
 
 class ComprasDashboardBuildTests(TestCase):
     """Monta o painel das três abas a partir de linhas controladas."""
+
+    def setUp(self):
+        cache.clear()
 
     def _load(self, view_key, fake):
         with patch.object(compras_bi, "_query_many", side_effect=fake):
@@ -125,6 +144,49 @@ class ComprasDashboardBuildTests(TestCase):
         self.assertTrue(all("height_pct" in item for item in dashboard["monthly"]))
         self.assertTrue(any(item["tick"] for item in dashboard["monthly"]))
 
+    def test_prazo_runs_one_aggregate_query_and_rebuilds_every_block(self):
+        calls = []
+
+        def fake(statements, params):
+            calls.append(sorted(statements))
+            return fake_query_many_prazo(statements, params)
+
+        dashboard = self._load("pagamento", fake)
+        # Uma passada para os cinco quadros + a lista recente; com só 1 linha recente, a lista
+        # volta ao período inteiro.
+        self.assertEqual(calls, [["agregados", "detalhe"], ["detalhe"]])
+        self.assertEqual(dashboard["metrics"]["fornecedores"], 2)
+        self.assertEqual([item["label"] for item in dashboard["familias"]], ["BOBINA"])
+        self.assertEqual(len(dashboard["monthly"]), 2)
+
+    def test_split_prazo_aggregates_keeps_the_old_order_and_limits(self):
+        rows = [{"grupo": "totals", "linhas": 99}]
+        rows += [{"grupo": "fornecedores", "fornecedor": code, "nome": f"F{code}", "linhas": code} for code in range(1, 21)]
+        rows += [{"grupo": "familias", "ds_familia": f"FAM{code}", "linhas": code} for code in range(1, 16)]
+        rows += [{"grupo": "monthly", "serie": serie, "linhas": 1} for serie in ("2026-09", "2026-07", "2026-08")]
+        blocks = compras_bi.split_prazo_aggregates(rows)
+        self.assertEqual(blocks["totals"][0]["linhas"], 99)
+        self.assertEqual([item["codigo"] for item in blocks["fornecedores"]][:3], [20, 19, 18])
+        self.assertEqual(len(blocks["fornecedores"]), 15)
+        self.assertEqual(len(blocks["familias"]), 12)
+        self.assertEqual([item["competencia"] for item in blocks["monthly"]], ["2026-07", "2026-08", "2026-09"])
+
+    def test_same_scope_is_served_from_the_cache(self):
+        with patch.object(compras_bi, "_query_many", side_effect=fake_query_many_prazo) as query:
+            for _ in range(2):
+                compras_bi.load_compras_dashboard(
+                    period_key="3", view_key="pagamento",
+                    fornecedores_available=FORNECEDORES, branches_available=BRANCHES, familias_available=FAMILIAS,
+                )
+        self.assertEqual(query.call_count, 2)  # só a primeira abertura (consulta + lista do período)
+
+    def test_opens_with_three_months_by_default(self):
+        with patch.object(compras_bi, "_query_many", side_effect=fake_query_many_prazo):
+            dashboard = compras_bi.load_compras_dashboard(
+                fornecedores_available=FORNECEDORES, branches_available=BRANCHES, familias_available=FAMILIAS,
+            )
+        self.assertEqual(dashboard["scope"]["period"]["key"], "3")
+
     def test_unknown_filter_values_fall_back_instead_of_raising(self):
         dashboard = self._load("rota-invalida", fake_query_many_prazo)
         # Aba desconhecida cai para "pagamento", o default do resolver.
@@ -157,6 +219,7 @@ class ComprasDashboardBuildTests(TestCase):
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
 class ComprasBiPageTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.dashboard = Dashboard.objects.get(slug="compras")
         self.url = reverse("dashesComprasBiPage")
         self.user = make_user("compradora")
