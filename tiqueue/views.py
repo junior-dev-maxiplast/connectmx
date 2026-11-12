@@ -188,6 +188,7 @@ from .compras_bi import (
     list_branches as list_compras_branches,
     list_familias as list_compras_familias,
     COMPRAS_BI_SYSTEM_PROMPT,
+    DEFAULT_PERIOD_KEY as COMPRAS_DEFAULT_PERIOD_KEY,
 )
 from .compras_bi_pdf import build_compras_bi_pdf
 from .decision_center_pdf import build_decision_center_pdf
@@ -2475,8 +2476,9 @@ def travelBiExportPdf(request):
 # ------------------------------------------------------------ BI de Compras --
 
 def _compras_bi_scope_from_source(source):
+    # Compras abre com 3 meses (compras_bi.DEFAULT_PERIOD_KEY): a base de prazo é pesada.
     return (
-        (source.get("periodo") or "12").strip(),
+        (source.get("periodo") or COMPRAS_DEFAULT_PERIOD_KEY).strip(),
         (source.get("aba") or "pagamento").strip(),
         (source.get("fornecedor") or "all").strip(),
         (source.get("filial") or "all").strip(),
