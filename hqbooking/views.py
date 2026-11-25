@@ -866,12 +866,15 @@ def _parse_romaneio_scanned_meters(raw_value):
 # Oracle no momento do envio (`_next_simulation_romaneio_sequence`).
 #
 # Desde nov/2026 a etiqueta pode trazer 11 campos: os 7 acima, na mesma ordem,
-# e mais 4 no fim que o sistema não usa — são lidos e descartados. As
-# etiquetas de 6 e 7 campos continuam aceitas.
+# e mais 4 no fim que o sistema não usa — são lidos e descartados. A etiqueta
+# atual (fim de nov/2026) traz 12: os mesmos 7 e mais 5 no fim, também
+# descartados. As etiquetas de 6, 7 e 11 campos continuam aceitas.
 ROMANEIO_PAYLOAD_FIELD_COUNT = 6
 ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS = 7
 ROMANEIO_PAYLOAD_FIELD_COUNT_ESTENDIDO = 11
+ROMANEIO_PAYLOAD_FIELD_COUNT_ESTENDIDO_12 = 12
 ROMANEIO_PAYLOAD_FIELD_COUNTS = (
+    ROMANEIO_PAYLOAD_FIELD_COUNT_ESTENDIDO_12,
     ROMANEIO_PAYLOAD_FIELD_COUNT_ESTENDIDO,
     ROMANEIO_PAYLOAD_FIELD_COUNT_COM_METROS,
     ROMANEIO_PAYLOAD_FIELD_COUNT,
@@ -894,7 +897,7 @@ def _split_romaneio_payload(raw_payload):
 def _map_romaneio_payload(parts):
     if not isinstance(parts, list) or len(parts) not in ROMANEIO_PAYLOAD_FIELD_COUNTS:
         return None
-    # Etiqueta de 11 campos: só os 7 primeiros interessam; os 4 últimos ficam de fora.
+    # Etiqueta de 11 ou 12 campos: só os 7 primeiros interessam; o resto fica de fora.
     return {
         "company_code": parts[0],
         "branch_code": parts[1],
@@ -1541,7 +1544,7 @@ def logistics_romaneio_quick_submit(request):
         return JsonResponse(
             {
                 "status": "error",
-                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou os 6 campos do romaneio, 7 com a metragem ou 11 na etiqueta nova.",
+                "message": "Não foi possível interpretar a leitura automaticamente. Verifique se o código enviou os 6 campos do romaneio, 7 com a metragem, ou 11/12 na etiqueta nova.",
             },
             status=400,
         )

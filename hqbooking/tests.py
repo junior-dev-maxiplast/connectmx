@@ -1396,6 +1396,18 @@ class MobileApiTests(OpenMobileApiMixin, TestCase):
         insert_mock.assert_called_once()
 
     @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
+    def test_create_from_barcode_etiqueta_de_12_campos(self, insert_mock):
+        """Etiqueta atual com 12 campos entra igual à de 7: os 5 últimos não são gravados."""
+        response = self._post({"user_code": "77", "barcode_payload": "1/1/27/384.400/430680/16/30.757.00/A8/B9/C10/D11/E12"})
+
+        self.assertEqual(response.status_code, 200)
+        entry = SimulationRomaneioEntry.objects.get()
+        self.assertEqual(entry.volume_quantity, 27)
+        self.assertEqual(entry.package_code, "430680")
+        self.assertEqual(entry.romaneio_meters, Decimal("30757.00"))
+        insert_mock.assert_called_once()
+
+    @patch("hqbooking.views._insert_simulation_romaneio_oracle", side_effect=_mock_oracle_insert_success.__func__)
     def test_create_from_barcode_sem_metragem_etiqueta_antiga(self, insert_mock):
         """Etiqueta com só 6 campos (impressa antes da mudança) continua entrando."""
         response = self._post({"user_code": "77", "barcode_payload": "1/2/18/1250,500/100/1"})
@@ -2155,8 +2167,8 @@ class RomaneioMetersTests(TestCase):
         self.assertEqual(_extract_romaneio_payload(linhas), sete)
 
     def test_extract_romaneio_payload_recusa_quantidade_de_campos_fora_do_padrao(self):
-        """Só 6, 7 ou 11 campos: 8, 9, 10 ou 12 indicam etiqueta errada."""
-        for extra in ("/8", "/8/9", "/8/9/10", "/8/9/10/11/12"):
+        """Só 6, 7, 11 ou 12 campos: 8, 9, 10 ou 13 indicam etiqueta errada."""
+        for extra in ("/8", "/8/9", "/8/9/10", "/8/9/10/11/12/13"):
             self.assertIsNone(_extract_romaneio_payload(self.PAYLOAD_COM_METROS + extra), extra)
 
     def test_extract_romaneio_payload_aceita_etiqueta_antiga_sem_metros(self):
