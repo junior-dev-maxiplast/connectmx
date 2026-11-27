@@ -1,0 +1,101 @@
+/* Metas de Vendas (Dashes): grade família × mês que grava na USU_TORCMET. Usa os tokens --mx-* do maxisys.css. */
+
+#mxGoals [hidden], .mxg-filters [hidden] { display: none !important; }
+.mxg-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.mxg-field { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.mxg-field .mx-toolbar-label { margin-right: 0; }
+.mxg-field .mx-select { max-width: 340px; }
+.mxg-summary { margin-top: 2px; }
+
+.mxg-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.mxg-add, .mxg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mxg-add .mx-select { width: 340px; max-width: 100%; }
+.mxg-status { color: var(--mx-muted); font-size: 12px; }
+.mxg-status.is-good { color: var(--mx-good); font-weight: 600; }
+.mxg-status.is-warn { color: var(--mx-warn); font-weight: 600; }
+.mx-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mxg-error { margin: 0 0 12px; }
+
+.mxg-wrap { margin: 0; border: 1px solid var(--mx-border); border-radius: 8px; }
+.mxg-table { min-width: 1640px; }
+.mxg-table th, .mxg-table td { padding: 4px 4px; }
+.mxg-table thead th { position: sticky; top: 0; z-index: 2; background: var(--mx-card-2); }
+.mxg-table .mxg-family-col {
+    position: sticky; left: 0; z-index: 1; min-width: 230px; max-width: 260px; padding-left: 10px;
+    background: var(--mx-card); text-align: left; box-shadow: 1px 0 0 var(--mx-border);
+}
+.mxg-table thead .mxg-family-col { z-index: 3; background: var(--mx-card-2); }
+.mxg-table tbody th.mxg-family-col b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.mxg-table tbody th.mxg-family-col .mx-cell-sub { white-space: normal; line-height: 1.25; }
+
+/* Zebrado: linhas alternadas para seguir a linha com o olho nas grades largas. A coluna fixa da família
+   recebe a mesma cor (é opaca). A linha sob o mouse ou em edição ganha o tom da marca, que não se
+   confunde com o cinza do zebrado. */
+.mxg-table {
+    --mxg-zebra: color-mix(in srgb, var(--mx-border) 55%, var(--mx-card));
+    --mxg-group: color-mix(in srgb, var(--mx-border) 85%, var(--mx-card));
+    --mxg-hover: color-mix(in srgb, var(--mx-accent) 12%, var(--mx-card));
+}
+.mxg-zebra > tbody > tr:nth-child(even) > :is(th, td),
+.mxr-table > tbody > tr.is-alt > :is(th, td) { background: var(--mxg-zebra); }
+.mxg-table > tbody > tr:is(:hover, :focus-within) > :is(th, td) { background: var(--mxg-hover); }
+
+.mxg-input {
+    width: 100%; min-width: 98px; height: 26px; padding: 0 6px;
+    border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mx-text);
+    font: inherit; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums;
+}
+.mxg-input:hover { border-color: var(--mx-border); }
+.mxg-input:focus { outline: none; border-color: var(--mx-accent); background: var(--mx-card); box-shadow: 0 0 0 2px var(--mx-accent-soft); }
+.mxg-cell.is-dirty .mxg-input { background: var(--mx-accent-soft); border-color: rgba(243, 146, 0, .45); }
+.mxg-cell.is-invalid .mxg-input { background: var(--mx-bad-bg); border-color: var(--mx-bad); color: var(--mx-bad); }
+.mxg-cell.is-conflict .mxg-input { background: var(--mx-warn-bg); border-color: var(--mx-warn); }
+
+.mxg-row-total { min-width: 96px; padding-right: 10px !important; }
+.mxg-table tfoot th, .mxg-table tfoot td {
+    position: sticky; bottom: 0; background: var(--mx-card-2); border-top: 2px solid var(--mx-border);
+    font-weight: 700; font-variant-numeric: tabular-nums; padding-top: 8px; padding-bottom: 8px;
+}
+.mxg-table tfoot td.is-num { padding-right: 10px; }
+.mxg-table tfoot .mxg-family-col { z-index: 2; background: var(--mx-card-2); }
+.mxg-row-tools { width: 1%; white-space: nowrap; text-align: right; }
+.mxg-row-btn {
+    height: 24px; padding: 0 8px; border: 1px solid var(--mx-border); border-radius: 6px; background: transparent;
+    color: var(--mx-muted); font: inherit; font-size: 11px; cursor: pointer;
+}
+.mxg-row-btn + .mxg-row-btn { margin-left: 4px; }
+.mxg-row-btn:hover { color: var(--mx-text); border-color: var(--mx-faint); }
+.mxg-row-btn.is-danger:hover { color: var(--mx-bad); border-color: var(--mx-bad); }
+
+.mxg-empty { margin-top: 4px; }
+
+/* Metas por representante */
+#mxReps [hidden] { display: none !important; }
+.mxr-tools { margin-top: -2px; }
+.mxr-family-select { width: 300px; max-width: 100%; }
+#mxrAddRep, #mxrFilter { width: 300px; max-width: 100%; min-width: 0; }
+.mxr-table { min-width: 1720px; }
+.mxr-table tr.mxr-family th, .mxr-table tr.mxr-family td {
+    /* Cabeçalho da família um tom acima do zebrado dos representantes. */
+    background: var(--mxg-group);
+    border-top: 2px solid var(--mx-border); font-weight: 700; padding-top: 8px; padding-bottom: 8px;
+}
+.mxr-table tr.mxr-family .mxr-meta { color: var(--mx-muted); font-variant-numeric: tabular-nums; }
+.mxr-table tr.mxr-rep th.mxg-family-col { padding-left: 22px; font-weight: 500; }
+.mxr-table tr.mxr-rep .mxr-rep-name b { margin-right: 4px; font-variant-numeric: tabular-nums; }
+.mxr-table .mxr-kg { color: var(--mx-text); font-variant-numeric: tabular-nums; }
+.mxr-table .mxr-pct { min-width: 96px; }
+.mxr-table tr.is-removed th, .mxr-table tr.is-removed .mxr-kg { color: var(--mx-faint); text-decoration: line-through; }
+.mxr-table tr.mxr-none td { padding-left: 22px; }
+.mxr-table .mx-cell-sub .mx-badge { font-size: 10px; padding: 1px 6px; }
+.mxg-hint { margin: 10px 0 0; }
+
+@media (max-width: 640px) {
+    .mxg-field { width: 100%; }
+    .mxg-field .mx-select { flex: 1 1 auto; width: auto; min-width: 0; max-width: 100%; }
+    .mxg-tools { align-items: stretch; }
+    .mxg-add, .mxg-actions { width: 100%; }
+    .mxg-add .mx-select { flex: 1 1 auto; width: auto; min-width: 0; }
+    .mxg-actions { justify-content: flex-end; }
+    .mxg-table .mxg-family-col { min-width: 150px; max-width: 170px; }
+}

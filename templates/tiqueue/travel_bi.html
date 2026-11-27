@@ -94,7 +94,8 @@
         {% endif %}
 
         {% if dashboard %}
-        <div class="bi-shell">
+        {# data-mx-*: menu do botão direito dos visuais e "Expandir dados" (maxisysDrill.js). #}
+        <div class="bi-shell" data-mx-detail-url="{% url 'dashesTravelBiDetail' %}{{ travel_scope_query }}">
             {% if insight_snapshot.ai_response %}
             <section class="bi-panel bi-ai">
                 <div class="bi-panel-head">
@@ -220,9 +221,9 @@
                         <small>{{ dashboard.cost.advance_share_pct }}% do custo da frota</small>
                     </div>
                 </div>
-                <div class="bi-chart is-tall{% if dashboard.cost.months|length < 3 %} is-sparse{% endif %}">
+                <div class="bi-chart is-tall{% if dashboard.cost.months|length < 3 %} is-sparse{% endif %}" data-mx-dim="custo_mes" data-mx-label-name="Competência" data-mx-columns="Custo:money:sum|KM:int:sum">
                     {% for item in dashboard.cost.months %}
-                    <div title="{{ item.label }}: {{ item.cost_display }} · {{ item.km_display }} · {{ item.cost_per_km_display }}/km{% if item.is_open %} (competência em aberto){% endif %}">
+                    <div title="{{ item.label }}: {{ item.cost_display }} · {{ item.km_display }} · {{ item.cost_per_km_display }}/km{% if item.is_open %} (competência em aberto){% endif %}" data-mx-key="{{ item.competencia }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.cost }}|{{ item.km }}">
                         <div class="bi-chart-bars">
                             <i class="{% if item.is_open %}is-late{% else %}is-km{% endif %}" style="height: {{ item.height_pct }}%"></i>
                         </div>
@@ -235,9 +236,9 @@
                     <span><i class="is-km"></i> Competência fechada</span>
                     <span><i class="is-open" style="background: var(--bi-red)"></i> Em aberto</span>
                 </div>
-                <div class="bi-bars" style="margin-top: 13px;">
+                <div class="bi-bars" style="margin-top: 13px;" data-mx-name="Custo por frota" data-mx-dim="frota" data-mx-label-name="Frota" data-mx-columns="Custo:money:sum|Participação:pct100">
                     {% for item in dashboard.cost.fleets %}
-                    <div class="bi-bar">
+                    <div class="bi-bar" data-mx-key="{{ item.code|default_if_none:'' }}" data-mx-values="{{ item.cost }}|{{ item.share_pct }}">
                         <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.cost_display }} · {{ item.share_pct }}%</span></div>
                         <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
                     </div>
@@ -254,9 +255,9 @@
                         <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.carrier.label }}</span>
                     </div>
                     {% if dashboard.monthly %}
-                    <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                    <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}" data-mx-dim="mes" data-mx-label-name="{% if dashboard.scope.series_label == 'por dia' %}Dia{% else %}Mês{% endif %}" data-mx-columns="Geradas:int:sum|Finalizadas:int:sum|KM:int:sum">
                         {% for item in dashboard.monthly %}
-                        <div title="{{ item.label }}: {{ item.trips }} viagem(ns), {{ item.km_display }}, {{ item.advance_display }}">
+                        <div title="{{ item.label }}: {{ item.trips }} viagem(ns), {{ item.km_display }}, {{ item.advance_display }}" data-mx-key="{{ item.competencia }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.trips }}|{{ item.finished }}|{{ item.km }}">
                             <div class="bi-chart-bars">
                                 <i class="is-open" style="height: {{ item.height_pct }}%"></i>
                                 <i class="is-closed" style="height: {% widthratio item.finished item.trips item.height_pct %}%"></i>
@@ -291,9 +292,9 @@
                             <small>{{ dashboard.validation.wrong_display }} viagens</small>
                         </div>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="erro" data-mx-label-name="Motivo" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.validation.reasons %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-red" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -310,7 +311,7 @@
                 </div>
                 {% if dashboard.carriers %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="frota">
                         <thead>
                             <tr>
                                 <th>Frota</th><th class="is-num">Viagens</th><th class="is-num">Participação</th>
@@ -321,7 +322,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.carriers %}
-                            <tr>
+                            <tr{% if item.code != None %} data-mx-key="{{ item.code }}"{% endif %} data-mx-label="{{ item.label }}">
                                 <td><div class="bi-cell"><strong>{% if item.code != None %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="frota" data-mx-value="{{ item.code }}">{{ item.label }}</button>{% else %}{{ item.label }}{% endif %}</strong><small>{{ item.cnpj|default:item.name }}</small></div></td>
                                 <td class="is-num">{{ item.trips_display }}</td>
                                 <td class="is-num">{{ item.share_pct }}%</td>
@@ -359,7 +360,7 @@
                     {% endfor %}
                 </div>
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="rota">
                         <thead>
                             <tr>
                                 <th>Rota</th><th>Tipo</th><th class="is-num">Viagens</th>
@@ -370,7 +371,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.cargo.routes %}
-                            <tr>
+                            <tr data-mx-key="{{ item.key }}" data-mx-label="{{ item.name }}">
                                 <td><div class="bi-cell"><strong>{{ item.name }}</strong><small>rota {{ item.key }}</small></div></td>
                                 <td><span class="bi-tag {% if item.opportunistic %}is-amber{% else %}is-green{% endif %}">{% if item.opportunistic %}Aproveitamento{% else %}Principal{% endif %}</span></td>
                                 <td class="is-num">{{ item.trips_display }}</td>
@@ -395,9 +396,9 @@
                         <h2>Perfil da frota</h2>
                         <span>{{ dashboard.fleet_profile.plates }} placas com cadastro no recorte</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="idade" data-mx-label-name="Idade" data-mx-columns="Viagens:int:sum|Consumo (km/l):dec|Placas:int:sum">
                         {% for item in dashboard.fleet_profile.ages %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.trips }}|{{ item.consumption }}|{{ item.plates }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.consumption_display }} km/l · {{ item.plates }} placa(s)</span></div>
                             <div class="bi-bar-track"><i class="{% if item.consumption >= dashboard.outliers.reference %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">{{ item.trips_display }} viagens · {{ item.km_display }}</small>
@@ -412,9 +413,9 @@
                         <h2>Modelos que mais rodam</h2>
                         <span>por quilometragem no recorte</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="modelo" data-mx-label-name="Modelo" data-mx-columns="KM:int:sum|Viagens:int:sum|Placas:int:sum">
                         {% for item in dashboard.fleet_profile.models %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.km }}|{{ item.trips }}|{{ item.plates }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.km_display }} · {{ item.plates }} placa(s)</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">{{ item.trips_display }} viagens</small>
@@ -431,9 +432,9 @@
                         <span>referência da frota: {{ dashboard.outliers.reference_display }} km/l</span>
                     </div>
                     {% if dashboard.outliers.items %}
-                    <div class="tv-dev">
+                    <div class="tv-dev" data-mx-dim="placa" data-mx-label-name="Placa" data-mx-columns="Consumo (km/l):dec|Viagens:int:sum">
                         {% for item in dashboard.outliers.items %}
-                        <div class="tv-dev-row" title="{{ item.plate }}: {{ item.consumption_display }} km/l em {{ item.trips }} viagens ({{ item.km_display }}, {{ item.liters_display }})">
+                        <div class="tv-dev-row" data-mx-key="{{ item.plate }}" data-mx-label="{{ item.plate }}" data-mx-values="{{ item.consumption }}|{{ item.trips }}" title="{{ item.plate }}: {{ item.consumption_display }} km/l em {{ item.trips }} viagens ({{ item.km_display }}, {{ item.liters_display }})">
                             <span class="tv-plate">{{ item.plate }}</span>
                             <div class="tv-dev-track">
                                 <i class="is-{{ item.tone }}" style="width: {% widthratio item.share_pct 200 100 %}%"></i>
@@ -458,16 +459,16 @@
                         <div><span>Comparáveis</span><strong>{{ dashboard.forecast.comparable_display }}</strong><small>de {{ dashboard.forecast.measured_display }} com as duas datas</small></div>
                         <div><span>Atrasadas</span><strong class="is-red">{{ dashboard.forecast.late_pct }}%</strong><small>{{ dashboard.forecast.late_display }} viagens · {{ dashboard.forecast.delay_average_display }}</small></div>
                     </div>
-                    <div class="bi-bars">
-                        <div class="bi-bar">
+                    <div class="bi-bars" data-mx-dim="previsto" data-mx-label-name="Chegada" data-mx-columns="Viagens:int|Participação:pct100">
+                        <div class="bi-bar" data-mx-key="same_date" data-mx-values="{{ dashboard.forecast.same_date }}|{{ dashboard.forecast.same_date_pct }}">
                             <div class="bi-bar-head"><strong>Previsão reescrita no fechamento</strong><span>{{ dashboard.forecast.same_date_display }} · {{ dashboard.forecast.same_date_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.forecast.same_date_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="late" data-mx-values="{{ dashboard.forecast.late }}|{{ dashboard.forecast.late_pct }}">
                             <div class="bi-bar-head"><strong>Chegou depois do previsto</strong><span>{{ dashboard.forecast.late_display }} · {{ dashboard.forecast.late_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-red" style="width: {{ dashboard.forecast.late_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="on_time" data-mx-values="{{ dashboard.forecast.on_time }}|{{ dashboard.forecast.on_time_pct }}">
                             <div class="bi-bar-head"><strong>Chegou no prazo</strong><span>{{ dashboard.forecast.on_time }} · {{ dashboard.forecast.on_time_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-green" style="width: {{ dashboard.forecast.on_time_pct }}%"></i></div>
                         </div>
@@ -479,9 +480,9 @@
             <div class="bi-grid is-3">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Carga por viagem</h2><span>{{ dashboard.cargo.trips_with_cargo_display }} com roteiro</span></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="carga" data-mx-label-name="Carga" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.cargo.bands.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">média de {{ item.average_display }} · {{ item.pallets_display }} palete(s) · {{ item.km_average_display }}</small>
@@ -493,9 +494,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Distância por viagem</h2><span>{{ dashboard.km_bands.total }} com KM válido</span></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="km" data-mx-label-name="Distância" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.km_bands.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">média de {{ item.average_display }}</small>
@@ -507,9 +508,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Duração da viagem</h2><span>média de {{ dashboard.metrics.duration_average_display }} · {{ dashboard.duration_bands.total }} com saída e chegada</span></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="duracao" data-mx-label-name="Duração" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.duration_bands.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">média de {{ item.average_display }} · {{ item.km_average_display }}</small>
@@ -522,15 +523,17 @@
 
             {% if insight_snapshot.metrics.deep %}
             {% with deep=insight_snapshot.metrics.deep %}
+            {# Quadros do snapshot: o detalhe conta a janela do período a partir do dia da análise. #}
+            <div class="bi-deep-scope" style="display: contents" data-mx-detail-url="{% url 'dashesTravelBiDetail' %}{{ travel_scope_query }}&amp;ref={{ insight_snapshot.updated_at|date:'Y-m-d' }}">
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head">
                         <h2>Consumo e custo {{ dashboard.scope.series_label }}</h2>
                         <span>km/l da frota no recorte</span>
                     </div>
-                    <div class="bi-chart is-tall{% if deep.monthly_efficiency|length < 3 %} is-sparse{% endif %}">
+                    <div class="bi-chart is-tall{% if deep.monthly_efficiency|length < 3 %} is-sparse{% endif %}" data-mx-dim="mes" data-mx-label-name="Período" data-mx-columns="Consumo (km/l):dec|Adiantamento/km:money|Viagens:int:sum">
                         {% for item in deep.monthly_efficiency %}
-                        <div title="{{ item.label }}: {{ item.consumption_display }} km/l · adiantamento {{ item.advance_per_km_display }}/km · {{ item.trips }} viagens · {{ item.km_display }}">
+                        <div data-mx-key="{{ item.competencia }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.consumption }}|{{ item.advance_per_km }}|{{ item.trips }}" title="{{ item.label }}: {{ item.consumption_display }} km/l · adiantamento {{ item.advance_per_km_display }}/km · {{ item.trips }} viagens · {{ item.km_display }}">
                             <div class="bi-chart-bars">
                                 <i class="{% if item.consumption >= dashboard.outliers.reference %}is-closed{% else %}is-open{% endif %}" style="height: {{ item.height_pct }}%"></i>
                             </div>
@@ -547,9 +550,9 @@
                         <h2>Consumo por faixa de distância</h2>
                         <span>viagem longa rende mais por litro?</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="km_consumo" data-mx-label-name="Distância" data-mx-columns="Consumo (km/l):dec|Viagens:int:sum">
                         {% for item in deep.km_band_consumption %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.consumption }}|{{ item.trips }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips_display }} viagens</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -565,13 +568,13 @@
                         <h2>Quando a viagem sai</h2>
                         <span>pico de {{ deep.heatmap.peak }} saídas</span>
                     </div>
-                    <div class="bi-heat">
+                    <div class="bi-heat" data-mx-dim="saida_dia">
                         <div class="bi-heat-row is-head">
                             <span></span>
                             {% for label in deep.heatmap.hour_labels %}<span>{{ label }}</span>{% endfor %}
                         </div>
                         {% for row in deep.heatmap.rows %}
-                        <div class="bi-heat-row">
+                        <div class="bi-heat-row" data-mx-key="{{ forloop.counter0 }}" data-mx-label="{{ row.label }}">
                             <span>{{ row.label }}</span>
                             {% for cell in row.cells %}
                             <i style="--heat: {{ cell.intensity }}" title="{{ row.label }}: {{ cell.total }} saída(s)">{{ cell.total }}</i>
@@ -587,15 +590,15 @@
                         <h2>Consumo por motorista</h2>
                         <span>{{ deep.driver_efficiency.measured }} com base suficiente</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="motorista" data-mx-label-name="Motorista" data-mx-columns="Consumo (km/l):dec|Viagens:int:sum">
                         {% for item in deep.driver_efficiency.best %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.consumption }}|{{ item.trips }}">
                             <div class="bi-bar-head"><strong>{{ item.label }} · frota {{ item.fleet }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips }} viagens</span></div>
                             <div class="bi-bar-track"><i class="is-green" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
                         {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
                         {% for item in deep.driver_efficiency.worst %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.consumption }}|{{ item.trips }}">
                             <div class="bi-bar-head"><strong>{{ item.label }} · frota {{ item.fleet }}</strong><span>{{ item.consumption_display }} km/l · {{ item.trips }} viagens</span></div>
                             <div class="bi-bar-track"><i class="is-red" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -610,9 +613,9 @@
                     <h2>Faixas de adiantamento</h2>
                     <span>{{ dashboard.metrics.advance_total_display }} · média de {{ dashboard.metrics.advance_average_display }}</span>
                 </div>
-                <div class="bi-bars">
+                <div class="bi-bars" data-mx-dim="adiantamento" data-mx-label-name="Faixa" data-mx-columns="Viagens:int:sum|Participação:pct100">
                     {% for item in deep.advance_bands %}
-                    <div class="bi-bar">
+                    <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                         <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}% · {{ item.value_display }}</span></div>
                         <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
                         <small class="bi-bar-sub">distância média de {{ item.km_average_display }}</small>
@@ -621,6 +624,7 @@
                 </div>
                 <p class="bi-note">A distância média de cada faixa mostra se o adiantamento acompanha o porte da viagem ou se é um valor de hábito.</p>
             </section>
+            </div>
             {% endwith %}
             {% endif %}
 
@@ -631,7 +635,7 @@
                 </div>
                 {% if dashboard.drivers %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="motorista">
                         <thead>
                             <tr>
                                 <th>Motorista</th><th>Frota</th><th class="is-num">Viagens</th>
@@ -642,7 +646,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.drivers %}
-                            <tr>
+                            <tr data-mx-key="{{ item.key }}" data-mx-label="{{ item.label }}">
                                 <td><div class="bi-cell"><strong>{{ item.label }}</strong><small>{{ item.key }}</small></div></td>
                                 <td>{{ item.fleet_label }}</td>
                                 <td class="is-num">{{ item.trips_display }}</td>
@@ -672,7 +676,7 @@
                 </div>
                 {% if dashboard.vehicles %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="placa">
                         <thead>
                             <tr>
                                 <th>Placa</th><th>Modelo</th><th>Idade</th><th class="is-num">Viagens</th>
@@ -683,7 +687,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.vehicles|slice:":25" %}
-                            <tr>
+                            <tr data-mx-key="{{ item.plate }}" data-mx-label="{{ item.plate }}">
                                 <td><span class="tv-plate">{{ item.plate }}</span></td>
                                 <td><div class="bi-cell"><strong>{{ item.model }}</strong><small>{{ item.fleet_label }}</small></div></td>
                                 <td>{% if item.registered %}<span class="bi-tag">{{ item.model_year }}</span> {{ item.age_label }}{% else %}<span class="bi-tag is-amber">sem cadastro</span>{% endif %}</td>
@@ -712,16 +716,16 @@
                     <h2>Viagens em aberto</h2>
                     <span>fila completa, independente do período e da situação</span>
                 </div>
-                <div class="bi-aging is-5">
-                    <div class="is-green"><span>Ainda no prazo</span><strong>{{ dashboard.open_backlog.counts.no_prazo }}</strong></div>
-                    <div><span>Até 7 dias vencida</span><strong>{{ dashboard.open_backlog.counts.ate_7 }}</strong></div>
-                    <div class="is-amber"><span>8 a 30 dias</span><strong>{{ dashboard.open_backlog.counts.de_8_a_30 }}</strong></div>
-                    <div class="is-red"><span>Mais de 30 dias</span><strong>{{ dashboard.open_backlog.counts.acima_30 }}</strong></div>
-                    <div><span>Sem previsão</span><strong>{{ dashboard.open_backlog.counts.sem_previsao }}</strong></div>
+                <div class="bi-aging is-5" data-mx-name="Fila de viagens em aberto" data-mx-dim="aberta" data-mx-label-name="Situação da fila" data-mx-columns="Viagens:int:sum">
+                    <div class="is-green" data-mx-key="no_prazo" data-mx-values="{{ dashboard.open_backlog.counts.no_prazo }}"><span>Ainda no prazo</span><strong>{{ dashboard.open_backlog.counts.no_prazo }}</strong></div>
+                    <div data-mx-key="ate_7" data-mx-values="{{ dashboard.open_backlog.counts.ate_7 }}"><span>Até 7 dias vencida</span><strong>{{ dashboard.open_backlog.counts.ate_7 }}</strong></div>
+                    <div class="is-amber" data-mx-key="de_8_a_30" data-mx-values="{{ dashboard.open_backlog.counts.de_8_a_30 }}"><span>8 a 30 dias</span><strong>{{ dashboard.open_backlog.counts.de_8_a_30 }}</strong></div>
+                    <div class="is-red" data-mx-key="acima_30" data-mx-values="{{ dashboard.open_backlog.counts.acima_30 }}"><span>Mais de 30 dias</span><strong>{{ dashboard.open_backlog.counts.acima_30 }}</strong></div>
+                    <div data-mx-key="sem_previsao" data-mx-values="{{ dashboard.open_backlog.counts.sem_previsao }}"><span>Sem previsão</span><strong>{{ dashboard.open_backlog.counts.sem_previsao }}</strong></div>
                 </div>
                 {% if dashboard.open_backlog.items %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-name="Viagens em aberto (roteiro)" data-mx-dim="roteiro">
                         <thead>
                             <tr>
                                 <th>Viagem</th><th>Placa</th><th>Motorista</th><th>Gerada</th>
@@ -731,7 +735,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.open_backlog.items %}
-                            <tr>
+                            <tr data-mx-key="{{ item.trip }}" data-mx-label="Viagem {{ item.trip }}">
                                 <td><div class="bi-cell"><strong>{{ item.trip }}</strong><small>frota {{ item.fleet }}</small></div></td>
                                 <td><span class="tv-plate">{{ item.plate }}</span></td>
                                 <td>{{ item.driver }}</td>
@@ -754,9 +758,9 @@
             <div class="bi-grid is-3">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Situação</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="situacao" data-mx-label-name="Situação" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.situations %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong><button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="situacao" data-mx-value="{% if item.label == 'Finalizada' %}F{% else %}A{% endif %}">{{ item.label }}</button></strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="{% if item.label == 'Finalizada' %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -766,9 +770,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Empresa</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="empresa" data-mx-label-name="Empresa" data-mx-columns="Viagens:int:sum|Participação:pct100">
                         {% for item in dashboard.companies %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.code }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">{{ item.km_display }}</small>
@@ -779,20 +783,20 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Cobertura dos campos</h2><span>o que a base preenche</span></div>
-                    <div class="bi-bars">
-                        <div class="bi-bar">
+                    <div class="bi-bars" data-mx-dim="cobertura" data-mx-label-name="Campo" data-mx-columns="Viagens:int|Cobertura:pct100">
+                        <div class="bi-bar" data-mx-key="km" data-mx-values="{{ dashboard.metrics.trips_with_km }}|{{ dashboard.metrics.km_coverage_pct }}">
                             <div class="bi-bar-head"><strong>Quilometragem</strong><span>{{ dashboard.metrics.trips_with_km }} · {{ dashboard.metrics.km_coverage_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ dashboard.metrics.km_coverage_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="litros" data-mx-values="|{{ dashboard.metrics.liters_coverage_pct }}">
                             <div class="bi-bar-head"><strong>Litros abastecidos</strong><span>{{ dashboard.metrics.liters_total_display }} · {{ dashboard.metrics.liters_coverage_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ dashboard.metrics.liters_coverage_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="adiantamento" data-mx-values="{{ dashboard.metrics.trips_with_advance }}|{{ dashboard.metrics.advance_coverage_pct }}">
                             <div class="bi-bar-head"><strong>Adiantamento</strong><span>{{ dashboard.metrics.trips_with_advance }} · {{ dashboard.metrics.advance_coverage_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.metrics.advance_coverage_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="duracao" data-mx-values="{{ dashboard.metrics.trips_with_duration }}|{{ dashboard.metrics.duration_coverage_pct }}">
                             <div class="bi-bar-head"><strong>Saída e chegada</strong><span>{{ dashboard.metrics.trips_with_duration }} · {{ dashboard.metrics.duration_coverage_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-green" style="width: {{ dashboard.metrics.duration_coverage_pct }}%"></i></div>
                         </div>

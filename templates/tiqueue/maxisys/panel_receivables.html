@@ -105,7 +105,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
 <script>
 (() => {
     const L = window.MXLive;
@@ -145,13 +145,84 @@
     const pick = (state, skip) => data.facts.filter((fact) => L.passAll(fact, state, skip));
     L.monthPicker(document.getElementById('mxMonths'), { months: [...new Set(data.facts.map((fact) => fact.vm))], filter, dimension: 'vm', title: 'Vencimento', allLabel: 'Todos' });
 
-    const aging = L.ranking(document.getElementById('rankAging'), { format: fmt.money, limit: 8, onSelect: (key, item, event) => filter.toggle('b', key, event) });
-    const gauge = L.gauge(document.getElementById('gaugeOverdue'), { lowerIsBetter: true, good: 0.03, warn: 0.06, max: 0.15, format: (value) => fmt.pct(value, 1), label: 'Inadimplência' });
-    const weeks = L.columns(document.getElementById('chartWeeks'), { height: 230, format: fmt.money, maxBar: 30, onSelect: (key, index, event) => filter.toggle('w', key, event) });
-    const paid = L.columns(document.getElementById('chartPaid'), { height: 230, format: fmt.money, stacked: true, maxBar: 30 });
-    const debtors = L.ranking(document.getElementById('rankDebtors'), { format: fmt.money, limit: 10, color: '--mx-div-neg-2', emptyText: 'Nenhum título vencido neste filtro.', onSelect: (key, item, event) => filter.toggle('c', key, event) });
-    const reps = L.ranking(document.getElementById('rankReps'), { format: fmt.money, limit: 10, onSelect: (key, item, event) => filter.toggle('r', key, event) });
-    const holders = L.donut(document.getElementById('donutHolders'), { format: fmt.money, centerLabel: 'em aberto', onSelect: (key, item, event) => filter.toggle('p', key, event) });
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): os títulos por trás do ponto,
+    // com os filtros cruzados que estão valendo.
+    const titleColumns = [
+        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+        { key: 'title', label: 'Título', nowrap: true },
+        { key: 'rep', label: 'Representante' },
+        { key: 'holder', label: 'Portador' },
+        { key: 'issued', label: 'Emissão', type: 'date', nowrap: true },
+        { key: 'due', label: 'Vencimento', type: 'date', nowrap: true, badge: 'status', tone: 'statusTone' },
+        { key: 'late', label: 'Dias de atraso', type: 'int' },
+        { key: 'amount', label: 'Valor', type: 'money', total: true, strong: true },
+    ];
+    const titleRow = (fact) => {
+        const info = customer(fact.c);
+        return {
+            customer: info.name, url: profileUrl(fact.c), place: [fact.c, info.place].filter(Boolean).join(' · '),
+            title: fact.t, rep: data.names.reps[fact.r] || '-', holder: data.holders[fact.p] || fact.p, issued: fact.e, due: fact.v,
+            status: fact.late ? `vencido há ${fact.late} dia${fact.late === 1 ? '' : 's'}` : (bucketLabel[fact.b] || '').replace('A vencer em ', 'vence em '),
+            statusTone: fact.late ? (fact.late > 30 ? 'bad' : 'warn') : 'good',
+            late: fact.late || null, amount: fact.a, __tone: fact.late > 30 ? 'bad' : fact.late ? 'warn' : null,
+        };
+    };
+    function titlesResult(title, subtitle, rows) {
+        const total = rows.reduce((acc, fact) => acc + fact.a, 0);
+        const overdueRows = rows.filter((fact) => fact.b.startsWith('v'));
+        const overdue = overdueRows.reduce((acc, fact) => acc + fact.a, 0);
+        return {
+            title,
+            subtitle: `${subtitle}${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+            summary: [
+                { label: 'Em aberto', value: fmt.moneyFull(total), note: `${fmt.int(rows.length)} título(s)` },
+                { label: 'Vencido', value: fmt.moneyFull(overdue), note: total ? `${fmt.pct(overdue / total, 1)} do valor` : '', tone: overdue ? 'bad' : 'good' },
+                { label: 'Clientes', value: fmt.int(new Set(rows.map((fact) => fact.c)).size) },
+                { label: 'Maior atraso', value: overdueRows.length ? fmt.days(Math.max(...overdueRows.map((fact) => fact.late))) : '–' },
+            ],
+            sections: [{ label: 'Títulos', columns: titleColumns, rows: rows.map(titleRow), sort: { key: 'due', dir: 'asc' }, groupBy: ['customer', 'rep', 'holder', 'due'], empty: 'Nenhum título neste ponto.' }],
+        };
+    }
+    const titlesFor = (dimension, key, extra) => pick(filter.get(), dimension).filter((fact) => String(fact[dimension]) === String(key) && (!extra || extra(fact)));
+
+    const aging = L.ranking(document.getElementById('rankAging'), {
+        format: fmt.money, limit: 8, onSelect: (key, item, event) => filter.toggle('b', key, event),
+        valueType: 'money', labelName: 'Vencimento', valueName: 'Valor',
+        drill: ({ key, label }) => titlesResult(label, 'Títulos da faixa de vencimento', titlesFor('b', key)), canDrill: ({ item }) => item.value > 0,
+    });
+    const gauge = L.gauge(document.getElementById('gaugeOverdue'), {
+        lowerIsBetter: true, good: 0.03, warn: 0.06, max: 0.15, format: (value) => fmt.pct(value, 1), label: 'Inadimplência', pointLabel: 'títulos vencidos',
+        drill: () => titlesResult('Inadimplência', 'Títulos vencidos', pick(filter.get()).filter((fact) => fact.b.startsWith('v'))),
+        canDrill: ({ item }) => !!item && item.ratio != null,
+    });
+    const weeks = L.columns(document.getElementById('chartWeeks'), {
+        height: 230, format: fmt.money, maxBar: 30, onSelect: (key, index, event) => filter.toggle('w', key, event),
+        valueType: 'money', labelName: 'Semana (a partir de)',
+        drill: ({ key, label }) => titlesResult(key === 'vencido' ? 'Vencidos' : `Semana a partir de ${label}`, 'Títulos a receber', titlesFor('w', key)),
+        canDrill: ({ index, data: chart }) => chart.series[0].values[index] > 0,
+    });
+    // Recebido por mês: a página só tem os totais; os títulos liquidados do mês vêm do servidor.
+    const monthParam = (key) => `${Math.floor(key / 12)}-${String((key % 12) + 1).padStart(2, '0')}`;
+    const paid = L.columns(document.getElementById('chartPaid'), {
+        height: 230, format: fmt.money, stacked: true, maxBar: 30, valueType: 'money', labelName: 'Mês',
+        drill: ({ index }) => window.MXDrill.fetchJSON(`{% url 'dashesReceivablesPanelDetail' %}?mes=${monthParam(data.paid[index].key)}`),
+        canDrill: ({ index }) => !!data.paid[index] && data.paid[index].paid > 0,
+    });
+    const debtors = L.ranking(document.getElementById('rankDebtors'), {
+        format: fmt.money, limit: 10, color: '--mx-div-neg-2', emptyText: 'Nenhum título vencido neste filtro.', onSelect: (key, item, event) => filter.toggle('c', key, event),
+        valueType: 'money', labelName: 'Cliente', valueName: 'Vencido', openLabel: 'Abrir a ficha do cliente',
+        drill: ({ key, label }) => titlesResult(label, 'Títulos vencidos do cliente', titlesFor('c', key, (fact) => fact.b.startsWith('v'))),
+    });
+    const reps = L.ranking(document.getElementById('rankReps'), {
+        format: fmt.money, limit: 10, onSelect: (key, item, event) => filter.toggle('r', key, event),
+        valueType: 'money', labelName: 'Representante', valueName: 'Em aberto',
+        drill: ({ key, label }) => titlesResult(label, 'Títulos em aberto do representante', titlesFor('r', key)),
+    });
+    const holders = L.donut(document.getElementById('donutHolders'), {
+        format: fmt.money, centerLabel: 'em aberto', onSelect: (key, item, event) => filter.toggle('p', key, event),
+        valueType: 'money', labelName: 'Portador', valueName: 'Em aberto',
+        drill: ({ key, label }) => titlesResult(label, 'Títulos em aberto no portador', titlesFor('p', key)),
+    });
     const holderOrder = [...L.group(data.facts, 'p', ['a']).entries()].sort((a, b) => b[1].a - a[1].a).map(([key]) => key);
 
     // Prazo médio e pontualidade: últimos 3 meses fechados ou em curso.
@@ -178,12 +249,29 @@
     });
 
     let shown = 40;
+    // Tabela de títulos: botão direito numa linha abre os títulos em aberto daquele cliente; o selo
+    // e "Mostrar como tabela" trazem todos os títulos do filtro (não só as linhas já mostradas).
+    let ordered = [];
+    const titlesWrap = document.getElementById('titlesBody').closest('.mx-table-wrap');
+    if (window.MXDrill) {
+        window.MXDrill.attach(titlesWrap, {
+            name: 'Títulos',
+            tableTitle: 'Títulos do filtro',
+            label: (index) => (ordered[index] ? customer(ordered[index].c).name : ''),
+            table: () => ({ columns: titleColumns, rows: ordered.map((fact, index) => ({ ...titleRow(fact), __index: index })) }),
+            drill: (index) => titlesResult(customer(ordered[index].c).name, 'Títulos em aberto do cliente', titlesFor('c', ordered[index].c)),
+            canDrill: (index) => !!ordered[index],
+            actions: (index) => (ordered[index] ? [{ label: 'Abrir a ficha do cliente', href: profileUrl(ordered[index].c) }] : []),
+        });
+    }
     function renderTable(rows) {
         const body = document.getElementById('titlesBody');
         body.replaceChildren();
-        const ordered = rows.slice().sort((a, b) => (a.v < b.v ? -1 : a.v > b.v ? 1 : b.a - a.a));
+        ordered = rows.slice().sort((a, b) => (a.v < b.v ? -1 : a.v > b.v ? 1 : b.a - a.a));
         ordered.slice(0, shown).forEach((fact, index) => {
             const tr = document.createElement('tr');
+            tr.setAttribute('data-mx-index', index);
+            if (window.MXDrill) tr.title = window.MXDrill.hint;
             tr.style.animationDelay = `${Math.min(index * 12, 400)}ms`;
             const info = customer(fact.c);
             const cell = (text, className) => { const td = document.createElement('td'); if (className) td.className = className; td.textContent = text; tr.appendChild(td); return td; };
@@ -273,6 +361,56 @@
         shown = 40;
         renderTable(rows);
         document.getElementById('titlesSub').textContent = Object.keys(state).length ? 'Filtrados pela seleção acima · os mais antigos primeiro' : 'Os mais antigos primeiro';
+    }
+
+    // Cards de indicador: o card inteiro abre os títulos por trás do número (com os filtros da
+    // página); prazo, pontualidade e créditos vêm do servidor, que a página só tem os totais.
+    if (window.MXDrill) {
+        const kpiCard = (id) => document.getElementById(id).closest('.mx-card');
+        const openRows = () => pick(filter.get());
+        window.MXDrill.kpi(kpiCard('kpiOpen'), {
+            drill: () => titlesResult('Carteira a receber', 'Títulos de débito em aberto', openRows()),
+            canDrill: () => openRows().length > 0,
+        });
+        window.MXDrill.kpi(kpiCard('kpiOverdue'), {
+            drill: () => {
+                const result = titlesResult('Vencido', 'Títulos vencidos (inadimplência)', openRows().filter((fact) => fact.b.startsWith('v')));
+                const open = openRows().reduce((acc, fact) => acc + fact.a, 0);
+                const overdue = result.sections[0].rows.reduce((acc, row) => acc + row.amount, 0);
+                result.summary[1] = { label: 'Inadimplência', value: open ? fmt.pct(overdue / open, 1) : '–', note: `vencido ÷ carteira de ${fmt.moneyFull(open)}`, tone: open && overdue / open > 0.06 ? 'bad' : open && overdue / open > 0.03 ? 'warn' : 'good' };
+                return result;
+            },
+            canDrill: () => openRows().some((fact) => fact.b.startsWith('v')),
+        });
+        window.MXDrill.kpi(kpiCard('kpiDue7'), {
+            drill: () => titlesResult('Vence em 7 dias', 'Títulos que vencem nos próximos 7 dias', openRows().filter((fact) => fact.b === 'a7')),
+            canDrill: () => openRows().some((fact) => fact.b === 'a7'),
+        });
+        // Prazo médio e pontualidade: os mesmos 3 últimos meses do gráfico Recebido por mês.
+        const recentRange = () => (recent.length ? `de=${monthParam(recent[0].key)}&ate=${monthParam(recent[recent.length - 1].key)}` : '');
+        [['kpiTerm', 'prazo'], ['kpiOnTime', 'pontualidade']].forEach(([id, focus]) => window.MXDrill.kpi(kpiCard(id), {
+            drill: () => window.MXDrill.fetchJSON(`{% url 'dashesReceivablesPanelDetail' %}?${recentRange()}&foco=${focus}`),
+            canDrill: () => recent.length > 0 && paidSum > 0,
+        }));
+        window.MXDrill.kpi(kpiCard('kpiDso'), {
+            drill: () => {
+                const rows = openRows();
+                const open = rows.reduce((acc, fact) => acc + fact.a, 0);
+                const result = titlesResult('Dias de faturamento na carteira (DSO)', 'Carteira a receber ÷ faturamento médio diário dos últimos 90 dias', rows);
+                result.summary = [
+                    { label: 'DSO', value: fmt.days(open / data.daily_billing), note: 'carteira ÷ faturamento médio diário' },
+                    { label: 'Carteira a receber', value: fmt.moneyFull(open), note: `${fmt.int(rows.length)} título(s)` },
+                    { label: 'Faturamento médio diário', value: fmt.moneyFull(data.daily_billing), note: 'títulos emitidos nos últimos 90 dias ÷ 90' },
+                ];
+                return result;
+            },
+            // O card só tem valor sem filtro (o faturamento diário é da empresa toda).
+            canDrill: () => !Object.keys(filter.get()).length && !!data.daily_billing,
+        });
+        window.MXDrill.kpi(kpiCard('kpiCredits'), {
+            drill: () => window.MXDrill.fetchJSON(`{% url 'dashesReceivablesPanelDetail' %}?creditos=1`),
+            canDrill: () => credits > 0,
+        });
     }
 
     filter.subscribe(render);

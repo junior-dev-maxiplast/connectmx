@@ -92,7 +92,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
 <script>
 (() => {
     const L = window.MXLive;
@@ -135,13 +135,134 @@
         };
     };
 
-    const monthly = L.line(document.getElementById('chartMonthly'), { height: 250, format: (value) => fmt.pct(value, 0), onSelect: (key, index, event) => filter.toggle('m', monthKeys[index], event) });
-    const gauge = L.gauge(document.getElementById('gaugeOtif'), { good: 0.95, warn: 0.85, target: data.reference, format: (value) => fmt.pct(value, 1), label: 'OTIF' });
-    const buckets = L.columns(document.getElementById('chartBuckets'), { height: 220, format: (value) => (measure === 'kg' ? fmt.kg(value) : fmt.int(value)), maxBar: 54, onSelect: (key, index, event) => filter.toggle('b', key, event) });
-    const rankOptions = (key) => ({ format: (value) => fmt.pct(value, 1), limit: 12, onSelect: (value, item, event) => filter.toggle(key, value, event) });
-    const reps = L.ranking(document.getElementById('rankReps'), rankOptions('r'));
-    const groups = L.ranking(document.getElementById('rankGroups'), { ...rankOptions('g'), color: '--mx-cat-3' });
-    const branches = L.ranking(document.getElementById('rankBranches'), { ...rankOptions('f'), color: '--mx-cat-7' });
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): as linhas por trás do ponto
+    // (mês, representante, grupo, filial e situação da entrega), com os filtros da página.
+    const otifColumns = [
+        { key: 'month', label: 'Mês prometido' },
+        { key: 'rep', label: 'Representante' },
+        { key: 'group', label: 'Grupo' },
+        { key: 'branch', label: 'Filial' },
+        { key: 'bucket', label: 'Entrega' },
+        { key: 'items', label: 'Itens', type: 'int', total: true },
+        { key: 'otifItems', label: 'No prazo e completos', type: 'int', total: true },
+        { key: 'otif', label: 'OTIF', type: 'pct', strong: true, ratio: ['otifItems', 'items'] },
+        { key: 'fullItems', label: 'Completos', type: 'int', total: true },
+        { key: 'kg', label: 'Kg', type: 'kg', total: true },
+        { key: 'delay', label: 'Atraso médio (dias)', type: 'dec', digits: 1, ratio: ['lateDays', 'lateItems'] },
+        { key: 'lateDays', label: 'Dias de atraso', type: 'int', hidden: true },
+        { key: 'lateItems', label: 'Itens atrasados', type: 'int', hidden: true },
+    ];
+    const otifRow = (row) => ({
+        month: L.monthLabel(row.m), rep: data.names.reps[row.r] || `Representante ${row.r}`, group: row.g,
+        branch: data.names.branches[row.f] || row.f, bucket: bucketLabel[row.b] || row.b,
+        items: row.i, otifItems: row.o, otif: row.i ? row.o / row.i : null, fullItems: row.fu, kg: row.k,
+        delay: row.li ? row.ld / row.li : null, lateDays: row.ld, lateItems: row.li,
+        __tone: ['open', 'short', 'd30', 'd30p'].includes(row.b) ? 'bad' : null,
+    });
+    const overdueColumns = [
+        { key: 'order', label: 'Pedido/item', nowrap: true },
+        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+        { key: 'product', label: 'Produto', wrap: true },
+        { key: 'rep', label: 'Representante' },
+        { key: 'due', label: 'Prometido para', type: 'date', nowrap: true },
+        { key: 'late', label: 'Dias de atraso', type: 'int', strong: true },
+        { key: 'kg', label: 'Kg em aberto', type: 'kg', total: true },
+        { key: 'value', label: 'Valor em aberto', type: 'money', total: true },
+    ];
+    const overdueRow = (row) => {
+        const info = data.names.customers[row.c] || { name: `Cliente ${row.c}`, place: '' };
+        return {
+            order: row.order, customer: info.name, url: profileUrl(row.c), place: [row.c, info.place].filter(Boolean).join(' · '),
+            product: row.product || row.g, rep: data.names.reps[row.r] || '-', due: row.due, late: row.late, kg: row.kg, value: row.value,
+            __tone: row.late > 15 ? 'bad' : 'warn',
+        };
+    };
+    function otifResult(title, subtitle, rows, overdueRows) {
+        const sum = L.sum(rows, ['i', 'o', 'fu', 'k', 'ld', 'li']);
+        const share = sum.i ? sum.o / sum.i : null;
+        const sections = [{ key: 'items', label: 'Itens entregues', columns: otifColumns, rows: rows.map(otifRow), sort: { key: 'items', dir: 'desc' }, groupBy: ['month', 'rep', 'group', 'branch', 'bucket'], empty: 'Nenhum item neste ponto.' }];
+        if (overdueRows) sections.push({ key: 'overdue', label: 'Carteira atrasada', columns: overdueColumns, rows: overdueRows.map(overdueRow), sort: { key: 'late', dir: 'desc' }, groupBy: ['customer', 'rep'], empty: 'Nenhum item atrasado em aberto.' });
+        return {
+            title,
+            subtitle: `${subtitle}${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+            summary: [
+                { label: 'OTIF', value: fmt.pct(share, 1), note: `${fmt.int(sum.o)} de ${fmt.int(sum.i)} itens`, tone: share == null ? null : share >= data.reference ? 'good' : share >= 0.85 ? 'warn' : 'bad' },
+                { label: 'Entregue completo', value: fmt.pct(sum.i ? sum.fu / sum.i : null, 1) },
+                { label: 'Volume', value: fmt.kg(sum.k) },
+                { label: 'Atraso médio', value: sum.li ? fmt.days(sum.ld / sum.li) : '–', note: `${fmt.int(sum.li)} item(ns) atrasado(s)` },
+            ],
+            sections,
+        };
+    }
+    const rangeRows = (skip) => { const period = periodOf(filter.get()); return pick(data.facts.filter((row) => !period.picked || period.recent.has(row.m)), filter.get(), skip); };
+    const overdueOf = (test) => data.overdue.filter((row) => ['r', 'g', 'f'].every((key) => L.pass(filter.get(), key, row[key])) && test(row));
+    const rankDrill = (dimension, kind) => ({ key, label }) => otifResult(label, `${kind} · ${periodOf(filter.get()).range}`, rangeRows(dimension).filter((row) => String(row[dimension]) === String(key)));
+
+    const monthly = L.line(document.getElementById('chartMonthly'), {
+        height: 250, format: (value) => fmt.pct(value, 0), onSelect: (key, index, event) => filter.toggle('m', monthKeys[index], event),
+        valueType: 'pct', labelName: 'Mês prometido',
+        drill: ({ index, label }) => otifResult(label, 'Itens com entrega prometida no mês', pick(data.facts, filter.get()).filter((row) => row.m === monthKeys[index]),
+            overdueOf((row) => monthOf(row.due) === monthKeys[index])),
+        canDrill: ({ index, data: chart }) => chart.series[0].values[index] != null,
+    });
+    // Medidor: os itens do período do medidor (meses escolhidos ou os 3 últimos) e a carteira atrasada dele.
+    const periodOverdue = (period) => overdueOf((row) => !period.picked || period.recent.has(monthOf(row.due)));
+    const gauge = L.gauge(document.getElementById('gaugeOtif'), {
+        good: 0.95, warn: 0.85, target: data.reference, format: (value) => fmt.pct(value, 1), label: 'OTIF', pointLabel: 'itens do período',
+        drill: () => {
+            const period = periodOf(filter.get());
+            return otifResult(`OTIF · ${period.label}`, 'Itens com entrega prometida no período do medidor',
+                pick(data.facts, filter.get()).filter((row) => period.recent.has(row.m)), periodOverdue(period));
+        },
+        canDrill: ({ item }) => !!item && item.ratio != null,
+    });
+    const buckets = L.columns(document.getElementById('chartBuckets'), {
+        height: 220, format: (value) => (measure === 'kg' ? fmt.kg(value) : fmt.int(value)), maxBar: 54, onSelect: (key, index, event) => filter.toggle('b', key, event),
+        labelName: 'Entrega',
+        drill: ({ key, label }) => otifResult(label, `Situação da entrega · ${periodOf(filter.get()).range}`, rangeRows('b').filter((row) => row.b === key)),
+        canDrill: ({ index, data: chart }) => chart.series[0].values[index] > 0,
+    });
+    const rankOptions = (key, kind) => ({
+        format: (value) => fmt.pct(value, 1), limit: 12, onSelect: (value, item, event) => filter.toggle(key, value, event),
+        valueType: 'pct', labelName: kind, valueName: 'OTIF', total: false, drill: rankDrill(key, kind),
+    });
+    // Itens atrasados em aberto: botão direito numa linha abre os itens atrasados do cliente; o selo e
+    // "Mostrar como tabela" trazem todos os itens atrasados do filtro (a tabela mostra até 80).
+    let overdueShown = [];
+    function overdueResult(title, subtitle, rows) {
+        const kg = rows.reduce((acc, row) => acc + (row.kg || 0), 0);
+        const value = rows.reduce((acc, row) => acc + (row.value || 0), 0);
+        return {
+            title,
+            subtitle: `${subtitle}${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+            summary: [
+                { label: 'Itens atrasados', value: fmt.int(rows.length), tone: rows.length ? 'bad' : 'good' },
+                { label: 'Em aberto', value: fmt.moneyFull(value), note: fmt.kg(kg) },
+                { label: 'Maior atraso', value: rows.length ? fmt.days(Math.max(...rows.map((row) => row.late))) : '–' },
+                { label: 'Pedidos', value: fmt.int(new Set(rows.map((row) => String(row.order).split('/')[0])).size) },
+            ],
+            sections: [{ key: 'overdue', label: 'Carteira atrasada', columns: overdueColumns, rows: rows.map(overdueRow), sort: { key: 'late', dir: 'desc' }, groupBy: ['customer', 'rep'], empty: 'Nenhum item atrasado em aberto.' }],
+        };
+    }
+    const overdueWrap = document.getElementById('overdueBody').closest('.mx-table-wrap');
+    if (window.MXDrill) {
+        const customerOf = (row) => (data.names.customers[row.c] || { name: `Cliente ${row.c}` }).name;
+        window.MXDrill.attach(overdueWrap, {
+            name: 'Itens atrasados em aberto',
+            tableTitle: 'Itens atrasados do filtro',
+            label: (index) => (overdueShown[index] ? customerOf(overdueShown[index]) : ''),
+            table: () => ({ columns: overdueColumns, rows: overdueShown.map((row, index) => ({ ...overdueRow(row), __index: index })) }),
+            drill: (index) => {
+                const row = overdueShown[index];
+                return overdueResult(customerOf(row), 'Itens atrasados em aberto do cliente', overdueShown.filter((other) => other.c === row.c));
+            },
+            canDrill: (index) => !!overdueShown[index],
+            actions: (index) => (overdueShown[index] ? [{ label: 'Abrir a ficha do cliente', href: profileUrl(overdueShown[index].c) }] : []),
+        });
+    }
+    const reps = L.ranking(document.getElementById('rankReps'), rankOptions('r', 'Representante'));
+    const groups = L.ranking(document.getElementById('rankGroups'), { ...rankOptions('g', 'Grupo'), color: '--mx-cat-3' });
+    const branches = L.ranking(document.getElementById('rankBranches'), { ...rankOptions('f', 'Filial'), color: '--mx-cat-7' });
 
     function ranking(rows, state, dimension, label) {
         const grouped = new Map();
@@ -226,8 +347,11 @@
 
         const body = document.getElementById('overdueBody');
         body.replaceChildren();
+        overdueShown = overdue;
         overdue.slice(0, 80).forEach((row, index) => {
             const tr = document.createElement('tr');
+            tr.setAttribute('data-mx-index', index);
+            if (window.MXDrill) tr.title = window.MXDrill.hint;
             tr.style.animationDelay = `${Math.min(index * 14, 500)}ms`;
             const cell = (text, className) => { const td = document.createElement('td'); if (className) td.className = className; td.textContent = text; tr.appendChild(td); return td; };
             cell(row.order);
@@ -259,6 +383,128 @@
         document.querySelectorAll('[data-measure]').forEach((other) => other.classList.toggle('is-active', other === button));
         render(filter.get());
     }));
+    // Cards de indicador: os itens do período dos cards (meses escolhidos ou os 3 últimos), com os
+    // filtros da página e a medida escolhida (itens ou kg) — as mesmas contas do render.
+    if (window.MXDrill) {
+        const kpiCard = (id) => document.getElementById(id).closest('.mx-card');
+        const current = () => {
+            const period = periodOf(filter.get());
+            const rows = pick(data.facts, filter.get());
+            return { period, rows: rows.filter((row) => period.recent.has(row.m)), before: rows.filter((row) => period.previous.has(row.m)) };
+        };
+        const unit = () => (measure === 'kg' ? 'kg' : 'itens');
+        const amount = (value) => (measure === 'kg' ? fmt.kg(value) : `${fmt.int(value)} ${value === 1 ? 'item' : 'itens'}`);
+        const ratio = (part, whole) => (whole ? part / whole : null);
+        const tone = (value) => (value == null ? null : value >= data.reference ? 'good' : value >= 0.85 ? 'warn' : 'bad');
+        const itemsSection = (label, rows, extra) => ({ key: label, label, columns: otifColumns, rows: rows.map(otifRow), sort: { key: 'items', dir: 'desc' }, groupBy: ['month', 'rep', 'group', 'branch', 'bucket'], empty: 'Nenhum item.', ...(extra || {}) });
+        const hasRows = () => current().rows.length > 0;
+        const otifFact = (now) => ({ label: 'OTIF', value: fmt.pct(ratio(now.otif, now.total), 1), note: `${amount(now.otif)} de ${amount(now.total)}`, tone: tone(ratio(now.otif, now.total)) });
+
+        window.MXDrill.kpi(kpiCard('kpiOtif'), {
+            drill: () => {
+                const { period, rows, before } = current();
+                const result = otifResult(`OTIF · ${period.label}`, 'Itens com entrega prometida no período dos cards', rows, periodOverdue(period));
+                const now = totals(rows);
+                const old = ratio(totals(before).otif, totals(before).total);
+                const value = ratio(now.otif, now.total);
+                const points = value != null && old != null ? (value - old) * 100 : null;
+                result.summary[0] = { ...otifFact(now), note: `${amount(now.otif)} de ${amount(now.total)}${points == null ? '' : ` · ${points > 0 ? '+' : ''}${fmt.dec(points, 1)} p.p. ${period.compare.replace('em pontos ', '')}`}` };
+                return result;
+            },
+            canDrill: hasRows,
+        });
+        window.MXDrill.kpi(kpiCard('kpiFull'), {
+            drill: () => {
+                const { period, rows } = current();
+                const now = totals(rows);
+                const short = rows.filter((row) => ['short', 'open'].includes(row.b));
+                return {
+                    title: `Entregue completo · ${period.label}`,
+                    subtitle: `Itens com pelo menos 90% da quantidade entregue · medida: ${unit()}${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+                    summary: [
+                        { label: 'Entregue completo', value: fmt.pct(ratio(now.full, now.total), 1), note: `${amount(now.full)} de ${amount(now.total)}` },
+                        { label: 'Incompletos ou em aberto', value: amount(now.total - now.full), tone: now.total - now.full > 0 ? 'warn' : 'good' },
+                        otifFact(now),
+                    ],
+                    sections: [itemsSection('Itens do período', rows), itemsSection('Incompletos ou em aberto', short, { empty: 'Todos os itens do período saíram completos.' })],
+                };
+            },
+            canDrill: hasRows,
+        });
+        window.MXDrill.kpi(kpiCard('kpiOnTime'), {
+            drill: () => {
+                const { period, rows } = current();
+                const now = totals(rows);
+                const complete = rows.filter((row) => !['short', 'open'].includes(row.b));
+                const late = complete.filter((row) => !['early', 'ontime'].includes(row.b));
+                return {
+                    title: `No prazo (dos completos) · ${period.label}`,
+                    subtitle: `Itens completos com a nota emitida até a data prometida · medida: ${unit()}${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+                    summary: [
+                        { label: 'No prazo', value: fmt.pct(ratio(now.otif, now.full), 1), note: `${amount(now.otif)} de ${amount(now.full)} completos` },
+                        { label: 'Completos fora do prazo', value: amount(now.full - now.otif), tone: now.full - now.otif > 0 ? 'warn' : 'good' },
+                        otifFact(now),
+                    ],
+                    sections: [itemsSection('Itens completos', complete), itemsSection('Completos fora do prazo', late, { sort: { key: 'delay', dir: 'desc' }, empty: 'Todos os itens completos saíram no prazo.' })],
+                };
+            },
+            canDrill: () => current().rows.some((row) => !['short', 'open'].includes(row.b)),
+        });
+        window.MXDrill.kpi(kpiCard('kpiDelay'), {
+            drill: () => {
+                const { period, rows } = current();
+                const late = rows.filter((row) => row.li > 0);
+                const sum = L.sum(late, ['ld', 'li']);
+                return {
+                    title: `Atraso médio · ${period.label}`,
+                    subtitle: `Dias de atraso ÷ itens atrasados${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+                    summary: [
+                        { label: 'Atraso médio', value: sum.li ? fmt.days(sum.ld / sum.li) : '–', note: 'entre os itens atrasados' },
+                        { label: 'Itens atrasados', value: fmt.int(sum.li), tone: sum.li ? 'warn' : 'good' },
+                        otifFact(totals(rows)),
+                    ],
+                    sections: [itemsSection('Linhas com item atrasado', late, { sort: { key: 'delay', dir: 'desc' }, empty: 'Nenhum item atrasado no período.' })],
+                };
+            },
+            canDrill: () => current().rows.some((row) => row.li > 0),
+        });
+        const leadColumns = [
+            ...otifColumns.slice(0, 6),
+            { key: 'lead', label: 'Lead time (dias)', type: 'dec', digits: 1, ratio: ['leadDays', 'leadItems'], strong: true },
+            { key: 'leadItems', label: 'Itens com nota', type: 'int', total: true },
+            { key: 'leadDays', label: 'Dias somados', type: 'int', hidden: true },
+            { key: 'kg', label: 'Kg', type: 'kg', total: true },
+        ];
+        window.MXDrill.kpi(kpiCard('kpiLead'), {
+            drill: () => {
+                const { period, rows } = current();
+                const withNote = rows.filter((row) => row.ti > 0);
+                const sum = L.sum(withNote, ['td', 'ti']);
+                return {
+                    title: `Lead time · ${period.label}`,
+                    subtitle: `Dias do pedido à última nota, em média por item${Object.keys(filter.get()).length ? ' · com os filtros da página' : ''}`,
+                    summary: [
+                        { label: 'Lead time', value: sum.ti ? fmt.days(sum.td / sum.ti) : '–', note: 'do pedido à última nota' },
+                        { label: 'Itens com nota', value: fmt.int(sum.ti) },
+                        otifFact(totals(rows)),
+                    ],
+                    sections: [{
+                        key: 'lead', label: 'Itens do período', columns: leadColumns, sort: { key: 'lead', dir: 'desc' }, groupBy: ['month', 'rep', 'group', 'branch', 'bucket'], empty: 'Nenhum item com nota no período.',
+                        rows: withNote.map((row) => ({ ...otifRow(row), lead: row.td / row.ti, leadDays: row.td, leadItems: row.ti })),
+                    }],
+                };
+            },
+            canDrill: () => current().rows.some((row) => row.ti > 0),
+        });
+        window.MXDrill.kpi(kpiCard('kpiOverdue'), {
+            drill: () => {
+                const period = periodOf(filter.get());
+                return overdueResult('Carteira atrasada', `Itens com a data prometida vencida e saldo em aberto${period.picked ? ' · prometidos no período' : ''}`, periodOverdue(period));
+            },
+            canDrill: () => periodOverdue(periodOf(filter.get())).length > 0,
+        });
+    }
+
     filter.subscribe(render);
     render(filter.get());
 })();

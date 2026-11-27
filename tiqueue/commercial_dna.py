@@ -996,6 +996,8 @@ def _monthly_series(lines, today, months=24):
         series.append(
             {
                 "label": _month_label(key),
+                # AAAA-MM: o "Expandir dados" do gráfico pede as notas deste mês.
+                "month": f"{key // 12}-{key % 12 + 1:02d}",
                 "revenue": float(net),
                 "weight": float(weight),
                 "fator": float(net / weight) if weight else None,
@@ -1262,6 +1264,8 @@ def load_customer_dna_v2(customer_id, view_mode="individual", member_customer_id
         "relationship": {
             "first_purchase": _display_date(first_purchase),
             "last_purchase": _display_date(last_purchase),
+            "first_purchase_month": first_purchase.strftime("%Y-%m") if first_purchase else "",
+            "last_purchase_month": last_purchase.strftime("%Y-%m") if last_purchase else "",
             "days_since": days_since,
             "band": inactivity_band(days_since),
             "is_new": bool(first_purchase and _in_window(first_purchase, window["start"], window["end"])),
@@ -1469,6 +1473,9 @@ def _representative_customers(lines, window, ranking, first_last, today):
                 "weight_display": _kg(customer_totals["net_weight"]),
                 "fator_display": _fator(customer_totals["fator_kg"]),
                 "margin_display": _pct(customer_totals["margin"]),
+                # Valores crus para a tabela do "Expandir dados" (ordenar e somar no navegador).
+                "weight": float(customer_totals["net_weight"]),
+                "margin": float(customer_totals["margin"]) if customer_totals["margin"] is not None else None,
                 "share": round(float(customer_totals["net"] / total) * 100, 1) if total else 0.0,
                 "share_display": _pct(customer_totals["net"] / total) if total else "0,0%",
                 "classification": classification["code"],
@@ -1535,6 +1542,7 @@ def _inactive_customers(lines, active_codes, first_last, today):
                 "code": code,
                 "name": name or f"Cliente {code}",
                 "location": location,
+                "last_purchase": last.isoformat(),  # mês do "Expandir dados" do card Para reativar
                 "last_purchase_display": _display_date(last),
                 "days": days,
                 "band": band["label"],
@@ -1593,6 +1601,7 @@ def _goal_tracking(goals, lines, orders, today):
         months.append(
             {
                 "label": MONTH_NAMES[month - 1],
+                "month": f"{year}-{month:02d}",
                 "goal": float(goal),
                 "billed": float(done),
                 "to_bill": float(pending),
@@ -1618,6 +1627,7 @@ def _goal_tracking(goals, lines, orders, today):
         pending = to_bill_family.get(family, ZERO)
         families.append(
             {
+                "key": family,
                 "name": family.title(),
                 "goal_display": _kg(goal) if goal else "Sem meta",
                 "billed_display": _kg(done),

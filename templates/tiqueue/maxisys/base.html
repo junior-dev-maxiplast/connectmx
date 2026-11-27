@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static '/style/maxisys.css' %}?v=20">
+    <link rel="stylesheet" href="{% static '/style/maxisys.css' %}?v=24">
     {% block head %}{% endblock %}
 </head>
 <body class="mx-body">
@@ -49,6 +49,7 @@
         <symbol id="mx-i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
         <symbol id="mx-i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20v-4h-4"/></symbol>
         <symbol id="mx-i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+        <symbol id="mx-i-headset" viewBox="0 0 24 24"><path d="M4 13a8 8 0 0 1 16 0"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/><path d="M19 19c0 1.5-2 2.5-5 2.5"/></symbol>
     </svg>
 
     <div class="mx-shell" id="mxShell">
@@ -67,6 +68,11 @@
                 <a class="mx-nav-item" href="{% url 'dashesHome' %}">
                     <svg class="mx-ico"><use href="#mx-i-home"/></svg><span class="mx-nav-text">Início</span>
                 </a>
+                {% if shell_can_helpdesk %}
+                <a class="mx-nav-item{% if shell_active == 'helpdesk-panel' %} is-active{% endif %}" href="{{ shell_helpdesk_url }}"{% if shell_active == 'helpdesk-panel' %} aria-current="page"{% endif %}>
+                    <svg class="mx-ico"><use href="#mx-i-headset"/></svg><span class="mx-nav-text">Helpdesk</span>
+                </a>
+                {% endif %}
                 <details class="mx-nav-group" open>
                     <summary class="mx-nav-item">
                         <svg class="mx-ico"><use href="#mx-i-chart"/></svg><span class="mx-nav-text">Comercial</span>
@@ -87,6 +93,16 @@
                         <svg class="mx-ico"><use href="#mx-i-history"/></svg><span class="mx-nav-text">DNA (versão anterior)</span>
                     </a>
                     {% endif %}
+                    {% if shell_can_sales_goals %}
+                    <a class="mx-nav-item mx-nav-sub{% if shell_active == 'sales-goals' %} is-active{% endif %}" href="{{ shell_sales_goals_url }}"{% if shell_active == 'sales-goals' %} aria-current="page"{% endif %}>
+                        <svg class="mx-ico"><use href="#mx-i-target"/></svg><span class="mx-nav-text">Metas de Vendas</span>
+                    </a>
+                    {% endif %}
+                    {% if shell_can_budget_panel %}
+                    <a class="mx-nav-item mx-nav-sub{% if shell_active == 'budget-panel' %} is-active{% endif %}" href="{{ shell_budget_panel_url }}"{% if shell_active == 'budget-panel' %} aria-current="page"{% endif %}>
+                        <svg class="mx-ico"><use href="#mx-i-chart"/></svg><span class="mx-nav-text">Orçamento</span>
+                    </a>
+                    {% endif %}
                 </details>
                 <details class="mx-nav-group">
                     <summary class="mx-nav-item">
@@ -94,7 +110,7 @@
                         <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
                     </summary>
                     {% for dash in dashes_menu %}
-                        {% if dash.slug != 'representative-dna' and dash.slug != 'customer-dna' %}
+                        {% if dash.slug != 'representative-dna' and dash.slug != 'customer-dna' and dash.slug != 'helpdesk' and dash.slug != 'sales-goals' and dash.slug != 'budget-panel' %}
                         <a class="mx-nav-item mx-nav-sub" href="{% url dash.url_name %}">
                             <svg class="mx-ico" viewBox="0 0 24 24">{{ dash.icon_path|safe }}</svg><span class="mx-nav-text">{{ dash.name }}</span>
                         </a>
@@ -139,6 +155,11 @@
                 </div>
             </header>
             <nav class="mx-tabs" aria-label="Páginas abertas">
+                {% if shell_can_helpdesk %}
+                <a class="mx-tab{% if shell_active == 'helpdesk-panel' %} is-active{% endif %}" href="{{ shell_helpdesk_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-headset"/></svg>Helpdesk
+                </a>
+                {% endif %}
                 {% if shell_can_customer_dna %}
                 <a class="mx-tab{% if shell_active == 'customer-dna' %} is-active{% endif %}" href="{{ shell_customer_dna_url }}">
                     <svg class="mx-ico"><use href="#mx-i-dna"/></svg>DNA do Cliente
@@ -189,6 +210,16 @@
                     <svg class="mx-ico"><use href="#mx-i-shield"/></svg>Qualidade
                 </a>
                 {% endif %}
+                {% if shell_can_sales_goals %}
+                <a class="mx-tab{% if shell_active == 'sales-goals' %} is-active{% endif %}" href="{{ shell_sales_goals_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-target"/></svg>Metas de Vendas
+                </a>
+                {% endif %}
+                {% if shell_can_budget_panel %}
+                <a class="mx-tab{% if shell_active == 'budget-panel' %} is-active{% endif %}" href="{{ shell_budget_panel_url }}">
+                    <svg class="mx-ico"><use href="#mx-i-chart"/></svg>Orçamento
+                </a>
+                {% endif %}
             </nav>
             <main class="mx-content">
                 {% if messages %}
@@ -206,6 +237,7 @@
     </div>
 
     <script src="{% static '/js/maxisysShell.js' %}?v=3"></script>
+    <script src="{% static '/js/maxisysDrill.js' %}?v=4"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

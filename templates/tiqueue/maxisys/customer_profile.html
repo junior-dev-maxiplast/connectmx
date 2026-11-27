@@ -39,14 +39,14 @@
                     {% if c.rfm %}<div class="mx-hero-meta">{{ c.rfm.description }}</div>{% endif %}
                 </div>
             </div>
-            <div class="mx-hero-facts">
-                <div class="mx-fact"><span>Cliente desde</span><strong>{{ first_purchase_display }}</strong><small>na base de 24 meses</small></div>
-                <div class="mx-fact"><span>Última compra</span><strong>{{ c.last_purchase_display }}</strong><small>{% if c.days_since != None %}há {{ c.days_since }} dias{% else %}-{% endif %}</small></div>
-                <div class="mx-fact"><span>Ritmo de compra</span><strong>{% if c.rhythm.typical_days %}a cada ~{{ c.rhythm.typical_days }} dias{% else %}sem histórico{% endif %}</strong><small>{% if c.rhythm.next_purchase_display %}{% if c.rhythm.overdue_days %}próxima atrasada {{ c.rhythm.overdue_days }} dias{% else %}próxima prevista {{ c.rhythm.next_purchase_display }}{% endif %}{% else %}uma compra só{% endif %}</small></div>
+            <div class="mx-hero-facts" id="mxProfileFacts">
+                <div class="mx-fact" data-mx-key="mes:{{ item.first_purchase|date:'Y-m' }}" data-mx-label="Primeira compra ({{ first_purchase_display }})"><span>Cliente desde</span><strong>{{ first_purchase_display }}</strong><small>na base de 24 meses</small></div>
+                <div class="mx-fact" data-mx-key="mes:{{ item.last_purchase|date:'Y-m' }}" data-mx-label="Última compra ({{ c.last_purchase_display }})"><span>Última compra</span><strong>{{ c.last_purchase_display }}</strong><small>{% if c.days_since != None %}há {{ c.days_since }} dias{% else %}-{% endif %}</small></div>
+                <div class="mx-fact" data-mx-key="historico" data-mx-label="Ritmo de compra (24 meses)"><span>Ritmo de compra</span><strong>{% if c.rhythm.typical_days %}a cada ~{{ c.rhythm.typical_days }} dias{% else %}sem histórico{% endif %}</strong><small>{% if c.rhythm.next_purchase_display %}{% if c.rhythm.overdue_days %}próxima atrasada {{ c.rhythm.overdue_days }} dias{% else %}próxima prevista {{ c.rhythm.next_purchase_display }}{% endif %}{% else %}uma compra só{% endif %}</small></div>
                 <div class="mx-fact"><span>Ranking de lucro</span><strong>{% if c.profit_position %}{{ c.profit_position }}º de {{ active_count }}{% else %}sem compra no período{% endif %}</strong><small>tendência: {{ c.momentum.label|lower }}</small></div>
             </div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxProfileResult">
             <div class="mx-card-head">
                 <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span>
                 <div><p class="mx-card-title">Resultado no período</p><p class="mx-card-sub">Comparado com a mediana do segmento{% if benchmark %} ({{ benchmark.customers }} clientes de {{ c.segment_label }}){% endif %}</p></div>
@@ -74,10 +74,10 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Mix e venda cruzada<small>Últimos 12 meses</small></h3>
     <div class="mx-grid mx-grid-2">
-        <article class="mx-card">
+        <article class="mx-card" id="mxProfileMix">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">O que compra</p><p class="mx-card-sub">Grupos de produto pelo faturamento</p></div></div>
             {% for row in mix %}
-            <div class="mx-bar-row">
+            <div class="mx-bar-row" data-mx-key="{{ row.group }}" data-mx-label="{{ row.group }}" data-mx-values="{{ row.net_display }}|{{ row.kg_display }}|{{ row.share_display }}">
                 <span title="{{ row.group }}">{{ row.group }}</span>
                 <div class="mx-progress" role="img" aria-label="{{ row.share_display }}"><i style="width: {{ row.share }}%"></i></div>
                 <b>{{ row.net_display }}</b>
@@ -86,12 +86,12 @@
             <p class="mx-empty-note">Sem compra nos últimos 12 meses.</p>
             {% endfor %}
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxProfileCross">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-target"/></svg></span><div><p class="mx-card-title">Venda cruzada</p><p class="mx-card-sub">{% if cross.peers %}O que os {{ cross.peers }} clientes de {{ c.segment_label }} compram e este não{% else %}Precisa de segmento com 5 clientes ou mais{% endif %}</p></div></div>
             {% if cross.items %}
             <ul class="mx-list">
                 {% for row in cross.items %}
-                <li><div class="mx-list-main"><strong>{{ row.group }}</strong><small>{{ row.adoption_display }} do segmento compra ({{ row.buyers }} cliente{{ row.buyers|pluralize }}) · compra típica de {{ row.median_display }} em 12 meses</small></div><span class="mx-badge is-info">oportunidade</span></li>
+                <li data-mx-key="{{ row.group }}" data-mx-label="{{ row.group }}" data-mx-values="{{ row.adoption_display }}|{{ row.buyers }}|{{ row.median_display }}"><div class="mx-list-main"><strong>{{ row.group }}</strong><small>{{ row.adoption_display }} do segmento compra ({{ row.buyers }} cliente{{ row.buyers|pluralize }}) · compra típica de {{ row.median_display }} em 12 meses</small></div><span class="mx-badge is-info">oportunidade</span></li>
                 {% endfor %}
             </ul>
             {% elif cross.peers %}
@@ -131,16 +131,59 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=4"></script>
 <script>
 (() => {
     const series = JSON.parse(document.getElementById('mxProfileSeries').textContent);
+    const drill = window.MXDrill;
     window.MXCharts.bars(document.getElementById('mxProfileChart'), {
         label: 'Faturamento e lucro bruto por mês',
         labels: series.map((row) => row.label),
         series: [{ name: 'Faturamento', values: series.map((row) => row.revenue), color: '--mx-chart-1' }],
         line: { name: 'Lucro bruto', values: series.map((row) => row.profit), color: '--mx-chart-2' },
         format: window.MXCharts.money,
+        // "Expandir dados" (botão direito ou ⋯): as notas do mês, com lucro bruto por linha.
+        valueType: 'money', labelName: 'Mês',
+        drill: drill ? (i) => drill.fetchJSON(drill.urlWith('{% url "dashesCustomerProfileDetail" customer_code %}', { mes: series[i].month })) : null,
+        canDrill: (i) => !!series[i].revenue,
+    });
+    if (!drill) return;
+
+    // Fatos, grupos e oportunidades: cada um é um ponto do "Expandir dados".
+    const profileDetail = (params) => drill.fetchJSON(drill.urlWith('{% url "dashesCustomerProfileDetail" customer_code %}', params));
+    const portfolioDetail = (params) => drill.fetchJSON(drill.urlWith('{% url "dashesCustomerPortfolioDetail" %}', { cliente: '{{ customer_code }}', periodo: '{{ window.key|escapejs }}', ...params }));
+    const attachPoints = (container, options) => {
+        if (!container) return;
+        const points = [...container.querySelectorAll('[data-mx-key]')];
+        if (!points.length) return;
+        points.forEach((point, index) => { point.setAttribute('data-mx-index', index); point.title = point.title ? `${point.title}\n${drill.hint}` : drill.hint; });
+        drill.attach(container, {
+            name: options.name, tableTitle: options.tableTitle,
+            label: (index) => (points[index] ? points[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: options.columns,
+                rows: points.map((point, index) => ({ label: point.dataset.mxLabel, ...Object.fromEntries((point.dataset.mxValues || '').split('|').map((value, part) => [`v${part}`, value])), __index: index })),
+            }),
+            drill: (index) => options.drill(points[index].dataset.mxKey),
+            canDrill: (index) => !!points[index] && points[index].dataset.mxKey !== 'mes:',
+        });
+    };
+    attachPoints(document.getElementById('mxProfileFacts'), {
+        name: 'Relação com o cliente', tableTitle: 'Relação com o cliente', columns: [{ key: 'label', label: 'Fato' }],
+        drill: (key) => (key === 'historico' ? portfolioDetail({ historico: '1' }) : profileDetail({ mes: key.split(':')[1] })),
+    });
+    // Resultado no período: o card inteiro abre o cliente no período (mês a mês e as notas).
+    const result = document.getElementById('mxProfileResult');
+    if (result) drill.kpi(result, { name: 'Resultado no período', drill: () => portfolioDetail({}) });
+    attachPoints(document.getElementById('mxProfileMix'), {
+        name: 'O que compra', tableTitle: 'Grupos de produto (12 meses)',
+        columns: [{ key: 'label', label: 'Grupo' }, { key: 'v0', label: 'Faturamento' }, { key: 'v1', label: 'Volume' }, { key: 'v2', label: 'Participação' }],
+        drill: (key) => profileDetail({ grupo: key }),
+    });
+    attachPoints(document.getElementById('mxProfileCross'), {
+        name: 'Venda cruzada', tableTitle: 'Oportunidades de venda cruzada',
+        columns: [{ key: 'label', label: 'Grupo' }, { key: 'v0', label: 'Adoção no segmento' }, { key: 'v1', label: 'Clientes que compram' }, { key: 'v2', label: 'Compra típica' }],
+        drill: (key) => profileDetail({ cruzada: key, periodo: '{{ window.key|escapejs }}' }),
     });
 })();
 </script>

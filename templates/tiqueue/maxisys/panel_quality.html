@@ -92,7 +92,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
 <script>
 (() => {
     const L = window.MXLive;
@@ -133,13 +133,99 @@
         return span;
     }));
 
-    const complaintsChart = L.columns(document.getElementById('chartComplaints'), { height: 230, format: fmt.int, stacked: true, maxBar: 18, onSelect: selectMonth });
-    const returnsChart = L.columns(document.getElementById('chartReturns'), { height: 230, format: fmt.money, maxBar: 18, onSelect: selectMonth });
-    const problems = L.ranking(document.getElementById('rankProblems'), { format: fmt.int, limit: 12, onSelect: (key, item, event) => filter.toggle('p', key, event) });
-    const machines = L.ranking(document.getElementById('rankMachines'), { format: fmt.int, limit: 10, color: '--mx-cat-7', onSelect: (key, item, event) => filter.toggle('q', key, event) });
-    const sectors = L.donut(document.getElementById('donutSectors'), { format: fmt.money, centerLabel: 'devolvido', onSelect: (key, item, event) => filter.toggle('rs', key, event) });
-    const returnProblems = L.ranking(document.getElementById('rankReturnProblems'), { format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: (key, item, event) => filter.toggle('rp', key, event) });
-    const customers = L.ranking(document.getElementById('rankCustomers'), { format: fmt.int, limit: 10, color: '--mx-cat-3', onSelect: (key, item, event) => filter.toggle('c', key, event) });
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): as reclamações e devoluções
+    // por trás do ponto, com os filtros cruzados que estão valendo.
+    const place = (code) => [code, customer(code).place].filter(Boolean).join(' · ');
+    const complaintColumns = [
+        { key: 'date', label: 'Data', type: 'date', nowrap: true },
+        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+        { key: 'severity', label: 'Gravidade' },
+        { key: 'problem', label: 'Problema', wrap: true },
+        { key: 'machine', label: 'Máquina / recurso' },
+    ];
+    const complaintRow = (row) => ({
+        date: row.d, customer: customer(row.c).name, url: profileUrl(row.c), place: place(row.c),
+        severity: severityLabel[row.s] || row.s, problem: row.p, machine: row.q,
+        __tone: row.s === 'G' ? 'bad' : row.s === 'M' ? 'warn' : null,
+    });
+    const returnColumns = [
+        { key: 'date', label: 'Data', type: 'date', nowrap: true },
+        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+        { key: 'sector', label: 'Setor' },
+        { key: 'problem', label: 'Motivo', wrap: true },
+        { key: 'branch', label: 'Filial' },
+        { key: 'value', label: 'Valor devolvido', type: 'money', total: true, strong: true },
+    ];
+    const returnRow = (row) => ({ date: row.d, customer: customer(row.c).name, url: profileUrl(row.c), place: place(row.c), sector: row.s, problem: row.p, branch: row.f, value: row.v });
+    function qualityResult(title, subtitle, complaints, returns) {
+        const sections = [];
+        const summary = [];
+        if (complaints) {
+            sections.push({ key: 'complaints', label: 'Reclamações', columns: complaintColumns, rows: complaints.map(complaintRow), sort: { key: 'date', dir: 'desc' }, groupBy: ['customer', 'severity', 'problem', 'machine'], empty: 'Nenhuma reclamação.' });
+            const graves = complaints.filter((row) => row.s === 'G').length;
+            summary.push({ label: 'Reclamações', value: fmt.int(complaints.length), note: `${fmt.int(graves)} grave(s)`, tone: graves ? 'bad' : null });
+        }
+        if (returns) {
+            sections.push({ key: 'returns', label: 'Devoluções', columns: returnColumns, rows: returns.map(returnRow), sort: { key: 'value', dir: 'desc' }, groupBy: ['customer', 'sector', 'problem', 'branch'], empty: 'Nenhuma devolução.' });
+            summary.push({ label: 'Devolvido', value: fmt.moneyFull(returns.reduce((acc, row) => acc + (row.v || 0), 0)), note: `${fmt.int(returns.length)} devolução(ões)` });
+        }
+        summary.push({ label: 'Clientes', value: fmt.int(new Set([...(complaints || []), ...(returns || [])].map((row) => row.c)).size) });
+        const filtered = Object.keys(filter.get()).some((key) => key !== 'm');
+        return { title, subtitle: `${subtitle}${filtered ? ' · com os filtros da página' : ''}`, summary, sections };
+    }
+    const inChosenPeriod = (row) => periodOf(filter.get()).keys.has(row.m);
+    const periodName = () => periodOf(filter.get()).label;
+    const hasValue = ({ index, data: chart }) => chart.series.some((series) => series.values[index]);
+    const sameKey = (field, key) => (row) => String(row[field]) === String(key);
+
+    const complaintsChart = L.columns(document.getElementById('chartComplaints'), {
+        height: 230, format: fmt.int, stacked: true, maxBar: 18, onSelect: selectMonth, valueType: 'int', labelName: 'Mês',
+        drill: ({ index, label }) => qualityResult(label, 'Reclamações do mês', complaintsFor(filter.get()).filter((row) => row.m === monthKeys[index])), canDrill: hasValue,
+    });
+    const returnsChart = L.columns(document.getElementById('chartReturns'), {
+        height: 230, format: fmt.money, maxBar: 18, onSelect: selectMonth, valueType: 'money', labelName: 'Mês',
+        drill: ({ index, label }) => qualityResult(label, 'Devoluções do mês', null, returnsFor(filter.get()).filter((row) => row.m === monthKeys[index])), canDrill: hasValue,
+    });
+    const problems = L.ranking(document.getElementById('rankProblems'), {
+        format: fmt.int, limit: 12, onSelect: (key, item, event) => filter.toggle('p', key, event), valueType: 'int', labelName: 'Problema', valueName: 'Reclamações',
+        drill: ({ key, label }) => qualityResult(label, `Problema · ${periodName()}`, complaintsFor(filter.get(), 'p').filter(inChosenPeriod).filter(sameKey('p', key))),
+    });
+    const machines = L.ranking(document.getElementById('rankMachines'), {
+        format: fmt.int, limit: 10, color: '--mx-cat-7', onSelect: (key, item, event) => filter.toggle('q', key, event), valueType: 'int', labelName: 'Máquina / recurso', valueName: 'Reclamações',
+        drill: ({ key, label }) => qualityResult(label, `Máquina / recurso · ${periodName()}`, complaintsFor(filter.get(), 'q').filter(inChosenPeriod).filter(sameKey('q', key))),
+    });
+    const sectors = L.donut(document.getElementById('donutSectors'), {
+        format: fmt.money, centerLabel: 'devolvido', onSelect: (key, item, event) => filter.toggle('rs', key, event), valueType: 'money', labelName: 'Setor', valueName: 'Devolvido',
+        drill: ({ key, label }) => qualityResult(label, `Setor · ${periodName()}`, null, returnsFor(filter.get(), 'rs').filter(inChosenPeriod).filter(sameKey('s', key))),
+    });
+    const returnProblems = L.ranking(document.getElementById('rankReturnProblems'), {
+        format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: (key, item, event) => filter.toggle('rp', key, event), valueType: 'money', labelName: 'Motivo', valueName: 'Devolvido',
+        drill: ({ key, label }) => qualityResult(label, `Motivo da devolução · ${periodName()}`, null, returnsFor(filter.get(), 'rp').filter(inChosenPeriod).filter(sameKey('p', key))),
+    });
+    const customers = L.ranking(document.getElementById('rankCustomers'), {
+        format: fmt.int, limit: 10, color: '--mx-cat-3', onSelect: (key, item, event) => filter.toggle('c', key, event), valueType: 'int', labelName: 'Cliente', valueName: 'Ocorrências',
+        openLabel: 'Abrir a ficha do cliente',
+        drill: ({ key, label }) => qualityResult(label, `Cliente · ${periodName()}`,
+            complaintsFor(filter.get(), 'c').filter(inChosenPeriod).filter(sameKey('c', key)), returnsFor(filter.get(), 'c').filter(inChosenPeriod).filter(sameKey('c', key))),
+    });
+    // Mapa de calor: botão direito numa célula abre as reclamações do problema naquele mês; no nome
+    // do problema, as do período inteiro. Pontos = nomes e células com valor, na ordem do desenho.
+    let heatPoints = [];
+    let heatTable = { columns: [], rows: [] };
+    const heatHint = (window.MXDrill && window.MXDrill.hint) || '';
+    if (window.MXDrill) {
+        window.MXDrill.attach(document.getElementById('heatProblems').closest('.mx-table-wrap'), {
+            name: 'Mapa de calor dos problemas',
+            label: (index) => (heatPoints[index] ? heatPoints[index].label : ''),
+            table: () => heatTable,
+            drill: (index) => {
+                const point = heatPoints[index];
+                const rows = complaintsFor(filter.get()).filter(inChosenPeriod).filter((row) => row.p === point.problem && (point.month == null || row.m === point.month));
+                return qualityResult(point.label, point.month == null ? `Problema · ${periodName()}` : 'Reclamações do problema no mês', rows);
+            },
+            canDrill: (index) => !!heatPoints[index] && heatPoints[index].count > 0,
+        });
+    }
     const defaultSet = new Set(defaultKeys);
     const sectorOrder = [...L.group(data.returns.filter((row) => defaultSet.has(row.m)), 's', ['v']).entries()].sort((a, b) => b[1].v - a[1].v).map(([key]) => key);
 
@@ -235,23 +321,175 @@
         head.appendChild(corner);
         heatMonths.forEach((month) => { const th = document.createElement('th'); th.textContent = month.label; head.appendChild(th); });
         const body = table.createTBody();
+        heatPoints = [];
+        const heatRows = [];
         top.forEach((problem, rowIndex) => {
             const tr = body.insertRow();
             const th = document.createElement('th');
             th.className = 'is-row';
             th.scope = 'row';
             th.textContent = problem;
-            th.title = problem;
+            const rowTotal = cells[rowIndex].reduce((acc, count) => acc + count, 0);
+            heatPoints.push({ problem, month: null, label: problem, count: rowTotal });
+            th.setAttribute('data-mx-index', heatPoints.length - 1);
+            th.title = heatHint ? `${problem}\n${heatHint}` : problem;
+            heatRows.push({ problem, ...Object.fromEntries(cells[rowIndex].map((count, index) => [`m${index}`, count])), total: rowTotal, __index: heatPoints.length - 1 });
             tr.appendChild(th);
             cells[rowIndex].forEach((count, columnIndex) => {
                 const td = tr.insertCell();
                 td.textContent = count || '';
                 if (count) td.className = `is-seq-${1 + breaks.filter((edge) => count > edge).length}`;
                 td.title = `${problem} · ${heatMonths[columnIndex].label}: ${count} reclamação(ões)`;
+                if (count) {
+                    heatPoints.push({ problem, month: heatMonths[columnIndex].key, label: `${problem} · ${heatMonths[columnIndex].label}`, count });
+                    td.setAttribute('data-mx-index', heatPoints.length - 1);
+                    if (heatHint) td.title += `\n${heatHint}`;
+                }
                 td.style.animation = L.reduceMotion ? 'none' : `mx-pop .45s cubic-bezier(.2,.8,.2,1) ${Math.min((rowIndex * 12 + columnIndex) * 8, 700)}ms both`;
             });
         });
         if (!top.length) { const tr = body.insertRow(); const td = tr.insertCell(); td.textContent = 'Sem reclamações neste filtro.'; td.colSpan = heatMonths.length + 1; }
+        heatTable = {
+            columns: [
+                { key: 'problem', label: 'Problema' },
+                ...heatMonths.map((month, index) => ({ key: `m${index}`, label: month.label, type: 'int', total: true })),
+                { key: 'total', label: 'Total', type: 'int', total: true, strong: true },
+            ],
+            rows: heatRows,
+        };
+    }
+
+    // Cards de indicador: as reclamações e devoluções do período dos cards (meses escolhidos ou os
+    // últimos 12), com os filtros da página — as mesmas contas do render.
+    if (window.MXDrill) {
+        const kpiCard = (id) => document.getElementById(id).closest('.mx-card');
+        const state = () => filter.get();
+        const period = () => periodOf(state());
+        const complaintsNow = () => complaintsFor(state()).filter((row) => period().keys.has(row.m));
+        const complaintsBefore = () => complaintsFor(state()).filter((row) => period().previous.has(row.m));
+        const returnsNow = () => returnsFor(state()).filter((row) => period().keys.has(row.m));
+        const returnsBefore = () => returnsFor(state()).filter((row) => period().previous.has(row.m));
+        const compareLabel = () => (period().picked ? 'os mesmos meses do ano anterior' : 'os 12 meses anteriores');
+        const changeNote = (now, before) => (before ? `${fmt.signedPct(now / before - 1)} contra ${compareLabel()}` : `sem base em ${compareLabel()}`);
+        const changeTone = (now, before, upIsBad = true) => (!before ? null : (now > before) === upIsBad ? 'bad' : 'good');
+        const valueOf = (rows) => rows.reduce((acc, row) => acc + (row.v || 0), 0);
+        const revenueOf = () => period().list.reduce((acc, key) => acc + (data.revenue[key] || 0), 0);
+        const monthColumns = [
+            { key: 'month', label: 'Mês' },
+            { key: 'complaints', label: 'Reclamações', type: 'int', total: true },
+            { key: 'graves', label: 'Graves', type: 'int', total: true },
+            { key: 'returned', label: 'Devolvido', type: 'money', total: true },
+            { key: 'revenue', label: 'Faturamento líquido', type: 'money', total: true },
+            { key: 'returnRate', label: 'Devolução ÷ faturamento', type: 'pct', digits: 2, ratio: ['returned', 'revenue'] },
+            { key: 'perMillion', label: 'Reclamações por R$ 1 mi', type: 'dec', digits: 2, ratio: ['complaints', 'revenueMi'] },
+            { key: 'revenueMi', label: 'Faturamento (R$ mi)', type: 'dec', digits: 3, hidden: true },
+        ];
+        const monthRows = (complaints, returns) => period().list.map((key) => {
+            const list = complaints.filter((row) => row.m === key);
+            const returned = valueOf(returns.filter((row) => row.m === key));
+            const revenue = data.revenue[key] || 0;
+            return {
+                month: L.monthLabel(key), complaints: list.length, graves: list.filter((row) => row.s === 'G').length, returned, revenue,
+                returnRate: revenue ? returned / revenue : null, perMillion: revenue ? list.length / (revenue / 1e6) : null, revenueMi: revenue / 1e6,
+            };
+        });
+        const monthSection = (complaints, returns) => ({ key: 'months', label: 'Por mês', columns: monthColumns, rows: monthRows(complaints, returns), empty: 'Sem meses no período.' });
+
+        window.MXDrill.kpi(kpiCard('kpiComplaints'), {
+            drill: () => {
+                const now = complaintsNow();
+                const result = qualityResult(`Reclamações · ${period().label}`, 'Reclamações registradas no período dos cards', now, null);
+                result.summary[0].note = `${result.summary[0].note} · ${changeNote(now.length, complaintsBefore().length)}`;
+                result.summary[0].tone = changeTone(now.length, complaintsBefore().length);
+                return result;
+            },
+            canDrill: () => complaintsNow().length > 0,
+        });
+        window.MXDrill.kpi(kpiCard('kpiGrave'), {
+            drill: () => {
+                const now = complaintsNow();
+                const graves = now.filter((row) => row.s === 'G');
+                const result = qualityResult(`Reclamações graves · ${period().label}`, 'Reclamações de gravidade alta no período dos cards', graves, null);
+                result.summary.unshift({ label: 'Graves', value: fmt.int(graves.length), note: `${fmt.pct(now.length ? graves.length / now.length : 0, 0)} das ${fmt.int(now.length)} reclamações`, tone: graves.length ? 'bad' : 'good' });
+                result.summary.splice(1, 1);
+                return result;
+            },
+            canDrill: () => complaintsNow().some((row) => row.s === 'G'),
+        });
+        window.MXDrill.kpi(kpiCard('kpiReturns'), {
+            drill: () => {
+                const now = returnsNow();
+                const result = qualityResult(`Devoluções · ${period().label}`, 'Notas de devolução no período dos cards', null, now);
+                result.summary[0].note = `${result.summary[0].note} · ${changeNote(valueOf(now), valueOf(returnsBefore()))}`;
+                result.summary[0].tone = changeTone(valueOf(now), valueOf(returnsBefore()));
+                return result;
+            },
+            canDrill: () => returnsNow().length > 0,
+        });
+        // Taxas sobre o faturamento: só valem sem filtro de cliente, setor e motivo (o faturamento é da empresa toda).
+        window.MXDrill.kpi(kpiCard('kpiReturnRate'), {
+            drill: () => {
+                const now = returnsNow();
+                const revenue = revenueOf();
+                const result = qualityResult(`Devolução sobre faturamento · ${period().label}`, 'Valor devolvido ÷ faturamento líquido, mês a mês', null, now);
+                result.summary.unshift({ label: 'Devolução sobre faturamento', value: fmt.pct(revenue ? valueOf(now) / revenue : null, 2), note: `${fmt.moneyFull(valueOf(now))} de ${fmt.moneyFull(revenue)}` });
+                result.sections.unshift(monthSection(complaintsNow(), now));
+                return result;
+            },
+            canDrill: () => { const s = state(); return !s.c && !s.rs && !s.rp && revenueOf() > 0; },
+        });
+        window.MXDrill.kpi(kpiCard('kpiCustomers'), {
+            drill: () => {
+                const complaints = complaintsNow();
+                const returns = returnsNow();
+                const byCustomer = new Map();
+                const entry = (code) => byCustomer.get(code) || { code, complaints: 0, graves: 0, returns: 0, value: 0 };
+                complaints.forEach((row) => { const item = entry(row.c); item.complaints += 1; item.graves += row.s === 'G' ? 1 : 0; byCustomer.set(row.c, item); });
+                returns.forEach((row) => { const item = entry(row.c); item.returns += 1; item.value += row.v || 0; byCustomer.set(row.c, item); });
+                const result = qualityResult(`Clientes com ocorrência · ${period().label}`, 'Clientes com reclamação ou devolução no período dos cards', complaints, returns);
+                result.sections.unshift({
+                    key: 'customers', label: 'Clientes', sort: { key: 'complaints', dir: 'desc' }, empty: 'Nenhum cliente com ocorrência.',
+                    columns: [
+                        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+                        { key: 'complaints', label: 'Reclamações', type: 'int', total: true, strong: true },
+                        { key: 'graves', label: 'Graves', type: 'int', total: true },
+                        { key: 'returns', label: 'Devoluções', type: 'int', total: true },
+                        { key: 'value', label: 'Devolvido', type: 'money', total: true },
+                    ],
+                    rows: [...byCustomer.values()].map((item) => ({ customer: customer(item.code).name, url: profileUrl(item.code), place: place(item.code), ...item, __tone: item.graves ? 'bad' : null })),
+                });
+                return result;
+            },
+            canDrill: () => complaintsNow().length + returnsNow().length > 0,
+        });
+        window.MXDrill.kpi(kpiCard('kpiRate'), {
+            drill: () => {
+                const now = complaintsNow();
+                const revenue = revenueOf();
+                const result = qualityResult(`Reclamações por R$ 1 milhão · ${period().label}`, 'Reclamações ÷ faturamento líquido em milhões, mês a mês', now, null);
+                result.summary.unshift({ label: 'Por R$ 1 milhão', value: revenue ? fmt.dec(now.length / (revenue / 1e6), 2) : '–', note: `${fmt.int(now.length)} reclamação(ões) em ${fmt.moneyFull(revenue)}` });
+                result.sections.unshift(monthSection(now, returnsNow()));
+                return result;
+            },
+            canDrill: () => Object.keys(state()).every((key) => key === 'm') && revenueOf() > 0,
+        });
+        // Dias sem reclamação grave: a empresa toda, nos 24 meses que a página tem (como o card).
+        window.MXDrill.kpi(kpiCard('kpiDaysSince'), {
+            drill: () => {
+                const graves = data.complaints.filter((row) => row.s === 'G');
+                return {
+                    title: 'Dias sem reclamação grave',
+                    subtitle: 'Reclamações graves dos últimos 24 meses · empresa toda, sem os filtros da página',
+                    summary: [
+                        { label: 'Dias sem grave', value: days == null ? '–' : fmt.int(days), note: data.last_grave ? `última em ${new Date(`${data.last_grave}T12:00:00`).toLocaleDateString('pt-BR')}` : '' },
+                        { label: 'Graves em 24 meses', value: fmt.int(graves.length), tone: graves.length ? 'bad' : 'good' },
+                        { label: 'Clientes', value: fmt.int(new Set(graves.map((row) => row.c)).size) },
+                    ],
+                    sections: [{ key: 'graves', label: 'Reclamações graves', columns: complaintColumns, rows: graves.map(complaintRow), sort: { key: 'date', dir: 'desc' }, groupBy: ['customer', 'problem', 'machine'], empty: 'Nenhuma reclamação grave em 24 meses.' }],
+                };
+            },
+            canDrill: () => data.complaints.some((row) => row.s === 'G'),
+        });
     }
 
     filter.subscribe(render);

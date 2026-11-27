@@ -175,8 +175,21 @@ def _summary_display(summary):
         "pareto_chart": {
             "labels": [f"{point['customers_pct']:.0f}%".replace(".", ",") for point in pareto["curve"]],
             "values": [point["profit_pct"] for point in pareto["curve"]],
+            "sizes": [point["customers"] for point in pareto["curve"]],
         },
     }
+
+
+def _pareto_customers(rows):
+    """Clientes da curva de concentração, do maior lucro ao menor (os mesmos de `pareto_stats`):
+    o ponto N da curva são os N primeiros."""
+    known = [item for item in rows if item["net"] > 0 and item["margin"] is not None and item["profit"] and item["profit"] > 0]
+    known.sort(key=lambda item: item["profit"], reverse=True)
+    return [
+        {"code": item["code"], "name": item["name"], "place": f"{item['city']}/{item['state']}" if item["city"] else item["state"] or "",
+         "net": intel._f(item["net"]), "profit": intel._f(item["profit"]), "margin": intel._f(item["margin"], 4)}
+        for item in known
+    ]
 
 
 def _receita_status(cnpjs):
@@ -332,12 +345,12 @@ def _regions_display(geo):
 
 
 def _lost_cities(geo, limit=8):
-    lost = [area for area in geo["cities"].values() if area["customers"] == 0 and area["previous_net"] > 0]
-    lost.sort(key=lambda area: area["previous_net"], reverse=True)
+    lost = [(key, area) for key, area in geo["cities"].items() if area["customers"] == 0 and area["previous_net"] > 0]
+    lost.sort(key=lambda pair: pair[1]["previous_net"], reverse=True)
     return {
         "count": len(lost),
-        "previous_display": intel.money(sum((area["previous_net"] for area in lost), Decimal("0"))),
-        "items": [{"name": area["name"], "state": area["state"], "previous_display": intel.money(area["previous_net"])} for area in lost[:limit]],
+        "previous_display": intel.money(sum((area["previous_net"] for _key, area in lost), Decimal("0"))),
+        "items": [{"key": key, "name": area["name"], "state": area["state"], "previous_display": intel.money(area["previous_net"])} for key, area in lost[:limit]],
     }
 
 
@@ -574,6 +587,7 @@ def dashesCustomerPortfolioPage(request):
         "rfm_clear_url": page_filters.url_without(reverse("dashesCustomerPortfolioPage"), request.GET, "rfm"),
         **_window_context(base, window),
         "summary": _summary_display(summary),
+        "pareto_customers": _pareto_customers(rows),
         "table_rows": table_rows,
         "table_total": table_total,
         "table_limited": table_total > TABLE_LIMIT,

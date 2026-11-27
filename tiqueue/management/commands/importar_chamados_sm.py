@@ -249,6 +249,7 @@ class Command(BaseCommand):
                     description=linha["description_txt"] or "",
                     status=status,
                     sm_ticket_id=linha["sm_id"],
+                    opened_via=PortalDemand.OPENED_VIA_SM,
                 )
                 if status == PortalDemand.STATUS_ASSUMED:
                     demand.assumed_at = date_open

@@ -1,88 +1,132 @@
 {% load static %}
 <!DOCTYPE html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ConnectMX | Detalhe da Base</title>
+    <title>ConnectMX | Base de conhecimento #{{ entry.id }}</title>
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
     {% include 'partials/maxisys_head.html' %}
+    <link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">
 </head>
-<body>
-    {% include 'partials/sidebar.html' %}
+<body class="hd-body">
+    {% include 'partials/helpdesk_sidebar.html' %}
 
-    <div class="queue_main checklist-page">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Base de Conhecimento - Registro #{{ entry.id }}</h1>
+    <main class="hd-kb">
+        {% if saved_flag %}
+            <div class="mx-alert is-good" role="status"><div>Registro salvo na base de conhecimento.</div></div>
+        {% endif %}
+
+        <div class="mx-page-head">
+            <div>
+                <span class="mx-kicker">Base de conhecimento · registro #{{ entry.id }}</span>
+                <h2>{{ entry.title }}</h2>
+                <p>{{ entry.category.name }} · inserido em {{ entry.inserted_at|date:"d/m/Y H:i" }}{% if entry.updated_at %} · atualizado em {{ entry.updated_at|date:"d/m/Y H:i" }}{% endif %}</p>
             </div>
-            <div class="headerButton">
-                <div class="queue-toolbar">
-                    <a class="queue-secondary-btn" href="{% url 'knowledgeConsultPage' %}">Voltar para consulta</a>
-                </div>
+            <div class="hd-head-actions">
+                <a class="mx-btn mx-btn-ghost" href="{% url 'knowledgeConsultPage' %}">Voltar para a consulta</a>
+                {% if can_edit_knowledge %}<a class="mx-btn" href="#editar" data-hd-open="hdEdit">Editar registro</a>{% endif %}
             </div>
         </div>
 
-        <div class="checklist-card">
-            <div class="checklist-card-title">{{ entry.title }}</div>
-            <div class="checklist-section-grid">
-                <div class="field">
-                    <label>Categoria</label>
-                    <div class="queue-input-sm table-input">{{ entry.category.name }}</div>
-                </div>
-                <div class="field">
-                    <label>Status</label>
-                    <div class="queue-input-sm table-input">{% if entry.is_resolved %}Resolvido{% else %}Pendente{% endif %}</div>
-                </div>
-                <div class="field">
-                    <label>Inserido em</label>
-                    <div class="queue-input-sm table-input">{{ entry.inserted_at|date:"d/m/Y H:i" }}</div>
-                </div>
-                <div class="field">
-                    <label>Autor</label>
-                    <div class="queue-input-sm table-input">{% if entry.created_by %}{{ entry.created_by.nameUser|default:entry.created_by.username }}{% else %}-{% endif %}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Situacao / Problema</label>
-                    <div class="queue-input-sm table-input">{{ entry.trigger|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Descricao detalhada</label>
-                    <div class="queue-input-sm table-input">{{ entry.description|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Impacto</label>
-                    <div class="queue-input-sm table-input">{{ entry.impact|default:"-"|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Contorno aplicado</label>
-                    <div class="queue-input-sm table-input">{{ entry.workaround|default:"-"|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Causa raiz</label>
-                    <div class="queue-input-sm table-input">{{ entry.root_cause|default:"-"|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Solucao definitiva</label>
-                    <div class="queue-input-sm table-input">{{ entry.resolution|default:"-"|linebreaksbr }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Tags</label>
-                    <div class="queue-input-sm table-input">{{ entry.tags|default:"-" }}</div>
-                </div>
-                <div class="field span-2">
-                    <label>Anexos</label>
-                    <div class="queue-input-sm table-input">
-                        {% for a in entry.attachments.all %}
-                            <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:a.file.name }}</a>{% if not forloop.last %}<br>{% endif %}
-                        {% empty %}
-                            -
+        <section class="mx-section">
+            <div class="hd-kb-facts">
+                <div class="mx-fact"><span>Situação</span><strong>{% if entry.is_resolved %}<span class="mx-badge is-good">Resolvido</span>{% else %}<span class="mx-badge is-warn">Em aberto</span>{% endif %}</strong><small>{% if entry.is_resolved %}O assistente de IA usa este registro{% else %}O assistente de IA ignora registros em aberto{% endif %}</small></div>
+                <div class="mx-fact"><span>Categoria</span><strong>{{ entry.category.name }}</strong></div>
+                <div class="mx-fact"><span>Autor</span><strong>{% if entry.created_by %}{{ entry.created_by.nameUser|default:entry.created_by.username }}{% else %}–{% endif %}</strong></div>
+                <div class="mx-fact"><span>Origem</span><strong>{% if entry.source_demand_id %}<a href="{{ source_demand_url }}">Chamado {{ entry.source_demand.protocol }}</a>{% else %}Cadastro manual{% endif %}</strong></div>
+            </div>
+            {% if tags %}
+                <div class="hd-kb-tags" aria-label="Tags">{% for tag in tags %}<span class="mx-chip">{{ tag }}</span>{% endfor %}</div>
+            {% endif %}
+        </section>
+
+        <section class="mx-section">
+            <div class="mx-grid mx-grid-2">
+                <article class="mx-card">
+                    <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-chat"/></svg></span><div><p class="mx-card-title">Situação / problema</p><p class="mx-card-sub">O que a pessoa vê quando acontece</p></div></div>
+                    <div class="hd-kb-text">{{ entry.trigger|linebreaksbr }}</div>
+                </article>
+                <article class="mx-card hd-kb-solution">
+                    <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-book"/></svg></span><div><p class="mx-card-title">Solução definitiva</p><p class="mx-card-sub">É o trecho que o assistente oferece ao solicitante</p></div></div>
+                    <div class="hd-kb-text">{{ entry.resolution|default:"Ainda sem solução registrada."|linebreaksbr }}</div>
+                </article>
+            </div>
+        </section>
+
+        <section class="mx-section">
+            <div class="mx-grid mx-grid-2">
+                <article class="mx-card">
+                    <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-list"/></svg></span><div><p class="mx-card-title">Descrição detalhada</p></div></div>
+                    <div class="hd-kb-text">{{ entry.description|linebreaksbr }}</div>
+                </article>
+                <article class="mx-card">
+                    <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-clock"/></svg></span><div><p class="mx-card-title">Impacto, contorno e causa</p></div></div>
+                    <dl class="mx-kv hd-kb-kv">
+                        <dt>Impacto</dt><dd>{{ entry.impact|default:"–"|linebreaksbr }}</dd>
+                        <dt>Contorno aplicado</dt><dd>{{ entry.workaround|default:"–"|linebreaksbr }}</dd>
+                        <dt>Causa raiz</dt><dd>{{ entry.root_cause|default:"–"|linebreaksbr }}</dd>
+                    </dl>
+                </article>
+            </div>
+        </section>
+
+        <section class="mx-section">
+            <article class="mx-card">
+                <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-form"/></svg></span><div><p class="mx-card-title">Anexos</p></div></div>
+                {% if entry.attachments.all %}
+                    <ul class="mx-list">
+                        {% for attachment in entry.attachments.all %}
+                            <li><div class="mx-list-main"><strong><a class="mx-link" href="{{ attachment.file.url }}" target="_blank" rel="noopener">{{ attachment.original_name|default:attachment.file.name }}</a></strong><small>{{ attachment.uploaded_at|date:"d/m/Y H:i" }}</small></div></li>
                         {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+                    </ul>
+                {% else %}
+                    <p class="mx-empty-note">Nenhum anexo.</p>
+                {% endif %}
+            </article>
+        </section>
+
+        {% if can_edit_knowledge and edit_form %}
+            <section class="mx-section" id="editar">
+                <details class="mx-card hd-kb-edit" id="hdEdit"{% if edit_open %} open{% endif %}>
+                    <summary class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-edit"/></svg></span><div><p class="mx-card-title">Editar registro</p><p class="mx-card-sub">Marque "Resolvido" para o assistente de IA passar a sugerir esta solução</p></div></summary>
+                    <form method="POST" enctype="multipart/form-data" class="hd-form">
+                        {% csrf_token %}
+                        {% if edit_form.non_field_errors %}<div class="mx-alert is-bad" role="alert"><div>{{ edit_form.non_field_errors }}</div></div>{% endif %}
+                        <div class="hd-form-grid">
+                            {% for field in edit_form %}
+                                <div class="hd-field{% if field.name in 'trigger description impact workaround root_cause resolution' %} is-wide{% endif %}{% if field.name == 'is_resolved' %} is-check{% endif %}">
+                                    {% if field.name == 'is_resolved' %}
+                                        <label class="hd-check">{{ field }}<span>{{ field.label }}</span></label>
+                                    {% else %}
+                                        {{ field.label_tag }}{{ field }}
+                                    {% endif %}
+                                    {% for error in field.errors %}<small class="hd-field-error">{{ error }}</small>{% endfor %}
+                                </div>
+                            {% endfor %}
+                            <div class="hd-field is-wide">
+                                <label for="kbEditAttachments">Novos anexos</label>
+                                <input id="kbEditAttachments" type="file" name="attachments" multiple>
+                            </div>
+                        </div>
+                        <div class="hd-form-actions"><button type="submit" class="mx-btn">Salvar alterações</button></div>
+                    </form>
+                </details>
+            </section>
+        {% endif %}
+    </main>
+    <script>
+    (function () {
+        /* "Editar registro" no topo abre o quadro de edição. */
+        document.querySelectorAll("[data-hd-open]").forEach(function (link) {
+            link.addEventListener("click", function () {
+                var target = document.getElementById(link.getAttribute("data-hd-open"));
+                if (target) target.open = true;
+            });
+        });
+    })();
+    </script>
 </body>
+</html>

@@ -791,26 +791,26 @@ def kpis(analysis):
     retention_data = analysis["retention"]
     concentration_data = analysis["concentration"]
     return [
-        {"label": "Faturamento líquido", "value": money(now["net"]), "delta": _delta(now["net"], before["net"]),
+        {"key": "faturamento", "label": "Faturamento líquido", "value": money(now["net"]), "delta": _delta(now["net"], before["net"]),
          "foot": f"antes {money(before['net'])}"},
-        {"label": "Lucro bruto", "value": money(now["profit"]), "delta": _delta(now["profit"], before["profit"]),
+        {"key": "lucro", "label": "Lucro bruto", "value": money(now["profit"]), "delta": _delta(now["profit"], before["profit"]),
          "foot": f"antes {money(before['profit'])}"},
-        {"label": "Margem bruta", "value": pct(now["margin"]), "delta": _delta(now["margin"], before["margin"], kind="pp"),
+        {"key": "margem", "label": "Margem bruta", "value": pct(now["margin"]), "delta": _delta(now["margin"], before["margin"], kind="pp"),
          "foot": f"antes {pct(before['margin'])}"},
-        {"label": "Volume", "value": intel.kg(now["kg"]), "delta": _delta(now["kg"], before["kg"]),
+        {"key": "volume", "label": "Volume", "value": intel.kg(now["kg"]), "delta": _delta(now["kg"], before["kg"]),
          "foot": f"antes {intel.kg(before['kg'])}"},
-        {"label": "Preço médio", "value": f"{money(now['price_kg'])}/kg", "delta": _delta(now["price_kg"], before["price_kg"]),
+        {"key": "preco", "label": "Preço médio", "value": f"{money(now['price_kg'])}/kg", "delta": _delta(now["price_kg"], before["price_kg"]),
          "foot": "faturamento ÷ kg"},
-        {"label": "Custo médio (CPV)", "value": f"{money(now['cost_kg'])}/kg",
+        {"key": "custo", "label": "Custo médio (CPV)", "value": f"{money(now['cost_kg'])}/kg",
          "delta": _delta(now["cost_kg"], before["cost_kg"], good_when_up=False), "foot": "custo do produto vendido ÷ kg"},
-        {"label": "Lucro bruto por kg", "value": f"{money(now['profit_kg'])}/kg", "delta": _delta(now["profit_kg"], before["profit_kg"]),
+        {"key": "lucro-kg", "label": "Lucro bruto por kg", "value": f"{money(now['profit_kg'])}/kg", "delta": _delta(now["profit_kg"], before["profit_kg"]),
          "foot": f"antes {money(before['profit_kg'])}/kg"},
-        {"label": "Retenção de receita (NRR)", "value": pct(retention_data["nrr"]),
+        {"key": "nrr", "label": "Retenção de receita (NRR)", "value": pct(retention_data["nrr"]),
          "delta": {"display": f"GRR {pct(retention_data['grr'])}", "tone": ""}, "foot": "receita de hoje dos clientes do ano anterior"},
-        {"label": "Clientes ativos", "value": str(analysis["customers_now"]),
+        {"key": "clientes", "label": "Clientes ativos", "value": str(analysis["customers_now"]),
          "delta": _delta(Decimal(analysis["customers_now"]), Decimal(analysis["customers_before"])),
          "foot": f"{retention_data['new']} novos · {retention_data['lost']} perdidos"},
-        {"label": "Dependência dos 10 maiores", "value": pct(concentration_data["top10"]),
+        {"key": "dependencia", "label": "Dependência dos 10 maiores", "value": pct(concentration_data["top10"]),
          "delta": {"display": f"maior: {pct(concentration_data['top1'])}", "tone": ""}, "foot": "participação no lucro bruto"},
     ]
 
@@ -819,7 +819,7 @@ def bridge_chart(bridge):
     return {
         "start": _f(bridge["start"], 0),
         "end": _f(bridge["end"], 0),
-        "steps": [{"label": step["label"], "value": _f(step["value"], 0), "detail": step["detail"]} for step in bridge["steps"]],
+        "steps": [{"key": step["key"], "label": step["label"], "value": _f(step["value"], 0), "detail": step["detail"]} for step in bridge["steps"]],
     }
 
 
@@ -873,6 +873,7 @@ def heatmap_display(heatmap, reference):
         cells = []
         for cell, label in zip(row["cells"], heatmap["months"]):
             cells.append({
+                "month": cell["month"],  # chave do mês: o "Expandir dados" da célula
                 "value": pct(cell["margin"]) if cell["margin"] is not None else "–",
                 "css": _div_class(cell["margin"], reference),
                 "title": f"{row['group'].title()} · {label}: margem {pct(cell['margin'])} · faturamento {money(cell['net'])}",
@@ -896,6 +897,7 @@ def seasonality_display(seasonality_data):
                 continue
             suffix = " (mês em andamento)" if cell["partial"] else ""
             cells.append({
+                "key": cell["key"],  # chave do mês: o "Expandir dados" da célula
                 # Em R$ milhões, com uma casa: 12 meses cabem na largura do card.
                 "value": f"{cell['net'] / 1000000:.1f}".replace(".", ","),
                 "css": "is-partial" if cell["partial"] else classify(cell["net"]),
@@ -912,13 +914,14 @@ def forecast_display(forecast_data):
         "overdue": money(forecast_data["overdue_backlog"]),
         "has_overdue": forecast_data["overdue_backlog"] > 0,
         "rows": [
-            {"label": row["label"], "projected": money(row["projected"]), "last_year": money(row["last_year"]),
+            {"key": row["key"], "label": row["label"], "projected": money(row["projected"]), "last_year": money(row["last_year"]),
              "backlog": money(row["backlog"]), "billed": money(row["billed"]) if row["billed"] is not None else None,
              "coverage": pct(row["coverage"]) if row["coverage"] is not None else "–",
              "coverage_width": min(round(float(row["coverage"] or 0) * 100), 100)}
             for row in forecast_data["rows"]
         ],
         "chart": {
+            "keys": [row["key"] for row in forecast_data["rows"]],
             "labels": [row["label"] for row in forecast_data["rows"]],
             "projected": [_f(row["projected"], 0) for row in forecast_data["rows"]],
             "backlog": [_f(row["backlog"], 0) for row in forecast_data["rows"]],

@@ -1,18 +1,23 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import intel_views, management_views, panel_views, views
+from . import drill_views, helpdesk_views, intel_views, management_views, panel_views, views
+from . import budget_views, sales_goals_views
 
 urlpatterns = [
     path('portal/chamados/exportar/', views.portalDemandsExport, name='portalDemandsExport'),
 
     path('', views.index, name='index'),
     path('dashes/', views.dashesHomePage, name='dashesHome'),
+    # Painel do Helpdesk: primeiro do catálogo, então é a tela inicial do Dashes.
+    path('dashes/helpdesk/', helpdesk_views.dashesHelpdeskPage, name='dashesHelpdeskPage'),
+    path('dashes/helpdesk/chamados/', helpdesk_views.dashesHelpdeskTickets, name='dashesHelpdeskTickets'),
     path('dashes/central/', views.dashesDecisionCenterPage, name='dashesDecisionCenterPage'),
     path('dashes/central/alertas/<int:alert_id>/reconhecer/', views.dashesAlertAcknowledge, name='dashesAlertAcknowledge'),
     path('dashes/central/acoes/criar/', views.dashesActionCreate, name='dashesActionCreate'),
     path('dashes/central/acoes/<int:action_id>/status/', views.dashesActionUpdateStatus, name='dashesActionUpdateStatus'),
     path('dashes/central/perguntar/', views.dashesAskDataQuestion, name='dashesAskDataQuestion'),
+    path('dashes/central/detalhe/', drill_views.dashesDecisionCenterDetail, name='dashesDecisionCenterDetail'),
     path('dashes/central/exportar/pdf/', views.dashesDecisionCenterExportPdf, name='dashesDecisionCenterExportPdf'),
     path('dashes/entrar/', views.dashesLoginPage, name='dashesLoginPage'),
     path('dashes/sair/', views.dashesLogoutPage, name='dashesLogoutPage'),
@@ -20,11 +25,15 @@ urlpatterns = [
     path('dashes/dna-cliente/v2/', views.dashesCustomerDnaV2Page, name='dashesCustomerDnaV2Page'),
     path('dashes/dna-cliente/v2/econodata/', views.dashesCustomerDnaEconodata, name='dashesCustomerDnaEconodata'),
     path('dashes/dna-representante/', views.dashesRepresentativeDnaPage, name='dashesRepresentativeDnaPage'),
+    # "Expandir dados" do menu do botão direito dos gráficos (tiqueue/drill_views.py).
+    path('dashes/dna-representante/detalhe/', drill_views.dashesRepresentativeDnaDetail, name='dashesRepresentativeDnaDetail'),
+    path('dashes/dna-cliente/v2/detalhe/', drill_views.dashesCustomerDnaDetail, name='dashesCustomerDnaDetail'),
     # Inteligência de clientes: mapa, carteira e ficha (tiqueue/intel_views.py).
     path('dashes/mapa-clientes/', intel_views.dashesCustomerMapPage, name='dashesCustomerMapPage'),
     path('dashes/mapa-clientes/malha/<str:key>.json', intel_views.dashesCustomerMapGeo, name='dashesCustomerMapGeo'),
     path('dashes/mapa-clientes/ia/', intel_views.dashesCustomerMapInsight, name='dashesCustomerMapInsight'),
     path('dashes/mapa-clientes/econodata/', intel_views.dashesCustomerMapEconodata, name='dashesCustomerMapEconodata'),
+    path('dashes/mapa-clientes/detalhe/', drill_views.dashesCustomerMapDetail, name='dashesCustomerMapDetail'),
     path('dashes/carteira/', intel_views.dashesCustomerPortfolioPage, name='dashesCustomerPortfolioPage'),
     path('dashes/carteira/ia/', intel_views.dashesCustomerPortfolioInsight, name='dashesCustomerPortfolioInsight'),
     path('dashes/carteira/segmentos/', intel_views.dashesCustomerSegmentsClassify, name='dashesCustomerSegmentsClassify'),
@@ -32,36 +41,55 @@ urlpatterns = [
     path('dashes/carteira/atualizar/', intel_views.dashesCustomerIntelRefresh, name='dashesCustomerIntelRefresh'),
     path('dashes/cliente/<int:customer_code>/', intel_views.dashesCustomerProfilePage, name='dashesCustomerProfilePage'),
     path('dashes/cliente/<int:customer_code>/ia/', intel_views.dashesCustomerProfileInsight, name='dashesCustomerProfileInsight'),
+    path('dashes/cliente/<int:customer_code>/detalhe/', drill_views.dashesCustomerProfileDetail, name='dashesCustomerProfileDetail'),
     # Painel Gerencial e Agenda Comercial (tiqueue/management_views.py).
     path('dashes/gerencial/', management_views.dashesManagementPage, name='dashesManagementPage'),
     path('dashes/gerencial/ia/', management_views.dashesManagementInsight, name='dashesManagementInsight'),
     path('dashes/agenda/', management_views.dashesSalesAgendaPage, name='dashesSalesAgendaPage'),
     path('dashes/agenda/contato/', management_views.dashesSalesAgendaContact, name='dashesSalesAgendaContact'),
+    path('dashes/agenda/detalhe/', drill_views.dashesSalesAgendaDetail, name='dashesSalesAgendaDetail'),
+    # Metas de Vendas: grade de metas de peso que grava na USU_TORCMET (tiqueue/sales_goals_views.py).
+    path('dashes/metas-vendas/', sales_goals_views.dashesSalesGoalsPage, name='dashesSalesGoalsPage'),
+    path('dashes/metas-vendas/salvar/', sales_goals_views.dashesSalesGoalsSave, name='dashesSalesGoalsSave'),
+    # Metas por representante (USU_TORCGER): % sugerido pelo faturamento e gravação.
+    path('dashes/metas-vendas/representantes/calcular/', sales_goals_views.dashesSalesGoalsRepsCompute, name='dashesSalesGoalsRepsCompute'),
+    path('dashes/metas-vendas/representantes/salvar/', sales_goals_views.dashesSalesGoalsRepsSave, name='dashesSalesGoalsRepsSave'),
+    # Orçamento: meta x faturado x previsão, recriado do PBIX "2. ORÇAMENTO 2026" (tiqueue/budget_views.py).
+    path('dashes/orcamento/', budget_views.dashesBudgetPanel, name='dashesBudgetPanel'),
+    path('dashes/orcamento/detalhe/', budget_views.dashesBudgetPanelDetail, name='dashesBudgetPanelDetail'),
     # Painéis-padrão animados (tiqueue/panel_views.py).
     path('dashes/vendas/', panel_views.dashesSalesPanel, name='dashesSalesPanel'),
     path('dashes/financeiro/', panel_views.dashesReceivablesPanel, name='dashesReceivablesPanel'),
     path('dashes/entregas/', panel_views.dashesServicePanel, name='dashesServicePanel'),
     path('dashes/qualidade/', panel_views.dashesQualityPanel, name='dashesQualityPanel'),
+    path('dashes/vendas/detalhe/', drill_views.dashesSalesPanelDetail, name='dashesSalesPanelDetail'),
+    path('dashes/financeiro/detalhe/', drill_views.dashesReceivablesPanelDetail, name='dashesReceivablesPanelDetail'),
+    path('dashes/gerencial/detalhe/', drill_views.dashesManagementDetail, name='dashesManagementDetail'),
+    path('dashes/carteira/detalhe/', drill_views.dashesCustomerPortfolioDetail, name='dashesCustomerPortfolioDetail'),
     path('dashes/bi-ti/', views.dashesItBiPage, name='dashesItBiPage'),
     path('dashes/bi-ti/insights/preparar/', views.itBiPrepareInsights, name='itBiPrepareInsights'),
     path('dashes/bi-ti/insights/solicitar-ia/', views.itBiRequestAiInsights, name='itBiRequestAiInsights'),
     path('dashes/bi-ti/insights/payload/', views.itBiInsightPayloadApi, name='itBiInsightPayloadApi'),
     path('dashes/bi-ti/exportar/pdf/', views.itBiExportPdf, name='itBiExportPdf'),
+    path('dashes/bi-ti/detalhe/', drill_views.dashesItBiDetail, name='dashesItBiDetail'),
     path('dashes/viagens/', views.dashesTravelBiPage, name='dashesTravelBiPage'),
     path('dashes/viagens/insights/preparar/', views.travelBiPrepareInsights, name='travelBiPrepareInsights'),
     path('dashes/viagens/insights/solicitar-ia/', views.travelBiRequestAiInsights, name='travelBiRequestAiInsights'),
     path('dashes/viagens/insights/payload/', views.travelBiInsightPayloadApi, name='travelBiInsightPayloadApi'),
     path('dashes/viagens/exportar/pdf/', views.travelBiExportPdf, name='travelBiExportPdf'),
+    path('dashes/viagens/detalhe/', drill_views.dashesTravelBiDetail, name='dashesTravelBiDetail'),
     path('dashes/compras/', views.dashesComprasBiPage, name='dashesComprasBiPage'),
     path('dashes/compras/insights/preparar/', views.comprasBiPrepareInsights, name='comprasBiPrepareInsights'),
     path('dashes/compras/insights/solicitar-ia/', views.comprasBiRequestAiInsights, name='comprasBiRequestAiInsights'),
     path('dashes/compras/insights/payload/', views.comprasBiInsightPayloadApi, name='comprasBiInsightPayloadApi'),
     path('dashes/compras/exportar/pdf/', views.comprasBiExportPdf, name='comprasBiExportPdf'),
+    path('dashes/compras/detalhe/', drill_views.dashesComprasBiDetail, name='dashesComprasBiDetail'),
     path('dashes/romaneios/', views.dashesRomaneioBiPage, name='dashesRomaneioBiPage'),
     path('dashes/romaneios/insights/preparar/', views.romaneioBiPrepareInsights, name='romaneioBiPrepareInsights'),
     path('dashes/romaneios/insights/solicitar-ia/', views.romaneioBiRequestAiInsights, name='romaneioBiRequestAiInsights'),
     path('dashes/romaneios/insights/payload/', views.romaneioBiInsightPayloadApi, name='romaneioBiInsightPayloadApi'),
     path('dashes/romaneios/exportar/pdf/', views.romaneioBiExportPdf, name='romaneioBiExportPdf'),
+    path('dashes/romaneios/detalhe/', drill_views.dashesRomaneioBiDetail, name='dashesRomaneioBiDetail'),
     path('dashes/dna-cliente/api/busca/', views.customerDnaSearchApi, name='dashesCustomerDnaSearchApi'),
     path('dashes/dna-cliente/insights/preparar/', views.customerDnaPrepareInsights, name='dashesCustomerDnaPrepareInsights'),
     path('dashes/dna-cliente/insights/solicitar-ia/', views.customerDnaRequestAiInsights, name='dashesCustomerDnaRequestAiInsights'),

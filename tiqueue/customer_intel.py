@@ -689,7 +689,7 @@ def pareto_stats(values):
     curve = []
     for step in range(1, steps + 1):
         size = math.ceil(step * count / steps)
-        curve.append({"customers_pct": round(size / count * 100, 1), "profit_pct": _f(prefix[size - 1] / total * 100, 1)})
+        curve.append({"customers_pct": round(size / count * 100, 1), "profit_pct": _f(prefix[size - 1] / total * 100, 1), "customers": size})
     hhi = sum(((value / total) ** 2 for value in positive), ZERO) * 10000
     return {
         "count": count,
@@ -998,6 +998,7 @@ def monthly_series(base, code, today, months=HISTORY_MONTHS):
         aggregate = _aggregate(by_month.get(key, []), key, key)
         series.append({
             "label": dna._month_label(key),
+            "month": f"{key // 12}-{key % 12 + 1:02d}",
             "revenue": float(aggregate["net"]),
             "profit": _f(aggregate["profit"]) if aggregate["net"] else None,
             "margin": _f(aggregate["margin"], 4),

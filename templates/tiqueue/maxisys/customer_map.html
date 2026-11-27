@@ -41,23 +41,24 @@
 
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Resumo<small>{{ window.label }} · {{ window.range_label }}</small></h3>
+    {% url 'dashesCustomerMapDetail' as detail_url %}
     <div class="mx-grid mx-grid-kpi">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?ponto=resumo:faturamento&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Faturamento líquido</div>
             <div class="mx-kpi-value">{{ summary.net_display }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta {{ summary.growth_tone }}">{{ summary.growth_display }}</span><span>contra o mesmo período do ano anterior</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?ponto=resumo:lucro&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Lucro bruto</div>
             <div class="mx-kpi-value">{{ summary.profit_display }}</div>
             <div class="mx-kpi-foot"><span>margem {{ summary.margin_display }} sobre o faturamento sem impostos</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?ponto=resumo:clientes&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Clientes ativos</div>
             <div class="mx-kpi-value">{{ summary.customers }}</div>
             <div class="mx-kpi-foot"><span>{{ states_count }} UFs · {{ cities_count }} cidades</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?ponto=resumo:volume&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Volume</div>
             <div class="mx-kpi-value">{{ summary.kg_display }}</div>
             <div class="mx-kpi-foot"><span>líquido de devolução</span></div>
@@ -68,7 +69,7 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-map"/></svg>Mapa<small>Clique em uma UF para ver os municípios · passe o mouse para ver os números</small></h3>
     <div class="mx-grid mx-grid-map">
-        <article class="mx-card">
+        <article class="mx-card" id="mxMapCard">
             <div class="mx-card-head">
                 <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pin"/></svg></span>
                 <div><p class="mx-card-title" id="mxMapTitle">Brasil por UF</p><p class="mx-card-sub" id="mxMapSub">Cor pelo indicador escolhido</p></div>
@@ -103,7 +104,7 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Regiões<small>Participação no faturamento do recorte</small></h3>
     <div class="mx-region-strip">
         {% for region in regions %}
-        <article class="mx-card mx-region">
+        <article class="mx-card mx-region" data-mx-kpi-url="{{ detail_url }}?ponto=regiao:{{ region.key|urlencode }}&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">{{ region.name }}</div>
             <strong>{{ region.net_display }}</strong>
             <small>{{ region.customers }} cliente(s) · lucro {{ region.profit_display }} · margem {{ region.margin_display }}</small>
@@ -121,10 +122,10 @@
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title" id="mxTopTitle">Mais lucrativos do Brasil</p><p class="mx-card-sub">Clique para abrir a ficha do cliente</p></div></div>
             <ul class="mx-list" id="mxTopCustomers"></ul>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxLostCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Onde perdemos clientes</p><p class="mx-card-sub">{{ lost.count }} cidade(s) sem compra no recorte, que somavam {{ lost.previous_display }} no ano anterior</p></div></div>
             {% if lost.items %}
-            <ul class="mx-list">{% for city in lost.items %}<li><div class="mx-list-main"><strong>{{ city.name }}/{{ city.state }}</strong><small>ano anterior</small></div><span class="mx-list-value">{{ city.previous_display }}</span></li>{% endfor %}</ul>
+            <ul class="mx-list">{% for city in lost.items %}<li data-mx-key="{{ city.key }}" data-mx-label="{{ city.name }}/{{ city.state }}"><div class="mx-list-main"><strong>{{ city.name }}/{{ city.state }}</strong><small>ano anterior</small></div><span class="mx-list-value">{{ city.previous_display }}</span></li>{% endfor %}</ul>
             {% else %}<p class="mx-empty-note">Nenhuma cidade perdida neste recorte.</p>{% endif %}
         </article>
     </div>
@@ -172,7 +173,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysMap.js' %}?v=1"></script>
+<script src="{% static '/js/maxisysMap.js' %}?v=2"></script>
 <script>
 (() => {
     const read = (id) => JSON.parse(document.getElementById(id).textContent);
@@ -193,6 +194,10 @@
     };
     let metric = config.metric in metrics ? config.metric : 'net';
     let view = { level: 'country', state: null, city: null };
+    // O que está desenhado agora em cada lista (o "Expandir dados" acha o ponto pelo índice).
+    let rankingShown = [];
+    let topShown = [];
+    let potentialShown = [];
 
     const node = (tag, className, text) => {
         const element = document.createElement(tag);
@@ -235,8 +240,11 @@
         const rows = rankingRows().sort((a, b) => (current.value(b.area) ?? -Infinity) - (current.value(a.area) ?? -Infinity));
         document.getElementById('mxRankTitle').textContent = view.level === 'country' ? 'Ranking por UF' : `Cidades de ${data.states[view.state].name}`;
         body.replaceChildren();
-        rows.forEach((row) => {
+        rankingShown = rows;
+        rows.forEach((row, index) => {
             const tr = node('tr', 'is-clickable');
+            tr.setAttribute('data-mx-index', index);
+            if (window.MXDrill) tr.title = window.MXDrill.hint;
             if ((row.kind === 'city' && row.key === view.city) || (row.kind === 'state' && row.key === view.state)) tr.classList.add('is-selected');
             tr.tabIndex = 0;
             const name = node('td', 'is-strong', row.label);
@@ -276,9 +284,12 @@
         document.getElementById('mxDetailSub').textContent = sub;
         const target = document.getElementById('mxTopCustomers');
         target.replaceChildren();
+        topShown = list;
         if (!list.length) { target.appendChild(node('li', 'mx-empty-note', 'Sem cliente com compra neste recorte.')); return; }
-        list.forEach((customer) => {
+        list.forEach((customer, index) => {
             const item = node('li');
+            item.setAttribute('data-mx-index', index);
+            if (window.MXDrill) item.title = window.MXDrill.hint;
             const main = node('div', 'mx-list-main');
             const link = node('a', 'mx-link', customer.name);
             link.href = profileUrl(customer.code);
@@ -305,6 +316,7 @@
         const title = document.getElementById('mxPotentialTitle');
         const body = document.getElementById('mxPotentialBody');
         body.replaceChildren();
+        potentialShown = [];
         if (!view.state) {
             title.textContent = 'Escolha uma UF no mapa';
             body.appendChild(node('p', 'mx-empty-note', 'Clique em uma UF no mapa ou no ranking para ver o potencial dos segmentos em que mais vendemos lá.'));
@@ -323,8 +335,11 @@
             ['Segmento', 'Nossos clientes', 'Faturamento', 'Empresas ativas', 'Penetração', ''].forEach((text, index) => headRow.appendChild(node('th', index && index < 5 ? 'is-num' : '', text)));
             head.appendChild(headRow);
             const tbody = node('tbody');
-            info.segments.forEach((segment) => {
+            potentialShown = info.segments;
+            info.segments.forEach((segment, index) => {
                 const tr = node('tr');
+                tr.setAttribute('data-mx-index', index);
+                if (window.MXDrill) tr.title = window.MXDrill.hint;
                 const name = node('td', 'is-strong', segment.name);
                 name.appendChild(node('span', 'mx-cell-sub', segment.cnaes.length ? `CNAE ${segment.cnaes.join(', ')}` : 'sem CNAE de referência'));
                 tr.append(
@@ -412,6 +427,78 @@
             syncUrl();
         });
     });
+
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): áreas do mapa, linhas do ranking,
+    // clientes, cidades perdidas e potencial — os clientes por trás, com o período e os filtros do mapa.
+    const drill = window.MXDrill;
+    if (drill) {
+        const detail = (params) => drill.fetchJSON(`{% url 'dashesCustomerMapDetail' %}?${new URLSearchParams({ periodo: '{{ window.key|escapejs }}', ...params })}{% if filter_query %}&{{ filter_query|escapejs }}{% endif %}`);
+        const areaPoint = (level, key) => (level === 'state' ? `uf:${key}` : `cidade:${key}`);
+        const areaColumns = [
+            { key: 'label', label: 'Local' }, { key: 'customers', label: 'Clientes', type: 'int', total: true },
+            { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true }, { key: 'profit', label: 'Lucro bruto', type: 'money', total: true },
+            { key: 'margin', label: 'Margem', type: 'pct' }, { key: 'growth', label: 'Cresc.', type: 'pct', digits: 0 },
+        ];
+        const areaRow = (label, area, index) => ({ label, customers: area.customers, net: area.net, profit: area.profit, margin: area.margin, growth: area.growth, __index: index });
+        drill.attach(document.getElementById('mxMap'), {
+            name: 'Mapa de clientes', tableTitle: 'Áreas do mapa',
+            label: (index) => (map.points()[index] || {}).name || '',
+            table: () => ({ columns: areaColumns, rows: map.points().map((point, index) => areaRow(point.name, point.area, index)) }),
+            drill: (index) => detail({ ponto: areaPoint(map.points()[index].level, map.points()[index].key) }),
+            canDrill: (index) => !!map.points()[index],
+            actions: (index) => {
+                const point = map.points()[index];
+                return point && point.level === 'state' ? [{ label: `Abrir os municípios de ${point.name}`, icon: 'filter', run: () => map.showState(point.key) }] : [];
+            },
+        });
+        drill.attach(document.getElementById('mxRankTable').closest('.mx-table-wrap'), {
+            tableTitle: 'Ranking do mapa',
+            label: (index) => (rankingShown[index] ? rankingShown[index].label : ''),
+            table: () => ({ columns: areaColumns, rows: rankingShown.map((row, index) => areaRow(row.sub ? `${row.label} · ${row.sub}` : row.label, row.area, index)) }),
+            drill: (index) => detail({ ponto: areaPoint(rankingShown[index].kind, rankingShown[index].key) }),
+            canDrill: (index) => !!rankingShown[index],
+        });
+        drill.attach(document.getElementById('mxTopCustomers'), {
+            tableTitle: 'Clientes mais lucrativos',
+            label: (index) => (topShown[index] ? topShown[index].name : ''),
+            table: () => ({
+                columns: [{ key: 'name', label: 'Cliente', sub: 'city' }, { key: 'net', label: 'Faturamento', type: 'money', total: true }, { key: 'profit', label: 'Lucro bruto', type: 'money', total: true, strong: true }, { key: 'margin', label: 'Margem', type: 'pct' }],
+                rows: topShown.map((customer, index) => ({ ...customer, __index: index })),
+            }),
+            drill: (index) => detail({ cliente: topShown[index].code }),
+            canDrill: (index) => !!topShown[index],
+            actions: (index) => (topShown[index] ? [{ label: 'Abrir a ficha do cliente', href: profileUrl(topShown[index].code) }] : []),
+        });
+        // Onde perdemos clientes: cada cidade da lista e, na linha de baixo do título, todas.
+        const lostCard = document.getElementById('mxLostCard');
+        if (lostCard) {
+            const cities = [...lostCard.querySelectorAll('li[data-mx-key]')];
+            const all = lostCard.querySelector('.mx-card-sub');
+            cities.forEach((item, index) => { item.setAttribute('data-mx-index', index); item.title = drill.hint; });
+            if (all) { all.setAttribute('data-mx-index', cities.length); all.title = drill.hint; }
+            drill.attach(lostCard, {
+                tableTitle: 'Cidades perdidas da lista',
+                label: (index) => (index === cities.length ? 'todas as cidades perdidas' : cities[index] ? cities[index].dataset.mxLabel : ''),
+                table: () => ({
+                    columns: [{ key: 'label', label: 'Cidade' }, { key: 'value', label: 'Ano anterior' }],
+                    rows: [...cities.map((item, index) => ({ label: item.dataset.mxLabel, value: (item.querySelector('.mx-list-value') || {}).textContent, __index: index })),
+                        { label: 'Todas as cidades perdidas', value: '', __index: cities.length }],
+                }),
+                drill: (index) => detail({ ponto: index === cities.length ? 'perdidas' : `perdida:${cities[index].dataset.mxKey}` }),
+                canDrill: (index) => (index === cities.length ? cities.length > 0 : !!cities[index]),
+            });
+        }
+        drill.attach(document.getElementById('mxPotentialBody'), {
+            tableTitle: 'Segmentos da UF',
+            label: (index) => (potentialShown[index] ? potentialShown[index].name : ''),
+            table: () => ({
+                columns: [{ key: 'name', label: 'Segmento' }, { key: 'customers', label: 'Nossos clientes', type: 'int', total: true }, { key: 'net_display', label: 'Faturamento' }, { key: 'market', label: 'Empresas ativas', type: 'int' }, { key: 'penetration_display', label: 'Penetração' }],
+                rows: potentialShown.map((segment, index) => ({ ...segment, __index: index })),
+            }),
+            drill: (index) => detail({ ponto: `segmento:${view.state}|${potentialShown[index].segment}` }),
+            canDrill: (index) => !!potentialShown[index] && potentialShown[index].customers > 0 && !!view.state,
+        });
+    }
 
     if (config.initial_state && data.states[config.initial_state]) map.showState(config.initial_state);
     else map.showCountry();

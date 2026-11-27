@@ -666,6 +666,19 @@ class PortalDemand(models.Model):
     # insatisfeito, 10 = muito satisfeito) em vez de rotular cada nota — dez
     # adjetivos inventados renderiam mais arbitrário do que o próprio número.
     FEEDBACK_CHOICES = [(n, str(n)) for n in range(1, 11)]
+    # Por onde o chamado entrou. Sem isto não dava para medir quanto o
+    # assistente de IA ajuda: o chamado aberto pela conversa ficava igual ao
+    # do formulário.
+    OPENED_VIA_PORTAL = "portal"
+    OPENED_VIA_CHAT = "chat"
+    OPENED_VIA_ATTENDANT = "attendant"
+    OPENED_VIA_SM = "sm"
+    OPENED_VIA_CHOICES = [
+        (OPENED_VIA_PORTAL, "Formulário do portal"),
+        (OPENED_VIA_CHAT, "Conversa com o assistente"),
+        (OPENED_VIA_ATTENDANT, "Aberto pelo atendente"),
+        (OPENED_VIA_SM, "Histórico do SM"),
+    ]
 
     requester = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="portal_demands")
     assigned_to = models.ForeignKey(
@@ -696,6 +709,7 @@ class PortalDemand(models.Model):
         related_name="demands",
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    opened_via = models.CharField(max_length=12, choices=OPENED_VIA_CHOICES, default=OPENED_VIA_PORTAL, db_index=True)
     # Id do chamado no SM (ex.: "ABL-PHHJR"), so preenchido em chamado importado
     # de la. Existe pra a importacao ser idempotente (rodar de novo nao duplica)
     # e pra dar pra achar de volta o chamado original se precisar conferir algo.
@@ -913,6 +927,8 @@ class PortalDemandLog(models.Model):
     EVENT_REOPENED = "reopened"
     EVENT_CANCELLED = "cancelled"
     EVENT_AI_ROUTED = "ai_routed"
+    EVENT_FEEDBACK = "feedback"
+    EVENT_DOCUMENTED = "documented"
     EVENT_CHOICES = [
         (EVENT_ASSUMED, "Assunção"),
         (EVENT_TRANSFERRED, "Transferência"),
@@ -923,6 +939,8 @@ class PortalDemandLog(models.Model):
         (EVENT_REOPENED, "Reabertura"),
         (EVENT_CANCELLED, "Cancelamento"),
         (EVENT_AI_ROUTED, "Roteamento IA"),
+        (EVENT_FEEDBACK, "Avaliação"),
+        (EVENT_DOCUMENTED, "Documentação na base"),
     ]
 
     demand = models.ForeignKey(PortalDemand, on_delete=models.CASCADE, related_name="logs")
@@ -1034,6 +1052,55 @@ class PortalChatUpload(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.original_name}"
+
+
+class PortalAssistantConversation(models.Model):
+    """Rastro de uma conversa com o assistente de abertura (IA) do portal.
+
+    O texto da conversa continua só na sessão (é rascunho e pode ter dado
+    pessoal); aqui fica o mínimo para medir o assistente: quantas conversas,
+    quantas terminaram resolvidas sem chamado e quantas viraram chamado.
+    Antes, uma conversa resolvida pela IA não deixava sinal nenhum na base.
+    """
+
+    OUTCOME_OPEN = "open"
+    OUTCOME_SOLUTION = "solution"
+    OUTCOME_RESOLVED = "resolved"
+    OUTCOME_SUMMARY = "summary"
+    OUTCOME_TICKET = "ticket"
+    OUTCOME_CHOICES = [
+        (OUTCOME_OPEN, "Sem conclusão"),
+        (OUTCOME_SOLUTION, "Solução sugerida"),
+        (OUTCOME_RESOLVED, "Resolvida sem chamado"),
+        (OUTCOME_SUMMARY, "Resumo não enviado"),
+        (OUTCOME_TICKET, "Virou chamado"),
+    ]
+
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="portal_assistant_conversations")
+    # Empresa e setor de quem conversou, no momento da conversa (mesmo
+    # raciocínio do snapshot em PortalDemand), para o painel filtrar por eles.
+    company = models.ForeignKey(
+        PortalCompany, on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_conversations"
+    )
+    sector = models.ForeignKey(
+        PortalRequesterSector, on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_conversations"
+    )
+    demand = models.ForeignKey(
+        PortalDemand, on_delete=models.SET_NULL, null=True, blank=True, related_name="assistant_conversations"
+    )
+    turns = models.PositiveIntegerField(default=0)
+    suggested_solution = models.BooleanField(default=False)
+    outcome = models.CharField(max_length=12, choices=OUTCOME_CHOICES, default=OUTCOME_OPEN, db_index=True)
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    last_turn_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ["-started_at", "-id"]
+        verbose_name = "Conversa com o assistente"
+        verbose_name_plural = "Conversas com o assistente"
+
+    def __str__(self):
+        return f"{self.user} - {self.get_outcome_display()}"
 
 
 class PortalNotification(models.Model):
@@ -2628,3 +2695,60 @@ class SalesAgendaContact(models.Model):
 
     def __str__(self):
         return f"{self.customer_code}: {self.get_outcome_display()} ({self.created_at:%d/%m/%Y})"
+
+
+class SalesBudget(models.Model):
+    """Orçamento de vendas por unidade de orçamento, família e mês: peso (kg) e valor (R$).
+
+    O peso das metas fica no ERP (USU_TORCMET); o ERP não guarda o valor, que fica aqui com a
+    base de comparação: "bruto" (faturamento com impostos, líquido de devolução, como no PBIX)
+    ou "sem_impostos". Carga: `manage.py importar_orcamento` (ver `tiqueue/sales_budget.py`).
+    """
+
+    BASIS_CHOICES = [
+        ("bruto", "Com impostos, líquido de devolução"),
+        ("sem_impostos", "Sem impostos"),
+    ]
+
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    company = models.PositiveSmallIntegerField(default=1)
+    branch = models.PositiveSmallIntegerField(help_text="Unidade de orçamento (1 Matriz, 2 Ráfia, 3 Big Bag, 4 Serafina, 5 Adesivado).")
+    family = models.CharField(max_length=6, help_text="Família da meta (E012FAM.CODFAM).")
+    groups = models.CharField(max_length=200, blank=True, help_text="Grupos do orçamento somados nesta família.")
+    weight_kg = models.DecimalField(max_digits=14, decimal_places=3)
+    value = models.DecimalField(max_digits=16, decimal_places=2)
+    basis = models.CharField(max_length=20, choices=BASIS_CHOICES, default="bruto")
+    source = models.CharField(max_length=40, blank=True)
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["year", "month", "company", "branch", "family"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "month", "company", "branch", "family"], name="uniq_sales_budget_month_family"),
+        ]
+        indexes = [models.Index(fields=["year"], name="sales_budget_year_idx")]
+
+    def __str__(self):
+        return f"{self.month:02d}/{self.year} {self.company}/{self.branch} {self.family}: {self.weight_kg} kg"
+
+
+class SalesBreakEven(models.Model):
+    """Ponto de equilíbrio (R$) de uma unidade de orçamento no mês (tabela "PONTO DE EQUILIBRIO" do PBIX)."""
+
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    company = models.PositiveSmallIntegerField(default=1)
+    branch = models.PositiveSmallIntegerField()
+    value = models.DecimalField(max_digits=16, decimal_places=2)
+    source = models.CharField(max_length=40, blank=True)
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["year", "month", "company", "branch"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "month", "company", "branch"], name="uniq_sales_break_even_month"),
+        ]
+
+    def __str__(self):
+        return f"{self.month:02d}/{self.year} {self.company}/{self.branch}: R$ {self.value}"

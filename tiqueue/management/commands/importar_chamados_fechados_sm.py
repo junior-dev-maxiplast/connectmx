@@ -216,6 +216,7 @@ class Command(BaseCommand):
                     assumed_at=date_open if attendant else None,
                     completed_at=date_close or date_open,
                     sm_ticket_id=linha["sm_id"],
+                    opened_via=PortalDemand.OPENED_VIA_SM,
                 )
                 demand.save()
 

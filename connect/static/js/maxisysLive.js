@@ -95,7 +95,7 @@
                 tip.replaceChildren();
                 lines.forEach((line, index) => {
                     if (index) tip.appendChild(document.createElement('br'));
-                    const node = html(line.strong ? 'strong' : 'span', line.swatch ? 'mx-live-tip-row' : null, line.text, tip);
+                    const node = html(line.strong ? 'strong' : 'span', line.swatch ? 'mx-live-tip-row' : line.hint ? 'mx-live-tip-hint' : null, line.text, tip);
                     if (line.swatch) {
                         const swatch = html('i', null, null);
                         swatch.style.background = paint(line.swatch);
@@ -231,6 +231,44 @@
         return result;
     }
 
+    // ------------------------------------------------------------------ menu de opções
+    /* Cada visual se registra no menu do botão direito (maxisysDrill.js): tabela, cópia e CSV
+       para todos; "Expandir dados" quando a página passa `options.drill(ponto)`, que recebe
+       { key, index, label, item, data } e devolve (ou promete) as linhas do ponto. Opcionais:
+       `name` (senão, o título do card), `valueType` (money, kg, int, pct) e `canDrill(ponto)`. */
+    function valueColumn(key, label, options, total) {
+        if (options.valueType) return { key, label, type: options.valueType, total };
+        const format = options.format || fmt.money;
+        return { key, label, type: 'dec', total, format: (value) => (value == null ? '–' : format(Number(value))) };
+    }
+
+    // Linha "Botão direito: expandir dados" na dica dos pontos que abrem registros.
+    function drillHint(options, context) {
+        if (!options.drill || !context || (options.canDrill && !options.canDrill(context))) return null;
+        return { text: (window.MXDrill && window.MXDrill.hint) || 'Botão direito: expandir dados', hint: true };
+    }
+
+    function register(container, options, spec) {
+        if (!window.MXDrill) return;
+        const point = (index) => spec.point(index);
+        window.MXDrill.attach(container, {
+            name: options.name || '',
+            label: (index) => (point(index) || {}).label,
+            table: spec.table,
+            drill: options.drill ? (index) => options.drill(point(index)) : null,
+            canDrill: (index) => {
+                const context = point(index);
+                return !!context && (!options.canDrill || options.canDrill(context));
+            },
+            actions: (index) => {
+                const context = point(index);
+                const own = context && options.actions ? options.actions(context) || [] : [];
+                const href = context && context.item && context.item.href;
+                return href ? [...own, { label: options.openLabel || 'Abrir a ficha', href }] : own;
+            },
+        });
+    }
+
     // ------------------------------------------------------------------ ranking (barras horizontais)
     function ranking(container, options = {}) {
         const format = options.format || fmt.money;
@@ -239,6 +277,14 @@
         const empty = html('p', 'mx-empty-note', options.emptyText || 'Sem dados para este filtro.', container);
         empty.hidden = true;
         const nodes = new Map();
+        let all = [];
+        register(container, options, {
+            point: (index) => (all[index] ? { key: all[index].key, index, label: all[index].label, item: all[index] } : null),
+            table: () => ({
+                columns: [{ key: 'label', label: options.labelName || 'Item', sub: 'sub', href: 'href' }, valueColumn('value', options.valueName || 'Valor', options, options.total !== false)],
+                rows: all.map((item, index) => ({ label: item.label, sub: item.sub || '', href: item.href || null, value: item.value, __index: index })),
+            }),
+        });
         function build(item) {
             const li = html('li', 'mx-live-rank-item');
             const button = html('button', 'mx-live-rank-button', null, li);
@@ -251,7 +297,8 @@
             fill.style.width = '0%';
             html('span', 'mx-live-rank-sub', item.sub || '', button);
             if (options.onSelect) button.addEventListener('click', (event) => options.onSelect(item.key, item, event));
-            else button.disabled = true;
+            else if (!options.drill) button.disabled = true;
+            if (options.drill) button.title = (window.MXDrill && window.MXDrill.hint) || 'Botão direito: expandir dados';
             if (item.href) {
                 const link = html('a', 'mx-live-rank-link', '↗', li);
                 link.href = item.href;
@@ -263,6 +310,7 @@
         return {
             update(items, selected) {
                 const picked = chosen(selected);
+                all = items;
                 const shown = items.slice(0, limit);
                 empty.hidden = shown.length > 0;
                 const max = Math.max(...shown.map((item) => Math.abs(item.value) || 0), 1);
@@ -273,6 +321,7 @@
                     let node = nodes.get(item.key);
                     if (!node) { node = build(item); nodes.set(item.key, node); }
                     keep.add(item.key);
+                    node.setAttribute('data-mx-index', index);
                     node.style.setProperty('--mx-rank-color', paint(item.color || options.color || '--mx-chart-1'));
                     node.querySelector('.mx-live-rank-label').textContent = item.label;
                     node.querySelector('.mx-live-rank-sub').textContent = item.sub || '';
@@ -398,12 +447,39 @@
         nodes.forEach((node, index) => { if (!keep.has(index)) node.remove(); });
     }
 
+    // Tabela de um gráfico de colunas ou linhas: uma linha por rótulo, uma coluna por série.
+    function seriesTable(data, options, totals) {
+        if (!data) return { columns: [], rows: [] };
+        const columns = [{ key: 'label', label: options.labelName || 'Período' }];
+        data.series.forEach((series, index) => columns.push(valueColumn(`s${index}`, series.name, options, totals)));
+        if (options.stacked && data.series.length > 1) columns.push(valueColumn('stack', 'Total', options, totals));
+        if (data.target) columns.push(valueColumn('target', data.target.name, options, totals));
+        if (data.extra) columns.push({ key: 'extra', label: 'Detalhe' });
+        const rows = data.labels.map((label, index) => {
+            const row = { label, __index: index };
+            data.series.forEach((series, si) => { row[`s${si}`] = series.values[index] == null ? null : Number(series.values[index]); });
+            if (options.stacked && data.series.length > 1) row.stack = data.series.reduce((acc, series) => acc + (Number(series.values[index]) || 0), 0);
+            if (data.target) row.target = data.target.values[index] || null;
+            if (data.extra) row.extra = data.extra(index).join(' · ');
+            return row;
+        });
+        return { columns, rows };
+    }
+
     function columns(container, options = {}) {
         const height = options.height || 240;
         const format = options.format || fmt.money;
         const { plot, tip } = chartShell(container);
         let current = null;
         let stop = () => {};
+        register(container, options, {
+            point: (index) => {
+                const data = api.data;
+                if (!data || index >= data.labels.length) return null;
+                return { key: data.keys ? data.keys[index] : index, index, label: data.labels[index], data };
+            },
+            table: () => seriesTable(api.data, options, options.total !== false),
+        });
         function draw(data, values) {
             const f = frame(plot, height);
             const labels = data.labels;
@@ -446,12 +522,14 @@
                 });
             }
             labels.forEach((label, index) => {
-                const hit = el('rect', { x: x(index) - slot / 2, y: f.pad.top, width: slot, height: plotH, fill: 'transparent', class: 'mx-live-hit', tabindex: 0 }, f.svg);
+                const hit = el('rect', { x: x(index) - slot / 2, y: f.pad.top, width: slot, height: plotH, fill: 'transparent', class: 'mx-live-hit', tabindex: 0, 'data-mx-index': index }, f.svg);
                 const show = (event) => {
                     const lines = [{ text: label, strong: true }];
                     data.series.forEach((series, seriesIndex) => lines.push({ text: `${series.name}: ${format(data.series[seriesIndex].values[index] || 0)}`, swatch: series.color }));
                     if (data.target && data.target.values[index]) lines.push({ text: `${data.target.name}: ${format(data.target.values[index])}` });
                     if (data.extra) data.extra(index).forEach((text) => lines.push({ text }));
+                    const hint = drillHint(options, { key: data.keys ? data.keys[index] : index, index, label, data });
+                    if (hint) lines.push(hint);
                     const box = f.svg.getBoundingClientRect();
                     const scale = box.width / f.width;
                     tip.show(lines, x(index) * scale, (f.pad.top + 46) * scale);
@@ -494,6 +572,15 @@
         let current = null;
         let stop = () => {};
         let drawnOnce = false;
+        register(container, options, {
+            point: (index) => {
+                const data = api.data;
+                if (!data || index >= data.labels.length) return null;
+                return { key: data.keys ? data.keys[index] : index, index, label: data.labels[index], data };
+            },
+            // Linha acumulada ou percentual não se soma: o total da tabela só vem se a página pedir.
+            table: () => seriesTable(api.data, options, !!options.total),
+        });
         function draw(data, values, animatePath) {
             const f = frame(plot, height);
             const labels = data.labels;
@@ -549,6 +636,7 @@
             const show = (index) => {
                 index = Math.max(0, Math.min(labels.length - 1, index));
                 focusIndex = index;
+                overlay.setAttribute('data-mx-index', index);
                 cross.setAttribute('x1', x(index));
                 cross.setAttribute('x2', x(index));
                 cross.style.opacity = 1;
@@ -563,6 +651,8 @@
                     lines.push({ text: `${series.name}: ${format(value)}`, swatch: series.color });
                 });
                 if (data.extra) data.extra(index).forEach((text) => lines.push({ text }));
+                const hint = drillHint(options, { key: data.keys ? data.keys[index] : index, index, label: labels[index], data });
+                if (hint) lines.push(hint);
                 const box = f.svg.getBoundingClientRect();
                 const scale = box.width / f.width;
                 tip.show(lines, x(index) * scale, (f.pad.top + 46) * scale);
@@ -575,6 +665,9 @@
             };
             const select = (index, event) => options.onSelect(data.keys ? data.keys[index] : index, index, event);
             overlay.addEventListener('pointermove', (event) => show(indexAt(event)));
+            // No toque (sem "pointermove" antes) o ponto precisa existir já no toque longo.
+            overlay.addEventListener('pointerdown', (event) => show(indexAt(event)));
+            overlay.addEventListener('contextmenu', (event) => { if (event.clientX || event.clientY) show(indexAt(event)); });
             overlay.addEventListener('pointerleave', hide);
             overlay.addEventListener('focus', () => show(focusIndex));
             overlay.addEventListener('blur', hide);
@@ -625,6 +718,17 @@
         const tip = tooltip(wrap);
         let current = [];
         let stop = () => {};
+        let shownItems = [];
+        register(container, options, {
+            point: (index) => (shownItems[index] ? { key: shownItems[index].key, index, label: shownItems[index].label, item: shownItems[index] } : null),
+            table: () => {
+                const sumValues = shownItems.reduce((acc, item) => acc + Math.max(item.value || 0, 0), 0);
+                return {
+                    columns: [{ key: 'label', label: options.labelName || 'Fatia' }, valueColumn('value', options.valueName || 'Valor', options, true), { key: 'share', label: 'Participação', type: 'pct' }],
+                    rows: shownItems.map((item, index) => ({ label: item.label, value: item.value, share: sumValues ? Math.max(item.value || 0, 0) / sumValues : null, __index: index })),
+                };
+            },
+        });
         const radius = size / 2 - 14;
         const thickness = options.thickness || 26;
         function arc(start, end) {
@@ -650,14 +754,15 @@
                 const isSelected = picked.includes(String(item.key));
                 const path = el('path', {
                     d: arc(start, end), fill: 'none', stroke: paint(item.color), 'stroke-width': isSelected ? thickness + 8 : thickness,
-                    class: `mx-live-donut-arc${picked.length && !isSelected ? ' is-dimmed' : ''}`, tabindex: 0,
+                    class: `mx-live-donut-arc${picked.length && !isSelected ? ' is-dimmed' : ''}`, tabindex: 0, 'data-mx-index': index,
                     'aria-label': `${item.label}: ${format(item.value)} (${fmt.pct(item.value / (items.reduce((acc, i) => acc + Math.max(i.value, 0), 0) || 1))})`,
                 }, svg);
                 const show = () => {
                     const mid = (start + end) / 2;
                     const box = svg.getBoundingClientRect();
                     const scale = box.width / size;
-                    tip.show([{ text: item.label, strong: true }, { text: format(item.value), swatch: item.color }, { text: `${fmt.pct(share)} do total` }],
+                    const hint = drillHint(options, { key: item.key, index, label: item.label, item });
+                    tip.show([{ text: item.label, strong: true }, { text: format(item.value), swatch: item.color }, { text: `${fmt.pct(share)} do total` }].concat(hint ? [hint] : []),
                         (size / 2 + radius * Math.cos(mid - Math.PI / 2)) * scale, (size / 2 + radius * Math.sin(mid - Math.PI / 2)) * scale);
                     path.classList.add('is-hover');
                 };
@@ -675,6 +780,7 @@
         }
         return {
             update(items, selected) {
+                shownItems = items;
                 const target = items.map((item) => Math.max(item.value || 0, 0));
                 const from = current.length === target.length ? current : target.map(() => 0);
                 stop();
@@ -684,9 +790,10 @@
                 count(total, totalValue, options.centerFormat || format);
                 legend.replaceChildren();
                 const picked = chosen(selected);
-                items.forEach((item) => {
+                items.forEach((item, index) => {
                     const isPicked = picked.includes(String(item.key));
                     const li = html('li', picked.length && !isPicked ? 'is-dimmed' : isPicked ? 'is-selected' : '', null, legend);
+                    li.setAttribute('data-mx-index', index);
                     const button = html('button', null, null, li);
                     button.type = 'button';
                     const swatch = html('i', null, null, button);
@@ -716,6 +823,19 @@
         const cy = 112;
         let current = 0;
         let stop = () => {};
+        // Menu do card; com `options.drill`, o medidor inteiro é um ponto só (índice 0).
+        let reading = null;
+        register(container, options, {
+            point: (index) => (index === 0 && reading ? { key: 'gauge', index: 0, label: options.pointLabel || options.label || '', item: reading, data: reading } : null),
+            table: options.table || (() => ({
+                columns: [{ key: 'label', label: 'Indicador' }, { key: 'value', label: 'Valor' }, { key: 'text', label: 'Detalhe', wrap: true }],
+                rows: reading ? [{ label: options.label || 'Medidor', value: reading.ratio == null ? '–' : format(reading.ratio), text: reading.text || '', __index: 0 }] : [],
+            })),
+        });
+        if (options.drill) {
+            wrap.setAttribute('data-mx-index', '0');
+            wrap.title = (window.MXDrill && window.MXDrill.hint) || 'Botão direito: expandir dados';
+        }
         const point = (ratio) => {
             const angle = Math.PI * (1 - ratio);
             return [cx + radius * Math.cos(angle), cy - radius * Math.sin(angle)];
@@ -750,6 +870,7 @@
             // define a cor (ex.: realizado ÷ ritmo esperado, em vez de realizado ÷ meta).
             update(ratio, text, extra = {}) {
                 stop();
+                reading = { ratio, text: text != null ? text : reading && reading.text, extra };
                 if (extra.target !== undefined) marker = extra.target;
                 const target = ratio == null ? 0 : ratio;
                 const toneRatio = extra.toneRatio != null ? extra.toneRatio : target;
@@ -768,8 +889,18 @@
         const format = options.format || fmt.money;
         const wrap = html('div', 'mx-live-calendar', null, container);
         const tip = tooltip(container);
+        let shownDays = [];
+        const dayLabel = (day) => new Date(`${day.date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+        register(container, options, {
+            point: (index) => (shownDays[index] ? { key: shownDays[index].date, index, label: dayLabel(shownDays[index]), item: shownDays[index] } : null),
+            table: () => ({
+                columns: [{ key: 'date', label: 'Dia', type: 'date' }, { key: 'weekday', label: 'Dia da semana' }, valueColumn('value', options.valueName || 'Valor', options, true)],
+                rows: shownDays.map((day, index) => ({ date: day.date, weekday: new Date(`${day.date}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long' }), value: day.value, __index: index })),
+            }),
+        });
         return {
             update(days) {
+                shownDays = days;
                 wrap.replaceChildren();
                 if (!days.length) return;
                 const values = days.map((day) => day.value).filter((value) => value > 0).sort((a, b) => a - b);
@@ -785,6 +916,7 @@
                     const position = index + offset;
                     const cell = html('button', 'mx-live-calendar-day', null, wrap);
                     cell.type = 'button';
+                    cell.setAttribute('data-mx-index', index);
                     cell.style.gridRow = String((position % 7) + 1);
                     cell.style.gridColumn = String(Math.floor(position / 7) + 2);
                     const level = day.value > 0 ? 1 + breaks.filter((edge) => day.value > edge).length : 0;
@@ -796,7 +928,8 @@
                     const show = () => {
                         const box = cell.getBoundingClientRect();
                         const parent = container.getBoundingClientRect();
-                        tip.show([{ text: label, strong: true }, { text: format(day.value) }].concat(day.extra ? [{ text: day.extra }] : []), box.left - parent.left + box.width / 2, box.top - parent.top);
+                        const hint = drillHint(options, { key: day.date, index, label: dayLabel(day), item: day });
+                        tip.show([{ text: label, strong: true }, { text: format(day.value) }].concat(day.extra ? [{ text: day.extra }] : [], hint ? [hint] : []), box.left - parent.left + box.width / 2, box.top - parent.top);
                     };
                     cell.addEventListener('pointerenter', show);
                     cell.addEventListener('focus', show);

@@ -31,28 +31,29 @@
 
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Resumo<small>{{ agenda.pending }} cliente(s) na fila · {{ agenda.snoozed }} já contatado(s) nos últimos 7 dias</small></h3>
+    {% url 'dashesSalesAgendaDetail' as detail_url %}
     <div class="mx-grid mx-grid-kpi">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?{{ query_prefix }}dias={{ horizon }}&amp;indicador=previstas">
             <div class="mx-kpi-label">Compras previstas</div>
             <div class="mx-kpi-value">{{ agenda.counts.due }}</div>
             <div class="mx-kpi-foot"><span>pedido típico somado {{ expected_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?{{ query_prefix }}dias={{ horizon }}&amp;indicador=risco">
             <div class="mx-kpi-label">Atrasados e em risco</div>
             <div class="mx-kpi-value">{{ agenda.counts.late|add:agenda.counts.at_risk }}</div>
             <div class="mx-kpi-foot"><span>{{ at_stake_display }} em pedidos típicos em jogo</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?{{ query_prefix }}dias={{ horizon }}&amp;indicador=cruzada">
             <div class="mx-kpi-label">Venda cruzada</div>
             <div class="mx-kpi-value">{{ agenda.counts.cross }}</div>
             <div class="mx-kpi-foot"><span>clientes em dia com produto a oferecer</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?{{ query_prefix }}dias={{ horizon }}&amp;indicador=reativar">
             <div class="mx-kpi-label">Reativar</div>
             <div class="mx-kpi-value">{{ agenda.counts.reactivate }}</div>
             <div class="mx-kpi-foot"><span>sem compra há mais de 180 dias</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ detail_url }}?{{ query_prefix }}dias={{ horizon }}&amp;indicador=contatos">
             <div class="mx-kpi-label">Contatos nos últimos 7 dias</div>
             <div class="mx-kpi-value">{{ recent_contacts }}</div>
             <div class="mx-kpi-foot"><span>{{ recent_orders }} com pedido fechado</span></div>
@@ -62,12 +63,12 @@
 
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-star"/></svg>Prioridades<small>Ordem: pedido típico × urgência · quem já foi contatado aparece no fim, apagado</small></h3>
-    <article class="mx-card">
+    <article class="mx-card" id="mxAgendaCard">
         <div class="mx-toolbar-group" style="margin-bottom: 8px">{% for reason in reason_labels %}<span class="mx-badge {{ reason.tone }}">{{ reason.label }} · {{ reason.count }}</span>{% endfor %}</div>
         {% if entries %}
         <ol class="mx-agenda">
             {% for entry in entries %}
-            <li class="{% if entry.snoozed %}is-snoozed{% endif %}">
+            <li class="{% if entry.snoozed %}is-snoozed{% endif %}" data-mx-key="{{ entry.code }}" data-mx-label="{{ entry.name }}" data-mx-reason="{{ entry.primary.label }}" data-mx-typical="{{ entry.typical_display }}" data-mx-last="{{ entry.last_purchase_display }}">
                 <span class="mx-agenda-rank">{{ forloop.counter }}</span>
                 <div class="mx-agenda-main">
                     <strong><a href="{{ profile_url_template|cut:'__code__/' }}{{ entry.code }}/">{{ entry.name }}</a></strong>
@@ -110,10 +111,10 @@
 {% if contacted %}
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-history"/></svg>Já contatados<small>Saem da fila por 7 dias depois do registro</small></h3>
-    <article class="mx-card">
+    <article class="mx-card" id="mxContactedCard">
         <ul class="mx-list">
             {% for entry in contacted %}
-            <li>
+            <li data-mx-key="{{ entry.code }}" data-mx-label="{{ entry.name }}" data-mx-reason="{{ entry.primary.label }}" data-mx-typical="{{ entry.typical_display }}" data-mx-last="{{ entry.last_purchase_display }}">
                 <div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ entry.code }}/">{{ entry.name }}</a></strong><small>{{ entry.place }} · {{ entry.rep_name }} · estava na agenda por: {{ entry.primary.label|lower }}</small></div>
                 <span class="mx-badge {% if entry.last_contact.outcome == 'pedido' %}is-good{% elif entry.last_contact.outcome == 'sem_interesse' %}is-bad{% else %}is-info{% endif %}">{{ entry.last_contact.outcome_label }}</span>
                 <span class="mx-list-value">{{ entry.last_contact.date|date:"d/m" }}{% if entry.last_contact.by %} · {{ entry.last_contact.by }}{% endif %}</span>
@@ -134,5 +135,44 @@
         <li>Pedido típico: o faturamento médio de um mês com compra nos últimos 24 meses. Registrar o contato tira o cliente da fila por 7 dias e deixa o resultado visível para o time.</li>
     </ul>
 </details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script>
+(() => {
+    // "Expandir dados": cada cliente da lista abre as compras dele nos últimos 24 meses (mês a mês e
+    // as notas); os cards do resumo abrem os clientes do motivo (data-mx-kpi-url, no maxisysDrill.js).
+    const drill = window.MXDrill;
+    if (!drill) return;
+    const profileUrl = (code) => '{{ profile_url_template|escapejs }}'.replace('__code__', code);
+    const attachList = (card, name) => {
+        if (!card) return;
+        const items = [...card.querySelectorAll('li[data-mx-key]')];
+        if (!items.length) return;
+        items.forEach((item, index) => { item.setAttribute('data-mx-index', index); item.title = drill.hint; });
+        drill.attach(card, {
+            name, tableTitle: name,
+            label: (index) => (items[index] ? items[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: [
+                    { key: 'position', label: 'Ordem', type: 'int' }, { key: 'name', label: 'Cliente', sub: 'code' }, { key: 'reason', label: 'Motivo' },
+                    { key: 'typical', label: 'Pedido típico' }, { key: 'last', label: 'Última compra' },
+                ],
+                rows: items.map((item, index) => ({
+                    position: index + 1, name: item.dataset.mxLabel, code: item.dataset.mxKey, reason: item.dataset.mxReason,
+                    typical: item.dataset.mxTypical, last: item.dataset.mxLast, __index: index,
+                })),
+            }),
+            drill: (index) => drill.fetchJSON(`{% url 'dashesSalesAgendaDetail' %}?cliente=${encodeURIComponent(items[index].dataset.mxKey)}`),
+            canDrill: (index) => !!items[index],
+            actions: (index) => (items[index] ? [{ label: 'Abrir a ficha do cliente', href: profileUrl(items[index].dataset.mxKey) }] : []),
+        });
+    };
+    attachList(document.getElementById('mxAgendaCard'), 'Prioridades');
+    attachList(document.getElementById('mxContactedCard'), 'Já contatados');
+})();
+</script>
 {% endif %}
 {% endblock %}

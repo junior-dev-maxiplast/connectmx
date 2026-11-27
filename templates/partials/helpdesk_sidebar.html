@@ -1,0 +1,226 @@
+{% load static %}{% comment %}
+Menu lateral e barra superior do Helpdesk, no mesmo padrão visual dos Dashes
+(maxisys.css + helpdesk.css). Vale para o portal do solicitante, a fila de quem
+atende, a base de conhecimento, o MaxiBot e os parâmetros do helpdesk.
+
+O menu é montado pelo papel de quem está logado (contexto de
+`_portal_topbar_context`): o solicitante vê só o que é dele; atendente e
+administrador ganham a fila, a base e os parâmetros. Na abertura de chamado o
+menu entra em modo foco (`portal_topbar_focus`) e só oferece a volta ao portal,
+para a navegação não competir com o formulário.
+{% endcomment %}
+<svg class="mx-sprite" aria-hidden="true" focusable="false">
+    <symbol id="mx-i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+    <symbol id="mx-i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+    <symbol id="mx-i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
+    <symbol id="mx-i-panel" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M9 5v14"/></symbol>
+    <symbol id="mx-i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="mx-i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="hd-i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/><path d="M10 19v-5h4v5"/></symbol>
+    <symbol id="hd-i-plus" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M12 9v6M9 12h6"/></symbol>
+    <symbol id="hd-i-chat" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 4v-4H6a2 2 0 0 1-2-2Z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/></symbol>
+    <symbol id="hd-i-list" viewBox="0 0 24 24"><path d="M9 7h11M9 12h11M9 17h11"/><path d="M4.5 7h.01M4.5 12h.01M4.5 17h.01"/></symbol>
+    <symbol id="hd-i-inbox" viewBox="0 0 24 24"><path d="M4 13h4.3l1.2 2.2h4.9l1.2-2.2H20"/><path d="M4 13 6 6.3a1 1 0 0 1 1-.7h10a1 1 0 0 1 1 .7L20 13"/><path d="M4 13v5a1.3 1.3 0 0 0 1.3 1.3h13.4A1.3 1.3 0 0 0 20 18v-5"/></symbol>
+    <symbol id="hd-i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.3" r="3.5"/><path d="M5 20c0-4 3.1-6.7 7-6.7s7 2.7 7 6.7"/></symbol>
+    <symbol id="hd-i-chart" viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/></symbol>
+    <symbol id="hd-i-book" viewBox="0 0 24 24"><path d="M4 6v12l7 1V7Z"/><path d="M20 6v12l-7 1V7Z"/></symbol>
+    <symbol id="hd-i-edit" viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16Z"/><path d="m13 7 4 4"/></symbol>
+    <symbol id="hd-i-tag" viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9Z"/><circle cx="8.5" cy="8.5" r="1.3"/></symbol>
+    <symbol id="hd-i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16.5h5"/></symbol>
+    <symbol id="hd-i-building" viewBox="0 0 24 24"><path d="M5 20V5h9v15M14 9h5v11"/><path d="M8 8h3M8 12h3M8 16h3M3 20h18"/></symbol>
+    <symbol id="hd-i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.6 2.5-6.2 5.5-6.2s5.5 2.6 5.5 6.2"/><path d="M15 4.6a3.2 3.2 0 0 1 0 6.2M17.6 14c1.8.8 2.9 2.9 2.9 6"/></symbol>
+    <symbol id="hd-i-form" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
+    <symbol id="hd-i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.7l3.2 2"/></symbol>
+    <symbol id="hd-i-reply" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/></symbol>
+    <symbol id="hd-i-back" viewBox="0 0 24 24"><path d="M10 6 4 12l6 6"/><path d="M4 12h11a5 5 0 0 1 5 5v1"/></symbol>
+</svg>
+
+<aside class="mx-sidebar is-fixed hd-sidebar" id="mxSidebar" aria-label="Menu do Helpdesk">
+    <a class="mx-brand" href="{% url 'portalDemandPage' %}" aria-label="Início do Helpdesk">
+        <span class="mx-brand-word">MaxiPlast</span>
+        <svg class="mx-brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.5c2 2.2 2 5.3 0 7.5-2-2.2-2-5.3 0-7.5Z" fill="#f6c700"/>
+            <path d="M21.5 12c-2.2 2-5.3 2-7.5 0 2.2-2 5.3-2 7.5 0Z" fill="#00a6e2"/>
+            <path d="M12 21.5c-2-2.2-2-5.3 0-7.5 2 2.2 2 5.3 0 7.5Z" fill="#e2333a"/>
+            <path d="M2.5 12c2.2-2 5.3-2 7.5 0-2.2 2-5.3 2-7.5 0Z" fill="#7cc242"/>
+        </svg>
+        <small class="mx-brand-sub">embalagens</small>
+    </a>
+    <nav class="mx-nav" aria-label="Helpdesk">
+        {% if portal_topbar_focus %}
+            <a class="mx-nav-item" href="{% url 'portalDemandPage' %}" title="Voltar ao portal">
+                <svg class="mx-ico"><use href="#hd-i-back"/></svg><span class="mx-nav-text">Voltar ao portal</span>
+            </a>
+            <p class="hd-nav-note">Preencha com calma: o menu volta quando o chamado for enviado.</p>
+        {% else %}
+            <span class="mx-nav-label">Portal</span>
+            <a class="mx-nav-item{% if portal_nav_active == 'home' %} is-active{% endif %}" href="{% url 'portalDemandPage' %}"{% if portal_nav_active == 'home' %} aria-current="page"{% endif %} title="Início do portal">
+                <svg class="mx-ico"><use href="#hd-i-home"/></svg><span class="mx-nav-text">Início</span>
+            </a>
+            {% if can_request_portal %}
+                {% if portal_ai_chat_available %}
+                <a class="mx-nav-item{% if portal_nav_active == 'chat' %} is-active{% endif %}" href="{% url 'portalDemandChatPage' %}" title="Conte o problema e o assistente monta o chamado">
+                    <svg class="mx-ico"><use href="#hd-i-chat"/></svg><span class="mx-nav-text">Conversar com o assistente</span>
+                </a>
+                {% endif %}
+                <a class="mx-nav-item{% if portal_nav_active == 'create' %} is-active{% endif %}" href="{% url 'portalDemandCreatePage' %}" title="Abrir chamado pelo formulário">
+                    <svg class="mx-ico"><use href="#hd-i-plus"/></svg><span class="mx-nav-text">Abrir chamado</span>
+                </a>
+            {% endif %}
+            <a class="mx-nav-item{% if portal_nav_active == 'my-demands' %} is-active{% endif %}" href="{% url 'portalMyDemandsPage' %}{% if pending_feedback_count %}?feedback_required=1{% endif %}"{% if portal_nav_active == 'my-demands' %} aria-current="page"{% endif %} title="Minhas demandas">
+                <svg class="mx-ico"><use href="#hd-i-list"/></svg><span class="mx-nav-text">Minhas demandas</span>
+                {% if pending_feedback_count %}<em class="mx-nav-badge" title="Avaliação pendente">{{ pending_feedback_count }}</em>{% endif %}
+            </a>
+
+            {% if can_manage_portal %}
+                <span class="mx-nav-label">Fila de TI</span>
+                <a class="mx-nav-item{% if portal_nav_active == 'pending' %} is-active{% endif %}" href="{% url 'portalPendingDemandsPage' %}"{% if portal_nav_active == 'pending' %} aria-current="page"{% endif %} title="Entrada de chamados">
+                    <svg class="mx-ico"><use href="#hd-i-inbox"/></svg><span class="mx-nav-text">Entrada de chamados</span>
+                    {% if portal_unassigned_count %}<em class="mx-nav-badge" title="Chamados sem atendente">{{ portal_unassigned_count }}</em>{% endif %}
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'mine' %} is-active{% endif %}" href="{% url 'portalPendingDemandsPage' %}?view=meus" title="Chamados atribuídos a você">
+                    <svg class="mx-ico"><use href="#hd-i-user"/></svg><span class="mx-nav-text">Meus chamados</span>
+                </a>
+                {% if can_view_helpdesk_panel %}
+                <a class="mx-nav-item" href="{% url 'dashesHelpdeskPage' %}" title="Painel do Helpdesk no Dashes, com filtro cruzado">
+                    <svg class="mx-ico"><use href="#hd-i-chart"/></svg><span class="mx-nav-text">Painel do Helpdesk</span>
+                </a>
+                {% endif %}
+            {% endif %}
+
+            {% if can_manage_portal or can_open_internal_panel %}
+                <span class="mx-nav-label">Conhecimento</span>
+                <a class="mx-nav-item{% if portal_nav_active == 'kb-consult' %} is-active{% endif %}" href="{% url 'knowledgeConsultPage' %}" title="Consultar a base de conhecimento">
+                    <svg class="mx-ico"><use href="#hd-i-book"/></svg><span class="mx-nav-text">Consultar base</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'kb-entries' %} is-active{% endif %}" href="{% url 'knowledgeEntriesPage' %}" title="Cadastrar e editar registros da base">
+                    <svg class="mx-ico"><use href="#hd-i-edit"/></svg><span class="mx-nav-text">Registros da base</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'kb-categories' %} is-active{% endif %}" href="{% url 'knowledgeCategoriesPage' %}" title="Categorias da base">
+                    <svg class="mx-ico"><use href="#hd-i-tag"/></svg><span class="mx-nav-text">Categorias</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'maxibot' %} is-active{% endif %}" href="{% url 'maxibotPage' %}" title="MaxiBot: perguntas à base de conhecimento">
+                    <svg class="mx-ico"><use href="#hd-i-bot"/></svg><span class="mx-nav-text">MaxiBot</span>
+                </a>
+            {% endif %}
+
+            {% if can_configure_portal %}
+                <span class="mx-nav-label">Parâmetros</span>
+                <a class="mx-nav-item{% if portal_nav_active == 'companies' %} is-active{% endif %}" href="{% url 'portalCompanyConfigPage' %}" title="Empresas atendidas">
+                    <svg class="mx-ico"><use href="#hd-i-building"/></svg><span class="mx-nav-text">Empresas</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'requesters' %} is-active{% endif %}" href="{% url 'portalRequesterAdminPage' %}" title="Setores, colaboradores e acessos do portal">
+                    <svg class="mx-ico"><use href="#hd-i-users"/></svg><span class="mx-nav-text">Solicitantes</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'fields' %} is-active{% endif %}" href="{% url 'portalDemandFieldsConfigPage' %}" title="Campos extras da abertura">
+                    <svg class="mx-ico"><use href="#hd-i-form"/></svg><span class="mx-nav-text">Campos de abertura</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'sla' %} is-active{% endif %}" href="{% url 'portalDemandSlaConfigPage' %}" title="Políticas de SLA e atendente padrão">
+                    <svg class="mx-ico"><use href="#hd-i-clock"/></svg><span class="mx-nav-text">SLA e metas</span>
+                </a>
+                <a class="mx-nav-item{% if portal_nav_active == 'responses' %} is-active{% endif %}" href="{% url 'portalDemandResponsesConfigPage' %}" title="Respostas prontas">
+                    <svg class="mx-ico"><use href="#hd-i-reply"/></svg><span class="mx-nav-text">Respostas prontas</span>
+                </a>
+            {% endif %}
+
+            {% if can_open_internal_panel %}
+                <span class="mx-nav-label">ConnectMX</span>
+                <a class="mx-nav-item" href="{% url 'index' %}" title="Voltar ao ConnectMX">
+                    <svg class="mx-ico"><use href="#hd-i-back"/></svg><span class="mx-nav-text">Voltar ao ConnectMX</span>
+                </a>
+            {% endif %}
+        {% endif %}
+    </nav>
+    <div class="mx-sidebar-footer">
+        <button type="button" class="mx-collapse" data-mx-collapse aria-label="Recolher menu lateral" title="Recolher menu">
+            <svg class="mx-ico"><use href="#mx-i-panel"/></svg>
+        </button>
+    </div>
+</aside>
+<div class="mx-scrim" data-mx-scrim hidden></div>
+
+<div class="mx-appbar hd-appbar">
+    <header class="mx-topbar">
+        <div class="mx-topbar-left">
+            <button type="button" class="mx-icon-btn mx-menu-btn" data-mx-menu aria-label="Abrir menu"><svg class="mx-ico"><use href="#mx-i-menu"/></svg></button>
+            <div>
+                <span class="mx-kicker">MaxiSys · Helpdesk</span>
+                <div class="mx-title" data-mx-appbar-title>{{ portal_page_label|default:"Portal de Chamados" }}</div>
+            </div>
+            <span class="mx-badge hd-role{% if can_manage_portal %} is-staff{% endif %}">{% if can_manage_portal %}Atendente{% else %}Solicitante{% endif %}</span>
+        </div>
+        <div class="mx-topbar-right">
+            {% if not portal_topbar_focus %}
+                <details class="hd-notif">
+                    <summary class="mx-icon-btn" aria-label="Notificações{% if portal_notifications_unread_count %} ({{ portal_notifications_unread_count }} não lidas){% endif %}" title="Notificações">
+                        <svg class="mx-ico"><use href="#mx-i-bell"/></svg>
+                        {% if portal_notifications_unread_count %}<span class="hd-notif-count">{{ portal_notifications_unread_count }}</span>{% endif %}
+                    </summary>
+                    <div class="hd-notif-panel">
+                        <div class="hd-notif-head">
+                            <strong>Notificações</strong>
+                            {% if portal_notifications_unread_count %}
+                                <form method="POST" action="{% url 'portalNotificationsMarkAllRead' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                    <button type="submit" class="hd-notif-mark">Marcar todas como lidas</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                        {% if portal_notifications %}
+                            <ul class="hd-notif-list">
+                                {% for notification in portal_notifications %}
+                                    <li>
+                                        <a href="{% url 'portalNotificationOpen' notification.pk %}" class="hd-notif-item{% if not notification.is_read %} is-unread{% endif %}">
+                                            <strong>{{ notification.title }}</strong>
+                                            {% if notification.message %}<span>{{ notification.message }}</span>{% endif %}
+                                            <small>{{ notification.created_at|date:"d/m/Y H:i" }}</small>
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="hd-notif-empty">Nenhuma notificação por aqui ainda.</p>
+                        {% endif %}
+                    </div>
+                </details>
+            {% endif %}
+            <button type="button" class="mx-icon-btn" data-mx-theme aria-label="Alternar tema claro e escuro" title="Alternar tema">
+                <svg class="mx-ico mx-ico-sun"><use href="#mx-i-sun"/></svg>
+                <svg class="mx-ico mx-ico-moon"><use href="#mx-i-moon"/></svg>
+            </button>
+            {% if portal_topbar_focus %}
+                <a href="{% url 'portalDemandPage' %}" class="mx-btn mx-btn-ghost hd-back">&#8592; Voltar ao portal</a>
+            {% else %}
+                <details class="mx-user">
+                    <summary>
+                        <span class="mx-avatar">{{ request.user.first_name|default:request.user.username|slice:":1"|upper }}</span>
+                        <span class="mx-user-name">{{ request.user.nameUser|default:request.user.get_full_name|default:request.user.username }}</span>
+                        <svg class="mx-ico mx-chevron"><use href="#mx-i-chevron"/></svg>
+                    </summary>
+                    <div class="mx-user-menu">
+                        {% if can_open_internal_panel %}<a href="{% url 'index' %}">Voltar ao ConnectMX</a>{% endif %}
+                        <form method="POST" action="{% url 'logoutPage' %}">
+                            {% csrf_token %}
+                            <button type="submit">Sair</button>
+                        </form>
+                    </div>
+                </details>
+            {% endif %}
+        </div>
+    </header>
+    <nav class="mx-tabs" aria-label="Página aberta">
+        <span class="mx-tab is-active" data-mx-current-tab><span data-mx-tab-label>{{ portal_page_label|default:"Portal de Chamados" }}</span></span>
+    </nav>
+</div>
+<script>
+(function () {
+    /* Fecha a caixa de notificações ao clicar fora dela. */
+    var menu = document.querySelector(".hd-notif");
+    if (!menu) return;
+    document.addEventListener("click", function (event) {
+        if (menu.open && !menu.contains(event.target)) menu.open = false;
+    });
+})();
+</script>
+<script src="{% static '/js/maxisysShell.js' %}?v=3"></script>

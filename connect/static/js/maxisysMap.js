@@ -117,6 +117,8 @@
     function mount(container, options) {
         const state = { level: 'country', stateSigla: null, metric: options.metric || 'net', selectedCode: null };
         const listeners = [];
+        // Áreas com dado do desenho atual, na ordem do data-mx-index (menu "Expandir dados").
+        let points = [];
         const svgBox = container.querySelector('[data-mx-map-canvas]') || container;
         const legendBox = container.querySelector('[data-mx-map-legend]');
         const statusBox = container.querySelector('[data-mx-map-status]');
@@ -144,6 +146,12 @@
                 node.textContent = text;
                 tooltip.appendChild(node);
             });
+            if (html.hint) {
+                const hint = document.createElement('span');
+                hint.className = 'mx-tip-hint';
+                hint.textContent = html.hint;
+                tooltip.appendChild(hint);
+            }
             tooltip.hidden = false;
             const box = container.getBoundingClientRect();
             const x = (event.clientX || box.left + box.width / 2) - box.left;
@@ -156,6 +164,7 @@
             const metric = options.metrics[state.metric];
             if (!area) return [[name, true], ['Sem cliente no período', false]];
             const lines = [[name, true], [`${metric.label}: ${metric.format(metric.value(area))}`, false]];
+            if (window.MXDrill) lines.hint = window.MXDrill.hint;
             if (state.metric !== 'net') lines.push([`Faturamento: ${options.metrics.net.format(area.net)}`, false]);
             if (state.metric !== 'customers') lines.push([`Clientes: ${area.customers}`, false]);
             if (state.metric !== 'margin' && area.margin != null) lines.push([`Margem: ${options.metrics.margin.format(area.margin)}`, false]);
@@ -181,6 +190,7 @@
             const areas = features.map((feature) => areaFor(feature.properties.code).area).filter(Boolean);
             const scale = scaleFor(metric, areas);
             svgBox.replaceChildren();
+            points = [];
             const svg = el('svg', { viewBox: `0 0 ${WIDTH} ${height}`, class: 'mx-map-svg', role: 'group', 'aria-label': state.level === 'country' ? 'Mapa do Brasil por UF' : `Municípios de ${options.data.states[state.stateSigla].name}` }, svgBox);
             features.forEach((feature) => {
                 const code = feature.properties.code;
@@ -197,6 +207,8 @@
                 if (fill) path.style.fill = fill;
                 const clickable = Boolean(area);
                 if (clickable) {
+                    path.setAttribute('data-mx-index', points.length);
+                    points.push({ level: state.level === 'country' ? 'state' : 'city', key: areaKey, name, area });
                     path.setAttribute('tabindex', '0');
                     path.setAttribute('role', 'button');
                     path.setAttribute('aria-label', describe(name, area).map((line) => line[0]).join('. '));
@@ -279,6 +291,7 @@
             setMetric,
             onSelect: (listener) => listeners.push(listener),
             state: () => ({ ...state }),
+            points: () => points,
         };
     }
 
