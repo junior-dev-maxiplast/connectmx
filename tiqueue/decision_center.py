@@ -117,10 +117,13 @@ def _sparkline_points(slug, metrics_cache):
     metrics_cache[("sparkline", slug)] = dashboard
     series_key = _SPARKLINE_SERIES_KEY.get(slug)
     items = dashboard.get(series_key) or []
-    return [
-        {"label": item.get("label"), "height_pct": item.get("height_pct") or 0}
-        for item in items[-12:]
-    ]
+    points = []
+    for item in items[-12:]:
+        point = {"label": item.get("label"), "height_pct": item.get("height_pct") or 0}
+        if item.get("competencia"):
+            point["key"] = item["competencia"]  # o mês (AAAA-MM) que o "Expandir dados" da barra abre
+        points.append(point)
+    return points
 
 
 def _scoped_dashboard_card(slug, metrics_cache):
@@ -140,7 +143,7 @@ def _scoped_dashboard_card(slug, metrics_cache):
 
     card["available"] = True
     card["kpis"] = [
-        {"label": label, "value": dashboard["metrics"].get(key, "-")}
+        {"key": key.replace("_display", ""), "label": label, "value": dashboard["metrics"].get(key, "-")}
         for key, label in _CARD_KPIS.get(slug, [])
     ]
     card["sparkline"] = _sparkline_points(slug, metrics_cache)

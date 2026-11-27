@@ -92,7 +92,8 @@
         {% endif %}
 
         {% if dashboard %}
-        <div class="bi-shell">
+        {# data-mx-*: menu do botão direito dos visuais e "Expandir dados" (maxisysDrill.js). #}
+        <div class="bi-shell" data-mx-detail-url="{% url 'dashesItBiDetail' %}{{ it_bi_scope_query }}">
             {% if insight_snapshot.ai_response %}
             <section class="bi-panel bi-ai">
                 <div class="bi-panel-head">
@@ -144,15 +145,17 @@
 
             {% if insight_snapshot.metrics.deep %}
             {% with deep=insight_snapshot.metrics.deep %}
+            {# Quadros do snapshot: o detalhe conta a janela do período a partir do dia da análise. #}
+            <div class="bi-deep-scope" style="display: contents" data-mx-detail-url="{% url 'dashesItBiDetail' %}{{ it_bi_scope_query }}&amp;ref={{ insight_snapshot.updated_at|date:'Y-m-d' }}">
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head">
                         <h2>Tempo de resolução</h2>
                         <span>{{ deep.resolution_total }} chamados resolvidos</span>
                     </div>
-                    <div class="bi-chart is-tall">
+                    <div class="bi-chart is-tall" data-mx-dim="resolucao" data-mx-label-name="Faixa" data-mx-columns="Chamados:int:sum|Participação:pct100|Tempo médio:text">
                         {% for item in deep.resolution_spread %}
-                        <div title="{{ item.label }}: {{ item.total_display }} ({{ item.share_pct }}%) · média {{ item.average_display }}">
+                        <div title="{{ item.label }}: {{ item.total_display }} ({{ item.share_pct }}%) · média {{ item.average_display }}" data-mx-key="{{ item.key }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}|{{ item.average_display }}">
                             <div class="bi-chart-bars">
                                 <i class="{% if forloop.counter <= 2 %}is-closed{% elif forloop.last %}is-late{% else %}is-open{% endif %}" style="height: {% widthratio item.share_pct 50 100 %}%"></i>
                             </div>
@@ -169,9 +172,9 @@
                         <h2>Satisfação por tempo de resolução</h2>
                         <span>nota média em cada faixa</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="resolucao" data-mx-label-name="Faixa" data-mx-columns="Nota média:dec:avg|Avaliações:int:sum">
                         {% for item in deep.rating_vs_speed %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.rating }}|{{ item.rated }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.rating_display }} · {{ item.rated }} avaliações</span></div>
                             <div class="bi-bar-track"><i class="{% if item.rating >= 9.5 %}is-green{% elif item.rating >= 9 %}is-amber{% else %}is-red{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -187,13 +190,13 @@
                         <h2>Quando a demanda chega</h2>
                         <span>pico de {{ deep.heatmap.peak }} chamados</span>
                     </div>
-                    <div class="bi-heat">
+                    <div class="bi-heat" data-mx-dim="dia_semana">
                         <div class="bi-heat-row is-head">
                             <span></span>
                             {% for label in deep.heatmap.hour_labels %}<span>{{ label }}</span>{% endfor %}
                         </div>
                         {% for row in deep.heatmap.rows %}
-                        <div class="bi-heat-row">
+                        <div class="bi-heat-row" data-mx-key="{{ forloop.counter0 }}" data-mx-label="{{ row.label }}">
                             <span>{{ row.label }}</span>
                             {% for cell in row.cells %}
                             <i style="--heat: {{ cell.intensity }}" title="{{ row.label }} {{ cell.total }} chamado(s)">{{ cell.total }}</i>
@@ -208,9 +211,9 @@
                         <h2>Solicitantes recorrentes</h2>
                         <span>top 10 do período</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="solicitante" data-mx-label-name="Solicitante" data-mx-columns="Chamados:int:sum|Tempo médio:text">
                         {% for item in deep.recurrent_requesters %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.login }}" data-mx-values="{{ item.total }}|{{ item.average_display }}">
                             <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.total_display }} · {{ item.average_display }}</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">{{ item.area }}</small>
@@ -218,6 +221,7 @@
                         {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
                     </div>
                 </section>
+            </div>
             </div>
             {% endwith %}
             {% elif insight_snapshot.ai_error %}
@@ -277,9 +281,9 @@
                         <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.company.label }}</span>
                     </div>
                     {% if dashboard.monthly %}
-                    <div class="bi-chart">
+                    <div class="bi-chart" data-mx-dim="mes" data-mx-label-name="{% if dashboard.scope.series_granularity == 'day' %}Dia{% else %}Mês{% endif %}" data-mx-columns="Abertos:int:sum|Fechados:int:sum">
                         {% for item in dashboard.monthly %}
-                        <div title="{{ item.label }}: {{ item.abertos }} aberto(s), {{ item.fechados }} fechado(s)">
+                        <div title="{{ item.label }}: {{ item.abertos }} aberto(s), {{ item.fechados }} fechado(s)" data-mx-key="{{ item.competencia }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.abertos }}|{{ item.fechados }}">
                             <div class="bi-chart-bars">
                                 <i class="is-open" style="height: {{ item.height_pct }}%"></i>
                                 <i class="is-closed" style="height: {% widthratio item.fechados item.abertos item.height_pct %}%"></i>
@@ -303,9 +307,9 @@
                         <span>{{ dashboard.metrics.backlog_display }}</span>
                     </div>
                     {% if dashboard.backlog.items %}
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="status" data-mx-label-name="Status" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.backlog.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -324,7 +328,7 @@
                 </div>
                 {% if dashboard.attendants %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="atendente">
                         <thead>
                             <tr>
                                 <th>Atendente</th><th class="is-num">Chamados</th><th class="is-num">Participação</th>
@@ -334,7 +338,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.attendants %}
-                            <tr>
+                            <tr{% if item.login %} data-mx-key="{{ item.login }}"{% endif %} data-mx-label="{{ item.name }}">
                                 <td><div class="bi-cell"><strong>{% if item.login %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="atendente" data-mx-value="{{ item.login }}">{{ item.name }}</button>{% else %}{{ item.name }}{% endif %}</strong><small>{{ item.login }}</small></div></td>
                                 <td class="is-num">{{ item.total_display }}</td>
                                 <td class="is-num">{{ item.share_pct }}%</td>
@@ -363,16 +367,16 @@
                         <div><span>Dentro do prazo</span><strong class="is-green">{{ dashboard.sla.within_pct }}%</strong><small>conclusão</small></div>
                         <div><span>1ª resposta fora</span><strong class="is-amber">{{ dashboard.sla.response_breached_pct }}%</strong><small>média de {{ dashboard.sla.response_average_display }}</small></div>
                     </div>
-                    <div class="bi-bars">
-                        <div class="bi-bar">
+                    <div class="bi-bars" data-mx-dim="sla" data-mx-label-name="SLA" data-mx-columns="Chamados:int|Participação:pct100">
+                        <div class="bi-bar" data-mx-key="conclusao" data-mx-values="{{ dashboard.sla.breached }}|{{ dashboard.sla.breached_pct }}">
                             <div class="bi-bar-head"><strong>Conclusão vencida</strong><span>{{ dashboard.sla.breached_display }} · {{ dashboard.sla.breached_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-red" style="width: {{ dashboard.sla.breached_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="resposta" data-mx-values="{{ dashboard.sla.response_breached }}|{{ dashboard.sla.response_breached_pct }}">
                             <div class="bi-bar-head"><strong>1ª resposta vencida</strong><span>{{ dashboard.sla.response_breached_display }} · {{ dashboard.sla.response_breached_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-amber" style="width: {{ dashboard.sla.response_breached_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="medido" data-mx-values="{{ dashboard.sla.measured }}|{{ dashboard.sla.measured_pct }}">
                             <div class="bi-bar-head"><strong>Com SLA medido</strong><span>{{ dashboard.sla.measured_display }} · {{ dashboard.sla.measured_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ dashboard.sla.measured_pct }}%"></i></div>
                         </div>
@@ -389,9 +393,9 @@
                         <i class="is-green" style="width: {{ dashboard.ratings.rated_pct }}%"></i>
                         <i class="is-red" style="width: {{ dashboard.ratings.unrated_pct }}%"></i>
                     </div>
-                    <div class="bi-bars" style="margin-top: 13px;">
+                    <div class="bi-bars" style="margin-top: 13px;" data-mx-name="Avaliações por nota" data-mx-dim="nota" data-mx-label-name="Nota" data-mx-columns="Avaliações:int:sum|Participação:pct100">
                         {% for item in dashboard.ratings.spread|slice:":5" %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="{% if forloop.counter <= 2 %}is-green{% else %}is-amber{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -405,8 +409,8 @@
                         <div><span>Total apontado</span><strong>{{ dashboard.logged.total_hours }}h</strong><small>{{ dashboard.logged.total_display }}</small></div>
                         <div><span>Média por chamado</span><strong>{{ dashboard.logged.average_display }}</strong><small>entre os que têm lançamento</small></div>
                     </div>
-                    <div class="bi-bars">
-                        <div class="bi-bar">
+                    <div class="bi-bars" data-mx-dim="apontamento" data-mx-label-name="Apontamento" data-mx-columns="Chamados:int|Cobertura:pct100">
+                        <div class="bi-bar" data-mx-key="com" data-mx-values="{{ dashboard.logged.tickets_with_log }}|{{ dashboard.logged.coverage_pct }}">
                             <div class="bi-bar-head"><strong>Chamados com apontamento</strong><span>{{ dashboard.logged.tickets_with_log_display }} · {{ dashboard.logged.coverage_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ dashboard.logged.coverage_pct }}%"></i></div>
                         </div>
@@ -418,9 +422,9 @@
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Tempo de atendimento por setor</h2><span>média em dias, da abertura ao fechamento</span></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="tempo_setor" data-mx-label-name="Setor" data-mx-columns="Dias (média):dec|Chamados fechados:int:sum">
                         {% for item in dashboard.area_times %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.days }}|{{ item.total }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.days_display }}d · {{ item.total }} chamado(s)</span></div>
                             <div class="bi-bar-track"><i class="{% if item.days >= 15 %}is-red{% elif item.days >= 7 %}is-amber{% else %}is-blue{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -430,9 +434,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Prioridade</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="prioridade" data-mx-label-name="Prioridade" data-mx-columns="Chamados:int:sum|Participação:pct100|Tempo médio:text">
                         {% for item in dashboard.priorities.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}|{{ item.average_display }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.average_display }}</span></div>
                             <div class="bi-bar-track"><i class="{% if forloop.first %}is-red{% else %}is-blue{% endif %}" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -445,9 +449,9 @@
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Tipo de chamado</h2><span>top 10</span></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="tipo" data-mx-label-name="Tipo" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.types.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -457,9 +461,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Setor de atendimento</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="setor" data-mx-label-name="Setor" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.service_areas.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -471,9 +475,9 @@
             <div class="bi-grid is-3">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Empresa</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="empresa" data-mx-label-name="Empresa" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.companies %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.id|default_if_none:'' }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{% if item.id != None %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="empresa" data-mx-value="{{ item.id }}">{{ item.label }}</button>{% else %}{{ item.label }}{% endif %}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -483,9 +487,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Origem</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="origem" data-mx-label-name="Origem" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.origins.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-amber" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -495,9 +499,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Setor solicitante</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="setor_solicitante" data-mx-label-name="Setor" data-mx-columns="Chamados:int:sum|Participação:pct100">
                         {% for item in dashboard.requester_areas.items %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -511,21 +515,21 @@
                     <h2>Chamados em aberto mais antigos</h2>
                     <span>backlog completo, independente do período</span>
                 </div>
-                <div class="bi-aging">
-                    <div><span>Até 7 dias</span><strong>{{ dashboard.aging.counts.ate_7 }}</strong></div>
-                    <div><span>8 a 30 dias</span><strong>{{ dashboard.aging.counts.de_8_a_30 }}</strong></div>
-                    <div class="is-amber"><span>31 a 90 dias</span><strong>{{ dashboard.aging.counts.de_31_a_90 }}</strong></div>
-                    <div class="is-red"><span>Mais de 90 dias</span><strong>{{ dashboard.aging.counts.acima_90 }}</strong></div>
+                <div class="bi-aging" data-mx-name="Em aberto por tempo" data-mx-dim="aging" data-mx-label-name="Em aberto há" data-mx-columns="Chamados:int:sum">
+                    <div data-mx-key="ate_7" data-mx-values="{{ dashboard.aging.counts.ate_7 }}"><span>Até 7 dias</span><strong>{{ dashboard.aging.counts.ate_7 }}</strong></div>
+                    <div data-mx-key="de_8_a_30" data-mx-values="{{ dashboard.aging.counts.de_8_a_30 }}"><span>8 a 30 dias</span><strong>{{ dashboard.aging.counts.de_8_a_30 }}</strong></div>
+                    <div class="is-amber" data-mx-key="de_31_a_90" data-mx-values="{{ dashboard.aging.counts.de_31_a_90 }}"><span>31 a 90 dias</span><strong>{{ dashboard.aging.counts.de_31_a_90 }}</strong></div>
+                    <div class="is-red" data-mx-key="acima_90" data-mx-values="{{ dashboard.aging.counts.acima_90 }}"><span>Mais de 90 dias</span><strong>{{ dashboard.aging.counts.acima_90 }}</strong></div>
                 </div>
                 {% if dashboard.aging.items %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-name="Chamados em aberto mais antigos" data-mx-dim="aberto">
                         <thead>
                             <tr><th>Chamado</th><th>Abertura</th><th class="is-num">Dias</th><th>Status</th><th>Prioridade</th><th>Atendente</th><th>Empresa</th></tr>
                         </thead>
                         <tbody>
                         {% for item in dashboard.aging.items %}
-                            <tr>
+                            <tr data-mx-key="todos" data-mx-label="Todos os chamados em aberto">
                                 <td><div class="bi-cell"><strong>{{ item.code }}</strong><small>{{ item.subject }}</small></div></td>
                                 <td>{{ item.opened_display }}</td>
                                 <td class="is-num"><span class="bi-tag is-{{ item.tone }}">{{ item.days }}</span></td>

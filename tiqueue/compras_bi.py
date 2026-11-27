@@ -39,9 +39,13 @@ não só incomum) são sinalizados como inconsistência e excluídos das médias
 nunca descartados da contagem total de linhas.
 """
 
+import functools
 import hashlib
 import json
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+
+from django.core.cache import cache
 
 from .customer_dna import _oracle_connection_safe as _erp_connection
 from .bi_periods import mark_series_ticks, period_choices, resolve_period, series_label
@@ -61,6 +65,36 @@ from .bi_common import (
 
 
 # ----------------------------------------------------------------- acesso --
+
+# Desempenho: a base de prazo (ordem × nota × entrada × pagamento) leva cerca de 5 s no Oracle
+# para 3 meses e 13 s para 12, e antes era recalculada para cada quadro (seis vezes, mais de
+# 1 minuto em 12 meses, passando do tempo do nginx). Agora o painel abre com 3 meses, soma os
+# quadros numa consulta só (GROUPING SETS), busca a lista dos últimos lançamentos só nos dias
+# recentes e guarda o resultado por 15 minutos. Os períodos maiores continuam a um clique.
+DEFAULT_PERIOD_KEY = "3"
+DASHBOARD_CACHE_SECONDS = 15 * 60
+CATALOG_CACHE_SECONDS = 60 * 60
+DETAIL_ROWS = 30
+DETAIL_RECENT_DAYS = 45
+
+
+def _cached(key, seconds, loader):
+    value = cache.get(key)
+    if value is None:
+        value = loader()
+        cache.set(key, value, seconds)
+    return value
+
+
+def _cached_catalog(name):
+    """Catálogo dos filtros (fornecedores, filiais, famílias): muda pouco, fica 1 hora guardado."""
+    def decorator(function):
+        @functools.wraps(function)
+        def wrapper():
+            return _cached(f"compras-bi:catalogo:{name}", CATALOG_CACHE_SECONDS, function)
+        return wrapper
+    return decorator
+
 
 def _query(sql, params=None):
     return oracle_query(_erp_connection, sql, params)
@@ -131,6 +165,7 @@ FETCH FIRST {FORNECEDORES_LIMIT} ROWS ONLY
 """
 
 
+@_cached_catalog("fornecedores")
 def list_fornecedores():
     """Fornecedores mais ativos com ordem de compra, para montar o filtro."""
     rows = _query(FORNECEDORES_SQL)
@@ -166,6 +201,7 @@ def resolve_fornecedor(raw_value, available=None):
     return {"key": "all", "label": "Todos os fornecedores", "code": None}
 
 
+@_cached_catalog("filiais")
 def list_branches():
     """Combinações empresa+filial com ordem de compra, para montar o filtro."""
     rows = _query(
@@ -179,6 +215,7 @@ def list_branches():
     return branches_from_rows(rows)
 
 
+@_cached_catalog("familias")
 def list_familias():
     """Famílias de produto com item de ordem de compra, para montar o filtro."""
     rows = _query(
@@ -370,7 +407,7 @@ def _itens(scope_sql):
 # ---------------------------------------------------------- agregações ----
 
 def load_compras_dashboard(
-    period_key="12",
+    period_key=DEFAULT_PERIOD_KEY,
     view_key="pagamento",
     fornecedor_key="all",
     filial_key="all",
@@ -379,7 +416,7 @@ def load_compras_dashboard(
     branches_available=None,
     familias_available=None,
 ):
-    period = resolve_period(period_key)
+    period = resolve_period(period_key or DEFAULT_PERIOD_KEY)
     fornecedores = fornecedores_available if fornecedores_available is not None else list_fornecedores()
     fornecedor = resolve_fornecedor(fornecedor_key, fornecedores)
     branches = branches_available if branches_available is not None else list_branches()
@@ -389,9 +426,14 @@ def load_compras_dashboard(
     view = resolve_view(view_key)
 
     catalogs = (fornecedores, branches, familias)
-    if view["key"] == "preco":
-        return _load_preco_dashboard(period, fornecedor, branch, familia, view, *catalogs)
-    return _load_prazo_dashboard(period, fornecedor, branch, familia, view, *catalogs)
+    loader = _load_preco_dashboard if view["key"] == "preco" else _load_prazo_dashboard
+    # O mesmo recorte reaberto em até 15 minutos (ou o "Gerar indicadores" logo depois) não
+    # volta ao Oracle.
+    cache_key = "compras-bi:painel:" + "|".join(str(part) for part in (
+        period.get("key"), period.get("start"), period.get("end"), view["key"],
+        fornecedor["code"], branch["empresa"], branch["filial"], familia["code"],
+    ))
+    return _cached(cache_key, DASHBOARD_CACHE_SECONDS, lambda: loader(period, fornecedor, branch, familia, view, *catalogs))
 
 
 def _scope_for_prazo(period, fornecedor, branch, familia):
@@ -418,81 +460,84 @@ def _load_prazo_dashboard(period, fornecedor, branch, familia, view, fornecedore
     prazo_expr = "DIAS_PAGAMENTO_REAL" if view["key"] == "pagamento" else "DIAS_ENTREGA"
     prazo_valido = f"{prazo_expr} IS NOT NULL AND {prazo_expr} >= 0"
 
-    statements = {
-        "totals": f"""
-            {base}
-            SELECT
-              COUNT(DISTINCT FORNECEDOR) AS FORNECEDORES,
-              COUNT(DISTINCT NOTA) AS NOTAS,
-              COUNT(DISTINCT ORDEM) AS ORDENS,
-              COUNT(DISTINCT PRODUTO) AS PRODUTOS,
-              COUNT(*) AS LINHAS,
-              AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO,
-              AVG(PRAZO_CONTRATADO) AS PRAZO_META,
-              COUNT(CASE WHEN {prazo_valido} THEN 1 END) AS LINHAS_COM_PRAZO,
-              SUM(CASE WHEN {prazo_expr} < 0 THEN 1 ELSE 0 END) AS INCONSISTENCIAS,
-              SUM(CASE WHEN SITUACAO_PAGAMENTO = 'Pago' THEN 1 ELSE 0 END) AS PAGOS
-            FROM BASE
-        """,
-        "monthly": f"""
-            {base}
-            SELECT
-              {series_column} AS COMPETENCIA,
-              COUNT(*) AS LINHAS,
-              AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO,
-              AVG(PRAZO_CONTRATADO) AS PRAZO_META
-            FROM BASE
-            GROUP BY {series_column}
-            ORDER BY {series_column}
-        """,
-        "familias": f"""
-            {base}
-            SELECT
-              DS_FAMILIA AS ROTULO,
-              COUNT(*) AS LINHAS,
-              AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO
-            FROM BASE
-            GROUP BY DS_FAMILIA
-            ORDER BY COUNT(*) DESC
-            FETCH FIRST 12 ROWS ONLY
-        """,
-        "origens": f"""
-            {base}
-            SELECT
-              DS_ORIGEM AS ROTULO,
-              COUNT(*) AS LINHAS,
-              AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO
-            FROM BASE
-            GROUP BY DS_ORIGEM
-            ORDER BY COUNT(*) DESC
-        """,
-        "fornecedores": f"""
-            {base}
-            SELECT
-              FORNECEDOR AS CODIGO,
-              MAX(DS_FORNECEDOR) AS NOME,
-              COUNT(*) AS LINHAS,
-              COUNT(DISTINCT ORDEM) AS ORDENS,
-              AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO
-            FROM BASE
-            GROUP BY FORNECEDOR
-            ORDER BY COUNT(*) DESC
-            FETCH FIRST 15 ROWS ONLY
-        """,
-        "detalhe": f"""
-            {base}
-            SELECT
-              ORDEM, NOTA, DS_FORNECEDOR, DS_FILIAL, DS_PRODUTO,
-              DATA_GERACAO, DT_ENTREGA, DT_EMISSAO_NOTA, DT_PAGAMENTO,
-              DIAS_ENTREGA, DIAS_PAGAMENTO_REAL, SITUACAO_PAGAMENTO
-            FROM BASE
-            ORDER BY DATA_GERACAO DESC
-            FETCH FIRST 30 ROWS ONLY
-        """,
-    }
-    params_by_name = {name: dict(params) for name in statements}
-    data = _query_many(statements, params_by_name)
+    # Os cinco quadros numa consulta só: a base é calculada uma vez (antes, uma vez por quadro).
+    aggregates_sql = f"""
+        {base}
+        SELECT
+          CASE WHEN GROUPING(SERIE) = 0 THEN 'monthly'
+               WHEN GROUPING(DS_FAMILIA) = 0 THEN 'familias'
+               WHEN GROUPING(DS_ORIGEM) = 0 THEN 'origens'
+               WHEN GROUPING(FORNECEDOR) = 0 THEN 'fornecedores'
+               ELSE 'totals' END AS GRUPO,
+          SERIE, DS_FAMILIA, DS_ORIGEM, FORNECEDOR,
+          MAX(DS_FORNECEDOR) AS NOME,
+          COUNT(DISTINCT FORNECEDOR) AS FORNECEDORES,
+          COUNT(DISTINCT NOTA) AS NOTAS,
+          COUNT(DISTINCT ORDEM) AS ORDENS,
+          COUNT(DISTINCT PRODUTO) AS PRODUTOS,
+          COUNT(*) AS LINHAS,
+          AVG(CASE WHEN {prazo_valido} THEN {prazo_expr} END) AS PRAZO_MEDIO,
+          AVG(PRAZO_CONTRATADO) AS PRAZO_META,
+          COUNT(CASE WHEN {prazo_valido} THEN 1 END) AS LINHAS_COM_PRAZO,
+          SUM(CASE WHEN {prazo_expr} < 0 THEN 1 ELSE 0 END) AS INCONSISTENCIAS,
+          SUM(CASE WHEN SITUACAO_PAGAMENTO = 'Pago' THEN 1 ELSE 0 END) AS PAGOS
+        FROM (SELECT BASE.*, {series_column} AS SERIE FROM BASE)
+        GROUP BY GROUPING SETS ((), (SERIE), (DS_FAMILIA), (DS_ORIGEM), (FORNECEDOR))
+    """
+    detail_select = f"""
+        SELECT
+          ORDEM, NOTA, DS_FORNECEDOR, DS_FILIAL, DS_PRODUTO,
+          DATA_GERACAO, DT_ENTREGA, DT_EMISSAO_NOTA, DT_PAGAMENTO,
+          DIAS_ENTREGA, DIAS_PAGAMENTO_REAL, SITUACAO_PAGAMENTO
+        FROM BASE
+        ORDER BY DATA_GERACAO DESC
+        FETCH FIRST {DETAIL_ROWS} ROWS ONLY
+    """
+    # Os últimos lançamentos estão no fim do período: a lista procura primeiro nos dias recentes.
+    anchor = period.get("end") or (date.today() + timedelta(days=1))
+    recent_params = {**params, "detail_from": anchor - timedelta(days=DETAIL_RECENT_DAYS)}
+    recent_base = _base(f"{scope} AND OCP.DATGER >= :detail_from")
+
+    data = _query_many(
+        {"agregados": aggregates_sql, "detalhe": recent_base + detail_select},
+        {"agregados": dict(params), "detalhe": recent_params},
+    )
+    if len(data.get("detalhe") or []) < DETAIL_ROWS:
+        # Poucos lançamentos recentes (ex.: um fornecedor só): busca no período inteiro.
+        data["detalhe"] = _query_many({"detalhe": base + detail_select}, {"detalhe": dict(params)})["detalhe"]
+    data.update(split_prazo_aggregates(data.pop("agregados", [])))
     return _build_prazo_dashboard(data, period, fornecedor, branch, familia, view, fornecedores, branches, familias)
+
+
+def split_prazo_aggregates(rows):
+    """Reparte a consulta única nos cinco quadros, no formato e na ordem de antes."""
+    groups = defaultdict(list)
+    for row in rows or []:
+        groups[row.get("grupo")].append(row)
+
+    def by_lines(items):
+        return sorted(items, key=lambda item: -(item.get("linhas") or 0))
+
+    def labeled(row, label):
+        return {"rotulo": label, "linhas": row.get("linhas"), "prazo_medio": row.get("prazo_medio")}
+
+    total_fields = ("fornecedores", "notas", "ordens", "produtos", "linhas", "prazo_medio", "prazo_meta",
+                    "linhas_com_prazo", "inconsistencias", "pagos")
+    return {
+        "totals": [{field: row.get(field) for field in total_fields} for row in groups["totals"][:1]],
+        "monthly": sorted(
+            ({"competencia": row.get("serie"), "linhas": row.get("linhas"), "prazo_medio": row.get("prazo_medio"),
+              "prazo_meta": row.get("prazo_meta")} for row in groups["monthly"]),
+            key=lambda item: str(item["competencia"] or ""),
+        ),
+        "familias": [labeled(row, row.get("ds_familia")) for row in by_lines(groups["familias"])][:12],
+        "origens": [labeled(row, row.get("ds_origem")) for row in by_lines(groups["origens"])],
+        "fornecedores": [
+            {"codigo": row.get("fornecedor"), "nome": row.get("nome"), "linhas": row.get("linhas"),
+             "ordens": row.get("ordens"), "prazo_medio": row.get("prazo_medio")}
+            for row in by_lines(groups["fornecedores"])
+        ][:15],
+    }
 
 
 def _load_preco_dashboard(period, fornecedor, branch, familia, view, fornecedores, branches, familias):

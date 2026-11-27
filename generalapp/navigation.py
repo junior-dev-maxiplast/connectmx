@@ -59,6 +59,8 @@ NAV_GROUPS = [
         "tone": "queue",
         "items": [
             ("portalMyAssignedDemandsPage", "Minhas demandas", "chamados atendente assumidos meus", "atendente"),
+            # Tela inicial do Dashes: indicadores do helpdesk com filtro cruzado.
+            ("dashesHelpdeskPage", "Painel do Helpdesk", "indicadores sla avaliacao bi dashboard chamados", "atendente"),
         ],
     },
     {

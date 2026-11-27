@@ -148,7 +148,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
 <script>
 (() => {
     const L = window.MXLive;
@@ -197,19 +197,170 @@
     };
     const toggle = (key) => (value, item, event) => filter.toggle(key, value, event);
 
-    const cumulative = L.line(document.getElementById('chartCumulative'), { height: 250, format: fmt.money });
-    const daily = L.columns(document.getElementById('chartDaily'), { height: 220, format: fmt.money, maxBar: multi ? 30 : 22 });
-    const goal = L.gauge(document.getElementById('chartGoal'), { label: 'Meta de volume', caption: '', good: 1, warn: 0.85, max: 1.2 });
-    const calendar = L.calendar(document.getElementById('chartCalendar'), { format: fmt.money });
-    const reps = L.ranking(document.getElementById('rankReps'), { format: fmt.money, limit: 10, onSelect: toggle('r') });
-    const groups = L.donut(document.getElementById('donutGroups'), { format: fmt.money, centerLabel: multi ? 'no período' : 'no mês', onSelect: (key, item, event) => { if (key !== '__outros') filter.toggle('g', key, event); } });
-    const branches = L.ranking(document.getElementById('rankBranches'), { format: fmt.money, limit: 8, color: '--mx-cat-3', onSelect: toggle('f') });
-    const customers = L.ranking(document.getElementById('rankCustomers'), { format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: toggle('c') });
-    const states = L.ranking(document.getElementById('rankStates'), { format: fmt.money, limit: 10, color: '--mx-cat-7', onSelect: toggle('u') });
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): as linhas por trás do ponto,
+    // tiradas dos fatos que a página já tem e com os filtros cruzados que estão valendo.
+    const repName = (code) => data.names.reps[code] || (code == null || code === 'null' ? 'Sem representante' : `Representante ${code}`);
+    const factColumns = [
+        { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+        { key: 'rep', label: 'Representante' },
+        { key: 'group', label: 'Grupo' },
+        { key: 'branch', label: 'Filial' },
+        { key: 'uf', label: 'UF' },
+        multi ? { key: 'period', label: 'Mês' } : { key: 'period', label: 'Dia', type: 'date', nowrap: true },
+        { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true },
+        { key: 'kg', label: 'Kg', type: 'kg', total: true },
+        { key: 'price', label: 'R$/kg', type: 'dec', digits: 2, ratio: ['net', 'kg'] },
+    ];
+    const factRow = (fact) => ({
+        customer: customerName(fact.c), url: profileUrl(fact.c), place: [fact.c, (data.names.customers[fact.c] || {}).place].filter(Boolean).join(' · '),
+        rep: repName(fact.r), group: fact.g, branch: data.names.branches[fact.f] || fact.f, uf: fact.u === 'EX' ? 'Exterior' : fact.u,
+        period: multi ? L.monthLabel(fact.mo) : `${data.month.key}-${String(fact.d).padStart(2, '0')}`,
+        net: fact.n, kg: fact.k, price: fact.k ? fact.n / fact.k : null,
+    });
+    const filterNote = () => (Object.keys(filter.get()).length ? ' · com os filtros da página' : '');
+    function factsResult(title, subtitle, rows, previousRows, previousLabel) {
+        const sum = (list, key) => list.reduce((acc, fact) => acc + (fact[key] || 0), 0);
+        const net = sum(rows, 'n');
+        const kg = sum(rows, 'k');
+        const summary = [
+            { label: 'Faturamento', value: fmt.moneyFull(net) },
+            { label: 'Volume', value: fmt.kg(kg) },
+            { label: 'Preço médio', value: kg ? `${fmt.moneyFull(net / kg)}/kg` : '–' },
+            { label: 'Clientes', value: fmt.int(new Set(rows.map((fact) => fact.c)).size) },
+        ];
+        const groupBy = ['customer', 'rep', 'group', 'branch', 'uf', 'period'];
+        const sections = [{ key: 'now', label: 'Faturamento', columns: factColumns, rows: rows.map(factRow), sort: { key: 'net', dir: 'desc' }, groupBy, empty: 'Nenhum faturamento neste ponto.' }];
+        if (previousRows) {
+            const before = sum(previousRows, 'n');
+            const change = pct(net, before);
+            summary[0].note = change == null ? 'sem base no ano anterior' : `${fmt.signedPct(change)} contra ${previousLabel}`;
+            summary[0].tone = change == null ? null : change >= 0 ? 'good' : 'bad';
+            sections.push({ key: 'before', label: previousLabel, columns: factColumns, rows: previousRows.map(factRow), sort: { key: 'net', dir: 'desc' }, groupBy, empty: 'Nenhum faturamento no ano anterior.' });
+        }
+        return { title, subtitle: `${subtitle}${filterNote()}`, summary, sections };
+    }
+    const currentFacts = (skip) => pick(data.facts.filter((fact) => fact.y === 0), filter.get(), skip);
+    const lastYearFacts = () => pick(data.facts.filter((fact) => fact.y !== 0), filter.get());
+    // Um ponto do gráfico diário (um mês) ou mensal (vários meses).
+    const periodDrill = ({ index, label }) => {
+        if (multi) {
+            const key = data.selected_months[index];
+            return factsResult(L.monthLabel(key), 'Notas do mês por cliente, grupo e filial', currentFacts().filter((fact) => fact.mo === key),
+                lastYearFacts().filter((fact) => fact.mo === key), L.monthLabel(key - 12));
+        }
+        const day = index + 1;
+        return factsResult(`${day} de ${data.month.label}`, 'Faturamento do dia', currentFacts().filter((fact) => fact.d === day),
+            lastYearFacts().filter((fact) => fact.d === day), `${day} de ${data.month.previous_label}`);
+    };
+    const cumulativeDrill = ({ index }) => {
+        if (multi) {
+            const keys = data.selected_months.slice(0, index + 1);
+            return factsResult(`Até ${L.monthLabel(keys[keys.length - 1])}`, 'Faturamento acumulado no período', currentFacts().filter((fact) => keys.includes(fact.mo)));
+        }
+        const day = index + 1;
+        return factsResult(`Até o dia ${day} de ${data.month.label}`, 'Faturamento acumulado no mês', currentFacts().filter((fact) => fact.d <= day));
+    };
+    const rankDrill = (dimension, kind) => ({ key, label }) => factsResult(label, `${kind} · ${data.month.label}`, currentFacts(dimension).filter((fact) => String(fact[dimension]) === String(key)));
+    let donutKeys = [];
+    const groupDrill = ({ key, label }) => factsResult(label, `Grupo de produto · ${data.month.label}`,
+        currentFacts('g').filter((fact) => (key === '__outros' ? !donutKeys.includes(fact.g) : fact.g === key)));
+    const monthlyColumns = [
+        { key: 'rep', label: 'Representante' }, { key: 'branch', label: 'Filial' }, { key: 'group', label: 'Grupo' },
+        { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true }, { key: 'kg', label: 'Kg', type: 'kg', total: true },
+        { key: 'price', label: 'R$/kg', type: 'dec', digits: 2, ratio: ['net', 'kg'] },
+    ];
+    const monthlyDrill = ({ index }) => {
+        const key = data.months[index].key;
+        const state = Object.fromEntries(Object.entries(filter.get()).filter(([dimension]) => ['r', 'g', 'f'].includes(dimension)));
+        const rows = (month) => pick(data.monthly, state).filter((fact) => fact.m === month).map((fact) => ({
+            rep: repName(fact.r), branch: data.names.branches[fact.f] || fact.f, group: fact.g, net: fact.n, kg: fact.k, price: fact.k ? fact.n / fact.k : null,
+        }));
+        const now = rows(key);
+        const before = rows(key - 12);
+        const net = now.reduce((acc, row) => acc + (row.net || 0), 0);
+        const change = pct(net, before.reduce((acc, row) => acc + (row.net || 0), 0));
+        const options = { columns: monthlyColumns, sort: { key: 'net', dir: 'desc' }, groupBy: ['rep', 'branch', 'group'] };
+        const running = key === data.available_months[data.available_months.length - 1];
+        return {
+            title: L.monthLabel(key),
+            subtitle: `Faturamento por representante, filial e grupo${running ? ' · mês em andamento, contra o mês inteiro do ano anterior' : ''}${Object.keys(state).length ? ' · com os filtros de representante, grupo e filial' : ''}`,
+            summary: [
+                { label: 'Faturamento', value: fmt.moneyFull(net), note: change == null ? '' : `${fmt.signedPct(change)} contra ${L.monthLabel(key - 12)}`, tone: change == null ? null : change >= 0 ? 'good' : 'bad' },
+                { label: 'Volume', value: fmt.kg(now.reduce((acc, row) => acc + (row.kg || 0), 0)) },
+            ],
+            sections: [
+                { key: 'now', label: L.monthLabel(key), rows: now, empty: 'Sem faturamento neste mês.', ...options },
+                { key: 'before', label: L.monthLabel(key - 12), rows: before, empty: 'Sem faturamento no mesmo mês do ano anterior.', ...options },
+            ],
+        };
+    };
+    const hasValue = ({ index, data: chart }) => chart.series.some((series) => series.values[index]);
+    // Medidor da meta: meta e realizado por representante (a meta só existe por representante) e as
+    // notas por trás do volume. Sem filtro de representante, entra todo o volume do período, como no medidor.
+    const goalColumns = [
+        { key: 'rep', label: 'Representante' },
+        { key: 'goal', label: 'Meta', type: 'kg', total: true },
+        { key: 'billed', label: 'Faturado', type: 'kg', total: true, strong: true },
+        { key: 'attained', label: 'Atingido', type: 'pct', digits: 0, ratio: ['billed', 'goal'] },
+        { key: 'gap', label: 'Falta', type: 'kg', total: true },
+    ];
+    const goalDrill = () => {
+        const state = filter.get();
+        const picked = L.chosen(state.r);
+        const facts = currentFacts().filter((fact) => !picked.length || picked.includes(String(fact.r)));
+        const billed = new Map();
+        facts.forEach((fact) => billed.set(String(fact.r), (billed.get(String(fact.r)) || 0) + (fact.k || 0)));
+        const reps = new Set([...Object.keys(data.goals).filter((rep) => !picked.length || picked.includes(rep)), ...billed.keys()]);
+        const rows = [...reps].map((rep) => {
+            const goal = data.goals[rep] || 0;
+            const kg = billed.get(rep) || 0;
+            return { rep: repName(rep), goal: goal || null, billed: kg, attained: goal ? kg / goal : null, gap: goal ? Math.max(goal - kg, 0) : null,
+                __tone: goal && kg / goal < (data.month.is_current && data.business.total ? data.business.elapsed / data.business.total : 1) * 0.85 ? 'warn' : null };
+        }).sort((a, b) => (b.goal || 0) - (a.goal || 0) || b.billed - a.billed);
+        const goalKg = rows.reduce((acc, row) => acc + (row.goal || 0), 0);
+        const kg = rows.reduce((acc, row) => acc + row.billed, 0);
+        const pace = data.month.is_current && data.business.total ? data.business.elapsed / data.business.total : null;
+        return {
+            title: `Meta de volume · ${data.month.label}`,
+            subtitle: `Meta e faturado por representante${picked.length ? ' · representantes do filtro' : ''}`,
+            summary: [
+                { label: 'Faturado', value: fmt.kg(kg), note: goalKg ? `de ${fmt.kg(goalKg)} de meta` : 'sem meta no orçamento' },
+                { label: 'Atingido', value: goalKg ? fmt.pct(kg / goalKg, 0) : '–', tone: goalKg && pace != null ? (kg / goalKg >= pace ? 'good' : 'warn') : null, note: pace != null ? `ritmo esperado ${fmt.pct(pace, 0)}` : '' },
+                { label: 'Falta', value: fmt.kg(Math.max(goalKg - kg, 0)) },
+                { label: 'Representantes', value: fmt.int(rows.length), note: `${fmt.int(rows.filter((row) => !row.goal).length)} sem meta` },
+            ],
+            sections: [
+                { key: 'reps', label: 'Por representante', columns: goalColumns, rows, sort: { key: 'goal', dir: 'desc' }, empty: 'Nenhum representante com meta ou faturamento.' },
+                { key: 'billing', label: 'Faturamento', columns: factColumns, rows: facts.map(factRow), sort: { key: 'kg', dir: 'desc' }, groupBy: ['customer', 'rep', 'group', 'branch', 'uf', 'period'], empty: 'Nenhum faturamento no período.' },
+            ],
+        };
+    };
+    // Calendário: 26 semanas, um total por dia (a página não tem as notas): o detalhe vem do servidor.
+    const calendarDrill = ({ key }) => window.MXDrill.fetchJSON(`{% url 'dashesSalesPanelDetail' %}?dia=${encodeURIComponent(key)}`);
+
+    const cumulative = L.line(document.getElementById('chartCumulative'), {
+        height: 250, format: fmt.money, valueType: 'money', labelName: multi ? 'Mês' : 'Dia', drill: cumulativeDrill,
+        canDrill: ({ index, data: chart }) => chart.series[0].values[index] != null, // dia que ainda não chegou fica sem detalhe
+    });
+    const daily = L.columns(document.getElementById('chartDaily'), { height: 220, format: fmt.money, maxBar: multi ? 30 : 22, valueType: 'money', labelName: multi ? 'Mês' : 'Dia', drill: periodDrill, canDrill: hasValue });
+    const goal = L.gauge(document.getElementById('chartGoal'), {
+        label: 'Meta de volume', caption: '', good: 1, warn: 0.85, max: 1.2, drill: goalDrill,
+        // Com filtro de grupo, filial, UF ou cliente o medidor fica sem meta (ver render).
+        canDrill: () => !['g', 'f', 'u', 'c'].some((key) => filter.get()[key]),
+    });
+    const calendar = L.calendar(document.getElementById('chartCalendar'), {
+        format: fmt.money, valueType: 'money', valueName: 'Faturamento', drill: calendarDrill, canDrill: ({ item }) => !!item && item.value > 0,
+    });
+    const reps = L.ranking(document.getElementById('rankReps'), { format: fmt.money, limit: 10, onSelect: toggle('r'), valueType: 'money', labelName: 'Representante', valueName: 'Faturamento', drill: rankDrill('r', 'Representante') });
+    const groups = L.donut(document.getElementById('donutGroups'), { format: fmt.money, centerLabel: multi ? 'no período' : 'no mês', onSelect: (key, item, event) => { if (key !== '__outros') filter.toggle('g', key, event); }, valueType: 'money', labelName: 'Grupo', valueName: 'Faturamento', drill: groupDrill });
+    const branches = L.ranking(document.getElementById('rankBranches'), { format: fmt.money, limit: 8, color: '--mx-cat-3', onSelect: toggle('f'), valueType: 'money', labelName: 'Filial', valueName: 'Faturamento', drill: rankDrill('f', 'Filial') });
+    const customers = L.ranking(document.getElementById('rankCustomers'), { format: fmt.money, limit: 10, color: '--mx-cat-2', onSelect: toggle('c'), valueType: 'money', labelName: 'Cliente', valueName: 'Faturamento', openLabel: 'Abrir a ficha do cliente', drill: rankDrill('c', 'Cliente') });
+    const states = L.ranking(document.getElementById('rankStates'), { format: fmt.money, limit: 10, color: '--mx-cat-7', onSelect: toggle('u'), valueType: 'money', labelName: 'UF', valueName: 'Faturamento', drill: rankDrill('u', 'Estado') });
     // Clique num mês do gráfico de 12 meses abre o mês; Ctrl + clique soma (como nos botões de mês).
     const monthly = L.columns(document.getElementById('chartMonthly'), {
         height: 240, format: fmt.money, maxBar: 30,
         onSelect: (key, index, event) => picker.choose(data.months[index].key, event),
+        valueType: 'money', labelName: 'Mês', drill: monthlyDrill, canDrill: hasValue,
     });
 
     function rankingItems(dimension, state, label, sub, href) {
@@ -374,6 +525,7 @@
         const groupTotals = L.group(pick(data.facts.filter((fact) => fact.y === 0), state, 'g'), 'g', ['n']);
         const sorted = [...groupTotals.entries()].sort((a, b) => b[1].n - a[1].n);
         const items = sorted.slice(0, 7).map(([key, value]) => ({ key, label: key, value: value.n, color: groupColors[key] || '--mx-chart-3' }));
+        donutKeys = items.map((item) => item.key);
         const others = sorted.slice(7).reduce((acc, [, value]) => acc + value.n, 0);
         if (others > 0) items.push({ key: '__outros', label: `Outros (${sorted.length - 7})`, value: others, color: '--mx-chart-3' });
         groups.update(items, state.g);
@@ -390,6 +542,193 @@
                 { name: 'Este ano', color: '--mx-chart-1', values: data.months.map((month) => (byMonth.get(month.key) || {}).n || 0) },
                 { name: 'Ano anterior', color: '--mx-chart-3', values: data.months.map((month) => (byMonth.get(month.key - 12) || {}).n || 0) },
             ],
+        });
+    }
+
+    // Cards de indicador: o card inteiro abre as notas (ou os pedidos) por trás do número, com os
+    // filtros cruzados que estão valendo — os mesmos fatos que o render soma.
+    if (window.MXDrill) {
+        const kpiCard = (id) => document.getElementById(id).closest('.mx-card');
+        const periodName = () => (multi ? 'no período' : 'no mês');
+        const toDate = () => lastYearFacts().filter(isLastYearToDate);
+        const toDateLabel = () => (data.month.is_current && !multi ? `${data.month.previous_label} até o dia ${today}` : data.month.previous_label);
+        const sum = (rows, key) => rows.reduce((acc, fact) => acc + (fact[key] || 0), 0);
+        const hasFacts = () => currentFacts().length > 0;
+        const byCustomer = (rows) => {
+            const map = new Map();
+            rows.forEach((fact) => {
+                const row = map.get(fact.c) || { code: fact.c, net: 0, kg: 0, reps: new Set(), groups: new Set() };
+                row.net += fact.n || 0;
+                row.kg += fact.k || 0;
+                row.reps.add(repName(fact.r));
+                row.groups.add(fact.g);
+                map.set(fact.c, row);
+            });
+            return [...map.values()].map((row) => ({
+                customer: customerName(row.code), url: profileUrl(row.code), place: [row.code, (data.names.customers[row.code] || {}).place].filter(Boolean).join(' · '),
+                rep: [...row.reps].join(', '), groups: row.groups.size, net: row.net, kg: row.kg, price: row.kg ? row.net / row.kg : null,
+            }));
+        };
+        const customerColumns = [
+            { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+            { key: 'rep', label: 'Representante' },
+            { key: 'groups', label: 'Grupos', type: 'int' },
+            { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true },
+            { key: 'kg', label: 'Kg', type: 'kg', total: true },
+            { key: 'price', label: 'R$/kg', type: 'dec', digits: 2, ratio: ['net', 'kg'] },
+        ];
+        const byGroup = (rows) => {
+            const map = new Map();
+            rows.forEach((fact) => {
+                const row = map.get(fact.g) || { group: fact.g, net: 0, kg: 0 };
+                row.net += fact.n || 0;
+                row.kg += fact.k || 0;
+                map.set(fact.g, row);
+            });
+            return [...map.values()].map((row) => ({ ...row, price: row.kg ? row.net / row.kg : null }));
+        };
+        const groupColumns = [
+            { key: 'group', label: 'Grupo' },
+            { key: 'net', label: 'Faturamento', type: 'money', total: true },
+            { key: 'kg', label: 'Kg', type: 'kg', total: true },
+            { key: 'price', label: 'R$/kg', type: 'dec', digits: 2, ratio: ['net', 'kg'], strong: true },
+        ];
+
+        window.MXDrill.kpi(kpiCard('kpiNet'), {
+            drill: () => factsResult(`Faturamento ${periodName()} · ${data.month.label}`, 'Notas por cliente, grupo e filial', currentFacts(), toDate(), toDateLabel()),
+            canDrill: hasFacts,
+        });
+
+        // Projeção: a mesma conta do card (faturado ÷ dias úteis passados × dias úteis do mês).
+        window.MXDrill.kpi(kpiCard('kpiProjection'), {
+            drill: () => {
+                const rows = currentFacts();
+                const net = sum(rows, 'n');
+                const closedMonth = sum(lastYearFacts(), 'n');
+                let projection = null;
+                let basis = multi ? 'meses fechados' : 'mês fechado';
+                if (multi) {
+                    const info = data.month.current_key != null ? data.business.months.find((month) => month.key === data.month.current_key) : null;
+                    if (info && info.elapsed) {
+                        const running = sum(rows.filter((fact) => fact.mo === info.key), 'n');
+                        projection = net - running + running / info.elapsed * info.total;
+                        basis = `${info.label} com ${info.elapsed} de ${info.total} dias úteis`;
+                    }
+                } else if (data.month.is_current && data.business.elapsed) {
+                    projection = net / data.business.elapsed * data.business.total;
+                    basis = `${data.business.elapsed} de ${data.business.total} dias úteis`;
+                }
+                const value = projection == null ? net : projection;
+                const change = pct(value, closedMonth);
+                const result = factsResult(`Projeção ${multi ? 'do período' : 'do mês'} · ${data.month.label}`, `Notas faturadas até agora · projeção no ritmo dos dias úteis (${basis})`, rows, lastYearFacts(), `${data.month.previous_label} inteiro`);
+                result.summary = [
+                    { label: 'Projeção', value: fmt.moneyFull(value), note: projection == null ? basis : `no ritmo de ${basis}` },
+                    { label: 'Faturado até agora', value: fmt.moneyFull(net), note: projection ? `${fmt.pct(net / projection, 0)} da projeção` : '' },
+                    { label: 'Falta faturar', value: projection == null ? '–' : fmt.moneyFull(Math.max(projection - net, 0)) },
+                    { label: `${data.month.previous_label} inteiro`, value: fmt.moneyFull(closedMonth), note: change == null ? '' : `${fmt.signedPct(change)} na projeção`, tone: change == null ? null : change >= 0 ? 'good' : 'bad' },
+                ];
+                return result;
+            },
+            canDrill: hasFacts,
+        });
+
+        // Pedidos recebidos: os fatos de pedido têm cliente, representante, filial e UF (sem grupo).
+        const intakeColumns = [
+            { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+            { key: 'rep', label: 'Representante' },
+            { key: 'branch', label: 'Filial' },
+            { key: 'uf', label: 'UF' },
+            multi ? { key: 'period', label: 'Mês' } : { key: 'period', label: 'Emissão', type: 'date', nowrap: true },
+            { key: 'orders', label: 'Pedidos', type: 'int', total: true },
+            { key: 'value', label: 'Valor pedido', type: 'money', total: true, strong: true },
+            { key: 'kg', label: 'Kg', type: 'kg', total: true },
+            { key: 'price', label: 'R$/kg', type: 'dec', digits: 2, ratio: ['value', 'kg'] },
+        ];
+        window.MXDrill.kpi(kpiCard('kpiIntake'), {
+            drill: () => {
+                const state = filter.get();
+                const rows = pick(data.intake.filter((fact) => fact.y === 0), state, null, ['r', 'f', 'u', 'c']);
+                const value = sum(rows, 'v');
+                const billed = sum(currentFacts(), 'n');
+                const ignored = Object.keys(state).includes('g');
+                return {
+                    title: `Pedidos recebidos · ${data.month.label}`,
+                    subtitle: `Quantidade pedida × preço dos pedidos emitidos ${periodName()}${filterNote()}${ignored ? ' (pedido não tem grupo: o filtro de grupo não vale aqui)' : ''}`,
+                    summary: [
+                        { label: 'Pedidos recebidos', value: fmt.moneyFull(value), note: `${fmt.int(sum(rows, 'o'))} pedido(s)` },
+                        { label: 'Volume pedido', value: fmt.kg(sum(rows, 'k')) },
+                        { label: 'Book-to-bill', value: billed ? `${fmt.dec(value / billed, 2)}×` : '–', note: `pedidos ÷ faturamento de ${fmt.moneyFull(billed)}`, tone: billed ? (value >= billed ? 'good' : 'warn') : null },
+                        { label: 'Clientes', value: fmt.int(new Set(rows.map((fact) => fact.c)).size) },
+                    ],
+                    sections: [{
+                        key: 'intake', label: 'Pedidos por cliente e dia', columns: intakeColumns, sort: { key: 'value', dir: 'desc' }, groupBy: ['customer', 'rep', 'branch', 'uf', 'period'], empty: 'Nenhum pedido recebido neste recorte.',
+                        rows: rows.map((fact) => ({
+                            customer: customerName(fact.c), url: profileUrl(fact.c), place: [fact.c, (data.names.customers[fact.c] || {}).place].filter(Boolean).join(' · '),
+                            rep: repName(fact.r), branch: data.names.branches[fact.f] || fact.f, uf: fact.u === 'EX' ? 'Exterior' : fact.u,
+                            period: multi ? L.monthLabel(fact.mo) : `${data.month.key}-${String(fact.d).padStart(2, '0')}`,
+                            orders: fact.o, value: fact.v, kg: fact.k, price: fact.k ? fact.v / fact.k : null,
+                        })),
+                    }],
+                };
+            },
+            canDrill: () => data.intake.some((fact) => fact.y === 0),
+        });
+
+        window.MXDrill.kpi(kpiCard('kpiKg'), {
+            drill: () => {
+                const result = factsResult(`Volume faturado · ${data.month.label}`, 'Notas por cliente, grupo e filial', currentFacts(), toDate(), toDateLabel());
+                const before = sum(toDate(), 'k');
+                const kg = sum(currentFacts(), 'k');
+                const change = pct(kg, before);
+                result.summary.unshift({ label: 'Volume', value: fmt.kg(kg), note: change == null ? '' : `${fmt.signedPct(change)} contra ${toDateLabel()}`, tone: change == null ? null : change >= 0 ? 'good' : 'bad' });
+                result.summary.splice(2, 1); // o volume já está em primeiro
+                result.sections.forEach((section) => { section.sort = { key: 'kg', dir: 'desc' }; });
+                return result;
+            },
+            canDrill: hasFacts,
+        });
+
+        window.MXDrill.kpi(kpiCard('kpiCustomers'), {
+            drill: () => {
+                const rows = currentFacts();
+                const list = byCustomer(rows);
+                const net = sum(rows, 'n');
+                return {
+                    title: `Clientes atendidos · ${data.month.label}`,
+                    subtitle: `Um cliente por linha, com o faturamento ${periodName()}${filterNote()}`,
+                    summary: [
+                        { label: 'Clientes', value: fmt.int(list.length) },
+                        { label: 'Faturamento', value: fmt.moneyFull(net) },
+                        { label: 'Ticket médio', value: list.length ? fmt.moneyFull(net / list.length) : '–', note: 'por cliente' },
+                    ],
+                    sections: [
+                        { key: 'customers', label: 'Clientes', columns: customerColumns, rows: list, sort: { key: 'net', dir: 'desc' }, groupBy: ['rep'], empty: 'Nenhum cliente faturado neste recorte.' },
+                        { key: 'facts', label: 'Notas por cliente, grupo e filial', columns: factColumns, rows: rows.map(factRow), sort: { key: 'net', dir: 'desc' }, groupBy: ['customer', 'rep', 'group', 'branch', 'uf', 'period'] },
+                    ],
+                };
+            },
+            canDrill: hasFacts,
+        });
+
+        window.MXDrill.kpi(kpiCard('kpiPrice'), {
+            drill: () => {
+                const rows = currentFacts();
+                const result = factsResult(`Preço médio · ${data.month.label}`, 'Faturamento ÷ kg, por grupo de produto e nas notas', rows, toDate(), toDateLabel());
+                const net = sum(rows, 'n');
+                const kg = sum(rows, 'k');
+                const beforeRows = toDate();
+                const beforePrice = sum(beforeRows, 'k') ? sum(beforeRows, 'n') / sum(beforeRows, 'k') : null;
+                const price = kg ? net / kg : null;
+                const change = pct(price, beforePrice);
+                result.summary = [
+                    { label: 'Preço médio', value: price == null ? '–' : `${fmt.moneyFull(price)}/kg`, note: change == null ? '' : `${fmt.signedPct(change)} contra ${toDateLabel()}`, tone: change == null ? null : change >= 0 ? 'good' : 'bad' },
+                    { label: 'Faturamento', value: fmt.moneyFull(net) },
+                    { label: 'Volume', value: fmt.kg(kg) },
+                ];
+                result.sections.unshift({ key: 'groups', label: 'Por grupo', columns: groupColumns, rows: byGroup(rows), sort: { key: 'net', dir: 'desc' }, empty: 'Sem faturamento.' });
+                return result;
+            },
+            canDrill: () => sum(currentFacts(), 'k') > 0,
         });
     }
 

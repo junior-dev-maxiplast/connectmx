@@ -35,7 +35,7 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Indicadores<small>{{ window.label }} · variação contra o mesmo período do ano anterior</small></h3>
     <div class="mx-grid mx-grid-kpi">
         {% for kpi in kpis %}
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-point="{{ kpi.key }}">
             <div class="mx-kpi-label">{{ kpi.label }}</div>
             <div class="mx-kpi-value">{{ kpi.value }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta {{ kpi.delta.tone }}">{{ kpi.delta.display }}</span><span>{{ kpi.foot }}</span></div>
@@ -87,11 +87,11 @@
         </article>
         <article class="mx-card">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Quem mexeu na receita</p><p class="mx-card-sub">Clique para abrir a ficha do cliente</p></div></div>
-            <div class="mx-flow-lists">
-                <div><h4>Perdidos (ano anterior)</h4><ul class="mx-list">{% for row in flows.lost %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
-                <div><h4>Novos</h4><ul class="mx-list">{% for row in flows.new %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
-                <div><h4>Compraram mais</h4><ul class="mx-list">{% for row in flows.expansion %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
-                <div><h4>Compraram menos</h4><ul class="mx-list">{% for row in flows.contraction %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+            <div class="mx-flow-lists" id="mxFlowLists">
+                <div data-mx-visual="retencao" data-mx-key="lost" data-mx-label="Clientes perdidos"><h4>Perdidos (ano anterior)</h4><ul class="mx-list">{% for row in flows.lost %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div data-mx-visual="retencao" data-mx-key="new" data-mx-label="Clientes novos"><h4>Novos</h4><ul class="mx-list">{% for row in flows.new %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div data-mx-visual="retencao" data-mx-key="expansion" data-mx-label="Compraram mais"><h4>Compraram mais</h4><ul class="mx-list">{% for row in flows.expansion %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-up">+{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
+                <div data-mx-visual="retencao" data-mx-key="contraction" data-mx-label="Compraram menos"><h4>Compraram menos</h4><ul class="mx-list">{% for row in flows.contraction %}<li><div class="mx-list-main"><strong><a class="mx-link" href="{{ profile_url_template|cut:'__code__/' }}{{ row.code }}/">{{ row.name }}</a></strong><small>{{ row.place }}</small></div><span class="mx-list-value mx-delta is-down">−{{ row.value }}</span></li>{% empty %}<li class="mx-empty-note">Nenhum.</li>{% endfor %}</ul></div>
             </div>
         </article>
     </div>
@@ -106,9 +106,9 @@
         </article>
         <article class="mx-card">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Quadrantes</p><p class="mx-card-sub">Clientes, faturamento e parte do lucro de cada grupo</p></div></div>
-            <div class="mx-quadrants">
+            <div class="mx-quadrants" id="mxQuadrants">
                 {% for row in matrix.quadrants %}
-                <div class="mx-quadrant">
+                <div class="mx-quadrant" data-mx-visual="quadrante" data-mx-key="{{ row.key }}" data-mx-label="{{ row.label }}">
                     <strong>{{ row.label }}</strong>
                     <span><b>{{ row.count }}</b> cliente{{ row.count|pluralize }} · {{ row.net_display }}</span>
                     <span>lucro {{ row.profit_display }} · <b>{{ row.profit_share_display }}</b> do lucro</span>
@@ -124,12 +124,12 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-box"/></svg>Produtos<small>Rentabilidade por grupo e a margem mês a mês</small></h3>
     <article class="mx-card">
         <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Rentabilidade por grupo de produto</p><p class="mx-card-sub">Pelo lucro bruto · a barra mostra quanto cada grupo mudou o lucro contra o ano anterior</p></div></div>
-        <div class="mx-table-wrap">
+        <div class="mx-table-wrap" id="mxGroupsTable">
             <table class="mx-table mx-table-compact">
                 <thead><tr><th scope="col">Grupo</th><th scope="col" class="is-num">Faturamento</th><th scope="col" class="is-num">Cresc.</th><th scope="col" class="is-num">Lucro bruto</th><th scope="col" class="is-num">Margem</th><th scope="col" class="is-num">Preço/kg</th><th scope="col" class="is-num">Custo/kg</th><th scope="col" class="is-num">Variação do lucro</th><th scope="col"><span class="mx-sr-only">Gráfico da variação</span></th></tr></thead>
                 <tbody>
                     {% for row in groups %}
-                    <tr>
+                    <tr data-mx-visual="grupo" data-mx-key="{{ row.key }}" data-mx-label="{{ row.group }}">
                         <td class="is-strong"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ row.key }}">{{ row.group }}</button></td>
                         <td class="is-num">{{ row.net }}</td>
                         <td class="is-num"><span class="mx-delta {{ row.growth_tone }}">{{ row.growth }}</span></td>
@@ -147,10 +147,10 @@
     </article>
     <article class="mx-card" style="margin-top: 14px">
         <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Mapa de calor da margem</p><p class="mx-card-sub">Os {{ heatmap.rows|length }} maiores grupos, mês a mês · vermelho abaixo e azul acima da margem da empresa ({{ heatmap.reference }})</p></div></div>
-        <div class="mx-table-wrap">
+        <div class="mx-table-wrap" id="mxMarginHeat">
             <table class="mx-heat">
                 <thead><tr><th scope="col">Grupo</th>{% for month in heatmap.months %}<th scope="col">{% if month.param %}<button type="button" class="mx-filter-cell" data-mx-filter="meses" data-mx-value="{{ month.param }}" data-mx-drop="periodo">{{ month.label }}</button>{% else %}{{ month.label }}{% endif %}</th>{% endfor %}</tr></thead>
-                <tbody>{% for row in heatmap.rows %}<tr><th scope="row" class="is-row" title="{{ row.group }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ row.key }}">{{ row.group }}</button></th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                <tbody>{% for row in heatmap.rows %}<tr><th scope="row" class="is-row" title="{{ row.group }}" data-mx-visual="grupo" data-mx-key="{{ row.key }}" data-mx-label="{{ row.group }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ row.key }}">{{ row.group }}</button></th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}"{% if cell.value != "–" %} data-mx-visual="calor-margem" data-mx-key="{{ row.key }}|{{ cell.month }}"{% endif %}>{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
             </table>
         </div>
         <div class="mx-heat-legend"><span><i style="background: var(--mx-div-neg-2)"></i>7,5 p.p. ou mais abaixo</span><span><i style="background: var(--mx-div-neg-1)"></i>abaixo</span><span><i style="background: var(--mx-div-mid)"></i>perto da margem da empresa</span><span><i style="background: var(--mx-div-pos-1)"></i>acima</span><span><i style="background: var(--mx-div-pos-2)"></i>7,5 p.p. ou mais acima</span></div>
@@ -161,10 +161,10 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg>Sazonalidade e próximos meses<small>Faturamento por mês, projeção simples e carteira a faturar</small></h3>
     <article class="mx-card">
         <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Faturamento por mês (R$ milhões)</p><p class="mx-card-sub">Azul mais escuro = mês mais forte, em cinco faixas · mês em andamento só com contorno</p></div></div>
-            <div class="mx-table-wrap">
+            <div class="mx-table-wrap" id="mxSeasonality">
                 <table class="mx-heat">
                     <thead><tr><th scope="col">Ano</th>{% for month in seasonality.months %}<th scope="col">{{ month }}</th>{% endfor %}</tr></thead>
-                    <tbody>{% for row in seasonality.rows %}<tr><th scope="row" class="is-row">{{ row.year }}</th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}">{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+                    <tbody>{% for row in seasonality.rows %}<tr><th scope="row" class="is-row">{{ row.year }}</th>{% for cell in row.cells %}<td class="{{ cell.css }}" title="{{ cell.title }}"{% if cell.value %} data-mx-visual="sazonalidade" data-mx-key="{{ cell.key }}"{% endif %}>{{ cell.value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
                 </table>
             </div>
     </article>
@@ -175,9 +175,9 @@
                 <div class="mx-chart" id="mxForecastChart" role="img" aria-label="Projeção e carteira a faturar dos próximos meses"></div>
                 <div class="mx-legend"><span><i style="background: var(--mx-chart-2)"></i>Já faturado</span><span><i style="background: var(--mx-chart-1)"></i>Carteira a faturar</span><span><i class="is-line" style="background: var(--mx-text)"></i>Projeção</span></div>
             </div>
-            <div class="mx-table-wrap"><table class="mx-table mx-table-compact">
+            <div class="mx-table-wrap" id="mxForecastTable"><table class="mx-table mx-table-compact">
                 <thead><tr><th scope="col">Mês</th><th scope="col" class="is-num">Ano anterior</th><th scope="col" class="is-num">Projeção</th><th scope="col" class="is-num">Carteira</th><th scope="col" class="is-num">Coberto pela carteira</th></tr></thead>
-                <tbody>{% for row in forecast.rows %}<tr><td class="is-strong">{{ row.label }}{% if row.billed %}<span class="mx-cell-sub">faturado até hoje {{ row.billed }}</span>{% endif %}</td><td class="is-num">{{ row.last_year }}</td><td class="is-num">{{ row.projected }}</td><td class="is-num">{{ row.backlog }}</td><td class="is-num">{{ row.coverage }}</td></tr>{% endfor %}</tbody>
+                <tbody>{% for row in forecast.rows %}<tr data-mx-visual="projecao" data-mx-key="{{ row.key }}" data-mx-label="{{ row.label }}"><td class="is-strong">{{ row.label }}{% if row.billed %}<span class="mx-cell-sub">faturado até hoje {{ row.billed }}</span>{% endif %}</td><td class="is-num">{{ row.last_year }}</td><td class="is-num">{{ row.projected }}</td><td class="is-num">{{ row.backlog }}</td><td class="is-num">{{ row.coverage }}</td></tr>{% endfor %}</tbody>
             </table></div>
         </div>
     </article>
@@ -186,12 +186,12 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Representantes<small>Resultado no período e meta de kg do orçamento {{ goal_year }} ({{ goal_label }})</small></h3>
     <article class="mx-card">
-        <div class="mx-table-wrap">
+        <div class="mx-table-wrap" id="mxRepsTable">
             <table class="mx-table mx-table-compact">
                 <thead><tr><th scope="col">Representante</th><th scope="col" class="is-num">Faturamento</th><th scope="col" class="is-num">Partic.</th><th scope="col" class="is-num">Cresc.</th><th scope="col" class="is-num">Lucro bruto</th><th scope="col" class="is-num">Margem</th><th scope="col" class="is-num">Clientes</th><th scope="col">Meta de kg no ano</th></tr></thead>
                 <tbody>
                     {% for rep in reps %}
-                    <tr>
+                    <tr data-mx-visual="rep" data-mx-key="{% if rep.code != None %}{{ rep.code }}{% else %}none{% endif %}" data-mx-label="{{ rep.name }}">
                         <td class="is-strong">{% if rep.code != None %}<button type="button" class="mx-filter-cell" data-mx-filter="rep" data-mx-value="{{ rep.code }}">{{ rep.name }}</button>{% else %}{{ rep.name }}{% endif %}</td>
                         <td class="is-num">{{ rep.net }}</td>
                         <td class="is-num">{{ rep.share }}</td>
@@ -256,7 +256,7 @@
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysLive.js' %}?v=7"></script>
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
 <script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
 <script>
 (() => {
@@ -276,22 +276,34 @@
     });
 })();
 </script>
-<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=4"></script>
 <script>
 (() => {
     const charts = JSON.parse(document.getElementById('mxManagementCharts').textContent);
     const money = window.MXCharts.money;
+    // "Expandir dados": o ponto clicado, com o recorte da página (período, representante, grupo e meses).
+    const fetchDetail = (visual, point) => {
+        const params = new URLSearchParams(window.location.search);
+        params.set('visual', visual);
+        params.set('ponto', point);
+        return window.MXDrill.fetchJSON(`{% url 'dashesManagementDetail' %}?${params}`);
+    };
+    // Barras da ponte na ordem do desenho: início, etapas com valor e fim.
+    const waterfallKeys = (data) => ['inicio', ...data.steps.filter((step) => step.value).map((step) => step.key), 'fim'];
     const pct = (value, signed) => `${signed && value > 0 ? '+' : ''}${(value * 100).toFixed(1).replace('.', ',')}%`;
-    const bridge = (id, data) => window.MXCharts.waterfall(document.getElementById(id), {
-        label: id,
+    const bridge = (id, data, visual) => window.MXCharts.waterfall(document.getElementById(id), {
+        label: document.getElementById(id).getAttribute('aria-label') || id,
         start: { label: data.start_label, value: data.start },
         steps: data.steps,
         end: { label: data.end_label, value: data.end },
         format: money,
         height: 320,
+        valueType: 'money', labelName: 'Etapa da ponte', // tabela do menu de opções
+        drill: (index) => fetchDetail(visual, waterfallKeys(data)[index]),
+        canDrill: (index) => !!waterfallKeys(data)[index],
     });
-    bridge('mxRevenueBridge', charts.revenue_bridge);
-    bridge('mxProfitBridge', charts.profit_bridge);
+    bridge('mxRevenueBridge', charts.revenue_bridge, 'ponte-receita');
+    bridge('mxProfitBridge', charts.profit_bridge, 'ponte-lucro');
     window.MXCharts.waterfall(document.getElementById('mxRetentionChart'), {
         label: 'Fluxo de receita por cliente',
         start: { label: charts.retention.start_label, value: charts.retention.start },
@@ -299,15 +311,22 @@
         end: { label: charts.retention.end_label, value: charts.retention.end },
         format: money,
         height: 260,
+        valueType: 'money', labelName: 'Etapa',
+        drill: (index) => fetchDetail('retencao', waterfallKeys(charts.retention)[index]),
+        canDrill: (index) => !!waterfallKeys(charts.retention)[index],
     });
 
     const matrix = charts.matrix;
+    const matrixPoints = matrix.points.map((point) => ({
+        x: point.x, y: point.y, size: point.size, label: point.name, sub: point.place, code: point.code,
+        href: charts.profile_url_template.replace('__code__', point.code),
+    }));
+    const plottedPoints = matrixPoints.filter((point) => point.x > 0 && point.y != null); // mesma ordem do gráfico
     window.MXCharts.scatter(document.getElementById('mxMatrixChart'), {
         label: 'Matriz de rentabilidade',
-        points: matrix.points.map((point) => ({
-            x: point.x, y: point.y, size: point.size, label: point.name, sub: point.place,
-            href: charts.profile_url_template.replace('__code__', point.code),
-        })),
+        points: matrixPoints,
+        drill: (index) => fetchDetail('matriz', plottedPoints[index].code),
+        canDrill: (index) => !!plottedPoints[index],
         refX: matrix.net_reference,
         refY: matrix.margin_reference,
         yMin: -0.3,
@@ -316,6 +335,9 @@
         yFormat: (value) => pct(value),
         quadrants: ['Nicho', 'Estrelas', 'Revisar', 'Volume'],
         height: 380,
+        // Tabela do menu de opções e "Abrir a ficha do cliente" no botão direito da bolha.
+        labelName: 'Cliente', xName: 'Faturamento', xValueType: 'money', yName: 'Margem', yValueType: 'pct',
+        sizeName: 'Lucro bruto', sizeValueType: 'money', openLabel: 'Abrir a ficha do cliente',
     });
 
     const forecast = charts.forecast;
@@ -330,7 +352,56 @@
         target: { name: 'Projeção', values: forecast.projected, color: '--mx-text' },
         format: money,
         height: 220,
+        valueType: 'money', labelName: 'Mês',
+        drill: (index) => fetchDetail('projecao', forecast.keys[index]),
+        canDrill: (index) => forecast.keys[index] != null,
     });
+
+    // Cards em HTML: cada elemento com data-mx-key é um ponto (data-mx-visual diz de qual gráfico).
+    const squash = (node) => (node ? node.innerText.replace(/\s+/g, ' ').trim() : '');
+    function htmlTable(wrap, points) {
+        const table = wrap.querySelector('table');
+        if (!table) {
+            return {
+                columns: [{ key: 'label', label: 'Item' }, { key: 'text', label: 'Resumo', wrap: true }],
+                rows: points.map((node, index) => ({ label: node.dataset.mxLabel || '', text: squash(node), __index: index })),
+            };
+        }
+        const heads = [...table.querySelectorAll('thead th')].map(squash);
+        return {
+            columns: heads.map((label, index) => ({ key: `c${index}`, label: label || ' ', sortNumeric: index > 0 })),
+            rows: [...table.querySelectorAll('tbody tr')].map((tr) => {
+                const row = Object.fromEntries([...tr.children].map((cell, index) => [`c${index}`, squash(cell)]));
+                const own = points.indexOf(tr.matches('[data-mx-key]') ? tr : tr.querySelector('th[data-mx-key]'));
+                if (own >= 0) row.__index = own;
+                return row;
+            }),
+        };
+    }
+    function attachHtml(id) {
+        const wrap = document.getElementById(id);
+        if (!wrap || !window.MXDrill) return;
+        const points = [...wrap.querySelectorAll('[data-mx-key]')];
+        if (!points.length) return;
+        const labelOf = (node) => node.dataset.mxLabel || (node.getAttribute('title') || '').split(':')[0].trim() || squash(node);
+        points.forEach((node, index) => {
+            node.setAttribute('data-mx-index', index);
+            node.setAttribute('title', node.getAttribute('title') ? `${node.getAttribute('title')}\n${window.MXDrill.hint}` : window.MXDrill.hint);
+        });
+        window.MXDrill.attach(wrap, {
+            label: (index) => (points[index] ? labelOf(points[index]) : ''),
+            table: () => htmlTable(wrap, points),
+            drill: (index) => fetchDetail(points[index].dataset.mxVisual, points[index].dataset.mxKey),
+            canDrill: (index) => !!points[index],
+        });
+    }
+    ['mxFlowLists', 'mxQuadrants', 'mxGroupsTable', 'mxMarginHeat', 'mxSeasonality', 'mxForecastTable', 'mxRepsTable'].forEach(attachHtml);
+    // Cards de indicador: o card inteiro abre os clientes e grupos por trás do número.
+    if (window.MXDrill) {
+        document.querySelectorAll('[data-mx-kpi-point]').forEach((card) => {
+            window.MXDrill.kpi(card, { drill: () => fetchDetail('indicador', card.dataset.mxKpiPoint) });
+        });
+    }
 
     // Simulador de cenários: recalcula a cada movimento dos controles.
     const sim = charts.simulator;

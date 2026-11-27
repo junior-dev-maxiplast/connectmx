@@ -58,20 +58,20 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="mx-hero-facts">
-                <div class="mx-fact"><span>Curva ABC</span><strong class="mx-inline"><span class="mx-abc {% if dashboard.ranking.class != '–' %}is-{{ dashboard.ranking.class }}{% endif %}">{{ dashboard.ranking.class }}</span> {% if dashboard.ranking.position %}{{ dashboard.ranking.position }}º de {{ dashboard.ranking.reps_count }}{% endif %}</strong><small>acumulado {{ dashboard.ranking.cumulative_display }}</small></div>
-                <div class="mx-fact"><span>Participação</span><strong>{{ dashboard.ranking.share_display }}</strong><small>do faturamento sem impostos</small></div>
-                <div class="mx-fact"><span>Clientes ativos</span><strong>{{ cs.active }}</strong><small>{{ cs.new }} novo(s) · {{ cs.inactive }} sem compra</small></div>
-                <div class="mx-fact"><span>Concentração</span><strong>{{ cs.concentration.count }} cliente(s) = 80%</strong><small title="{{ cs.concentration.top_name }}">maior: {{ cs.concentration.share_top1 }}</small></div>
+            <div class="mx-hero-facts" id="mxRepFacts">
+                <div class="mx-fact" data-mx-key="periodo" data-mx-label="Curva ABC do representante"><span>Curva ABC</span><strong class="mx-inline"><span class="mx-abc {% if dashboard.ranking.class != '–' %}is-{{ dashboard.ranking.class }}{% endif %}">{{ dashboard.ranking.class }}</span> {% if dashboard.ranking.position %}{{ dashboard.ranking.position }}º de {{ dashboard.ranking.reps_count }}{% endif %}</strong><small>acumulado {{ dashboard.ranking.cumulative_display }}</small></div>
+                <div class="mx-fact" data-mx-key="periodo" data-mx-label="Participação no faturamento sem impostos"><span>Participação</span><strong>{{ dashboard.ranking.share_display }}</strong><small>do faturamento sem impostos</small></div>
+                <div class="mx-fact" data-mx-key="ativos" data-mx-label="Clientes ativos"><span>Clientes ativos</span><strong>{{ cs.active }}</strong><small>{{ cs.new }} novo(s) · {{ cs.inactive }} sem compra</small></div>
+                <div class="mx-fact" data-mx-key="concentracao" data-mx-label="Concentração da carteira"><span>Concentração</span><strong>{{ cs.concentration.count }} cliente(s) = 80%</strong><small title="{{ cs.concentration.top_name }}">maior: {{ cs.concentration.share_top1 }}</small></div>
             </div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxCurveCard">
             <div class="mx-card-head">
                 <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span>
                 <div><p class="mx-card-title">Carteira por curva de faturamento</p><p class="mx-card-sub">Posição de cada cliente no Pareto da empresa</p></div>
             </div>
             {% for letter, count in cs.class_counts.items %}
-                <div class="mx-bar-row">
+                <div class="mx-bar-row" data-mx-index="{{ forloop.counter0 }}" data-letter="{{ letter }}">
                     <span><span class="mx-abc is-{{ letter }}">{{ letter }}</span> Curva {{ letter }}</span>
                     <div class="mx-progress"><i style="width: {% widthratio count cs.active|default:1 100 %}%; background: var(--mx-{% if letter == 'A' %}good{% elif letter == 'B' %}warn{% else %}bad{% endif %})"></i></div>
                     <b>{{ count }}</b>
@@ -86,20 +86,20 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Meta {{ g.year }}<small>Realizado = faturado líquido + carteira com entrega no mês</small></h3>
     {% if g.has_goals %}
     <div class="mx-grid mx-grid-3">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-rep-kpi="meta-acumulado">
             <div class="mx-kpi-label">Acumulado no ano (até {{ g.month.label }})</div>
             <div class="mx-goal-figure"><strong>{{ g.ytd.pct_display }}</strong><span>da meta de {{ g.ytd.goal_display }}</span></div>
             <div class="mx-progress mx-progress-lg is-accent" style="margin-top: 8px"><i style="width: {{ g.ytd.bar_pct }}%"></i></div>
             <div class="mx-goal-meta"><span>Faturado {{ g.ytd.billed_display }} ({{ g.ytd.billed_pct_display }})</span><span>Carteira {{ g.ytd.to_bill_display }}</span></div>
             <div class="mx-goal-meta"><span>Falta {{ g.ytd.gap_display }}</span><span>{% if g.has_overdue %}em atraso {{ g.overdue_to_bill_display }}{% endif %}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-rep-kpi="meta-mes" data-mx-month="{% now 'Y-m' %}">
             <div class="mx-kpi-label">Mês atual ({{ g.month.label }})</div>
             <div class="mx-goal-figure"><strong>{{ g.month.pct_display }}</strong><span>da meta de {{ g.month.goal_display }}</span></div>
             <div class="mx-progress mx-progress-lg is-accent" style="margin-top: 8px"><i style="width: {{ g.month.bar_pct }}%"></i></div>
             <div class="mx-goal-meta"><span>Faturado + carteira {{ g.month.done_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-rep-kpi="meta-ano">
             <div class="mx-kpi-label">Meta do ano</div>
             <div class="mx-goal-figure"><strong>{{ g.year_total.goal_display }}</strong></div>
             <div class="mx-goal-meta"><span>Atingido {{ g.year_total.pct_display }}</span><span>Esperado até aqui {{ g.year_total.expected_display }}</span></div>
@@ -112,10 +112,10 @@
             <div class="mx-chart" id="mxGoalChart"></div>
             <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturado (kg líquido)</span><span><i style="background: var(--mx-chart-2)"></i>Carteira a faturar</span><span><i class="is-line" style="background: var(--mx-text)"></i>Meta</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxFamilyGoalCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Meta por família</p><p class="mx-card-sub">Ano inteiro · faturado + carteira</p></div></div>
             {% for family in g.families %}
-                <div class="mx-bar-row">
+                <div class="mx-bar-row" data-mx-key="{{ family.key }}" data-mx-label="{{ family.name }}" data-mx-values="{{ family.goal_display }}|{{ family.billed_display }}|{{ family.to_bill_display }}|{{ family.pct_display }}">
                     <span title="{{ family.name }}">{{ family.name }}<small> · {{ family.billed_display }} / {{ family.goal_display }}</small></span>
                     <div class="mx-progress is-accent">{% if family.pct != None %}<i style="width: {{ family.pct }}%"></i>{% endif %}</div>
                     <b>{% if family.without_goal %}<span class="mx-badge">sem meta</span>{% else %}{{ family.pct_display }}{% endif %}</b>
@@ -131,14 +131,14 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Faturamento<small>Comparação com {{ dashboard.period.previous_label }}</small></h3>
     <div class="mx-grid mx-grid-kpi">
-        <article class="mx-card"><div class="mx-kpi-label">Faturamento líquido de devolução</div><div class="mx-kpi-value">{{ k.net_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net.tone }}">{{ k.deltas.net.display }}</span><span>ano anterior {{ k.previous_net_display }}</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Faturamento sem impostos</div><div class="mx-kpi-value">{{ k.net_of_taxes_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net_of_taxes.tone }}">{{ k.deltas.net_of_taxes.display }}</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Volume líquido</div><div class="mx-kpi-value">{{ k.weight_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.weight.tone }}">{{ k.deltas.weight.display }}</span><span>ano anterior {{ k.previous_weight_display }}</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Fator kg (R$/kg)</div><div class="mx-kpi-value">{{ k.fator_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.fator.tone }}">{{ k.deltas.fator.display }}</span><span>limpo {{ k.fator_clean_display }}</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Margem bruta (CPV)</div><div class="mx-kpi-value">{{ k.margin_display }}</div><div class="mx-kpi-foot">{% if k.cost_partial %}<span class="mx-badge is-warn">custo em {{ k.cost_coverage_display }} das vendas</span>{% else %}<span>sobre o faturamento sem impostos</span>{% endif %}</div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Pedidos faturados</div><div class="mx-kpi-value">{{ k.orders }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.orders.tone }}">{{ k.deltas.orders.display }}</span><span>{{ k.invoices }} NFs · ticket {{ k.ticket_display }}</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Devoluções</div><div class="mx-kpi-value">{{ k.returned_display }}</div><div class="mx-kpi-foot"><span>{{ k.returned_share_display }} do faturamento bruto</span></div></article>
-        <article class="mx-card"><div class="mx-kpi-label">Prazo médio de pagamento</div><div class="mx-kpi-value">{{ k.payment_days_display }}</div><div class="mx-kpi-foot"><span>ponderado pelo faturamento</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="faturamento"><div class="mx-kpi-label">Faturamento líquido de devolução</div><div class="mx-kpi-value">{{ k.net_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net.tone }}">{{ k.deltas.net.display }}</span><span>ano anterior {{ k.previous_net_display }}</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="sem-impostos"><div class="mx-kpi-label">Faturamento sem impostos</div><div class="mx-kpi-value">{{ k.net_of_taxes_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net_of_taxes.tone }}">{{ k.deltas.net_of_taxes.display }}</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="volume"><div class="mx-kpi-label">Volume líquido</div><div class="mx-kpi-value">{{ k.weight_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.weight.tone }}">{{ k.deltas.weight.display }}</span><span>ano anterior {{ k.previous_weight_display }}</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="fator"><div class="mx-kpi-label">Fator kg (R$/kg)</div><div class="mx-kpi-value">{{ k.fator_display }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.fator.tone }}">{{ k.deltas.fator.display }}</span><span>limpo {{ k.fator_clean_display }}</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="margem"><div class="mx-kpi-label">Margem bruta (CPV)</div><div class="mx-kpi-value">{{ k.margin_display }}</div><div class="mx-kpi-foot">{% if k.cost_partial %}<span class="mx-badge is-warn">custo em {{ k.cost_coverage_display }} das vendas</span>{% else %}<span>sobre o faturamento sem impostos</span>{% endif %}</div></article>
+        <article class="mx-card" data-mx-rep-kpi="pedidos"><div class="mx-kpi-label">Pedidos faturados</div><div class="mx-kpi-value">{{ k.orders }}</div><div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.orders.tone }}">{{ k.deltas.orders.display }}</span><span>{{ k.invoices }} NFs · ticket {{ k.ticket_display }}</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="devolucoes"><div class="mx-kpi-label">Devoluções</div><div class="mx-kpi-value">{{ k.returned_display }}</div><div class="mx-kpi-foot"><span>{{ k.returned_share_display }} do faturamento bruto</span></div></article>
+        <article class="mx-card" data-mx-rep-kpi="prazo"><div class="mx-kpi-label">Prazo médio de pagamento</div><div class="mx-kpi-value">{{ k.payment_days_display }}</div><div class="mx-kpi-foot"><span>ponderado pelo faturamento</span></div></article>
     </div>
 </section>
 
@@ -164,7 +164,7 @@
                 </thead>
                 <tbody>
                     {% for row in dashboard.customers %}
-                        <tr data-class="{{ row.letters.0|default:'' }}" data-search="{{ row.name|lower }} {{ row.location|lower }} {{ row.code }}">
+                        <tr data-mx-key="{{ row.code }}" data-mx-label="{{ row.name }}" data-class="{{ row.letters.0|default:'' }}" data-search="{{ row.name|lower }} {{ row.location|lower }} {{ row.code }}">
                             <td class="mx-col-name"><a href="{{ customer_page_url }}?cliente={{ row.code }}&{{ dashboard.period.query }}">{{ row.name }}</a><span class="mx-cell-sub">{{ row.code }} · {{ row.location }}{% if row.is_new %} · <span class="mx-badge is-good">novo</span>{% endif %}</span></td>
                             <td><span class="mx-abc-row">{% for letter in row.letters %}<span class="mx-abc {% if letter %}is-{{ letter }}{% endif %}">{{ letter|default:"–" }}</span>{% endfor %}</span></td>
                             <td class="is-num is-strong">{{ row.score_display }}</td>
@@ -189,21 +189,21 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-user-plus"/></svg>Clientes novos e sem compra</h3>
     <div class="mx-grid mx-grid-3">
-        <article class="mx-card">
+        <article class="mx-card" id="mxNewCustomersCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-user-plus"/></svg></span><div><p class="mx-card-title">Clientes novos</p><p class="mx-card-sub">Primeira compra da história dentro do período</p></div><span class="mx-card-aside">{{ cs.new }}</span></div>
             <ul class="mx-list">
                 {% for row in dashboard.new_customers %}
-                    <li><div class="mx-list-main"><strong><a class="mx-link" href="{{ customer_page_url }}?cliente={{ row.code }}&{{ dashboard.period.query }}">{{ row.name }}</a></strong><small>Primeira compra {{ row.first_purchase_display }} · {{ row.location }}</small></div><span class="mx-list-value">{{ row.revenue_display }}</span></li>
+                    <li data-mx-key="{{ row.code }}" data-mx-label="{{ row.name }}"><div class="mx-list-main"><strong><a class="mx-link" href="{{ customer_page_url }}?cliente={{ row.code }}&{{ dashboard.period.query }}">{{ row.name }}</a></strong><small>Primeira compra {{ row.first_purchase_display }} · {{ row.location }}</small></div><span class="mx-list-value">{{ row.revenue_display }}</span></li>
                 {% empty %}<li class="mx-empty">Nenhum cliente novo no período.</li>{% endfor %}
             </ul>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxInactiveCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-user-off"/></svg></span><div><p class="mx-card-title">Dias sem compra</p><p class="mx-card-sub">Clientes dos últimos 24 meses sem venda deste representante no período</p></div></div>
             {% for band in dashboard.inactive.bands %}
-                <div class="mx-bar-row"><span>{{ band.label }}</span><div class="mx-progress"><i style="width: {% widthratio band.count cs.inactive|default:1 100 %}%; background: var(--mx-bad)"></i></div><b>{{ band.count }}</b></div>
+                <div class="mx-bar-row" data-mx-index="{{ forloop.counter0 }}"><span>{{ band.label }}</span><div class="mx-progress"><i style="width: {% widthratio band.count cs.inactive|default:1 100 %}%; background: var(--mx-bad)"></i></div><b>{{ band.count }}</b></div>
             {% endfor %}
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxReactivateCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Para reativar</p><p class="mx-card-sub">Do mais recente ao mais antigo</p></div><span class="mx-card-aside">{{ cs.inactive }}</span></div>
             <ul class="mx-list">
                 {% for row in dashboard.inactive.items|slice:":8" %}
@@ -223,20 +223,20 @@
             <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturamento</span><span><i class="is-line" style="background: var(--mx-chart-2)"></i>Ano anterior</span></div>
         </article>
         <article class="mx-card">
-            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Mix por grupo</p><p class="mx-card-sub">{{ dashboard.mix.groups_count }} grupo(s) no período · clique num grupo para filtrar a página (Ctrl + clique soma)</p></div></div>
+            <div class="mx-card-head" id="mxMixHead"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Mix por grupo</p><p class="mx-card-sub">{{ dashboard.mix.groups_count }} grupo(s) no período · clique num grupo para filtrar a página (Ctrl + clique soma)</p></div></div>
             {% for group in dashboard.mix.groups %}
-                <div class="mx-bar-row"><span title="{{ group.name }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ group.key }}">{{ group.name }}</button><small> · {{ group.fator_display }}/kg</small></span><div class="mx-progress"><i style="width: {{ group.share }}%"></i></div><b>{{ group.share_display }}</b></div>
+                <div class="mx-bar-row" data-mx-key="{{ group.key }}" data-mx-label="{{ group.name }}" data-mx-values="{{ group.revenue_display }}|{{ group.weight_display }}|{{ group.fator_display }}|{{ group.share_display }}"><span title="{{ group.name }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ group.key }}">{{ group.name }}</button><small> · {{ group.fator_display }}/kg</small></span><div class="mx-progress"><i style="width: {{ group.share }}%"></i></div><b>{{ group.share_display }}</b></div>
             {% empty %}<div class="mx-empty">Sem vendas no período.</div>{% endfor %}
         </article>
         <article class="mx-card mx-span-2">
             {% with p=dashboard.portfolio %}
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-truck"/></svg></span><div><p class="mx-card-title">Carteira a faturar</p><p class="mx-card-sub">{{ p.open_orders }} pedido(s) · {{ p.to_bill_kg_display }} · {{ p.to_bill_value_display }} · pronto {{ p.ready_share_display }}</p></div>{% if p.overdue_items %}<span class="mx-badge is-bad" style="margin-left:auto">{{ p.overdue_items }} atrasado(s) · {{ p.overdue_kg_display }}</span>{% endif %}</div>
             <div class="mx-table-wrap">
-                <table class="mx-table">
+                <table class="mx-table" id="mxOpenOrdersTable">
                     <thead><tr><th>Pedido</th><th>Cliente</th><th>Produto</th><th>Entrega</th><th class="is-num">A faturar</th><th class="is-num">Valor</th><th class="is-num">Pronto</th></tr></thead>
                     <tbody>
                         {% for item in p.items %}
-                            <tr>
+                            <tr data-mx-key="{{ item.customer }}" data-mx-label="{{ item.customer_name|default:item.customer }}">
                                 <td class="is-strong">{{ item.number }}</td>
                                 <td>{{ item.customer_name|default:item.customer }}</td>
                                 <td>{{ item.product_name }}</td>
@@ -253,7 +253,7 @@
         </article>
         <article class="mx-card">
             {% with p=dashboard.portfolio %}
-            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Entrada de pedidos</p><p class="mx-card-sub">Pedidos emitidos no período</p></div></div>
+            <div class="mx-card-head" id="mxIntakeHead"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Entrada de pedidos</p><p class="mx-card-sub">Pedidos emitidos no período</p></div></div>
             <div class="mx-goal-figure"><strong>{{ p.entered_kg_display }}</strong><span>{{ p.entered_orders }} pedido(s)</span></div>
             <div class="mx-goal-meta"><span>Valor {{ p.entered_value_display }}</span><span>Fator {{ p.entered_fator_display }}/kg</span></div>
             {% endwith %}
@@ -274,6 +274,8 @@
 
 {{ dashboard.series|json_script:"mxSeriesData" }}
 {{ g.months|json_script:"mxGoalData" }}
+{{ dashboard.customers|json_script:"mxCustomersData" }}
+{{ dashboard.inactive|json_script:"mxInactiveData" }}
 {% endwith %}
 {% endif %}
 {{ rep_choices|json_script:"mxRepChoices" }}
@@ -281,7 +283,7 @@
 
 {% block scripts %}
 <script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
-<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=4"></script>
 <script>
 (() => {
     const normalize = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -348,36 +350,275 @@
         }));
     }
 
-    if (!window.MXCharts) return;
-    const seriesNode = document.getElementById('mxSeriesData');
-    if (seriesNode) {
-        const series = JSON.parse(seriesNode.textContent);
-        MXCharts.bars(document.getElementById('mxRevenueChart'), {
-            label: 'Faturamento mensal',
-            labels: series.map((row) => row.label),
-            series: [{ name: 'Faturamento', values: series.map((row) => row.revenue), color: '--mx-chart-1' }],
-            line: { name: 'Ano anterior', values: series.map((row) => row.previous_revenue), color: '--mx-chart-2', dashed: true },
-            format: (value) => MXCharts.money(value, true),
-            extra: (i) => `Volume: <b>${MXCharts.kg(series[i].weight)}</b>`,
+    // "Expandir dados" (botão direito, toque longo ou ⋯ do card): as linhas do mês vêm do
+    // servidor, com o mesmo filtro de grupo de produto da página.
+    const drill = window.MXDrill;
+    const fetchDetail = (visual, month) => drill.fetchJSON(drill.urlWith('{% url "dashesRepresentativeDnaDetail" %}', { representante: '{{ rep_code|default:"" }}', visual, mes: month }, ['grupo']));
+    const read = (id) => { const node = document.getElementById(id); return node ? JSON.parse(node.textContent) : null; };
+    const customerUrl = (code, query) => `{{ customer_page_url }}?cliente=${encodeURIComponent(code)}&${query}`;
+    const periodQuery = '{{ dashboard.period.query|escapejs }}';
+
+    if (window.MXCharts) {
+        const series = read('mxSeriesData');
+        if (series) {
+            MXCharts.bars(document.getElementById('mxRevenueChart'), {
+                label: 'Faturamento mensal',
+                labels: series.map((row) => row.label),
+                series: [{ name: 'Faturamento', values: series.map((row) => row.revenue), color: '--mx-chart-1' }],
+                line: { name: 'Ano anterior', values: series.map((row) => row.previous_revenue), color: '--mx-chart-2', dashed: true },
+                format: (value) => MXCharts.money(value, true),
+                extra: (i) => `Volume: <b>${MXCharts.kg(series[i].weight)}</b>`,
+                valueType: 'money', labelName: 'Mês',
+                drill: drill ? (i) => fetchDetail('faturamento', series[i].month) : null,
+                canDrill: (i) => !!(series[i].revenue || series[i].previous_revenue),
+            });
+        }
+        const months = read('mxGoalData');
+        const goalChart = document.getElementById('mxGoalChart');
+        if (months && goalChart) {
+            MXCharts.bars(goalChart, {
+                label: 'Meta x realizado por mês',
+                labels: months.map((row) => row.label),
+                stacked: true,
+                series: [
+                    { name: 'Faturado', values: months.map((row) => row.billed), color: '--mx-chart-1' },
+                    { name: 'Carteira', values: months.map((row) => row.to_bill), color: '--mx-chart-2' },
+                ],
+                target: { name: 'Meta', values: months.map((row) => row.goal), color: '--mx-text' },
+                format: (value) => MXCharts.kg(value),
+                extra: (i) => `Atingido: <b>${months[i].pct_display}</b>`,
+                valueType: 'kg', labelName: 'Mês',
+                drill: drill ? (i) => fetchDetail('meta', months[i].month) : null,
+                canDrill: (i) => !!(months[i].goal || months[i].billed || months[i].to_bill),
+            });
+        }
+    }
+    if (!drill) return;
+
+    // Visuais em HTML: o detalhe sai dos dados que já vieram na página.
+    const customers = read('mxCustomersData');
+    const curveCard = document.getElementById('mxCurveCard');
+    if (customers && curveCard) {
+        const letters = [...curveCard.querySelectorAll('[data-letter]')].map((row) => row.dataset.letter);
+        const inCurve = (letter) => customers.filter((row) => row.letters[0] === letter);
+        const columns = [
+            { key: 'name', label: 'Cliente', href: 'url', sub: 'sub' },
+            { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true },
+            { key: 'share', label: '% do representante', type: 'pct', total: true },
+            { key: 'weight', label: 'Volume', type: 'kg', total: true },
+            { key: 'margin', label: 'Margem', type: 'pct' },
+            { key: 'recurrence', label: 'Recorrência' },
+            { key: 'last', label: 'Última compra', sub: 'since' },
+            { key: 'orientation', label: 'Orientação', wrap: true },
+        ];
+        drill.attach(curveCard, {
+            name: 'Carteira por curva de faturamento', tableTitle: 'Clientes por curva',
+            label: (i) => `Curva ${letters[i]}`,
+            table: () => ({
+                columns: [{ key: 'label', label: 'Curva' }, { key: 'count', label: 'Clientes', type: 'int', total: true }, { key: 'net', label: 'Faturamento', type: 'money', total: true }],
+                rows: letters.map((letter, i) => ({ label: `Curva ${letter}`, count: inCurve(letter).length, net: inCurve(letter).reduce((acc, row) => acc + Number(row.net), 0), __index: i })),
+            }),
+            drill: (i) => {
+                const list = inCurve(letters[i]);
+                return {
+                    title: `Curva ${letters[i]}`,
+                    subtitle: `${list.length} cliente(s) na curva ${letters[i]} do faturamento da empresa · {{ dashboard.period.label|escapejs }}`,
+                    sections: [{
+                        label: 'Clientes', columns, sort: { key: 'net', dir: 'desc' }, empty: 'Nenhum cliente nesta curva.',
+                        rows: list.map((row) => ({
+                            name: row.name, url: customerUrl(row.code, periodQuery), sub: `${row.code} · ${row.location}`,
+                            net: Number(row.net), share: row.share / 100, weight: row.weight, margin: row.margin,
+                            recurrence: row.recurrence_label, last: row.last_purchase_display,
+                            since: row.days_since != null ? `há ${row.days_since} dias` : '', orientation: row.orientation,
+                        })),
+                    }],
+                };
+            },
+            canDrill: (i) => inCurve(letters[i]).length > 0,
         });
     }
-    const goalNode = document.getElementById('mxGoalData');
-    const goalChart = document.getElementById('mxGoalChart');
-    if (goalNode && goalChart) {
-        const months = JSON.parse(goalNode.textContent);
-        MXCharts.bars(goalChart, {
-            label: 'Meta x realizado por mês',
-            labels: months.map((row) => row.label),
-            stacked: true,
-            series: [
-                { name: 'Faturado', values: months.map((row) => row.billed), color: '--mx-chart-1' },
-                { name: 'Carteira', values: months.map((row) => row.to_bill), color: '--mx-chart-2' },
-            ],
-            target: { name: 'Meta', values: months.map((row) => row.goal), color: '--mx-text' },
-            format: (value) => MXCharts.kg(value),
-            extra: (i) => `Atingido: <b>${months[i].pct_display}</b>`,
+
+    const inactive = read('mxInactiveData');
+    const inactiveCard = document.getElementById('mxInactiveCard');
+    if (inactive && inactiveCard) {
+        const bands = inactive.bands;
+        const rowsOf = (list) => list.map((item) => ({
+            name: item.name, url: customerUrl(item.code, 'periodo=24'), sub: `${item.code} · ${item.location}`,
+            last: item.last_purchase_display, days: item.days, band: item.band,
+            __tone: item.days > 180 ? 'bad' : item.days > 60 ? 'warn' : null,
+        }));
+        const columns = [
+            { key: 'name', label: 'Cliente', href: 'url', sub: 'sub' },
+            { key: 'last', label: 'Última compra', nowrap: true },
+            { key: 'days', label: 'Dias sem compra', type: 'int', strong: true },
+            { key: 'band', label: 'Faixa' },
+        ];
+        drill.attach(inactiveCard, {
+            name: 'Dias sem compra', tableTitle: 'Clientes por faixa de dias sem compra',
+            label: (i) => bands[i].label,
+            table: () => ({
+                columns: [{ key: 'label', label: 'Faixa' }, { key: 'count', label: 'Clientes', type: 'int', total: true }],
+                rows: bands.map((band, i) => ({ label: band.label, count: band.count, __index: i })),
+            }),
+            drill: (i) => {
+                const list = inactive.items.filter((item) => item.band === bands[i].label);
+                return {
+                    title: bands[i].label,
+                    subtitle: `${list.length} cliente(s) que compraram com o representante nos últimos 24 meses e não no período`,
+                    sections: [{ label: 'Clientes', columns, rows: rowsOf(list), sort: { key: 'days', dir: 'asc' }, groupBy: ['band'], empty: 'Nenhum cliente nesta faixa.' }],
+                };
+            },
+            canDrill: (i) => bands[i].count > 0,
+        });
+        // "Para reativar" mostra 8 (na ordem da lista inteira); a tabela traz todos. O botão direito
+        // num cliente abre as notas do mês da última compra dele com o representante.
+        const reactivateCard = document.getElementById('mxReactivateCard');
+        if (reactivateCard) {
+            reactivateCard.querySelectorAll('.mx-list > li:not(.mx-empty)').forEach((item, index) => {
+                item.setAttribute('data-mx-index', index);
+                item.title = drill.hint;
+            });
+            const lastPurchase = (item) => drill.fetchJSON(drill.urlWith('{% url "dashesRepresentativeDnaDetail" %}', {
+                representante: '{{ rep_code|default:"" }}', visual: 'ultima-compra', mes: item.last_purchase.slice(0, 7), cliente: item.code,
+            }, ['grupo']));
+            drill.attach(reactivateCard, {
+                name: 'Para reativar', tableTitle: 'Todos os clientes para reativar',
+                label: (i) => (inactive.items[i] || {}).name,
+                table: () => ({ columns, rows: rowsOf(inactive.items).map((row, index) => ({ ...row, __index: index })) }),
+                drill: (i) => lastPurchase(inactive.items[i]),
+                canDrill: (i) => !!(inactive.items[i] && inactive.items[i].last_purchase),
+                actions: (i) => (inactive.items[i] ? [{ label: 'Abrir o DNA do cliente', href: customerUrl(inactive.items[i].code, 'periodo=24') }] : []),
+            });
+        }
+    }
+
+    // Tabelas de registros: cada linha abre o cliente — em "Clientes da carteira", as notas com o
+    // representante no período; em "Carteira a faturar", todos os itens em aberto dele (a tabela
+    // mostra só os 10 primeiros da carteira).
+    const cellText = (cell) => cell.innerText.replace(/\s+/g, ' ').trim();
+    const attachRows = (table, options) => {
+        if (!table) return;
+        const lines = [...table.querySelectorAll('tbody tr[data-mx-key]')];
+        if (!lines.length) return;
+        const heads = [...table.querySelectorAll('thead th')].map((th) => th.innerText.trim());
+        lines.forEach((tr, index) => { tr.setAttribute('data-mx-index', index); tr.title = drill.hint; });
+        drill.attach(table.closest('.mx-table-wrap'), {
+            name: options.name, tableTitle: options.tableTitle,
+            label: (i) => (lines[i] ? lines[i].dataset.mxLabel : ''),
+            table: () => ({
+                columns: heads.map((label, index) => ({ key: `c${index}`, label: label || ' ', sortNumeric: options.numeric.includes(index) })),
+                rows: lines.filter((tr) => !tr.hidden).map((tr) => ({ ...Object.fromEntries([...tr.children].map((cell, index) => [`c${index}`, cellText(cell)])), __index: lines.indexOf(tr) })),
+            }),
+            drill: (i) => drill.fetchJSON(drill.urlWith('{% url "dashesRepresentativeDnaDetail" %}', { representante: '{{ rep_code|default:"" }}', cliente: lines[i].dataset.mxKey, ...options.params }, ['grupo'])),
+            canDrill: (i) => !!lines[i],
+            actions: (i) => [{ label: 'Abrir o DNA do cliente', href: customerUrl(lines[i].dataset.mxKey, periodQuery) }],
+        });
+    };
+    attachRows(document.getElementById('mxCustomerTable'), {
+        name: 'Clientes da carteira', tableTitle: 'Clientes da carteira (linhas visíveis)', numeric: [2, 3, 4, 5, 6, 7],
+        params: { visual: 'cliente-periodo', inicio: '{{ dashboard.period.start_iso }}', fim: '{{ dashboard.period.end_iso }}' },
+    });
+    attachRows(document.getElementById('mxOpenOrdersTable'), {
+        name: 'Carteira a faturar', tableTitle: 'Itens em aberto (os 10 primeiros)', numeric: [0, 4, 5, 6],
+        params: { visual: 'carteira-cliente' },
+    });
+
+    // Cards de indicador: os de faturamento abrem as notas do período da tela (com o filtro de
+    // grupo); os da meta, o ano corrente (faturado + carteira + meta por grupo).
+    const repDetail = (params, keep = ['grupo']) => drill.fetchJSON(drill.urlWith('{% url "dashesRepresentativeDnaDetail" %}', { representante: '{{ rep_code|default:"" }}', ...params }, keep));
+    const periodParams = { inicio: '{{ dashboard.period.start_iso }}', fim: '{{ dashboard.period.end_iso }}' };
+    document.querySelectorAll('[data-mx-rep-kpi]').forEach((card) => {
+        const kind = card.dataset.mxRepKpi;
+        let params;
+        if (kind === 'meta-mes') params = { visual: 'meta', mes: card.dataset.mxMonth };
+        else if (kind.startsWith('meta')) params = { visual: kind };
+        else params = { visual: 'periodo', foco: kind, ...periodParams };
+        drill.kpi(card, { drill: () => repDetail(params) });
+    });
+    // Barras de um card (Meta por família, Mix por grupo) e listas de clientes: cada linha é um ponto.
+    const attachBars = (container, options) => {
+        if (!container) return;
+        const bars = [...container.querySelectorAll('[data-mx-key]')];
+        if (!bars.length) return;
+        bars.forEach((bar, index) => { bar.setAttribute('data-mx-index', index); bar.title = bar.title ? `${bar.title}\n${drill.hint}` : drill.hint; });
+        drill.attach(container, {
+            name: options.name, tableTitle: options.tableTitle,
+            label: (index) => (bars[index] ? bars[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: options.columns,
+                rows: bars.map((bar, index) => ({ label: bar.dataset.mxLabel, ...Object.fromEntries((bar.dataset.mxValues || '').split('|').map((value, part) => [`v${part}`, value])), __index: index })),
+            }),
+            drill: (index) => options.drill(bars[index].dataset.mxKey),
+            canDrill: (index) => !!bars[index],
+            actions: options.actions ? (index) => options.actions(bars[index].dataset.mxKey) : null,
+        });
+    };
+    attachBars(document.getElementById('mxFamilyGoalCard'), {
+        name: 'Meta por família', tableTitle: 'Meta por família (ano inteiro)',
+        columns: [{ key: 'label', label: 'Família' }, { key: 'v0', label: 'Meta' }, { key: 'v1', label: 'Faturado' }, { key: 'v2', label: 'Carteira' }, { key: 'v3', label: 'Atingido' }],
+        drill: (key) => repDetail({ visual: 'meta-familia', familia: key }),
+    });
+    const mixHead = document.getElementById('mxMixHead');
+    attachBars(mixHead && mixHead.closest('.mx-card'), {
+        name: 'Mix por grupo', tableTitle: 'Mix por grupo (os 8 maiores)',
+        columns: [{ key: 'label', label: 'Grupo' }, { key: 'v0', label: 'Faturamento' }, { key: 'v1', label: 'Volume' }, { key: 'v2', label: 'R$/kg' }, { key: 'v3', label: 'Participação' }],
+        drill: (key) => repDetail({ visual: 'mix-grupo', familia: key, ...periodParams }, []),
+    });
+    attachBars(document.getElementById('mxNewCustomersCard'), {
+        name: 'Clientes novos', tableTitle: 'Clientes novos (os 12 primeiros)',
+        columns: [{ key: 'label', label: 'Cliente' }],
+        drill: (key) => repDetail({ visual: 'cliente-periodo', cliente: key, ...periodParams }),
+        actions: (key) => [{ label: 'Abrir o DNA do cliente', href: customerUrl(key, periodQuery) }],
+    });
+    // Fatos do cabeçalho: curva e participação abrem as notas do período (sem impostos, a base da
+    // curva); clientes ativos e concentração saem da lista de clientes que a página já tem.
+    const repFacts = document.getElementById('mxRepFacts');
+    if (repFacts && customers) {
+        const customerRows = (list) => {
+            let running = 0;
+            const total = list.reduce((acc, row) => acc + Number(row.net), 0) || 1;
+            return list.slice().sort((a, b) => Number(b.net) - Number(a.net)).map((row, index) => {
+                running += Number(row.net);
+                return {
+                    position: index + 1, name: row.name, url: customerUrl(row.code, periodQuery), sub: `${row.code} · ${row.location}`,
+                    net: Number(row.net), share: Number(row.net) / total, cumulative: running / total, weight: row.weight, margin: row.margin,
+                    curve: row.letters[0] || '–', last: row.last_purchase_display, __tone: running / total <= 0.8 ? 'info' : null,
+                };
+            });
+        };
+        const factColumns = [
+            { key: 'position', label: 'Posição', type: 'int' },
+            { key: 'name', label: 'Cliente', href: 'url', sub: 'sub' },
+            { key: 'curve', label: 'Curva' },
+            { key: 'net', label: 'Faturamento', type: 'money', total: true, strong: true },
+            { key: 'share', label: '% da carteira', type: 'pct', total: true },
+            { key: 'cumulative', label: 'Acumulado', type: 'pct' },
+            { key: 'weight', label: 'Volume', type: 'kg', total: true },
+            { key: 'margin', label: 'Margem', type: 'pct' },
+            { key: 'last', label: 'Última compra', nowrap: true },
+        ];
+        attachBars(repFacts, {
+            name: 'Representante', tableTitle: 'Números do representante', columns: [{ key: 'label', label: 'Número' }],
+            drill: (key) => {
+                if (key === 'periodo') return repDetail({ visual: 'periodo', foco: 'sem-impostos', ...periodParams });
+                const rows = customerRows(customers);
+                const top = rows.filter((row) => row.cumulative <= 0.8 || row.position === 1);
+                return {
+                    title: key === 'ativos' ? 'Clientes ativos' : 'Concentração da carteira',
+                    subtitle: key === 'ativos' ? 'Clientes com faturamento no período, do maior para o menor' : 'Clientes do maior para o menor: os marcados somam até 80% do faturamento',
+                    summary: [
+                        { label: 'Clientes ativos', value: String(rows.length) },
+                        { label: 'Somam 80%', value: `${top.length} cliente(s)` },
+                        { label: 'Maior cliente', value: rows[0] ? `${(rows[0].share * 100).toFixed(1).replace('.', ',')}%` : '–', note: rows[0] ? rows[0].name : '' },
+                    ],
+                    sections: [{ key: 'customers', label: key === 'ativos' ? 'Clientes' : 'Até 80% do faturamento', columns: factColumns,
+                                 rows: key === 'ativos' ? rows : top, sort: { key: 'position', dir: 'asc' }, groupBy: ['curve'], empty: 'Nenhum cliente no período.' }],
+                };
+            },
         });
     }
+    const intakeHead = document.getElementById('mxIntakeHead');
+    if (intakeHead) drill.kpi(intakeHead.closest('.mx-card'), { name: 'Entrada de pedidos', drill: () => repDetail({ visual: 'entrada', ...periodParams }, []) });
 })();
 </script>
 {% endblock %}

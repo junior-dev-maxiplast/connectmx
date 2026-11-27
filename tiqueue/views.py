@@ -89,6 +89,7 @@ from .models import (
     PortalDemandLog,
     PortalDemandAttachment,
     PortalChatUpload,
+    PortalAssistantConversation,
     PortalNotification,
     PortalDemandSlaPolicy,
     PortalCannedResponse,
@@ -188,6 +189,7 @@ from .compras_bi import (
     list_branches as list_compras_branches,
     list_familias as list_compras_familias,
     COMPRAS_BI_SYSTEM_PROMPT,
+    DEFAULT_PERIOD_KEY as COMPRAS_DEFAULT_PERIOD_KEY,
 )
 from .compras_bi_pdf import build_compras_bi_pdf
 from .decision_center_pdf import build_decision_center_pdf
@@ -2475,8 +2477,9 @@ def travelBiExportPdf(request):
 # ------------------------------------------------------------ BI de Compras --
 
 def _compras_bi_scope_from_source(source):
+    # Compras abre com 3 meses (compras_bi.DEFAULT_PERIOD_KEY): a base de prazo é pesada.
     return (
-        (source.get("periodo") or "12").strip(),
+        (source.get("periodo") or COMPRAS_DEFAULT_PERIOD_KEY).strip(),
         (source.get("aba") or "pagamento").strip(),
         (source.get("fornecedor") or "all").strip(),
         (source.get("filial") or "all").strip(),
@@ -2916,6 +2919,16 @@ def _portal_topbar_context(user, active, label, focus=False):
         "can_request_portal": _portal_can_open_new_demands(user),
         "can_open_internal_panel": bool(
             getattr(user, "can_access_internal", False) and (can_attend or not has_requester_record)
+        ),
+        # Menu lateral do Helpdesk (partials/helpdesk_sidebar.html): parâmetros
+        # só para quem configura, painel só para quem tem o painel liberado.
+        "can_configure_portal": _portal_can_configure(user),
+        "portal_ai_chat_available": _portal_ai_chat_available(),
+        "portal_unassigned_count": (
+            PortalDemand.objects.filter(status=PortalDemand.STATUS_PENDING).count() if can_attend else 0
+        ),
+        "can_view_helpdesk_panel": bool(
+            can_attend and allowed_dashboards(user).filter(slug="helpdesk").exists()
         ),
         "portal_page_label": label,
         "portal_nav_active": active,
@@ -4600,6 +4613,7 @@ def portalDemandCreatePage(request):
 
     chat_draft = None
     chat_upload_ids = []
+    chat_conversation_id = None
     if request.method == "GET":
         # Visita nova à tela = conversa nova. Só no GET: um POST com erro de
         # validação re-renderiza a mesma página e não deve apagar o que a
@@ -4609,9 +4623,12 @@ def portalDemandCreatePage(request):
         chat_draft = request.session.pop(_PORTAL_CHAT_DRAFT_KEY, None)
         if chat_draft:
             chat_upload_ids = chat_draft.pop("attachment_ids", []) or []
+            chat_conversation_id = chat_draft.pop("conversation_id", None)
     else:
         chat_upload_ids = request.POST.getlist("chat_upload_ids")
+        chat_conversation_id = (request.POST.get("chat_conversation") or "").strip() or None
     chat_uploads = _portal_chat_uploads_for(request.user, chat_upload_ids)
+    chat_conversation = _portal_assistant_conversation_for(request.user, chat_conversation_id)
 
     can_open_on_behalf = _portal_can_attend(request.user)
     form = PortalDemandForm(
@@ -4632,7 +4649,18 @@ def portalDemandCreatePage(request):
             demand.company = requester_company
             demand.status = PortalDemand.STATUS_PENDING
             demand.priority_level = form.cleaned_data.get("priority_level") or userQueue.PRIORITY_MEDIUM
+            # Canal de abertura, para o painel medir o assistente de IA.
+            if chat_conversation is not None:
+                demand.opened_via = PortalDemand.OPENED_VIA_CHAT
+            elif getattr(requester_user, "pk", None) != request.user.pk:
+                demand.opened_via = PortalDemand.OPENED_VIA_ATTENDANT
+            else:
+                demand.opened_via = PortalDemand.OPENED_VIA_PORTAL
             demand.save()
+            if chat_conversation is not None:
+                chat_conversation.demand = demand
+                chat_conversation.outcome = PortalAssistantConversation.OUTCOME_TICKET
+                chat_conversation.save(update_fields=["demand", "outcome"])
             form.save_custom_values(demand)
             _create_portal_attachments(
                 demand,
@@ -4664,6 +4692,7 @@ def portalDemandCreatePage(request):
             "can_open_on_behalf": can_open_on_behalf,
             "ai_chat_available": _portal_ai_chat_available(),
             "chat_uploads": chat_uploads,
+            "chat_conversation_id": chat_conversation.id if chat_conversation is not None else "",
             **_portal_topbar_context(request.user, "create", "Nova Demanda", focus=True),
             **dashboard_context,
         },
@@ -4698,6 +4727,7 @@ def portalDemandChatPage(request):
         # Visita nova = conversa nova, mesmo critério do formulário manual.
         request.session.pop(_PORTAL_CHAT_SESSION_KEY, None)
         request.session.pop(_PORTAL_CHAT_SOURCES_KEY, None)
+        request.session.pop(_PORTAL_CHAT_CONVERSATION_KEY, None)
 
     return render(
         request,
@@ -4821,6 +4851,56 @@ def _portal_chat_upload_parts(uploads):
 _PORTAL_CHAT_MIN_SCORE = 3  # um termo no título (3) ou três no corpo (1 cada)
 _PORTAL_CHAT_CANDIDATE_LIMIT = 5
 _PORTAL_CHAT_SOURCES_KEY = "portal_chat_sources"
+_PORTAL_CHAT_CONVERSATION_KEY = "portal_chat_conversation"
+
+
+def _portal_assistant_conversation_for(user, conversation_id):
+    """A conversa com o assistente indicada, se for mesmo de quem está logado
+    e ainda não tiver virado chamado (o id vem do formulário)."""
+    raw = str(conversation_id or "").strip()
+    if not raw.isdigit() or not getattr(user, "is_authenticated", False):
+        return None
+    return PortalAssistantConversation.objects.filter(pk=int(raw), user=user, demand__isnull=True).first()
+
+
+def _portal_track_assistant_turn(request, action, suggested_solution=False):
+    """Registra o turno da conversa de abertura (sem o texto): uma linha por
+    conversa, com o número de turnos e como ela terminou. Falha aqui nunca
+    pode derrubar a conversa da pessoa."""
+    try:
+        conversation = None
+        conversation_id = request.session.get(_PORTAL_CHAT_CONVERSATION_KEY)
+        if conversation_id:
+            conversation = PortalAssistantConversation.objects.filter(
+                pk=conversation_id, user=request.user, demand__isnull=True
+            ).first()
+        if conversation is None:
+            profile = _portal_requester_account_record(request.user)
+            collaborator = getattr(profile, "collaborator", None)
+            conversation = PortalAssistantConversation.objects.create(
+                user=request.user,
+                company=getattr(collaborator, "company", None) or getattr(request.user, "company", None),
+                sector=getattr(collaborator, "sector", None),
+            )
+            request.session[_PORTAL_CHAT_CONVERSATION_KEY] = conversation.id
+        conversation.turns = int(conversation.turns or 0) + 1
+        conversation.last_turn_at = timezone.now()
+        if suggested_solution:
+            conversation.suggested_solution = True
+        if action == "resolved":
+            conversation.outcome = PortalAssistantConversation.OUTCOME_RESOLVED
+        elif action == "summary":
+            conversation.outcome = PortalAssistantConversation.OUTCOME_SUMMARY
+        elif action == "solution" and conversation.outcome == PortalAssistantConversation.OUTCOME_OPEN:
+            conversation.outcome = PortalAssistantConversation.OUTCOME_SOLUTION
+        conversation.save(update_fields=["turns", "last_turn_at", "suggested_solution", "outcome"])
+        if action == "resolved":
+            # Resolvida: a próxima mensagem é outra conversa.
+            request.session.pop(_PORTAL_CHAT_CONVERSATION_KEY, None)
+        return conversation
+    except Exception:
+        logger.exception("Falha ao registrar a conversa com o assistente do portal")
+        return None
 
 
 def _portal_normalized_text(value):
@@ -5104,6 +5184,11 @@ def portalDemandChatMessageApi(request):
 
     source = _portal_chat_source_for(reply.get("source_id"), candidates)
     reply["source_id"] = source["ref"] if source else None
+    conversation = _portal_track_assistant_turn(
+        request,
+        reply.get("action"),
+        suggested_solution=bool(source) and reply.get("action") in {"solution", "summary"},
+    )
     history.append({"role": "assistant", "content": json.dumps(reply, ensure_ascii=False)})
     request.session[_PORTAL_CHAT_SESSION_KEY] = history[-_PORTAL_CHAT_MAX_TURNS:]
     reply["solution_source"] = (
@@ -5132,6 +5217,8 @@ def portalDemandChatMessageApi(request):
             "description": description,
             "priority_level": reply.get("priority_level") or "",
             "attachment_ids": [upload.id for upload in uploads],
+            # Liga o chamado à conversa quando o resumo for enviado.
+            "conversation_id": conversation.id if conversation is not None else None,
         }
         reply["similar"] = _portal_find_similar_resolved(request.user, title, description, keywords)
         reply["attachments"] = [upload.original_name for upload in uploads]
@@ -5145,6 +5232,7 @@ def portalDemandChatResetApi(request):
     request.session.pop(_PORTAL_CHAT_SESSION_KEY, None)
     request.session.pop(_PORTAL_CHAT_DRAFT_KEY, None)
     request.session.pop(_PORTAL_CHAT_SOURCES_KEY, None)
+    request.session.pop(_PORTAL_CHAT_CONVERSATION_KEY, None)
     return JsonResponse({"status": "ok"})
 
 
@@ -5314,6 +5402,12 @@ def portalDemandDocumentSaveApi(request, demand_id):
                         file=attachment.file.name,
                         original_name=attachment.original_name,
                     )
+            _portal_log_event(
+                demand,
+                PortalDemandLog.EVENT_DOCUMENTED,
+                actor=request.user,
+                summary=f"Solução documentada na base de conhecimento: {entry.title}"[:255],
+            )
     except IntegrityError:
         return JsonResponse({"message": "Este chamado já tem documentação."}, status=409)
     return JsonResponse({"redirect": f"{demand.get_absolute_url()}?documented=1#documentation"}, status=201)
@@ -5569,6 +5663,24 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
                     feedback = feedback_form.save(commit=False)
                     feedback.feedback_submitted_at = timezone.now()
                     feedback.save(update_fields=["feedback_rating", "feedback_comment", "feedback_submitted_at", "updated_at"])
+                    # A nota entra no histórico do chamado e chega a quem atendeu;
+                    # antes ficava só gravada, sem ninguém do TI saber.
+                    rating_summary = f"Atendimento avaliado com nota {feedback.feedback_rating}/10."
+                    _portal_log_event(
+                        feedback,
+                        PortalDemandLog.EVENT_FEEDBACK,
+                        actor=request.user,
+                        summary=rating_summary,
+                        details=feedback.feedback_comment or None,
+                        to_attendant=feedback.assigned_to if feedback.assigned_to_id else None,
+                    )
+                    if feedback.assigned_to_id and feedback.assigned_to_id != request.user.pk:
+                        _portal_notify(
+                            feedback.assigned_to,
+                            feedback,
+                            f"Chamado avaliado: nota {feedback.feedback_rating}/10",
+                            feedback.feedback_comment or rating_summary,
+                        )
                     return redirect(f"{demand.get_absolute_url()}?feedback=1#feedback")
         elif form_type == "transfer":
             transfer_form = PortalDemandTransferForm(request.POST or None, demand=demand)
@@ -5768,7 +5880,12 @@ def portalDemandDetailPage(request, demand_id=None, demand_code=None):
             "worklog_success": worklog_success,
             "workflow_state": workflow_state,
             "workflow_error_message": workflow_error_message,
-            **_portal_topbar_context(request.user, "my-demands", "Conversa da Demanda"),
+            # Quem atende chega aqui pela fila: o menu marca a Entrada de chamados.
+            **_portal_topbar_context(
+                request.user,
+                "pending" if _portal_can_attend(request.user) and demand.requester_id != request.user.pk else "my-demands",
+                f"Chamado {demand.protocol}",
+            ),
             "can_reply": _portal_can_reply_to_demand(request.user, demand),
             "can_log_worklog": _portal_can_attend(request.user) and _portal_can_reply_to_demand(request.user, demand),
             "can_leave_feedback": _portal_can_leave_feedback(request.user, demand),
@@ -5824,6 +5941,8 @@ def _portal_admin_base_context(request, active_key, page_title, requires="config
         else "Somente administradores do sistema podem alterar a configuração do portal."
     )
     return {
+        # Menu lateral do Helpdesk (mesmo papel do portal_topbar nas telas do portal).
+        **_portal_topbar_context(request.user, active_key, page_title),
         "can_manage": can_manage,
         "can_attend": can_attend,
         "can_configure": can_configure,
@@ -6448,7 +6567,9 @@ def portalMyAssignedDemandsPage(request):
 @login_required
 def portalPendingDemandsPage(request):
     context = _portal_admin_base_context(request, "pending", "Entrada de Chamados", requires="attend")
-    context.update(_portal_topbar_context(request.user, "pending", "Entrada de Chamados"))
+    if request.GET.get("view") == "meus":
+        context["portal_nav_active"] = "mine"
+        context["portal_page_label"] = "Meus chamados"
     if context["can_manage"]:
         _sync_portal_critical_notifications()
         context.update(_portal_ticket_list_context(request))
@@ -8526,8 +8647,19 @@ def knowledgeBasePage(request):
     return redirect("knowledgeEntriesPage")
 
 
+def _knowledge_can_edit(user):
+    """Quem cadastra e edita a base: quem atende e os usuários do ConnectMX
+    interno. Conta só de solicitante do portal consulta, mas não escreve — a
+    base alimenta o assistente de IA e as sugestões da abertura de chamado."""
+    if _portal_can_attend(user):
+        return True
+    return bool(getattr(user, "can_access_internal", False) and _portal_requester_account_record(user) is None)
+
+
 @login_required
 def knowledgeCategoriesPage(request):
+    if not _knowledge_can_edit(request.user):
+        return redirect("knowledgeConsultPage")
     category_form = KnowledgeCategoryForm(prefix="kcat")
 
     if request.method == "POST":
@@ -8535,9 +8667,11 @@ def knowledgeCategoriesPage(request):
 
         if form_id == "category":
             category_form = KnowledgeCategoryForm(request.POST, prefix="kcat")
+            # Inválido (ex.: nome repetido) volta com o erro na tela; antes o
+            # redirect acontecia de qualquer jeito e a categoria sumia calada.
             if category_form.is_valid():
                 category_form.save()
-            return redirect("knowledgeCategoriesPage")
+                return redirect(f"{reverse('knowledgeCategoriesPage')}?saved=1")
 
         if form_id == "edit_category":
             category_id = request.POST.get("category_id")
@@ -8557,7 +8691,7 @@ def knowledgeCategoriesPage(request):
                 KnowledgeCategory.objects.filter(pk=category_id).update(**data)
             return redirect("knowledgeCategoriesPage")
 
-    categories = KnowledgeCategory.objects.all().order_by("sort_order", "name", "id")
+    categories = KnowledgeCategory.objects.annotate(entry_count=Count("entries")).order_by("sort_order", "name", "id")
 
     return render(
         request,
@@ -8565,12 +8699,16 @@ def knowledgeCategoriesPage(request):
         {
             "category_form": category_form,
             "categories": categories,
+            "saved_flag": request.GET.get("saved") == "1",
+            **_portal_topbar_context(request.user, "kb-categories", "Categorias da base"),
         },
     )
 
 
 @login_required
 def knowledgeEntriesPage(request):
+    if not _knowledge_can_edit(request.user):
+        return redirect("knowledgeConsultPage")
     entry_form = KnowledgeEntryForm(prefix="kentry")
 
     if request.method == "POST":
@@ -8578,6 +8716,9 @@ def knowledgeEntriesPage(request):
 
         if form_id == "entry":
             entry_form = KnowledgeEntryForm(request.POST, prefix="kentry")
+            # Só sai da tela quando salvou: com erro (campo obrigatório vazio)
+            # o formulário volta preenchido e com a mensagem, em vez de perder
+            # o texto num redirect silencioso.
             if entry_form.is_valid():
                 entry = entry_form.save(commit=False)
                 entry.created_by = request.user
@@ -8588,7 +8729,7 @@ def knowledgeEntriesPage(request):
                         file=f,
                         original_name=getattr(f, "name", None) or None,
                     )
-            return redirect("knowledgeEntriesPage")
+                return redirect(f"{reverse('knowledgeEntryDetailPage', args=[entry.id])}?saved=1")
 
         if form_id == "edit_entry":
             entry_id = request.POST.get("entry_id")
@@ -8621,6 +8762,8 @@ def knowledgeEntriesPage(request):
         {
             "entry_form": entry_form,
             "categories": categories,
+            "recent_entries": KnowledgeEntry.objects.select_related("category", "source_demand").order_by("-updated_at", "-id")[:12],
+            **_portal_topbar_context(request.user, "kb-entries", "Registros da base"),
         },
     )
 
@@ -8651,6 +8794,8 @@ def knowledgeConsultPage(request):
             "categories": categories,
             "title_q": title_q,
             "selected_category": category_id,
+            "can_edit_knowledge": _knowledge_can_edit(request.user),
+            **_portal_topbar_context(request.user, "kb-consult", "Consultar base"),
         },
     )
 
@@ -8658,15 +8803,46 @@ def knowledgeConsultPage(request):
 @login_required
 def knowledgeEntryDetailPage(request, entry_id):
     entry = get_object_or_404(
-        KnowledgeEntry.objects.select_related("category", "created_by").prefetch_related("attachments"),
+        KnowledgeEntry.objects.select_related("category", "created_by", "source_demand").prefetch_related("attachments"),
         pk=entry_id,
     )
-    return render(request, "tiqueue/knowledge_entry_detail.html", {"entry": entry})
+    can_edit = _knowledge_can_edit(request.user)
+    # Edição do registro na própria ficha. Antes só existia na tela antiga
+    # (knowledge_base.html), que deixou de ser usada: um registro salvo sem
+    # "Resolvido" nunca mais podia ser corrigido, e o assistente de IA só usa
+    # registros resolvidos.
+    edit_form = KnowledgeEntryForm(instance=entry, prefix="kedit") if can_edit else None
+    if request.method == "POST":
+        if not can_edit:
+            return HttpResponseForbidden("Somente atendentes e usuários internos editam a base de conhecimento.")
+        edit_form = KnowledgeEntryForm(request.POST, instance=entry, prefix="kedit")
+        if edit_form.is_valid():
+            edit_form.save()
+            for upload in request.FILES.getlist("attachments"):
+                KnowledgeEntryAttachment.objects.create(
+                    entry=entry, file=upload, original_name=getattr(upload, "name", None) or None
+                )
+            return redirect(f"{reverse('knowledgeEntryDetailPage', args=[entry.id])}?saved=1")
+    tags = [tag.strip() for tag in (entry.tags or "").split(",") if tag.strip()]
+    return render(
+        request,
+        "tiqueue/knowledge_entry_detail.html",
+        {
+            "entry": entry,
+            "tags": tags,
+            "can_edit_knowledge": can_edit,
+            "edit_form": edit_form,
+            "edit_open": request.method == "POST",
+            "saved_flag": request.GET.get("saved") == "1",
+            "source_demand_url": entry.source_demand.get_absolute_url() if entry.source_demand_id else "",
+            **_portal_topbar_context(request.user, "kb-consult", f"Registro #{entry.id}"),
+        },
+    )
 
 
 @login_required
 def maxibotPage(request):
-    return render(request, "tiqueue/maxibot.html")
+    return render(request, "tiqueue/maxibot.html", _portal_topbar_context(request.user, "maxibot", "MaxiBot"))
 
 
 def _maxibot_tokens(text):
@@ -13085,6 +13261,10 @@ def _maxisys_shell(request, active, title):
         "shell_can_receivables_panel": "receivables-panel" in slugs,
         "shell_can_service_panel": "service-panel" in slugs,
         "shell_can_quality_panel": "quality-panel" in slugs,
+        "shell_can_sales_goals": "sales-goals" in slugs,
+        "shell_can_budget_panel": "budget-panel" in slugs,
+        "shell_can_helpdesk": "helpdesk" in slugs,
+        "shell_helpdesk_url": reverse("dashesHelpdeskPage"),
         "shell_customer_dna_url": reverse("dashesCustomerDnaV2Page"),
         "shell_rep_dna_url": reverse("dashesRepresentativeDnaPage"),
         "shell_legacy_dna_url": reverse("dashesCustomerDnaPage"),
@@ -13096,6 +13276,8 @@ def _maxisys_shell(request, active, title):
         "shell_receivables_panel_url": reverse("dashesReceivablesPanel"),
         "shell_service_panel_url": reverse("dashesServicePanel"),
         "shell_quality_panel_url": reverse("dashesQualityPanel"),
+        "shell_sales_goals_url": reverse("dashesSalesGoalsPage"),
+        "shell_budget_panel_url": reverse("dashesBudgetPanel"),
     }
 
 

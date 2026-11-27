@@ -51,7 +51,8 @@
 
     function hover(f, labels, x, slot, describe) {
         labels.forEach((label, index) => {
-            const hit = el('rect', { x: x(index) - slot / 2, y: f.pad.top, width: slot, height: f.plotH, fill: 'transparent' }, f.svg);
+            // data-mx-index: o menu do botão direito (maxisysDrill.js) sabe em qual ponto foi.
+            const hit = el('rect', { x: x(index) - slot / 2, y: f.pad.top, width: slot, height: f.plotH, fill: 'transparent', 'data-mx-index': index }, f.svg);
             hit.addEventListener('mouseenter', () => {
                 f.tooltip.innerHTML = describe(index);
                 f.tooltip.hidden = false;
@@ -62,6 +63,12 @@
             });
             hit.addEventListener('mouseleave', () => { f.tooltip.hidden = true; });
         });
+    }
+
+    // Linha extra na dica dos pontos que abrem registros (`config.drill`, menu do botão direito).
+    function drillHint(config, index) {
+        if (!config.drill || !window.MXDrill || (config.canDrill && !config.canDrill(index))) return '';
+        return `<span class="mx-tip-hint">${window.MXDrill.hint}</span>`;
     }
 
     function tickStep(count, width) {
@@ -113,7 +120,7 @@
             if (config.target) rows.push(`${config.target.name}: <b>${(config.format || compact)(Number(config.target.values[i]) || 0)}</b>`);
             if (config.line && config.line.values[i] != null) rows.push(`${config.line.name}: <b>${(config.format || compact)(Number(config.line.values[i]))}</b>`);
             if (config.extra) rows.push(config.extra(i));
-            return `<strong>${labels[i]}</strong><br>${rows.join('<br>')}`;
+            return `<strong>${labels[i]}</strong><br>${rows.join('<br>')}${drillHint(config, i)}`;
         });
     }
 
@@ -151,7 +158,7 @@
                 const fmt = s.right ? (config.rightFormat || compact) : (config.format || compact);
                 return `${s.name}: <b>${value == null ? '–' : fmt(Number(value))}</b>`;
             });
-            return `<strong>${labels[i]}</strong><br>${rows.join('<br>')}`;
+            return `<strong>${labels[i]}</strong><br>${rows.join('<br>')}${drillHint(config, i)}`;
         });
     }
 
@@ -225,7 +232,7 @@
         hover(f, bars.map((bar) => bar.label), x, slot, (index) => {
             const bar = bars[index];
             const value = bar.total ? format(bar.value) : `${bar.value > 0 ? '+' : '−'}${format(Math.abs(bar.value))}`;
-            return `<strong>${bar.label}</strong><br>${value}${bar.detail ? `<br><span>${bar.detail}</span>` : ''}`;
+            return `<strong>${bar.label}</strong><br>${value}${bar.detail ? `<br><span>${bar.detail}</span>` : ''}${drillHint(config, index)}`;
         });
     }
 
@@ -278,6 +285,7 @@
             const dot = el('circle', {
                 cx: x(point.x), cy: y(point.y), r: radius.toFixed(1),
                 fill: color('--mx-chart-1'), class: `mx-bubble${clipped ? ' is-clipped' : ''}`, tabindex: point.href ? 0 : -1,
+                'data-mx-index': points.indexOf(point),
             }, f.svg);
             const show = () => {
                 f.tooltip.innerHTML = '';
@@ -285,6 +293,12 @@
                 strong.textContent = point.label;
                 f.tooltip.append(strong, document.createElement('br'), document.createTextNode(`${xFormat(point.x)} · margem ${yFormat(point.y)}${clipped ? ' (fora da escala)' : ''}`));
                 if (point.sub) f.tooltip.append(document.createElement('br'), document.createTextNode(point.sub));
+                if (drillHint(config, points.indexOf(point))) {
+                    const hint = document.createElement('span');
+                    hint.className = 'mx-tip-hint';
+                    hint.textContent = window.MXDrill.hint;
+                    f.tooltip.append(hint);
+                }
                 f.tooltip.hidden = false;
                 const box = f.svg.getBoundingClientRect();
                 const scale = box.width / f.width;
@@ -306,10 +320,82 @@
 
     const DRAWERS = { bars: drawBars, line: drawLine, waterfall: drawWaterfall, scatter: drawScatter };
 
+    /* Menu de opções (maxisysDrill.js): todo gráfico vira tabela, cópia e CSV; com
+       `config.drill(index)` o ponto clicado ganha "Expandir dados". Opcionais: `valueType`
+       (money, kg, int, pct: a tabela mostra o valor inteiro, não o resumido do eixo),
+       `labelName` (título da 1ª coluna), `canDrill(index)` e `actions(index)`. */
+    const stripTags = (text) => String(text == null ? '' : text).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+    function valueColumn(key, label, type, format, total) {
+        if (type) return { key, label, type, total };
+        return { key, label, type: 'dec', total, format: (value) => (value == null || value === '' ? '–' : (format || compact)(Number(value))) };
+    }
+
+    function drillSpec(type, config) {
+        // Nome no menu: o título do card (o `label` às vezes é só o id do gráfico).
+        const spec = { name: config.drillName || '', fallbackName: config.label || '', drill: config.drill || null, canDrill: config.canDrill || null, actions: config.actions || null };
+        const first = { key: 'label', label: config.labelName || (type === 'waterfall' ? 'Etapa' : type === 'scatter' ? 'Item' : 'Período') };
+        if (type === 'bars' || type === 'line') {
+            spec.label = (index) => config.labels[index];
+            spec.table = () => {
+                const totals = type === 'bars' && config.tableTotals !== false;
+                const columns = [first];
+                config.series.forEach((series, index) => {
+                    const format = series.right ? config.rightFormat : config.format;
+                    const kind = series.valueType || (series.right ? config.rightValueType : config.valueType);
+                    columns.push(valueColumn(`s${index}`, series.name, kind, format, totals));
+                });
+                if (config.stacked && config.series.length > 1) columns.push(valueColumn('stack', 'Total', config.valueType, config.format, totals));
+                if (config.target) columns.push(valueColumn('target', config.target.name, config.valueType, config.format, totals));
+                if (config.line) columns.push(valueColumn('line', config.line.name, config.line.valueType || config.valueType, config.format, totals));
+                if (config.extra) columns.push({ key: 'extra', label: 'Detalhe' });
+                const rows = config.labels.map((label, index) => {
+                    const row = { label, __index: index };
+                    config.series.forEach((series, si) => { row[`s${si}`] = series.values[index] == null ? null : Number(series.values[index]); });
+                    if (config.stacked && config.series.length > 1) row.stack = config.series.reduce((acc, series) => acc + (Number(series.values[index]) || 0), 0);
+                    if (config.target) row.target = config.target.values[index] == null ? null : Number(config.target.values[index]);
+                    if (config.line) row.line = config.line.values[index] == null ? null : Number(config.line.values[index]);
+                    if (config.extra) row.extra = stripTags(config.extra(index));
+                    return row;
+                });
+                return { columns, rows };
+            };
+        } else if (type === 'waterfall') {
+            const items = () => [
+                { label: config.start.label, value: config.start.value },
+                ...config.steps.filter((step) => step.value),
+                { label: config.end.label, value: config.end.value },
+            ];
+            spec.label = (index) => (items()[index] || {}).label;
+            spec.table = () => ({
+                columns: [first, valueColumn('value', 'Valor', config.valueType, config.format), { key: 'detail', label: 'Detalhe' }],
+                rows: items().map((item, index) => ({ label: item.label, value: item.value, detail: item.detail ? stripTags(item.detail) : '', __index: index })),
+            });
+        } else if (type === 'scatter') {
+            const points = () => config.points.filter((point) => point.x > 0 && point.y != null);
+            spec.label = (index) => (points()[index] || {}).label;
+            spec.table = () => ({
+                columns: [
+                    { ...first, sub: 'sub', href: 'href' },
+                    valueColumn('x', config.xName || 'Eixo horizontal', config.xValueType, config.xFormat),
+                    valueColumn('y', config.yName || 'Eixo vertical', config.yValueType, config.yFormat || ((value) => `${Math.round(value * 100)}%`)),
+                    valueColumn('size', config.sizeName || 'Tamanho', config.sizeValueType, config.sizeFormat),
+                ],
+                rows: points().map((point, index) => ({ label: point.label, sub: point.sub || '', href: point.href || null, x: point.x, y: point.y, size: point.size, __index: index })),
+            });
+            spec.actions = (index) => {
+                const point = points()[index] || {};
+                const own = config.actions ? config.actions(index) || [] : [];
+                return point.href ? [...own, { label: config.openLabel || 'Abrir a ficha', href: point.href }] : own;
+            };
+        }
+        return spec;
+    }
+
     function mount(container, type, config) {
         const draw = () => DRAWERS[type](container, config);
         registry.add(draw);
         draw();
+        if (window.MXDrill) window.MXDrill.attach(container, drillSpec(type, config));
         if (window.ResizeObserver) {
             let last = container.clientWidth;
             new ResizeObserver(() => {

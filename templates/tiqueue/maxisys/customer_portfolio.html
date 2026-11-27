@@ -56,28 +56,29 @@
 
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Resumo<small>{{ window.label }} · {{ window.range_label }}</small></h3>
+    {% url 'dashesCustomerPortfolioDetail' as kpi_url %}
     <div class="mx-grid mx-grid-kpi">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ kpi_url }}?indicador=lucro&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Lucro bruto</div>
             <div class="mx-kpi-value">{{ summary.profit_display }}</div>
             <div class="mx-kpi-foot"><span>margem {{ summary.margin_display }} · faturamento {{ summary.net_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ kpi_url }}?indicador=concentracao&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Concentração do lucro</div>
             <div class="mx-kpi-value">{{ summary.top20_display }}</div>
             <div class="mx-kpi-foot"><span>vem dos {{ summary.pareto.top20_count }} maiores (20% dos clientes) · {{ summary.pareto.count_for_80|default:"–" }} fazem 80%</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ kpi_url }}?indicador=margem-negativa&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Margem negativa</div>
             <div class="mx-kpi-value">{{ summary.negative_count }} cliente{{ summary.negative_count|pluralize }}</div>
             <div class="mx-kpi-foot"><span>{{ summary.negative_net_display }} vendidos sem lucro · {{ summary.low_count }} abaixo de 5%{% if summary.suspect_count %} · {{ summary.suspect_count }} com custo zerado a conferir{% endif %}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ kpi_url }}?indicador=clientes&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Clientes ativos</div>
             <div class="mx-kpi-value">{{ summary.customers }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta {{ summary.growth_tone }}">{{ summary.growth_display }}</span><span>faturamento contra o ano anterior</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-kpi-url="{{ kpi_url }}?indicador=ritmo&amp;periodo={{ window.key|urlencode }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}">
             <div class="mx-kpi-label">Ritmo de compra</div>
             <div class="mx-kpi-value">{{ summary.at_risk_count }} em risco</div>
             <div class="mx-kpi-foot"><span>{{ summary.late_count }} atrasado(s) em relação ao próprio ritmo</span></div>
@@ -92,10 +93,10 @@
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Curva de concentração do lucro</p><p class="mx-card-sub">% do lucro bruto acumulado (eixo vertical) pelos clientes do maior para o menor (eixo horizontal)</p></div></div>
             <div class="mx-chart" id="mxParetoChart" role="img" aria-label="Curva de concentração do lucro"></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxRfmCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Segmentos RFM</p><p class="mx-card-sub">Recência, frequência e valor de quem comprou no período</p></div></div>
             {% for row in summary.rfm %}
-            <div class="mx-bar-row" title="{{ row.description }}">
+            <div class="mx-bar-row" title="{{ row.description }}" data-mx-key="{{ row.key }}" data-mx-label="{{ row.label }}" data-mx-count="{{ row.count }}">
                 <span><button type="button" class="mx-badge mx-badge-btn {{ row.tone }}" data-mx-filter="rfm" data-mx-value="{{ row.key }}">{{ row.label }}</button></span>
                 <div class="mx-progress" role="img" aria-label="{{ row.count }} cliente(s)"><i style="width: {% widthratio row.count summary.rfm_customers|default:1 100 %}%"></i></div>
                 <b>{{ row.count }}</b>
@@ -157,7 +158,7 @@
                 <tbody>
                     {% spaceless %}
                     {% for row in table_rows %}
-                    <tr data-position="{{ forloop.counter }}" data-name="{{ row.name }}" data-rep="{{ row.rep_name }}" data-segment="{{ row.segment_label }}"
+                    <tr data-mx-key="{{ row.code }}" data-mx-label="{{ row.name }}" data-position="{{ forloop.counter }}" data-name="{{ row.name }}" data-rep="{{ row.rep_name }}" data-segment="{{ row.segment_label }}"
                         data-net="{{ row.net|default_if_none:'' }}" data-profit="{{ row.profit|default_if_none:'' }}" data-margin="{{ row.margin|default_if_none:'' }}"
                         data-growth="{{ row.growth|default_if_none:'' }}" data-days="{{ row.days_since|default_if_none:'' }}" data-hprofit="{{ row.history_profit|default_if_none:'' }}"
                         data-search="{{ row.name }} {{ row.trade_name }} {{ row.place }} {{ row.rep_name }} {{ row.segment_label }} {{ row.cnpj }}">
@@ -245,12 +246,13 @@
 </details>
 
 {{ summary.pareto_chart|json_script:"mxParetoData" }}
+{{ pareto_customers|json_script:"mxParetoCustomers" }}
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 {% if not data_error %}
-<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=4"></script>
 <script src="{% static '/js/maxisysTable.js' %}?v=1"></script>
 <script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
 <script>
@@ -258,12 +260,94 @@
     const read = (id) => JSON.parse(document.getElementById(id).textContent);
     const pareto = read('mxParetoData');
     const percent = (value) => `${Math.round(value)}%`;
+    const paretoCustomers = read('mxParetoCustomers') || [];
+    // Tabela de clientes: botão direito numa linha abre o cliente no período (mês a mês e as notas).
+    // As linhas mudam de ordem e de página (maxisysTable), então o ponto é a linha, não a posição.
+    const portfolioTable = document.getElementById('mxPortfolioTable');
+    if (window.MXDrill && portfolioTable) {
+        const lines = [...portfolioTable.querySelectorAll('tbody tr[data-mx-key]')];
+        const heads = [...portfolioTable.querySelectorAll('thead th')].map((th) => th.innerText.trim());
+        const cellText = (cell) => cell.innerText.replace(/\s+/g, ' ').trim();
+        lines.forEach((tr, index) => { tr.setAttribute('data-mx-index', index); tr.title = window.MXDrill.hint; });
+        window.MXDrill.attach(portfolioTable.closest('.mx-table-wrap'), {
+            tableTitle: 'Clientes da tabela',
+            label: (index) => (lines[index] ? lines[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: heads.map((label, index) => ({ key: `c${index}`, label: label || ' ', sortNumeric: index === 0 || index > 3 })),
+                rows: lines.map((tr, index) => ({ ...Object.fromEntries([...tr.children].map((cell, cellIndex) => [`c${cellIndex}`, cellText(cell)])), __index: index })),
+            }),
+            drill: (index) => window.MXDrill.fetchJSON(`{% url 'dashesCustomerPortfolioDetail' %}?cliente=${encodeURIComponent(lines[index].dataset.mxKey)}&periodo={{ window.key|urlencode }}{% if view == "reativacao" %}&historico=1{% endif %}`),
+            canDrill: (index) => !!lines[index],
+            actions: (index) => {
+                const link = lines[index] && lines[index].querySelector('a[href]');
+                return link ? [{ label: 'Abrir a ficha do cliente', href: link.getAttribute('href') }] : [];
+            },
+        });
+    }
+    // Segmentos RFM: cada barra abre os clientes do segmento (com os filtros da página, menos o de
+    // RFM, como a distribuição).
+    const rfmCard = document.getElementById('mxRfmCard');
+    if (window.MXDrill && rfmCard) {
+        const bars = [...rfmCard.querySelectorAll('.mx-bar-row[data-mx-key]')];
+        bars.forEach((bar, index) => { bar.setAttribute('data-mx-index', index); bar.title = `${bar.title}\n${window.MXDrill.hint}`; });
+        window.MXDrill.attach(rfmCard, {
+            tableTitle: 'Clientes por segmento RFM',
+            label: (index) => (bars[index] ? bars[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: [{ key: 'label', label: 'Segmento' }, { key: 'count', label: 'Clientes', type: 'int', total: true }, { key: 'description', label: 'O que é', wrap: true }],
+                rows: bars.map((bar, index) => ({ label: bar.dataset.mxLabel, count: Number(bar.dataset.mxCount), description: bar.title.split('\n')[0], __index: index })),
+            }),
+            drill: (index) => window.MXDrill.fetchJSON(`{% url 'dashesCustomerPortfolioDetail' %}?indicador=rfm:${encodeURIComponent(bars[index].dataset.mxKey)}&periodo={{ window.key|urlencode }}{% if filter_query %}&{{ filter_query|escapejs }}{% endif %}`),
+            canDrill: (index) => !!bars[index] && Number(bars[index].dataset.mxCount) > 0,
+        });
+    }
+    const profileUrl = (code) => '{% url "dashesCustomerProfilePage" 0 %}'.replace('/0/', `/${code}/`);
+    const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+    function paretoDrill(index) {
+        const size = pareto.sizes[index];
+        const top = paretoCustomers.slice(0, size);
+        const totalProfit = paretoCustomers.reduce((acc, row) => acc + (row.profit || 0), 0) || 1;
+        const profit = top.reduce((acc, row) => acc + (row.profit || 0), 0);
+        let running = 0;
+        return {
+            title: `${pareto.labels[index]} dos clientes`,
+            subtitle: `Os ${size} cliente(s) de maior lucro bruto somam ${percent(pareto.values[index])} do lucro da carteira filtrada`,
+            summary: [
+                { label: 'Clientes', value: String(size), note: `de ${paretoCustomers.length} com lucro` },
+                { label: 'Lucro bruto', value: brl.format(profit), note: `${percent(profit / totalProfit * 100)} do lucro` },
+                { label: 'Faturamento', value: brl.format(top.reduce((acc, row) => acc + (row.net || 0), 0)) },
+            ],
+            sections: [{
+                key: 'customers', label: 'Clientes', sort: { key: 'rank', dir: 'asc' }, empty: 'Nenhum cliente.',
+                columns: [
+                    { key: 'rank', label: 'Posição', type: 'int' },
+                    { key: 'customer', label: 'Cliente', href: 'url', sub: 'place' },
+                    { key: 'net', label: 'Faturamento', type: 'money', total: true },
+                    { key: 'profit', label: 'Lucro bruto', type: 'money', total: true, strong: true },
+                    { key: 'margin', label: 'Margem', type: 'pct' },
+                    { key: 'share', label: '% do lucro', type: 'pct', total: true },
+                    { key: 'cumulative', label: 'Acumulado', type: 'pct' },
+                ],
+                rows: top.map((row, position) => {
+                    running += row.profit || 0;
+                    return {
+                        rank: position + 1, customer: row.name, url: profileUrl(row.code), place: [row.code, row.place].filter(Boolean).join(' · '),
+                        net: row.net, profit: row.profit, margin: row.margin, share: (row.profit || 0) / totalProfit, cumulative: running / totalProfit,
+                    };
+                }),
+            }],
+        };
+    }
     if (pareto.values.length) {
         window.MXCharts.line(document.getElementById('mxParetoChart'), {
             label: 'Curva de concentração do lucro',
             labels: pareto.labels,
             series: [{ name: 'Lucro acumulado', values: pareto.values, color: '--mx-chart-1', area: true }],
             format: percent,
+            labelName: '% dos clientes', // 1ª coluna da tabela do menu de opções
+            // "Expandir dados": os clientes que formam o ponto (os N de maior lucro).
+            drill: (index) => paretoDrill(index),
+            canDrill: (index) => !!(pareto.sizes && pareto.sizes[index]),
         });
     }
 })();

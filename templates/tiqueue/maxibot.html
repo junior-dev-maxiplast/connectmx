@@ -9,40 +9,44 @@
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
     <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
     {% include 'partials/maxisys_head.html' %}
+    <link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">
 </head>
-<body>
-    {% include 'partials/sidebar.html' %}
+<body class="hd-body">
+    {% include 'partials/helpdesk_sidebar.html' %}
 
-    <div class="queue_main checklist-page">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Maxibot</h1>
-                <div class="subtitle">Pergunte algo e eu busco respostas na Base de Conhecimento</div>
+    <main class="hd-kb">
+        <div class="mx-page-head">
+            <div>
+                <span class="mx-kicker">Base de conhecimento</span>
+                <h2>MaxiBot</h2>
+                <p>Pergunte em poucas palavras e ele busca nos registros da base (busca por termos, sem IA generativa). Para o solicitante, o assistente de IA fica no portal.</p>
             </div>
         </div>
 
-        <div class="checklist-card maxibot-chat-card">
-            <div class="maxibot-chat-head">
-                <div class="maxibot-avatar">M</div>
-                <div class="maxibot-chat-head-text">
-                    <div class="checklist-card-title">Maxibot</div>
-                    <div class="maxibot-chat-sub">Assistente da Base de Conhecimento</div>
+        <section class="mx-section">
+            <article class="mx-card maxibot-chat-card hd-bot">
+                <div class="mx-card-head maxibot-chat-head">
+                    <span class="mx-card-icon maxibot-avatar"><svg class="mx-ico"><use href="#hd-i-bot"/></svg></span>
+                    <div class="maxibot-chat-head-text">
+                        <p class="mx-card-title">MaxiBot</p>
+                        <p class="mx-card-sub maxibot-chat-sub">Assistente da base de conhecimento</p>
+                    </div>
+                    <button id="maxibotClearBtn" type="button" class="mx-btn mx-btn-ghost mx-card-aside">Limpar conversa</button>
                 </div>
-                <button id="maxibotClearBtn" type="button" class="queue-secondary-btn">Limpar conversa</button>
-            </div>
 
-            <div id="maxibotMessages" class="maxibot-messages">
-                <div class="maxibot-bubble maxibot-bubble-bot">
-                    Ola! Me pergunte sobre erros, solucao, causa raiz ou procedimentos da base.
+                <div id="maxibotMessages" class="maxibot-messages">
+                    <div class="maxibot-bubble maxibot-bubble-bot">
+                        Ola! Me pergunte sobre erros, solucao, causa raiz ou procedimentos da base.
+                    </div>
                 </div>
-            </div>
 
-            <div class="maxibot-compose">
-                <textarea id="maxibotQuestion" class="queue-input-sm table-input maxibot-input" placeholder="Digite sua pergunta..."></textarea>
-                <button id="maxibotAskBtn" type="button" class="queue-primary-btn">Enviar</button>
-            </div>
-        </div>
-    </div>
+                <div class="maxibot-compose">
+                    <textarea id="maxibotQuestion" class="mx-input maxibot-input" placeholder="Digite sua pergunta..."></textarea>
+                    <button id="maxibotAskBtn" type="button" class="mx-btn">Enviar</button>
+                </div>
+            </article>
+        </section>
+    </main>
 
     <script>
         function getCookie(name) {

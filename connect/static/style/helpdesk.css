@@ -1,0 +1,430 @@
+/* Helpdesk no padrão visual MaxiSys (o mesmo dos Dashes).
+
+   1. Painel do Helpdesk (Dashes): detalhes que os componentes mx-* não cobrem.
+   As telas do portal e da base de conhecimento ganham o restante desta folha
+   (menu lateral, cartões, tabelas, selos e formulários) mais abaixo. */
+
+/* ---------- 1. Painel do Helpdesk ---------- */
+.hd-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.hd-kpis { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.hd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.hd-facts .mx-fact strong { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hd-heat td { min-width: 22px; padding: 6px 2px; }
+.hd-heat th.is-row { width: 44px; }
+.hd-heat tr.is-dimmed td { opacity: .32; }
+.hd-table td { white-space: nowrap; }
+.hd-table .hd-table-title { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 560px) {
+    .hd-facts { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- 2. Casco do Helpdesk (partials/helpdesk_sidebar.html) ---------- */
+/* Fundo liso do MaxiSys no lugar do degradê do portal, e o conteúdo começa
+   depois do menu lateral, como nas telas do Dashes. */
+html[data-theme] body.hd-body,
+html[data-theme] body.hd-body.support-portal-body { background: var(--mx-bg); background-image: none; color: var(--mx-text); font-family: var(--mx-font); }
+html[data-theme] body.hd-body > main {
+    margin-left: calc(var(--mx-side-w) + 24px); margin-right: 24px;
+    width: auto; max-width: 1640px; padding: 22px 0 48px;
+    transition: margin-left .18s ease;
+}
+@media (max-width: 900px) {
+    html[data-theme] body.hd-body > main { margin-left: 16px; margin-right: 16px; padding-top: 16px; }
+}
+@media print {
+    html[data-theme] body.hd-body > main { margin: 0; }
+}
+
+.hd-sidebar .mx-nav-label { margin-top: 10px; }
+.hd-nav-note { margin: 10px 12px 0; color: var(--mx-sidebar-muted); font-size: 11.5px; line-height: 1.45; }
+html.mx-rail .hd-sidebar .hd-nav-note { display: none; }
+.hd-appbar .mx-topbar-left > div { min-width: 0; }
+.hd-appbar .mx-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hd-role { flex: 0 0 auto; background: var(--mx-info-bg); color: var(--mx-info); }
+.hd-role.is-staff { background: var(--mx-accent-soft); color: var(--mx-accent-deep, var(--mx-accent)); }
+.hd-back { white-space: nowrap; }
+
+/* Notificações do portal no sino da barra superior */
+.hd-notif { position: relative; }
+.hd-notif > summary { position: relative; list-style: none; }
+.hd-notif > summary::-webkit-details-marker { display: none; }
+.hd-notif-count {
+    position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px;
+    display: grid; place-items: center; background: var(--mx-accent); color: #fff; font-size: 10px; font-weight: 800; line-height: 1;
+}
+.hd-notif-panel {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 120; width: min(340px, calc(100vw - 24px));
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: 0 14px 34px rgba(0, 0, 0, .18);
+    overflow: hidden;
+}
+.hd-notif-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--mx-border); }
+.hd-notif-head strong { font-size: 12.5px; }
+.hd-notif-head form { margin: 0; }
+.hd-notif-mark { border: 0; background: none; color: var(--mx-info); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; padding: 0; }
+.hd-notif-mark:hover { text-decoration: underline; }
+.hd-notif-list { list-style: none; margin: 0; padding: 4px; max-height: 360px; overflow-y: auto; }
+.hd-notif-item { display: grid; gap: 2px; padding: 8px 10px; border-radius: 6px; color: var(--mx-text); text-decoration: none; font-size: 12px; }
+.hd-notif-item:hover { background: var(--mx-icon-bg); }
+.hd-notif-item.is-unread { background: var(--mx-accent-soft); }
+.hd-notif-item.is-unread strong::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--mx-accent); vertical-align: 2px; }
+.hd-notif-item span { color: var(--mx-muted); font-size: 11.5px; }
+.hd-notif-item small { color: var(--mx-faint); font-size: 10.5px; }
+.hd-notif-empty { margin: 0; padding: 18px 12px; color: var(--mx-muted); font-size: 12px; text-align: center; }
+@media (max-width: 560px) {
+    .hd-role { display: none; }
+}
+
+/* ---------- 3. Início do portal ---------- */
+.hd-home .mx-page-head .mx-kicker { margin-bottom: 4px; }
+.hd-home .mx-kpi-hero .hd-tone-primary { --mx-kpi-accent: var(--mx-cat-1); }
+.hd-home .mx-kpi-hero .hd-tone-info { --mx-kpi-accent: var(--mx-cat-7); }
+.hd-home .mx-kpi-hero .hd-tone-success { --mx-kpi-accent: var(--mx-good); }
+.hd-home .mx-kpi-hero .hd-tone-warning { --mx-kpi-accent: var(--mx-cat-4); }
+.hd-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.hd-action {
+    display: flex; align-items: flex-start; gap: 12px; padding: 16px; color: var(--mx-text); text-decoration: none;
+    transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+a.hd-action:hover { border-color: var(--mx-accent); transform: translateY(-1px); box-shadow: 0 10px 24px rgba(16, 41, 58, .1); }
+a.hd-action:focus-visible { outline: 2px solid var(--mx-accent); outline-offset: 2px; }
+.hd-action.is-primary { border-color: var(--mx-accent); background: linear-gradient(var(--mx-accent-soft), var(--mx-accent-soft)), var(--mx-card); }
+.hd-action.is-primary .mx-card-icon { background: var(--mx-accent); color: #fff; }
+.hd-action.is-blocked { border-color: var(--mx-warn); background: linear-gradient(var(--mx-warn-bg), var(--mx-warn-bg)), var(--mx-card); }
+.hd-action.is-blocked .mx-card-icon { background: var(--mx-warn); color: #fff; }
+.hd-action-copy { display: grid; gap: 3px; min-width: 0; }
+.hd-action-copy strong { font-size: 13.5px; font-weight: 700; }
+.hd-action-copy span { color: var(--mx-muted); font-size: 12px; line-height: 1.45; }
+.hd-insights { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.hd-insights .mx-fact strong { font-size: 16px; font-weight: 800; }
+@media (max-width: 560px) {
+    /* No celular os quatro números cabem em duas colunas, sem empurrar as ações para baixo. */
+    .hd-home .mx-kpi-hero,
+    .hd-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .hd-home .mx-kpi-hero .mx-card { padding: 10px 12px; }
+    .hd-home .mx-kpi-hero .mx-kpi-value { font-size: 20px; }
+    .hd-home .mx-kpi-hero .mx-kpi-foot { display: none; }
+}
+
+/* ---------- 4. Componentes do portal no padrão MaxiSys ---------- */
+/* Os seletores levam html[data-theme] body.hd-body para valer sobre o claro e o
+   escuro do supportPortal.css, que pintavam com azul e degradês fixos. */
+
+/* Avisos */
+html[data-theme] body.hd-body .support-banner {
+    border-radius: 8px; border: 1px solid var(--mx-border); background: var(--mx-card); color: var(--mx-text);
+    font-size: 12.5px; box-shadow: none;
+}
+html[data-theme] body.hd-body .support-banner.is-success { border-color: transparent; background: var(--mx-good-bg); color: var(--mx-good); }
+html[data-theme] body.hd-body .support-banner.is-danger { border-color: transparent; background: var(--mx-bad-bg); color: var(--mx-bad); }
+html[data-theme] body.hd-body .support-banner.is-warning { border-color: transparent; background: var(--mx-warn-bg); color: var(--mx-warn); }
+
+/* Selos de situação: mesmo desenho do .mx-badge */
+html[data-theme] body.hd-body .support-chip {
+    min-height: 22px; padding: 0 9px; border: 0; border-radius: 99px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .02em; background: var(--mx-icon-bg); color: var(--mx-muted);
+}
+html[data-theme] body.hd-body .support-chip.is-pending { background: var(--mx-warn-bg); color: var(--mx-warn); }
+html[data-theme] body.hd-body .support-chip.is-assumed,
+html[data-theme] body.hd-body .support-chip.is-info { background: var(--mx-info-bg); color: var(--mx-info); }
+html[data-theme] body.hd-body .support-chip.is-waiting { background: color-mix(in srgb, var(--mx-cat-7) 14%, transparent); color: var(--mx-cat-7); }
+html[data-theme] body.hd-body .support-chip.is-completed,
+html[data-theme] body.hd-body .support-chip.is-success { background: var(--mx-good-bg); color: var(--mx-good); }
+html[data-theme] body.hd-body .support-chip.is-cancelled,
+html[data-theme] body.hd-body .support-chip.is-danger { background: var(--mx-bad-bg); color: var(--mx-bad); }
+html[data-theme] body.hd-body .support-chip.is-soft-neutral { background: var(--mx-icon-bg); color: var(--mx-muted); }
+
+/* Botões do portal: ação principal laranja, secundária contornada */
+html[data-theme] body.hd-body > main .support-btn {
+    border-radius: 7px; border: 1px solid var(--mx-accent); background: var(--mx-accent); color: #fff;
+    font-family: var(--mx-font); font-weight: 600; box-shadow: none;
+}
+html[data-theme] body.hd-body > main .support-btn:hover { background: var(--mx-accent-deep); border-color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body > main .support-btn.support-btn-secondary { background: var(--mx-card); border-color: var(--mx-border); color: var(--mx-text); }
+html[data-theme] body.hd-body > main .support-btn.support-btn-secondary:hover { background: var(--mx-card-2); border-color: var(--mx-faint); }
+
+/* ---------- 5. Entrada de chamados ---------- */
+html[data-theme] body.hd-body .support-queue-shell { width: auto; }
+html[data-theme] body.hd-body .ticket-header-titles h1 { font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: var(--mx-text); }
+html[data-theme] body.hd-body .ticket-header-accent { display: none; }
+html[data-theme] body.hd-body .ticket-header-kicker { padding-left: 0; border-left: 0; color: var(--mx-muted); font-size: 12px; font-weight: 500; }
+html[data-theme] body.hd-body .ticket-header-sub { color: var(--mx-muted); font-size: 12px; }
+html[data-theme] body.hd-body .ticket-header-sub strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .ticket-kpis { gap: 12px; }
+html[data-theme] body.hd-body .ticket-kpi {
+    min-width: 168px; padding: 12px 16px 12px 18px; border-radius: 8px;
+    background: var(--mx-card); border: 1px solid var(--mx-border); box-shadow: var(--mx-shadow);
+}
+html[data-theme] body.hd-body .ticket-kpi::before { background: var(--mx-chart-1); opacity: .9; }
+html[data-theme] body.hd-body .ticket-kpi.is-danger::before { background: var(--mx-bad); }
+html[data-theme] body.hd-body .ticket-kpi.is-warning::before { background: var(--mx-warn); }
+html[data-theme] body.hd-body .ticket-kpi.is-static::before { background: var(--mx-chart-3); }
+html[data-theme] body.hd-body .ticket-kpi-value { font-size: 22px; letter-spacing: -.02em; color: var(--mx-text); }
+html[data-theme] body.hd-body .ticket-kpi-value small { color: var(--mx-faint); }
+html[data-theme] body.hd-body .ticket-kpi-label { font-size: 11.5px; font-weight: 500; letter-spacing: 0; color: var(--mx-muted); }
+html[data-theme] body.hd-body .ticket-kpi.is-danger .ticket-kpi-value { color: var(--mx-bad); }
+html[data-theme] body.hd-body .ticket-kpi.is-warning .ticket-kpi-value { color: var(--mx-warn); }
+html[data-theme] body.hd-body a.ticket-kpi:hover { border-color: var(--mx-faint); }
+html[data-theme] body.hd-body .ticket-kpi.is-active { border-color: var(--mx-accent); background: var(--mx-accent-soft); }
+html[data-theme] body.hd-body .ticket-tabs { background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; }
+html[data-theme] body.hd-body .ticket-tab { color: var(--mx-muted); border-radius: 99px; font-weight: 600; }
+html[data-theme] body.hd-body .ticket-tab:hover { color: var(--mx-text); background: var(--mx-card-2); }
+html[data-theme] body.hd-body .ticket-tab.is-active { color: var(--mx-accent-deep); background: var(--mx-accent-soft); border-color: var(--mx-accent); font-weight: 700; }
+html[data-theme] body.hd-body .ticket-tab span { background: var(--mx-icon-bg); color: var(--mx-muted); }
+html[data-theme] body.hd-body .ticket-tab.is-active span { background: var(--mx-accent); color: #fff; }
+html[data-theme] body.hd-body .ticket-toolbar,
+html[data-theme] body.hd-body .ticket-table-wrap { background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: var(--mx-shadow); }
+html[data-theme] body.hd-body .ticket-table thead th {
+    color: var(--mx-faint); font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+    background: var(--mx-card); border-bottom: 1px solid var(--mx-border);
+}
+html[data-theme] body.hd-body .ticket-table tbody td { border-color: var(--mx-border); }
+html[data-theme] body.hd-body .ticket-table tbody tr:hover td { background: var(--mx-card-2); }
+html[data-theme] body.hd-body .ticket-console .queue-select,
+html[data-theme] body.hd-body .ticket-search,
+html[data-theme] body.hd-body .ticket-select {
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 7px; color: var(--mx-text); color-scheme: inherit;
+}
+html[data-theme] body.hd-body .ticket-console .queue-select option { background-color: var(--mx-card); color: var(--mx-text); }
+html[data-theme] body.hd-body .ticket-console .queue-select:focus,
+html[data-theme] body.hd-body .ticket-search:focus-within,
+html[data-theme] body.hd-body .ticket-select:focus { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] body.hd-body .ticket-console .queue-secondary-btn { background: var(--mx-card); border: 1px solid var(--mx-border); color: var(--mx-text); }
+html[data-theme] body.hd-body .ticket-console .queue-secondary-btn:hover { background: var(--mx-card-2); border-color: var(--mx-faint); }
+
+/* ---------- 6. Abertura de chamado (formulário) ---------- */
+/* O formulário era verde e com manchas de luz ao fundo; no MaxiSys o laranja
+   marca o que está escolhido e o verde fica só para "concluído". */
+html[data-theme] body.hd-body.newticket-body::before,
+html[data-theme] body.hd-body.newticket-body::after,
+html[data-theme] body.hd-body.support-home-body::before,
+html[data-theme] body.hd-body.support-home-body::after { display: none; }
+html[data-theme] body.hd-body .newticket-shell { width: auto; }
+html[data-theme] body.hd-body .newticket-kicker { color: var(--mx-accent); font-weight: 800; }
+html[data-theme] body.hd-body .newticket-head-copy h1 { color: var(--mx-text); }
+html[data-theme] body.hd-body .newticket-head-copy p { color: var(--mx-muted); }
+html[data-theme] body.hd-body .newticket-avatar { background: linear-gradient(135deg, #1d4f66, #0c2232); box-shadow: 0 0 0 2px var(--mx-bg), 0 0 0 3.5px #00a6e2; }
+html[data-theme] body.hd-body .newticket-progress-track { background: var(--mx-icon-bg); }
+html[data-theme] body.hd-body .newticket-progress-fill,
+html[data-theme] body.hd-body .support-topbar.is-staff ~ main .newticket-progress-fill { background: var(--mx-accent); }
+html[data-theme] body.hd-body .newticket-step,
+html[data-theme] body.hd-body .newticket-side-card {
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: var(--mx-shadow); backdrop-filter: none;
+}
+html[data-theme] body.hd-body .newticket-side-card.is-sla { border-color: var(--mx-border); box-shadow: inset 3px 0 0 var(--mx-chart-1); }
+html[data-theme] body.hd-body .newticket-step-num,
+html[data-theme] body.hd-body .newticket-step.is-attendant-only .newticket-step-num { background: var(--mx-accent-soft); color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .newticket-field input[type="text"],
+html[data-theme] body.hd-body .newticket-field input[type="number"],
+html[data-theme] body.hd-body .newticket-field input[type="date"],
+html[data-theme] body.hd-body .newticket-field textarea,
+html[data-theme] body.hd-body .newticket-field select { background: var(--mx-card); border-color: var(--mx-border); color: var(--mx-text); color-scheme: inherit; }
+html[data-theme] body.hd-body .newticket-field input:focus,
+html[data-theme] body.hd-body .newticket-field textarea:focus,
+html[data-theme] body.hd-body .newticket-field select:focus { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] body.hd-body .newticket-choice,
+html[data-theme] body.hd-body .newticket-impact-card { background: var(--mx-card); border-color: var(--mx-border); color: var(--mx-text); }
+html[data-theme] body.hd-body .newticket-choice:hover,
+html[data-theme] body.hd-body .newticket-impact-card:hover { border-color: var(--mx-faint); }
+html[data-theme] body.hd-body .newticket-choice.is-selected,
+html[data-theme] body.hd-body .newticket-impact-card.is-selected { border-color: var(--mx-accent); background: var(--mx-accent-soft); color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .newticket-dropzone { background: var(--mx-card-2); border-color: var(--mx-border); }
+html[data-theme] body.hd-body .newticket-dropzone:hover,
+html[data-theme] body.hd-body .newticket-dropzone:focus-visible,
+html[data-theme] body.hd-body .newticket-dropzone.is-dragover { border-color: var(--mx-accent); background: var(--mx-accent-soft); }
+html[data-theme] body.hd-body .newticket-dropzone-link { color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .newticket-chat-banner { border-color: var(--mx-accent); border-radius: 8px; background: var(--mx-accent-soft); }
+html[data-theme] body.hd-body .newticket-chat-banner:hover { background: color-mix(in srgb, var(--mx-accent) 18%, transparent); }
+html[data-theme] body.hd-body .newticket-chat-banner-copy strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .newticket-chat-banner-copy span { color: var(--mx-muted); }
+html[data-theme] body.hd-body .newticket-chat-banner-arrow { color: var(--mx-accent); }
+/* ---------- 7. Conversa com o assistente de IA ---------- */
+html[data-theme] body.hd-body .aichat-shell {
+    width: min(760px, 100%); margin: 0 auto; border-radius: 8px; border: 1px solid var(--mx-border);
+    background: var(--mx-card); box-shadow: var(--mx-shadow); overflow: hidden;
+}
+html[data-theme] body.hd-body .aichat-header { background: var(--mx-card-2); color: var(--mx-text); border-bottom: 1px solid var(--mx-border); }
+html[data-theme] body.hd-body .aichat-header-copy strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .aichat-header-copy span { color: var(--mx-muted); }
+html[data-theme] body.hd-body .aichat-header-copy span.is-typing { color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .aichat-avatar { background: var(--mx-accent-soft); }
+html[data-theme] body.hd-body .aichat-log { background-color: var(--mx-bg); background-image: radial-gradient(var(--mx-border) 1px, transparent 1px); }
+html[data-theme] body.hd-body .aichat-bubble { box-shadow: none; border: 1px solid var(--mx-border); }
+html[data-theme] body.hd-body .aichat-bubble.is-bot,
+html[data-theme] body.hd-body .aichat-summary-card { background: var(--mx-card); color: var(--mx-text); }
+html[data-theme] body.hd-body .aichat-bubble.is-user { background: var(--mx-accent-soft); color: var(--mx-text); border-color: color-mix(in srgb, var(--mx-accent) 35%, transparent); }
+html[data-theme] body.hd-body .aichat-bubble.is-error { background: var(--mx-bad-bg); color: var(--mx-bad); border-color: transparent; }
+html[data-theme] body.hd-body .aichat-bubble-time,
+html[data-theme] body.hd-body .aichat-typing-row .aichat-bubble,
+html[data-theme] body.hd-body .aichat-summary-row span,
+html[data-theme] body.hd-body .aichat-summary-files { color: var(--mx-faint); }
+html[data-theme] body.hd-body .aichat-summary-card h3,
+html[data-theme] body.hd-body .aichat-similar-title { color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .aichat-summary-row strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .aichat-similar { border-top-color: var(--mx-border); }
+html[data-theme] body.hd-body .aichat-input-bar,
+html[data-theme] body.hd-body .aichat-chips,
+html[data-theme] body.hd-body .aichat-footer-link { background: var(--mx-card-2); }
+html[data-theme] body.hd-body .aichat-input-bar { border-top: 1px solid var(--mx-border); }
+html[data-theme] body.hd-body .aichat-input-bar input { background: var(--mx-card); color: var(--mx-text); border: 1px solid var(--mx-border); }
+html[data-theme] body.hd-body .aichat-input-bar input:focus { outline: none; border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] body.hd-body .aichat-send-btn,
+html[data-theme] body.hd-body .aichat-attach-btn.is-suggested { background: var(--mx-accent); color: #fff; }
+html[data-theme] body.hd-body .aichat-send-btn:hover { background: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .aichat-attach-btn { color: var(--mx-muted); }
+html[data-theme] body.hd-body .aichat-attach-btn:hover { background: var(--mx-icon-bg); color: var(--mx-text); }
+html[data-theme] body.hd-body .aichat-chip { background: var(--mx-card); color: var(--mx-text); border: 1px solid var(--mx-border); box-shadow: none; }
+html[data-theme] body.hd-body .aichat-chip-remove { background: var(--mx-icon-bg); color: var(--mx-muted); }
+html[data-theme] body.hd-body .aichat-footer-link a { color: var(--mx-info); }
+
+/* ---------- 7b. Minhas demandas e conversa do chamado ---------- */
+/* As duas já usam as variáveis do MaxiSys (maxisysTheme.css); aqui só o que
+   ainda divergia dos Dashes: título, cantos dos cartões, abas e aviso de avaliação. */
+html[data-theme] body.hd-body .md-page,
+html[data-theme] body.hd-body .dd-page { max-width: 1640px; }
+html[data-theme] body.hd-body .md-title { font-size: 22px; font-weight: 800; color: var(--mx-text); }
+html[data-theme] body.hd-body .md-card { border-radius: 8px; box-shadow: var(--mx-shadow); }
+html[data-theme] body.hd-body .md-tab.is-active { color: var(--mx-text); border-bottom-color: var(--mx-accent); }
+html[data-theme] body.hd-body .md-tab span { background: var(--mx-icon-bg); color: var(--mx-muted); }
+html[data-theme] body.hd-body .md-tab.is-active span { background: var(--mx-accent); color: #fff; }
+html[data-theme] body.hd-body .md-gate { border-radius: 8px; border-color: var(--mx-warn); background: var(--mx-warn-bg); }
+html[data-theme] body.hd-body .md-gate-cta { background: var(--mx-warn); color: #fff; }
+html[data-theme] body.hd-body .md-notice,
+html[data-theme] body.hd-body .dd-notice { border-radius: 8px; }
+html[data-theme] body.hd-body .dd-kicker { color: var(--mx-accent); }
+html[data-theme] body.hd-body .dd-title { font-size: 22px; color: var(--mx-text); }
+
+/* ---------- 8. Base de conhecimento e MaxiBot ---------- */
+.hd-kb .mx-page-head .mx-kicker { margin-bottom: 4px; }
+.hd-kb-filters .mx-input { min-width: min(280px, 100%); }
+.hd-kb-layout { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; }
+.hd-kb-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.hd-kb-facts .mx-fact strong { white-space: normal; }
+.hd-kb-facts .mx-fact strong .mx-badge { vertical-align: 1px; }
+.hd-kb-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.hd-kb-tags .mx-chip { cursor: default; }
+.hd-kb-text { font-size: 13px; line-height: 1.6; color: var(--mx-text); overflow-wrap: anywhere; }
+.hd-kb-solution { box-shadow: inset 3px 0 0 var(--mx-good); }
+.hd-kb-kv dd { overflow-wrap: anywhere; }
+.hd-kb-table td { vertical-align: top; }
+.hd-kb-table .hd-kb-clip { min-width: 200px; max-width: 340px; color: var(--mx-muted); font-size: 11.5px; }
+.hd-kb-edit > summary { cursor: pointer; list-style: none; margin-bottom: 0; }
+.hd-kb-edit > summary::-webkit-details-marker { display: none; }
+.hd-kb-edit[open] > summary { margin-bottom: 14px; }
+.hd-input-wide { width: 100%; min-width: 200px; }
+.hd-input-num { width: 72px; text-align: right; }
+
+/* Formulários das telas do helpdesk */
+.hd-form { display: grid; gap: 14px; }
+.hd-form .mx-alert { margin-top: 0; }
+.hd-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.hd-form-grid.is-single { grid-template-columns: minmax(0, 1fr); }
+.hd-field { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.hd-field.is-wide { grid-column: 1 / -1; }
+.hd-field.is-check { align-content: end; }
+.hd-field > label { color: var(--mx-muted); font-size: 11.5px; font-weight: 600; }
+.hd-field input:not([type="checkbox"]):not([type="file"]),
+.hd-field select,
+.hd-field textarea {
+    width: 100%; min-height: 32px; padding: 7px 10px; border: 1px solid var(--mx-border); border-radius: 7px;
+    background: var(--mx-card); color: var(--mx-text); font: inherit; font-size: 12.5px; color-scheme: inherit;
+}
+.hd-field textarea { min-height: 72px; resize: vertical; line-height: 1.5; }
+.hd-field input:focus, .hd-field select:focus, .hd-field textarea:focus,
+.hd-kb .mx-input:focus, .hd-kb .mx-select:focus { outline: none; border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+.hd-field input[type="file"] { font: inherit; font-size: 12px; color: var(--mx-muted); }
+.hd-field-error { color: var(--mx-bad); font-size: 11px; font-weight: 600; }
+.hd-check { display: inline-flex; align-items: center; gap: 8px; color: var(--mx-text); font-size: 12.5px; cursor: pointer; }
+.hd-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 1180px) {
+    .hd-kb-layout, .hd-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+html[data-theme] body.hd-body .hd-bot .maxibot-chat-head { margin-bottom: 12px; }
+html[data-theme] body.hd-body .hd-bot .maxibot-avatar { width: 28px; height: 28px; border-radius: 7px; background: var(--mx-accent-soft); color: var(--mx-accent-deep); }
+html[data-theme] body.hd-body .hd-bot .maxibot-messages {
+    min-height: 320px; max-height: 58vh; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px;
+    background: var(--mx-bg); border: 1px solid var(--mx-border); border-radius: 8px;
+}
+html[data-theme] body.hd-body .hd-bot .maxibot-bubble { max-width: 82%; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.5; box-shadow: none; }
+html[data-theme] body.hd-body .hd-bot .maxibot-bubble-bot { align-self: flex-start; background: var(--mx-card); border: 1px solid var(--mx-border); color: var(--mx-text); }
+html[data-theme] body.hd-body .hd-bot .maxibot-bubble-user { align-self: flex-end; background: var(--mx-accent-soft); border: 1px solid color-mix(in srgb, var(--mx-accent) 35%, transparent); color: var(--mx-text); }
+html[data-theme] body.hd-body .hd-bot .maxibot-bubble-sources { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--mx-border); color: var(--mx-muted); font-size: 11.5px; }
+html[data-theme] body.hd-body .hd-bot .maxibot-source-link { color: var(--mx-info); font-weight: 600; }
+html[data-theme] body.hd-body .hd-bot .maxibot-compose { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; }
+html[data-theme] body.hd-body .hd-bot .maxibot-input { flex: 1; height: auto; min-height: 44px; padding: 9px 10px; resize: vertical; }
+html[data-theme] body.hd-body .hd-bot .maxibot-compose .mx-btn { height: 36px; }
+
+/* ---------- 9. Parâmetros do helpdesk (empresas, solicitantes, campos, SLA, respostas) ---------- */
+html[data-theme] body.hd-body .support-card {
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: var(--mx-shadow); backdrop-filter: none;
+}
+html[data-theme] body.hd-body .support-kicker {
+    padding: 0; border-radius: 0; background: none; color: var(--mx-accent);
+    font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+}
+html[data-theme] body.hd-body .support-card-head h2 { color: var(--mx-text); font-size: 20px; font-weight: 800; letter-spacing: -.01em; }
+html[data-theme] body.hd-body .support-card-head h3,
+html[data-theme] body.hd-body .support-admin-alert-panel-head h3 { color: var(--mx-text); font-weight: 700; }
+html[data-theme] body.hd-body .support-admin-nav-links { gap: 6px; }
+html[data-theme] body.hd-body .support-admin-nav-links .support-btn {
+    min-height: 26px; height: 26px; padding: 0 11px; border: 1px solid var(--mx-border); border-radius: 99px;
+    background: var(--mx-card); color: var(--mx-muted); font-size: 11.5px; font-weight: 500;
+}
+html[data-theme] body.hd-body .support-admin-nav-links .support-btn:hover { color: var(--mx-text); border-color: var(--mx-faint); background: var(--mx-card); }
+html[data-theme] body.hd-body .support-admin-nav-links .support-btn.is-active { color: var(--mx-accent); border-color: var(--mx-accent); background: var(--mx-accent-soft); font-weight: 700; }
+html[data-theme] body.hd-body .support-admin-alert-metric,
+html[data-theme] body.hd-body .support-admin-alert-metric.is-critical,
+html[data-theme] body.hd-body .support-admin-alert-metric.is-warning {
+    position: relative; overflow: hidden; background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px;
+}
+html[data-theme] body.hd-body .support-admin-alert-metric::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--mx-chart-1); }
+html[data-theme] body.hd-body .support-admin-alert-metric.is-critical::after { background: var(--mx-bad); }
+html[data-theme] body.hd-body .support-admin-alert-metric.is-warning::after { background: var(--mx-warn); }
+html[data-theme] body.hd-body .support-admin-alert-metric span { color: var(--mx-muted); font-size: 11.5px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+html[data-theme] body.hd-body .support-admin-alert-metric strong { color: var(--mx-text); font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
+html[data-theme] body.hd-body .support-admin-alert-metric.is-critical strong { color: var(--mx-bad); }
+html[data-theme] body.hd-body .support-admin-alert-metric.is-warning strong { color: var(--mx-warn); }
+html[data-theme] body.hd-body .support-admin-alert-metric small,
+html[data-theme] body.hd-body .support-admin-alert-copy small { color: var(--mx-muted); font-size: 11px; }
+html[data-theme] body.hd-body .support-admin-alert-panel { background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; }
+html[data-theme] body.hd-body .support-admin-alert-item { background: var(--mx-card-2); border: 1px solid var(--mx-border); border-radius: 8px; }
+html[data-theme] body.hd-body .support-admin-alert-copy strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .support-demand-code { color: var(--mx-muted); font-weight: 700; letter-spacing: .03em; }
+html[data-theme] body.hd-body .support-config-card,
+html[data-theme] body.hd-body .support-insight-card { background: var(--mx-card-2); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: none; }
+html[data-theme] body.hd-body .support-config-card.is-active-edit { border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] body.hd-body .support-config-card strong,
+html[data-theme] body.hd-body .support-insight-card strong { color: var(--mx-text); }
+html[data-theme] body.hd-body .support-config-card p,
+html[data-theme] body.hd-body .support-config-card span,
+html[data-theme] body.hd-body .support-insight-card span { color: var(--mx-muted); }
+html[data-theme] body.hd-body .support-config-card-stats span,
+html[data-theme] body.hd-body .support-meta-pill { background: var(--mx-icon-bg); border: 0; color: var(--mx-muted); border-radius: 99px; }
+html[data-theme] body.hd-body .support-pending-metric,
+html[data-theme] body.hd-body .support-pending-metric.is-highlight { background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 8px; box-shadow: none; }
+html[data-theme] body.hd-body .support-pending-metric.is-highlight { box-shadow: inset 3px 0 0 var(--mx-accent); }
+html[data-theme] body.hd-body .support-pending-metric .queue-dashboard-value { color: var(--mx-text); font-weight: 800; }
+html[data-theme] body.hd-body .support-pending-metric .queue-dashboard-label { color: var(--mx-muted); }
+html[data-theme] body.hd-body .support-field label { color: var(--mx-muted); font-size: 11.5px; font-weight: 600; }
+html[data-theme] body.hd-body .support-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme] body.hd-body .support-field select,
+html[data-theme] body.hd-body .support-field textarea,
+html[data-theme] body.hd-body .support-portal-search,
+html[data-theme] body.hd-body .support-portal-filter {
+    background: var(--mx-card); border: 1px solid var(--mx-border); border-radius: 7px; color: var(--mx-text); color-scheme: inherit; box-shadow: none;
+}
+html[data-theme] body.hd-body .support-field input:focus,
+html[data-theme] body.hd-body .support-field select:focus,
+html[data-theme] body.hd-body .support-field textarea:focus { outline: none; border-color: var(--mx-accent); box-shadow: 0 0 0 3px var(--mx-accent-soft); }
+html[data-theme] body.hd-body .support-field-error { color: var(--mx-bad); }
+html[data-theme] body.hd-body .queue-banner { border-radius: 8px; }
+html[data-theme] body.hd-body .queue-banner-danger { background: var(--mx-bad-bg); color: var(--mx-bad); border-color: transparent; }
+html[data-theme] body.hd-body .support-empty { background: var(--mx-card-2); border: 1px dashed var(--mx-border); border-radius: 8px; color: var(--mx-muted); }
+html[data-theme] body.hd-body .support-empty strong { color: var(--mx-text); }
+
+html[data-theme] body.hd-body .support-btn:focus-visible,
+html[data-theme] body.hd-body .newticket-choice:focus-visible,
+html[data-theme] body.hd-body .newticket-impact-card:focus-visible,
+html[data-theme] body.hd-body .newticket-dropzone:focus-visible,
+html[data-theme] body.hd-body .ticket-tab:focus-visible,
+html[data-theme] body.hd-body .ticket-kpi:focus-visible { outline-color: var(--mx-accent); }

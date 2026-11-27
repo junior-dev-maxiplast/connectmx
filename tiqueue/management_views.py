@@ -146,10 +146,10 @@ def dashesManagementPage(request):
             "retention": {
                 "start": mgmt._f(retention_data["start"], 0), "end": mgmt._f(retention_data["end"], 0),
                 "steps": [
-                    {"label": "Clientes perdidos", "value": -mgmt._f(retention_data["churn"], 0), "detail": f"{retention_data['lost']} cliente(s) que pararam de comprar"},
-                    {"label": "Compraram menos", "value": -mgmt._f(retention_data["contraction"], 0), "detail": "clientes que continuam, com menos faturamento"},
-                    {"label": "Compraram mais", "value": mgmt._f(retention_data["expansion"], 0), "detail": "clientes que continuam, com mais faturamento"},
-                    {"label": "Clientes novos", "value": mgmt._f(retention_data["new_revenue"], 0), "detail": f"{retention_data['new']} cliente(s) novo(s)"},
+                    {"key": "lost", "label": "Clientes perdidos", "value": -mgmt._f(retention_data["churn"], 0), "detail": f"{retention_data['lost']} cliente(s) que pararam de comprar"},
+                    {"key": "contraction", "label": "Compraram menos", "value": -mgmt._f(retention_data["contraction"], 0), "detail": "clientes que continuam, com menos faturamento"},
+                    {"key": "expansion", "label": "Compraram mais", "value": mgmt._f(retention_data["expansion"], 0), "detail": "clientes que continuam, com mais faturamento"},
+                    {"key": "new", "label": "Clientes novos", "value": mgmt._f(retention_data["new_revenue"], 0), "detail": f"{retention_data['new']} cliente(s) novo(s)"},
                 ],
                 "start_label": "Ano anterior", "end_label": "Período atual",
             },

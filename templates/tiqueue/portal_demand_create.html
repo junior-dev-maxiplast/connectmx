@@ -10,8 +10,9 @@
     <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     {% include 'partials/maxisys_head.html' %}
+    <link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">
 </head>
-<body class="support-portal-body newticket-body">
+<body class="hd-body support-portal-body newticket-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
     <main class="newticket-shell">
@@ -49,6 +50,7 @@
 
         <form method="POST" enctype="multipart/form-data" class="newticket-form" id="portalDemandCreateForm" novalidate>
             {% csrf_token %}
+            {% if chat_conversation_id %}<input type="hidden" name="chat_conversation" value="{{ chat_conversation_id }}">{% endif %}
 
             <div class="newticket-layout">
                 <div class="newticket-main">

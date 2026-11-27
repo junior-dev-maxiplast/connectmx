@@ -1,0 +1,202 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block head %}<link rel="stylesheet" href="{% static '/style/budgetPanel.css' %}?v=1">{% endblock %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Orçamento {{ year }}</h2>
+        <p>Meta × faturado × previsão por unidade, família e representante · as contas do PBIX "2. ORÇAMENTO 2026"{% if payload %} · dados das {{ payload.loaded_at }}{% endif %}</p>
+    </div>
+    <div class="mx-toolbar-group">
+        <span class="mx-toolbar-label">Ano</span>
+        {% for item in years %}<a class="mx-chip{% if item == year %} is-active{% endif %}" href="{{ page_url }}?ano={{ item }}">{{ item }}</a>{% endfor %}
+        {% if shell_can_sales_goals %}<a class="mx-btn mx-btn-ghost" href="{{ goals_url }}?ano={{ year }}"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Metas de Vendas</a>{% endif %}
+    </div>
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div class="mx-toolbar bg-toolbar">
+    <div class="mx-toolbar-group" id="bgMonths" role="group" aria-label="Meses"></div>
+    <div class="mx-toolbar-group" id="bgUnits" role="group" aria-label="Unidades de orçamento"></div>
+    <div class="mx-toolbar-group" role="group" aria-label="Base do valor">
+        <span class="mx-toolbar-label">Valor</span>
+        <button type="button" class="mx-chip" data-bg-basis="bruto" title="Valor bruto da nota, líquido de devolução (VL_FAT-DEV do PBIX)">com impostos</button>
+        <button type="button" class="mx-chip" data-bg-basis="sem_impostos" title="Sem ICMS, PIS e COFINS (a base da projeção de 2027)">sem impostos</button>
+    </div>
+    <div class="mx-toolbar-group" role="group" aria-label="Medida dos gráficos e tabelas">
+        <span class="mx-toolbar-label">Gráficos em</span>
+        <button type="button" class="mx-chip" data-bg-measure="kg" title="Gráficos, ranking e calor em peso">kg</button>
+        <button type="button" class="mx-chip" data-bg-measure="value" title="Gráficos, ranking e calor em valor">R$</button>
+    </div>
+</div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique em barras, linhas e tabelas para filtrar a página inteira; clique de novo para tirar. Ctrl + clique soma itens. Botão direito (ou o selo "Expandir dados") abre os registros, até a nota fiscal.</p>
+<div class="mx-alert is-info bg-source" id="bgSource" hidden><svg class="mx-ico"><use href="#mx-i-info"/></svg><div id="bgSourceText"></div></div>
+
+<section class="mx-section">
+    <div class="mx-kpi-hero bg-kpis">
+        <article class="mx-card mx-reveal" id="kpiKg" style="--i: 0; --mx-kpi-accent: var(--mx-chart-1)">
+            <div class="mx-kpi-label">Volume faturado</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" data-bg-delta>–</span><span data-bg-foot>da meta do período</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="kpiValue" style="--i: 1; --mx-kpi-accent: var(--mx-cat-2)">
+            <div class="mx-kpi-label">Valor faturado</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" data-bg-delta>–</span><span data-bg-foot>da meta em R$</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="kpiForecast" style="--i: 2; --mx-kpi-accent: var(--mx-cat-3)">
+            <div class="mx-kpi-label">Previsão de faturamento</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span class="mx-delta" data-bg-delta>–</span><span data-bg-foot>faturado + a faturar</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="kpiBacklog" style="--i: 3; --mx-kpi-accent: var(--mx-cat-4)">
+            <div class="mx-kpi-label">A faturar (carteira)</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span data-bg-foot>–</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="kpiLate" style="--i: 4; --mx-kpi-accent: var(--mx-bad)">
+            <div class="mx-kpi-label" title="Como no PBIX: itens em aberto com entrega prevista neste mês e já vencida">Atraso no mês</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span data-bg-foot>–</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="kpiPace" style="--i: 5; --mx-kpi-accent: var(--mx-cat-7)">
+            <div class="mx-kpi-label">Ritmo para bater a meta</div>
+            <div class="mx-kpi-value" data-bg-value>–</div>
+            <div class="mx-kpi-foot"><span data-bg-foot>–</span></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" id="cardGaugeValue" style="--i: 6">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-coin"/></svg></span><div><p class="mx-card-title">Valor faturado × valor previsto</p><p class="mx-card-sub" id="gaugeValueSub">Faturado ÷ meta em R$ · marca = ponto de equilíbrio</p></div></div>
+            <div class="bg-gauge-row">
+                <div id="gaugeValue"></div>
+                <dl class="bg-facts">
+                    <div><dt>% dif. valor previsto</dt><dd id="factValuePct">–</dd></div>
+                    <div><dt>(R$) dif. valor previsto</dt><dd id="factValueDiff">–</dd></div>
+                    <div><dt>Meta do período</dt><dd id="factValueGoal">–</dd></div>
+                    <div><dt>Ponto de equilíbrio</dt><dd id="factBreakEven">–</dd></div>
+                </dl>
+            </div>
+        </article>
+        <article class="mx-card mx-reveal" id="cardGaugeVolume" style="--i: 7">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-scale"/></svg></span><div><p class="mx-card-title">Volume faturado × volume previsto</p><p class="mx-card-sub" id="gaugeVolumeSub">Faturado ÷ meta em kg · marca = ritmo esperado</p></div></div>
+            <div class="bg-gauge-row">
+                <div id="gaugeVolume"></div>
+                <dl class="bg-facts">
+                    <div><dt>% dif. peso previsto</dt><dd id="factKgPct">–</dd></div>
+                    <div><dt>(kg) dif. peso previsto</dt><dd id="factKgDiff">–</dd></div>
+                    <div><dt>Meta do período</dt><dd id="factKgGoal">–</dd></div>
+                    <div><dt>Contra o ano anterior</dt><dd id="factKgPrevious">–</dd></div>
+                </dl>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" id="cardFamilies" style="--i: 8">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Volume faturado × volume previsto por família</p><p class="mx-card-sub">A faturar, pronto em estoque, faturado e previsão contra a meta (traço) · % meta = previsão ÷ meta, até 100% · clique filtra</p></div></div>
+        <div id="chartFamilies"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturado</span><span><i style="background: var(--mx-cat-4)"></i>A faturar</span><span><i style="background: var(--mx-cat-7)"></i>Pronto em estoque</span><span><i style="background: var(--mx-cat-3)"></i>Previsão</span><span><i class="is-line" style="background: var(--mx-text)"></i>Meta</span></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" id="cardMonths" style="--i: 9">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Mês a mês</p><p class="mx-card-sub">Faturado e a faturar (pela data de entrega) contra a meta de cada mês · a dica traz o ano anterior · clique filtra o mês</p></div><span class="mx-card-aside" id="monthsNote"></span></div>
+        <div id="chartMonths"></div>
+        <div class="mx-legend"><span><i style="background: var(--mx-chart-1)"></i>Faturado</span><span><i style="background: var(--mx-cat-4)"></i>A faturar</span><span><i class="is-line" style="background: var(--mx-text)"></i>Meta</span></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" id="cardCumulative" style="--i: 10">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-pulse"/></svg></span><div><p class="mx-card-title">Acumulado no ano</p><p class="mx-card-sub">Faturado e previsão acumulados contra a meta acumulada e o ano anterior · clique escolhe de janeiro até o mês</p></div></div>
+            <div id="chartCumulative"></div>
+            <div class="mx-legend"><span><i class="is-line" style="background: var(--mx-text)"></i>Meta acumulada</span><span><i style="background: var(--mx-chart-1)"></i>Faturado</span><span><i class="is-line" style="background: var(--mx-cat-3)"></i>Previsão</span><span><i class="is-line" style="background: var(--mx-faint)"></i>{{ year|add:"-1" }}</span></div>
+        </article>
+        <article class="mx-card mx-reveal" id="cardHighlights" style="--i: 11">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-spark"/></svg></span><div><p class="mx-card-title">Destaques do período</p><p class="mx-card-sub">Onde a previsão está mais longe (ou mais acima) da meta, preço, ano anterior e estoque pronto · clique filtra</p></div></div>
+            <ul class="mx-list bg-highlights" id="listHighlights"></ul>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" id="cardReps" style="--i: 12">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Meta por representante</p><p class="mx-card-sub">Peso = faturado + a faturar · % atingido = peso ÷ meta · clique filtra</p></div></div>
+            <div class="mx-table-wrap bg-table-wrap" id="tableReps"></div>
+        </article>
+        <article class="mx-card mx-reveal" id="cardRanking" style="--i: 13">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title">Atingimento dos representantes</p><p class="mx-card-sub">Previsão ÷ meta, do maior para o menor · só quem tem meta no período</p></div></div>
+            <div id="rankReps"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" id="cardHeat" style="--i: 14">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Atingimento por família e mês</p><p class="mx-card-sub">Previsão ÷ meta de cada mês · o mês corrente soma a carteira e os atrasados; os próximos (em contorno) só têm a carteira · clique filtra família e mês</p></div></div>
+        <div class="mx-table-wrap" id="heatFamilies"></div>
+        <div class="mx-heat-legend"><span><i style="background: var(--mx-div-neg-2)"></i>abaixo de 75%</span><span><i style="background: var(--mx-div-neg-1)"></i>75% a 95%</span><span><i style="background: var(--mx-div-mid)"></i>95% a 105%</span><span><i style="background: var(--mx-div-pos-1)"></i>105% a 120%</span><span><i style="background: var(--mx-div-pos-2)"></i>acima de 120%</span></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" id="cardForecast" style="--i: 15">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-truck"/></svg></span><div><p class="mx-card-title">Previsão de faturamento</p><p class="mx-card-sub">Em aberto, faturado e total por unidade e representante (kg e R$)</p></div></div>
+        <div class="mx-table-wrap bg-table-wrap" id="tableForecast"></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" id="cardFamilyTable" style="--i: 16">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">Faturamento por família</p><p class="mx-card-sub">Peso, valor, R$/kg e meta · contra os mesmos meses do ano anterior</p></div></div>
+        <div class="mx-table-wrap bg-table-wrap" id="tableFamilies"></div>
+    </article>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" id="cardLate" style="--i: 17">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Pedidos em atraso</p><p class="mx-card-sub">Itens em aberto com entrega antes de hoje (de qualquer mês), do mais antigo · clique filtra o cliente</p></div></div>
+            <div class="mx-table-wrap bg-table-wrap" id="tableLate"></div>
+        </article>
+        <article class="mx-card mx-reveal" id="cardTransfers" style="--i: 18">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-map"/></svg></span><div><p class="mx-card-title">Faturamento contado em outra unidade</p><p class="mx-card-sub">Nota de uma filial que conta em outra unidade (ex.: laminado da Matriz para a Serafina) · clique filtra</p></div></div>
+            <div class="mx-table-wrap bg-table-wrap" id="tableTransfers"></div>
+        </article>
+    </div>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Faturamento: notas de transações de venda, líquido de devolução, sem os clientes do grupo e sem produtos ISOLAX (as regras do PBIX e do DNA). Cada nota conta na unidade de orçamento (Matriz, Ráfia, Big Bag, Serafina, Adesivado) e na família da meta do seu grupo de produto. Notas de grupos sem meta (aparas, subprodutos) e de outras empresas ficam de fora. Na Ráfia, a sacaria e a bobina "mono" do orçamento do PBIX são a ráfia convencional (famílias 800013, 800015 e 800017).</li>
+        <li>Valor "com impostos" é o VL_FAT-DEV do PBIX (valor bruto da nota menos a devolução); "sem impostos" desconta ICMS, PIS e COFINS. O orçamento de 2025 e 2026 em R$ é o do PBIX (peso × fator R$/kg); o de 2027, o da projeção (R$/kg sem impostos).</li>
+        <li>A faturar: peso dos itens em aberto menos o faturado e o cancelado, no mês da previsão de entrega; item atrasado (ou sem data) conta no mês corrente, quando ainda pode ser faturado. Previsão = faturado + a faturar. % meta = previsão ÷ meta, até 100%, como no PBIX. Atraso no mês: como no PBIX, itens em aberto com entrega prevista neste mês e já vencida; a lista de pedidos em atraso mostra também os de meses anteriores. Atraso de anos anteriores não entra na previsão. Pronto em estoque: produzido e ainda não atendido.</li>
+        <li>Meta por unidade: a da USU_TORCMET quando o ano está lá (tela Metas de Vendas); senão a do orçamento do PBIX. Meta por representante: a da USU_TORCGER, senão a do PBIX. Com o filtro de representante, a meta passa a ser a soma das metas deles; com o de cliente, não há meta.</li>
+        <li>Ritmo esperado: dias úteis já passados ÷ dias úteis dos meses escolhidos. Ritmo para bater a meta: o que falta além da carteira ÷ dias úteis que restam.</li>
+    </ul>
+</details>
+{{ payload|json_script:"bgData" }}
+{{ page_config|json_script:"bgConfig" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
+<script src="{% static '/js/budgetPanel.js' %}?v=1"></script>
+{% endif %}
+{% endblock %}

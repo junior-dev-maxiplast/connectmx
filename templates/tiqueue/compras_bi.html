@@ -127,7 +127,8 @@
         {% endif %}
 
         {% if dashboard %}
-        <div class="bi-shell">
+        {# data-mx-*: menu do botão direito dos visuais e "Expandir dados" (maxisysDrill.js). #}
+        <div class="bi-shell" data-mx-detail-url="{% url 'dashesComprasBiDetail' %}{{ compras_scope_query }}">
             {% if insight_snapshot.ai_response %}
             <section class="bi-panel bi-ai">
                 <div class="bi-panel-head">
@@ -224,9 +225,9 @@
                     <span>{{ dashboard.scope.fornecedor.label }} · {{ dashboard.scope.familia.label }}</span>
                 </div>
                 {% if dashboard.monthly %}
-                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}" data-mx-dim="mes" data-mx-label-name="Período" data-mx-columns="Preço médio:money|Total:money:sum|Quantidade:dec:sum">
                     {% for item in dashboard.monthly %}
-                    <div title="{{ item.label }}: {{ item.preco_medio_display }} · total {{ item.total_display }}">
+                    <div title="{{ item.label }}: {{ item.preco_medio_display }} · total {{ item.total_display }}" data-mx-key="{{ item.label }}" data-mx-values="{{ item.preco_medio }}|{{ item.total }}|{{ item.quantidade }}">
                         <div class="bi-chart-bars">
                             <i class="is-blue" style="height: {{ item.height_pct }}%"></i>
                         </div>
@@ -246,9 +247,9 @@
                         <span>{{ dashboard.fornecedores|length }} no recorte · barra por R$ gasto</span>
                     </div>
                     {% if dashboard.fornecedores %}
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="fornecedor" data-mx-label-name="Fornecedor" data-mx-columns="Total:money:sum|Quantidade:dec:sum|Preço médio:money">
                         {% for item in dashboard.fornecedores %}
-                        <div class="bi-bar">
+                        <div class="bi-bar"{% if item.code %} data-mx-key="{{ item.code }}"{% endif %} data-mx-label="{{ item.name }}" data-mx-values="{{ item.total }}|{{ item.quantidade }}|{{ item.preco_medio }}">
                             <div class="bi-bar-head"><strong>{% if item.code %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="fornecedor" data-mx-value="{{ item.code }}">{{ item.name }}</button>{% else %}{{ item.name }}{% endif %}</strong><span>{{ item.total_display }} · {{ item.quantidade_display }} un. · {{ item.preco_medio_display }} médio</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
                         </div>
@@ -265,9 +266,9 @@
                         <span>{{ dashboard.produtos|length }} no recorte · barra por R$ gasto</span>
                     </div>
                     {% if dashboard.produtos %}
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="produto" data-mx-label-name="Produto" data-mx-columns="Total:money:sum|Quantidade:dec:sum|Preço médio:money">
                         {% for item in dashboard.produtos %}
-                        <div class="bi-bar">
+                        <div class="bi-bar"{% if item.code %} data-mx-key="{{ item.code }}"{% endif %} data-mx-label="{{ item.name }}" data-mx-values="{{ item.total }}|{{ item.quantidade }}|{{ item.preco_medio }}">
                             <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.total_display }} · {{ item.quantidade_display }} un. · {{ item.preco_medio_display }} médio</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.height_pct }}%"></i></div>
                         </div>
@@ -286,11 +287,11 @@
                 </div>
                 {% if dashboard.detalhe %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-name="Detalhe dos itens de OC" data-mx-dim="todos">
                         <thead><tr><th>Ordem</th><th>Fornecedor</th><th>Produto</th><th class="is-num">Qtde.</th><th class="is-num">Unitário</th><th class="is-num">Total</th><th>Geração</th></tr></thead>
                         <tbody>
                         {% for item in dashboard.detalhe %}
-                            <tr>
+                            <tr data-mx-key="todos" data-mx-label="Todos os itens do recorte">
                                 <td>{{ item.ordem }}</td>
                                 <td>{{ item.fornecedor }}</td>
                                 <td>{{ item.produto }}</td>
@@ -357,9 +358,9 @@
                     <span>{{ dashboard.scope.fornecedor.label }} · {{ dashboard.scope.branch.label }}</span>
                 </div>
                 {% if dashboard.monthly %}
-                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}">
+                <div class="bi-chart{% if dashboard.monthly|length < 3 %} is-sparse{% endif %}" data-mx-dim="mes" data-mx-label-name="Período" data-mx-columns="Prazo médio (dias):dec|Meta (dias):dec|Linhas:int:sum">
                     {% for item in dashboard.monthly %}
-                    <div title="{{ item.label }}: {{ item.prazo_medio_display }}{% if dashboard.scope.view.key == 'pagamento' %} · meta {{ item.prazo_meta_display }}{% endif %}">
+                    <div data-mx-key="{{ item.label }}" data-mx-values="{{ item.prazo_medio }}|{{ item.prazo_meta }}|{{ item.linhas }}" title="{{ item.label }}: {{ item.prazo_medio_display }}{% if dashboard.scope.view.key == 'pagamento' %} · meta {{ item.prazo_meta_display }}{% endif %}">
                         <div class="bi-chart-bars">
                             <i class="is-blue" style="height: {{ item.height_pct }}%"></i>
                             {% if dashboard.scope.view.key == 'pagamento' %}<i class="is-meta" style="height: {{ item.meta_height_pct }}%"></i>{% endif %}
@@ -386,9 +387,9 @@
                         <span>{{ dashboard.familias|length }} no recorte</span>
                     </div>
                     {% if dashboard.familias %}
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="familia" data-mx-label-name="Família" data-mx-columns="Prazo médio (dias):dec|Linhas:int:sum">
                         {% for item in dashboard.familias %}
-                        <div class="bi-bar">
+                        <div class="bi-bar"{% if item.label != '-' %} data-mx-key="{{ item.label }}"{% endif %} data-mx-values="{{ item.prazo_medio }}|{{ item.linhas }}">
                             <div class="bi-bar-head"><strong>{% if item.key %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="familia" data-mx-value="{{ item.key }}">{{ item.label }}</button>{% else %}{{ item.label }}{% endif %}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s)</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
                         </div>
@@ -405,9 +406,9 @@
                         <span>{{ dashboard.origens|length }} no recorte</span>
                     </div>
                     {% if dashboard.origens %}
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="origem" data-mx-label-name="Origem" data-mx-columns="Prazo médio (dias):dec|Linhas:int:sum">
                         {% for item in dashboard.origens %}
-                        <div class="bi-bar">
+                        <div class="bi-bar"{% if item.label != '-' %} data-mx-key="{{ item.label }}"{% endif %} data-mx-values="{{ item.prazo_medio }}|{{ item.linhas }}">
                             <div class="bi-bar-head"><strong>{{ item.label }}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s)</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.height_pct }}%"></i></div>
                         </div>
@@ -425,9 +426,9 @@
                     <span>{{ dashboard.fornecedores|length }} no recorte · barra por prazo médio</span>
                 </div>
                 {% if dashboard.fornecedores %}
-                <div class="bi-bars">
+                <div class="bi-bars" data-mx-dim="fornecedor" data-mx-label-name="Fornecedor" data-mx-columns="Prazo médio (dias):dec|Linhas:int:sum|Ordens:int:sum">
                     {% for item in dashboard.fornecedores %}
-                    <div class="bi-bar">
+                    <div class="bi-bar"{% if item.code %} data-mx-key="{{ item.code }}"{% endif %} data-mx-label="{{ item.name }}" data-mx-values="{{ item.prazo_medio }}|{{ item.linhas }}|{{ item.ordens }}">
                         <div class="bi-bar-head"><strong>{{ item.name }}</strong><span>{{ item.prazo_medio_display }} · {{ item.linhas }} linha(s) · {{ item.ordens }} ordem(ns)</span></div>
                         <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.height_pct }}%"></i></div>
                     </div>
@@ -445,7 +446,7 @@
                 </div>
                 {% if dashboard.detalhe %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-name="Detalhe dos itens recebidos" data-mx-dim="todos">
                         <thead>
                             <tr>
                                 <th>Ordem</th><th>Nota</th><th>Fornecedor</th><th>Filial</th><th>Produto</th>
@@ -454,7 +455,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.detalhe %}
-                            <tr>
+                            <tr data-mx-key="todos" data-mx-label="Todos os itens do recorte">
                                 <td>{{ item.ordem }}</td>
                                 <td>{{ item.nota }}</td>
                                 <td>{{ item.fornecedor }}</td>

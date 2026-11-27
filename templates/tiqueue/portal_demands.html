@@ -10,85 +10,104 @@
     <link rel="stylesheet" href="{% static '/style/supportPortal.css' %}?v=11">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     {% include 'partials/maxisys_head.html' %}
+    <link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">
 </head>
-<body class="support-portal-body support-home-body">
+<body class="hd-body support-portal-body support-home-body">
     {% include 'tiqueue/partials/portal_topbar.html' %}
 
-    <main class="support-shell support-home-shell">
+    <main class="support-shell support-home-shell hd-home">
         {% if access_denied_message %}
-            <div class="support-banner is-danger">{{ access_denied_message }}</div>
+            <div class="mx-alert is-bad" role="alert"><div>{{ access_denied_message }}</div></div>
         {% endif %}
 
-        <section class="support-home-header">
-            <span class="support-kicker">Portal do solicitante</span>
-            <h1>Ol&aacute;! O que voc&ecirc; precisa hoje?</h1>
-            <p>Abra uma demanda, acompanhe o andamento das suas e avalie o atendimento assim que ele for conclu&iacute;do.</p>
+        <div class="mx-page-head">
+            <div>
+                <span class="mx-kicker">Portal do solicitante</span>
+                <h2>Ol&aacute;! O que voc&ecirc; precisa hoje?</h2>
+                <p>Abra uma demanda, acompanhe o andamento das suas e avalie o atendimento assim que ele for conclu&iacute;do.</p>
+            </div>
+        </div>
 
-            {% if dashboard_cards %}
-                <div class="support-home-stats">
+        {% if dashboard_cards %}
+            <section class="mx-section" aria-label="Suas demandas em números">
+                <div class="mx-kpi-hero">
                     {% for card in dashboard_cards %}
-                        <div class="support-home-stat">
-                            <span>{{ card.label }}</span>
-                            <strong>{{ card.value }}</strong>
-                        </div>
+                        <article class="mx-card mx-reveal hd-tone-{{ card.tone|default:'primary' }}" style="--i: {{ forloop.counter0 }}">
+                            <div class="mx-kpi-label">{{ card.label }}</div>
+                            <div class="mx-kpi-value">{{ card.value }}</div>
+                            {% if card.hint %}<div class="mx-kpi-foot"><span>{{ card.hint }}</span></div>{% endif %}
+                        </article>
                     {% endfor %}
                 </div>
-            {% endif %}
-        </section>
+            </section>
+        {% endif %}
 
-        <section class="support-home-actions">
-            {% if pending_feedback %}
-                <a href="{% url 'portalMyDemandsPage' %}?feedback_required=1" class="support-home-action-card is-blocked">
-                    <div class="support-home-action-copy">
-                        <strong>Avalie para liberar a abertura</strong>
-                        <span>Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} conclu&iacute;do{{ pending_feedback|length|pluralize }} sem avalia&ccedil;&atilde;o.</span>
+        <section class="mx-section">
+            <h3 class="mx-section-label">O que fazer agora</h3>
+            <div class="hd-actions">
+                {% if pending_feedback %}
+                    <a href="{% url 'portalMyDemandsPage' %}?feedback_required=1" class="mx-card hd-action is-blocked">
+                        <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-list"/></svg></span>
+                        <span class="hd-action-copy">
+                            <strong>Avalie para liberar a abertura</strong>
+                            <span>Voc&ecirc; tem {{ pending_feedback|length }} atendimento{{ pending_feedback|length|pluralize }} conclu&iacute;do{{ pending_feedback|length|pluralize }} sem avalia&ccedil;&atilde;o.</span>
+                        </span>
+                    </a>
+                {% elif can_request_portal %}
+                    <a href="{% url 'portalDemandChatPage' %}" class="mx-card hd-action is-primary">
+                        <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-chat"/></svg></span>
+                        <span class="hd-action-copy">
+                            <strong>Chatbot de Ajuda</strong>
+                            <span>Conte o que est&aacute; acontecendo e o assistente prepara o chamado pra voc&ecirc; (ou resolve na hora, com a base de conhecimento).</span>
+                        </span>
+                    </a>
+                    <a href="{% url 'portalDemandCreatePage' %}" class="mx-card hd-action">
+                        <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-plus"/></svg></span>
+                        <span class="hd-action-copy">
+                            <strong>Abrir manualmente</strong>
+                            <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>
+                        </span>
+                    </a>
+                {% else %}
+                    <div class="mx-card hd-action is-static">
+                        <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-user"/></svg></span>
+                        <span class="hd-action-copy">
+                            <strong>Acesso de abertura pendente</strong>
+                            <span>Seu usu&aacute;rio ainda precisa ser vinculado a um colaborador e setor para abrir demandas ao TI.</span>
+                        </span>
                     </div>
+                {% endif %}
+                <a href="{% url 'portalMyDemandsPage' %}" class="mx-card hd-action">
+                    <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-list"/></svg></span>
+                    <span class="hd-action-copy">
+                        <strong>Minhas demandas</strong>
+                        <span>Ver andamento, conversar com o atendente e avaliar ap&oacute;s a conclus&atilde;o.</span>
+                    </span>
                 </a>
-            {% elif can_request_portal %}
-                <a href="{% url 'portalDemandChatPage' %}" class="support-home-action-card is-primary">
-                    <div class="support-home-action-copy">
-                        <strong>🤖 Chatbot de Ajuda</strong>
-                        <span>Conte o que est&aacute; acontecendo e o assistente prepara o chamado pra voc&ecirc;.</span>
-                    </div>
-                </a>
-                <a href="{% url 'portalDemandCreatePage' %}" class="support-home-action-card">
-                    <div class="support-home-action-copy">
-                        <strong>Abrir manualmente</strong>
-                        <span>Registrar uma nova solicita&ccedil;&atilde;o com descri&ccedil;&atilde;o, grupo, tipo e anexos.</span>
-                    </div>
-                </a>
-            {% else %}
-                <div class="support-home-action-card">
-                    <div class="support-home-action-copy">
-                        <strong>Acesso de abertura pendente</strong>
-                        <span>Seu usu&aacute;rio ainda precisa ser vinculado a um colaborador e setor para abrir demandas ao TI.</span>
-                    </div>
-                </div>
-            {% endif %}
-            <a href="{% url 'portalMyDemandsPage' %}" class="support-home-action-card">
-                <div class="support-home-action-copy">
-                    <strong>Minhas demandas</strong>
-                    <span>Ver andamento, conversar com o atendente e avaliar ap&oacute;s a conclus&atilde;o.</span>
-                </div>
-            </a>
-            {% if can_manage_portal %}
-                <a href="{% url 'portalPendingDemandsPage' %}" class="support-home-action-card">
-                    <div class="support-home-action-copy">
-                        <strong>Entrada de chamados</strong>
-                        <span>Assumir, responder e concluir os chamados abertos pelos solicitantes.</span>
-                    </div>
-                </a>
-            {% endif %}
+                {% if can_manage_portal %}
+                    <a href="{% url 'portalPendingDemandsPage' %}" class="mx-card hd-action">
+                        <span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-inbox"/></svg></span>
+                        <span class="hd-action-copy">
+                            <strong>Entrada de chamados</strong>
+                            <span>Assumir, responder e concluir os chamados abertos pelos solicitantes.</span>
+                        </span>
+                    </a>
+                {% endif %}
+            </div>
         </section>
 
         {% if insight_cards %}
-            <section class="support-home-insight-grid">
-                {% for insight in insight_cards %}
-                    <div class="support-home-insight-card">
-                        <span>{{ insight.label }}</span>
-                        <strong>{{ insight.value }}</strong>
-                    </div>
-                {% endfor %}
+            <section class="mx-section">
+                <h3 class="mx-section-label">Resumo</h3>
+                <div class="hd-insights">
+                    {% for insight in insight_cards %}
+                        <div class="mx-fact">
+                            <span>{{ insight.label }}</span>
+                            <strong>{{ insight.value }}</strong>
+                            {% if insight.hint %}<small>{{ insight.hint }}</small>{% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
             </section>
         {% endif %}
     </main>

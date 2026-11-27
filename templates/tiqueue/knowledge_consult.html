@@ -1,5 +1,6 @@
 {% load static %}
 <!DOCTYPE html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,89 +8,87 @@
     <script src="{% static '/js/theme.js'%}"></script>
     <link rel="stylesheet" href="{% static '/style/theme.css'%}">
     <link rel="stylesheet" href="{% static '/style/mainQueue.css'%}">
-    <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
     {% include 'partials/maxisys_head.html' %}
+    <link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">
 </head>
-<body>
-    {% include 'partials/sidebar.html' %}
+<body class="hd-body">
+    {% include 'partials/helpdesk_sidebar.html' %}
 
-    <div class="queue_main checklist-page">
-        <div class="headerMain">
-            <div class="headerTitle">
-                <h1>Base de Conhecimento - Consulta</h1>
+    <main class="hd-kb">
+        <div class="mx-page-head">
+            <div>
+                <span class="mx-kicker">Base de conhecimento</span>
+                <h2>Consultar a base</h2>
+                <p>Problemas já resolvidos, com causa e solução. O assistente de IA do portal sugere os registros marcados como resolvidos.</p>
             </div>
-            <div class="headerButton">
-                <div class="queue-toolbar">
-                    <a class="queue-secondary-btn" href="{% url 'knowledgeEntriesPage' %}">Novo registro</a>
+            {% if can_edit_knowledge %}
+                <div class="hd-head-actions">
+                    <a class="mx-btn" href="{% url 'knowledgeEntriesPage' %}">Novo registro</a>
                 </div>
-            </div>
+            {% endif %}
         </div>
 
-        <div class="checklist-card">
-            <div class="checklist-card-title">Filtros</div>
-            <form method="GET" class="checklist-form">
-                <div class="checklist-section-grid">
-                    <div class="field">
-                        <label for="kbTitle">Titulo</label>
-                        <input id="kbTitle" class="queue-input-sm table-input" type="search" name="title" value="{{ title_q }}" placeholder="Buscar por titulo...">
-                    </div>
-                    <div class="field">
-                        <label for="kbCategory">Categoria</label>
-                        <select id="kbCategory" class="queue-input-sm table-input" name="category">
-                            <option value="">Todas as categorias</option>
-                            {% for c in categories %}
-                                <option value="{{ c.id }}" {% if selected_category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button type="submit" class="queue-primary-btn">Pesquisar</button>
-                    <a href="{% url 'knowledgeConsultPage' %}" class="queue-secondary-btn">Limpar</a>
-                </div>
-            </form>
-        </div>
+        <form method="GET" class="mx-toolbar hd-kb-filters" role="search">
+            <div class="mx-toolbar-group">
+                <span class="mx-toolbar-label">Título</span>
+                <input id="kbTitle" class="mx-input" type="search" name="title" value="{{ title_q }}" placeholder="Buscar por título...">
+            </div>
+            <div class="mx-toolbar-group">
+                <span class="mx-toolbar-label">Categoria</span>
+                <select id="kbCategory" class="mx-select" name="category">
+                    <option value="">Todas as categorias</option>
+                    {% for c in categories %}
+                        <option value="{{ c.id }}" {% if selected_category == c.id|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mx-toolbar-group">
+                <button type="submit" class="mx-btn">Pesquisar</button>
+                <a href="{% url 'knowledgeConsultPage' %}" class="mx-btn mx-btn-ghost">Limpar</a>
+            </div>
+        </form>
 
-        <div class="checklist-card">
-            <div class="checklist-card-title">Resultados</div>
-            <div class="checklist-table projects-table-wrap">
-                <table class="projects-manage-table">
-                    <thead>
-                        <tr>
-                            <th>Categoria</th>
-                            <th>Titulo</th>
-                            <th>Situacao</th>
-                            <th>Descricao</th>
-                            <th>Solucao</th>
-                            <th>Anexos</th>
-                            <th>Resolvido</th>
-                            <th>Inserido em</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for e in entries %}
+        <section class="mx-section">
+            <article class="mx-card">
+                <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#hd-i-book"/></svg></span><div><p class="mx-card-title">Resultados</p><p class="mx-card-sub">{{ entries|length }} registro{{ entries|length|pluralize }}{% if title_q or selected_category %} para os filtros informados{% endif %}</p></div></div>
+                <div class="mx-table-wrap">
+                    <table class="mx-table hd-kb-table">
+                        <thead>
                             <tr>
-                                <td>{{ e.category.name }}</td>
-                                <td><a href="{% url 'knowledgeEntryDetailPage' e.id %}">{{ e.title }}</a></td>
-                                <td>{{ e.trigger }}</td>
-                                <td>{{ e.description }}</td>
-                                <td>{{ e.resolution|default:'-' }}</td>
-                                <td>
-                                    {% for a in e.attachments.all %}
-                                        <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:a.file.name }}</a>{% if not forloop.last %}<br>{% endif %}
-                                    {% empty %}
-                                        -
-                                    {% endfor %}
-                                </td>
-                                <td>{% if e.is_resolved %}Sim{% else %}Nao{% endif %}</td>
-                                <td>{{ e.inserted_at|date:"d/m/Y H:i" }}</td>
+                                <th>Registro</th>
+                                <th>Categoria</th>
+                                <th>Situação / problema</th>
+                                <th>Solução</th>
+                                <th>Situação</th>
+                                <th>Anexos</th>
+                                <th class="is-num">Inserido em</th>
                             </tr>
-                        {% empty %}
-                            <tr><td colspan="8" class="queue-empty">Nenhum registro encontrado para os filtros informados.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+                        </thead>
+                        <tbody>
+                            {% for e in entries %}
+                                <tr>
+                                    <td class="mx-col-name"><a href="{% url 'knowledgeEntryDetailPage' e.id %}">{{ e.title }}</a>{% if e.source_demand_id %}<span class="mx-cell-sub">Documentado de um chamado</span>{% endif %}</td>
+                                    <td>{{ e.category.name }}</td>
+                                    <td class="hd-kb-clip">{{ e.trigger|truncatechars:160 }}</td>
+                                    <td class="hd-kb-clip">{{ e.resolution|default:'–'|truncatechars:160 }}</td>
+                                    <td>{% if e.is_resolved %}<span class="mx-badge is-good">Resolvido</span>{% else %}<span class="mx-badge is-warn">Em aberto</span>{% endif %}</td>
+                                    <td>
+                                        {% for a in e.attachments.all %}
+                                            <a href="{{ a.file.url }}" target="_blank" rel="noopener">{{ a.original_name|default:a.file.name }}</a>{% if not forloop.last %}<br>{% endif %}
+                                        {% empty %}
+                                            –
+                                        {% endfor %}
+                                    </td>
+                                    <td class="is-num">{{ e.inserted_at|date:"d/m/Y H:i" }}</td>
+                                </tr>
+                            {% empty %}
+                                <tr><td colspan="7" class="mx-empty">Nenhum registro encontrado para os filtros informados.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
 </body>
+</html>

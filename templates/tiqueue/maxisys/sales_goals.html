@@ -1,0 +1,169 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block head %}<link rel="stylesheet" href="{% static '/style/salesGoals.css' %}?v=6">{% endblock %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Metas de Vendas</h2>
+        <p>Peso (kg) por família e mês{% if table_ref %} · grava em <strong>{{ table_ref }}</strong>{% endif %}</p>
+    </div>
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível abrir as metas.</strong><br>{{ data_error }}</div></div>
+{% else %}
+{% if is_simulation %}
+<div class="mx-alert is-info"><svg class="mx-ico"><use href="#mx-i-info"/></svg><div><strong>Ambiente de simulação do Senior.</strong> A USU_TORCMET ainda não está na produção: as metas ficam no esquema {{ schema_name }}.{% if is_admin %} Quando a tabela for publicada, troque a variável {{ schema_env }} para SAPIENS e rode a pré-carga de novo.{% endif %}</div></div>
+{% endif %}
+
+<div class="mx-toolbar">
+    <form method="get" action="{{ page_url }}" class="mx-filters mxg-filters" id="mxgFilters" aria-label="Empresa, filial e ano">
+        <label class="mxg-field"><span class="mx-toolbar-label">Empresa</span>
+            <select class="mx-select" name="empresa" data-mxg-filter>
+                {% for item in companies %}<option value="{{ item.code }}"{% if item.code == company %} selected{% endif %}>{{ item.code }} · {{ item.name }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="mxg-field"><span class="mx-toolbar-label">Filial</span>
+            <select class="mx-select" name="filial" data-mxg-filter>
+                {% for item in branches %}<option value="{{ item.code }}"{% if item.code == branch %} selected{% endif %}>{{ item.label }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="mxg-field"><span class="mx-toolbar-label">Ano</span>
+            <select class="mx-select" name="ano" data-mxg-filter>
+                {% for item in years %}<option value="{{ item }}"{% if item == year %} selected{% endif %}>{{ item }}</option>{% endfor %}
+            </select>
+        </label>
+        <noscript><button class="mx-btn mx-btn-ghost" type="submit">Abrir</button></noscript>
+    </form>
+</div>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-target"/></svg>Metas de {{ year }} por filial<small>{% if summary %}{{ year_total_display }} no ano{% else %}nenhuma meta gravada em {{ year }}{% endif %}</small></h3>
+    {% if summary %}
+    <div class="mx-toolbar-group mxg-summary">
+        {% for item in summary %}<a class="mx-chip{% if item.active %} is-active{% endif %}" href="{{ page_url }}?empresa={{ company }}&amp;filial={{ item.code }}&amp;ano={{ year }}" title="{{ item.families }} família(s)">{{ item.label }} · {{ item.total_display }}</a>{% endfor %}
+    </div>
+    {% else %}
+    <p class="mx-empty-note">Escolha a filial acima e digite as metas, ou rode a pré-carga da planilha.</p>
+    {% endif %}
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Peso por família e mês (kg)<small>{{ branch_label }} · {{ year }}</small></h3>
+    <article class="mx-card mxg-card" id="mxGoals" data-save-url="{{ save_url }}" data-page-url="{{ page_url }}" data-empresa="{{ company }}" data-filial="{{ branch }}" data-ano="{{ year }}">
+        {% csrf_token %}
+        <div class="mxg-tools">
+            <div class="mxg-add">
+                <select class="mx-select" id="mxgFamily" aria-label="Família para adicionar à grade"></select>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxgAdd">Adicionar família</button>
+            </div>
+            <div class="mxg-actions">
+                <span class="mxg-status" id="mxgStatus" role="status" aria-live="polite"></span>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxgUndo" disabled>Desfazer</button>
+                <button type="button" class="mx-btn" id="mxgSave" disabled>Salvar</button>
+            </div>
+        </div>
+        <div class="mx-alert is-bad mxg-error" id="mxgError" role="alert" hidden></div>
+        {% if outside %}
+        <div class="mx-alert is-warn"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div>{{ outside }} lançamento(s) desta filial em {{ year }} estão sem família ou sem mês e ficaram fora da grade (não são alterados aqui).</div></div>
+        {% endif %}
+        <div class="mx-table-wrap mxg-wrap" id="mxgWrap">
+            <table class="mx-table mxg-table mxg-zebra" id="mxgTable">
+                <thead>
+                    <tr>
+                        <th scope="col" class="mxg-family-col">Família</th>
+                        {% for label in month_labels %}<th scope="col" class="is-num">{{ label }}</th>{% endfor %}
+                        <th scope="col" class="is-num">Total</th>
+                        <th scope="col" class="mxg-row-tools"><span class="mx-sr-only">Ações da linha</span></th>
+                    </tr>
+                </thead>
+                <tbody id="mxgBody"></tbody>
+                <tfoot>
+                    <tr>
+                        <th scope="row" class="mxg-family-col">Total</th>
+                        {% for label in month_labels %}<td class="is-num" data-mxg-col-total="{{ forloop.counter }}"></td>{% endfor %}
+                        <td class="is-num" id="mxgGrandTotal"></td>
+                        <td class="mxg-row-tools"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <p class="mx-empty-note mxg-empty" id="mxgEmpty" hidden>Nenhuma meta para {{ branch_label }} em {{ year }}. Escolha uma família acima e digite os pesos.</p>
+        <p class="mx-hint mxg-hint">Peso em kg, até 3 casas. Célula vazia é mês sem meta. Enter desce uma linha; colar do Excel preenche a partir da célula escolhida.</p>
+    </article>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-users"/></svg>Metas por representante<small>{{ branch_label }} · {{ year }} · % da meta de cada família</small></h3>
+    <article class="mx-card mxg-card" id="mxReps" data-save-url="{{ save_reps_url }}" data-compute-url="{{ compute_reps_url }}" data-page-url="{{ page_url }}" data-empresa="{{ company }}" data-filial="{{ branch }}" data-ano="{{ year }}">
+        {% csrf_token %}
+        <div class="mxg-tools">
+            <div class="mxg-add">
+                <label class="mxg-field"><span class="mx-toolbar-label">Base do %</span>
+                    <select class="mx-select" id="mxrBase">
+                        {% for item in rep_bases %}<option value="{{ item.key }}">{{ item.label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxrCompute">Calcular % pelo faturamento</button>
+            </div>
+            <div class="mxg-actions">
+                <span class="mxg-status" id="mxrStatus" role="status" aria-live="polite"></span>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxrUndo" disabled>Desfazer</button>
+                <button type="button" class="mx-btn" id="mxrSave" disabled>Salvar representantes</button>
+            </div>
+        </div>
+        <div class="mxg-tools mxr-tools">
+            <div class="mxg-add">
+                <select class="mx-select mxr-family-select" id="mxrAddFamily" aria-label="Família do representante a adicionar"></select>
+                <select class="mx-select" id="mxrAddRep" aria-label="Representante a adicionar"></select>
+                <button type="button" class="mx-btn mx-btn-ghost" id="mxrAdd">Adicionar representante</button>
+            </div>
+            <label class="mxg-field"><span class="mx-toolbar-label">Mostrar</span>
+                <select class="mx-select" id="mxrFilter"></select>
+            </label>
+        </div>
+        <div class="mx-alert is-bad mxg-error" id="mxrError" role="alert" hidden></div>
+        <div class="mx-table-wrap mxg-wrap" id="mxrWrap">
+            <table class="mx-table mxg-table mxr-table" id="mxrTable">
+                <thead>
+                    <tr>
+                        <th scope="col" class="mxg-family-col">Família / representante</th>
+                        <th scope="col" class="is-num">% da meta</th>
+                        {% for label in month_labels %}<th scope="col" class="is-num">{{ label }}</th>{% endfor %}
+                        <th scope="col" class="is-num">Total</th>
+                        <th scope="col" class="mxg-row-tools"><span class="mx-sr-only">Ações da linha</span></th>
+                    </tr>
+                </thead>
+                <tbody id="mxrBody"></tbody>
+            </table>
+        </div>
+        <p class="mx-empty-note" id="mxrEmpty" hidden>{{ branch_label }} não tem meta em {{ year }}: preencha a grade de famílias acima primeiro.</p>
+        <p class="mx-hint mxg-hint">Na linha da família aparece a meta de cada mês; nas dos representantes, o peso que cabe a cada um (meta × %). Só o % é digitado. Com os % somando 100, o peso fecha a meta exata.</p>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como esta tela grava</summary>
+    <ul>
+        <li>Cada célula família × mês é um lançamento (USU_CODLAN) na {{ table_ref }}, com ano em 01/01/{{ year }}, mês em 01/MM/{{ year }} e o peso em kg com 3 casas. Lançamento novo recebe o maior número da tabela mais um.</li>
+        <li>Salvar grava só as células alteradas, numa transação só. Se outra pessoa gravou numa delas depois que a tela abriu, nada é gravado e a tela avisa quais células conferir.</li>
+        <li>Apagar o valor de uma célula (ou limpar a linha) tira a meta daquele mês ao salvar.</li>
+        <li>As famílias são as do cadastro do ERP (E012FAM). A pré-carga de 2027 veio da planilha "Projeção de Vendas 2027 por Família": cada grupo do orçamento foi para a família que mais faturou nele em 2026, somando quando dois grupos caem na mesma família (comando <code>manage.py carregar_metas_planilha</code>).</li>
+        <li>Metas por representante ficam na {{ ger_table_ref }}: uma linha por representante, família e mês, com o % (USU_PERMET, 4 casas) e o peso (USU_PESMET = meta do mês × %). Mudar a meta de uma família refaz o peso dos representantes dela na mesma gravação, mantendo o %.</li>
+        <li>"Calcular % pelo faturamento" usa o peso líquido faturado (sem devoluções) no período-base: a participação de cada representante na mesma filial do orçamento e no mesmo grupo de produto que a família representa. Códigos que o DNA soma num representante só contam no código principal. Nada é gravado até salvar.</li>
+    </ul>
+</details>
+{{ grid_payload|json_script:"mxgData" }}
+{{ families_payload|json_script:"mxgFamilies" }}
+{{ reps_catalog_payload|json_script:"mxrCatalog" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/salesGoals.js' %}?v=3"></script>
+<script src="{% static '/js/salesGoalsReps.js' %}?v=3"></script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "tiqueue/maxisys/base.html" %}
+{% load static %}
+
+{% block head %}<link rel="stylesheet" href="{% static '/style/helpdesk.css' %}?v=2">{% endblock %}
+
+{% block content %}
+<div class="mx-page-head">
+    <div>
+        <h2>Helpdesk</h2>
+        <p>Tudo o que entra, anda e sai da fila de TI · base do ConnectMX (portal + histórico do SM){% if payload %} · dados das <span id="mxStamp">{{ payload.loaded_at }}</span>{% endif %}</p>
+    </div>
+    {% if payload %}
+    <div class="hd-head-actions">
+        <label class="mx-live-status" title="Recarrega os números a cada 2 minutos enquanto a aba está aberta">
+            <span class="mx-live-pulse" aria-hidden="true"></span>
+            <input type="checkbox" id="mxLive" checked> Ao vivo
+        </label>
+        {% if can_access_internal %}<a class="mx-btn mx-btn-ghost" href="{{ queue_url }}">Entrada de chamados</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if data_error %}
+<div class="mx-alert is-bad" role="alert"><svg class="mx-ico"><use href="#mx-i-alert"/></svg><div><strong>Não foi possível montar o painel.</strong><br>{{ data_error }}</div></div>
+{% else %}
+<div id="mxMonths"></div>
+<div class="mx-filter-bar" id="mxFilterBar" hidden></div>
+<p class="mx-filter-hint">Clique em qualquer barra, fatia, linha de ranking, nota ou dia da semana para filtrar a página inteira, como no Power BI; Ctrl + clique soma itens à seleção e clicar de novo tira o filtro. Os filtros ficam no endereço, então o link compartilhado abre igual.</p>
+
+<section class="mx-section" aria-label="Indicadores">
+    <div class="mx-kpi-hero hd-kpis">
+        <article class="mx-card mx-reveal" style="--i: 0; --mx-kpi-accent: var(--mx-cat-1)"><div class="mx-kpi-label">Chamados abertos (<span data-period>12 meses</span>)</div><div class="mx-kpi-value" id="kpiOpened">–</div><div class="mx-kpi-foot"><span class="mx-delta" id="kpiOpenedDelta">–</span><span id="kpiOpenedCompare">contra os 12 meses anteriores</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 1; --mx-kpi-accent: var(--mx-cat-3)"><div class="mx-kpi-label">Resolvidos (<span data-period>12 meses</span>)</div><div class="mx-kpi-value" id="kpiResolved">–</div><div class="mx-kpi-foot"><span id="kpiResolvedFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 2; --mx-kpi-accent: var(--mx-cat-4)"><div class="mx-kpi-label">Em aberto agora</div><div class="mx-kpi-value" id="kpiBacklog">–</div><div class="mx-kpi-foot"><span id="kpiBacklogFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 3; --mx-kpi-accent: var(--mx-good)"><div class="mx-kpi-label">SLA de resolução cumprido</div><div class="mx-kpi-value" id="kpiSla">–</div><div class="mx-kpi-foot"><span id="kpiSlaFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 4; --mx-kpi-accent: var(--mx-cat-7)"><div class="mx-kpi-label">1ª resposta (mediana)</div><div class="mx-kpi-value" id="kpiFirst">–</div><div class="mx-kpi-foot"><span id="kpiFirstFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 5; --mx-kpi-accent: var(--mx-cat-2)"><div class="mx-kpi-label">Tempo de resolução (mediana)</div><div class="mx-kpi-value" id="kpiResolution">–</div><div class="mx-kpi-foot"><span id="kpiResolutionFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 6; --mx-kpi-accent: var(--mx-cat-5)"><div class="mx-kpi-label">Satisfação (nota de 1 a 10)</div><div class="mx-kpi-value" id="kpiRating">–</div><div class="mx-kpi-foot"><span id="kpiRatingFoot">–</span></div></article>
+        <article class="mx-card mx-reveal" style="--i: 7; --mx-kpi-accent: var(--mx-cat-8)"><div class="mx-kpi-label">Reabertos</div><div class="mx-kpi-value" id="kpiReopen">–</div><div class="mx-kpi-foot"><span id="kpiReopenFoot">–</span></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-panel">
+        <article class="mx-card mx-reveal" style="--i: 8">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-chart"/></svg></span><div><p class="mx-card-title">Abertos × resolvidos por mês</p><p class="mx-card-sub">24 meses · resolvido conta no mês da conclusão · clique num mês para filtrar (Ctrl soma meses)</p></div></div>
+            <div id="chartFlow"></div>
+            <div class="mx-legend"><span><i style="background: var(--mx-cat-1)"></i>Abertos</span><span><i style="background: var(--mx-cat-3)"></i>Resolvidos</span></div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 9">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Situação</p><p class="mx-card-sub">Chamados abertos em <span data-period>12 meses</span>, pela situação de hoje</p></div></div>
+            <div id="donutStatus"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 10"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-spark"/></svg></span><div><p class="mx-card-title">Canal de abertura</p><p class="mx-card-sub">Formulário, conversa com o assistente de IA, atendente ou SM</p></div></div><div id="donutChannel"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 11"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-target"/></svg></span><div><p class="mx-card-title">SLA de resolução</p><p class="mx-card-sub">Prazo da política aplicada na abertura</p></div></div><div id="donutSla"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 12"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-alert"/></svg></span><div><p class="mx-card-title">Prioridade</p><p class="mx-card-sub">Como o solicitante (ou a triagem) classificou</p></div></div><div id="donutPriority"></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 13"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-grid"/></svg></span><div><p class="mx-card-title">Empresas</p><p class="mx-card-sub">Chamados abertos em <span data-period>12 meses</span></p></div></div><div id="rankCompanies"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 14"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-users"/></svg></span><div><p class="mx-card-title">Setores que mais abrem</p><p class="mx-card-sub">Setor do solicitante na abertura</p></div></div><div id="rankSectors"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 15"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">Áreas atendidas</p><p class="mx-card-sub">Grupo de tarefa do chamado</p></div></div><div id="rankGroups"></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 16"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title">Atendentes</p><p class="mx-card-sub">Chamados atribuídos · resolvidos, mediana de resolução e nota média no filtro</p></div></div><div id="rankAttendants"></div></article>
+        <article class="mx-card mx-reveal" style="--i: 17"><div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Tipos de chamado</p><p class="mx-card-sub">Os mais frequentes em <span data-period>12 meses</span></p></div></div><div id="rankTypes"></div></article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <div class="mx-grid mx-grid-2">
+        <article class="mx-card mx-reveal" style="--i: 18">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span><div><p class="mx-card-title">Avaliações dos solicitantes</p><p class="mx-card-sub">Notas de 1 a 10 dos chamados resolvidos em <span data-period>12 meses</span> · clique numa nota para filtrar</p></div></div>
+            <div id="chartRatings"></div>
+            <p class="mx-hint" id="ratingsHint"></p>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 19">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-calendar"/></svg></span><div><p class="mx-card-title">Quando os chamados chegam</p><p class="mx-card-sub">Abertura por dia da semana e hora · mais escuro = mais chamados · clique no dia para filtrar</p></div></div>
+            <div class="mx-table-wrap"><table class="mx-heat hd-heat" id="heatWeek"></table></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-spark"/></svg>Assistente de IA e base de conhecimento <small>valem o filtro de mês e, no assistente, empresa e setor</small></h3>
+    <div class="mx-grid mx-grid-3-even">
+        <article class="mx-card mx-reveal" style="--i: 20">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-spark"/></svg></span><div><p class="mx-card-title">Conversas com o assistente</p><p class="mx-card-sub">Como terminaram as conversas de abertura em <span data-period>12 meses</span></p></div></div>
+            <div id="donutAssistant"></div>
+            <p class="mx-hint" id="assistantHint"></p>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 21">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-info"/></svg></span><div><p class="mx-card-title">Base de conhecimento</p><p class="mx-card-sub">Registros que o assistente e os atendentes consultam</p></div></div>
+            <div class="hd-facts">
+                <div class="mx-fact"><span>Registros na base</span><strong id="kbTotal">–</strong><small id="kbTotalFoot">–</small></div>
+                <div class="mx-fact"><span>Novos em <span data-period>12 meses</span></span><strong id="kbNew">–</strong><small id="kbNewFoot">–</small></div>
+                <div class="mx-fact"><span>Chamados documentados</span><strong id="kbDocumented">–</strong><small id="kbDocumentedFoot">–</small></div>
+                <div class="mx-fact"><span>Resolvidos pela conversa</span><strong id="kbDeflected">–</strong><small id="kbDeflectedFoot">–</small></div>
+            </div>
+        </article>
+        <article class="mx-card mx-reveal" style="--i: 22">
+            <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Categorias da base</p><p class="mx-card-sub">Registros por categoria · novos no período em destaque</p></div></div>
+            <div id="rankKnowledge"></div>
+        </article>
+    </div>
+</section>
+
+<section class="mx-section">
+    <article class="mx-card mx-reveal" style="--i: 23">
+        <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-history"/></svg></span><div><p class="mx-card-title">Chamados do filtro</p><p class="mx-card-sub" id="tableSub">Os mais recentes que passam por todos os filtros</p></div></div>
+        <div class="mx-table-wrap">
+            <table class="mx-table mx-table-compact hd-table">
+                <thead><tr><th>Protocolo</th><th>Assunto</th><th>Empresa</th><th>Área</th><th>Situação</th><th>Atendente</th><th class="is-num">Aberto em</th><th class="is-num">Nota</th></tr></thead>
+                <tbody id="ticketRows"></tbody>
+            </table>
+        </div>
+    </article>
+</section>
+
+<details class="mx-notes">
+    <summary>Como os números são calculados</summary>
+    <ul>
+        <li>Fonte: a base do ConnectMX — chamados do portal e o histórico importado do SM (que chega sem SLA nem horário de 1ª resposta, então esses indicadores dependem dos chamados abertos no portal).</li>
+        <li>Período: os meses escolhidos acima, ou os últimos 12 meses; a comparação é com os mesmos meses do ano anterior. "Abertos" contam no mês da abertura e "Resolvidos" no mês da conclusão.</li>
+        <li>Em aberto agora: pendentes, em atendimento e aguardando o solicitante, de qualquer data, respeitando os filtros que não são de mês.</li>
+        <li>SLA cumprido: chamados resolvidos no período com política de SLA cuja conclusão saiu dentro do prazo (o prazo já desconta o tempo em que o chamado esperou o solicitante).</li>
+        <li>1ª resposta: da abertura à primeira resposta pública de um atendente (nota interna não conta). Resolução: da abertura à conclusão. Usamos a mediana para um chamado esquecido não distorcer a média.</li>
+        <li>Assistente de IA: cada conversa de abertura registra como terminou — resolvida sem chamado, solução sugerida, resumo que virou chamado ou sem conclusão. O texto da conversa não é guardado.</li>
+    </ul>
+</details>
+
+{{ payload|json_script:"mxPanelData" }}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not data_error %}
+<script src="{% static '/js/maxisysLive.js' %}?v=9"></script>
+<script src="{% static '/js/helpdeskPanel.js' %}?v=4"></script>
+{% endif %}
+{% endblock %}

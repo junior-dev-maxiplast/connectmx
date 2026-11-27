@@ -55,6 +55,7 @@ Thumbs.db
 # Dados internos da empresa: ficam só no computador e no servidor (o repositório é público).
 REGISTRO_ECONODATA.md
 tiqueue/data/representative_goals.json
+tiqueue/data/sales_budget.json
 tiqueue/data/representative_names.json
 # Saída do collectstatic em produção (STATIC_ROOT)
 /static/

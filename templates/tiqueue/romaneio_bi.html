@@ -107,7 +107,8 @@
         {% endif %}
 
         {% if dashboard %}
-        <div class="bi-shell">
+        {# data-mx-*: menu do botão direito dos visuais e "Expandir dados" (maxisysDrill.js). #}
+        <div class="bi-shell" data-mx-detail-url="{% url 'dashesRomaneioBiDetail' %}{{ romaneio_scope_query }}">
             {% if insight_snapshot.ai_response %}
             <section class="bi-panel bi-ai">
                 <div class="bi-panel-head">
@@ -159,6 +160,8 @@
 
             {% if insight_snapshot.metrics.deep %}
             {% with deep=insight_snapshot.metrics.deep %}
+            {# Quadros do snapshot: o detalhe conta a janela do período a partir do dia da análise. #}
+            <div class="bi-deep-scope" style="display: contents" data-mx-detail-url="{% url 'dashesRomaneioBiDetail' %}{{ romaneio_scope_query }}&amp;ref={{ insight_snapshot.updated_at|date:'Y-m-d' }}">
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head">
@@ -169,20 +172,20 @@
                         <div><span>Concluíram</span><strong class="is-green">{{ deep.funnel.completed_pct }}%</strong><small>{{ deep.funnel.completed_display }} chegaram a Carregar</small></div>
                         <div><span>Tempo médio de ciclo</span><strong>{{ deep.funnel.lead_time_display }}</strong><small>de Separar a Carregar · base de {{ deep.funnel.lead_time_base }}</small></div>
                     </div>
-                    <div class="bi-bars">
-                        <div class="bi-bar">
+                    <div class="bi-bars" data-mx-dim="funil" data-mx-label-name="Etapa do funil" data-mx-columns="Pallets:int:sum|Participação:pct100">
+                        <div class="bi-bar" data-mx-key="1" data-mx-values="{{ deep.funnel.stopped_stage_1 }}|{{ deep.funnel.stopped_stage_1_pct }}">
                             <div class="bi-bar-head"><strong>Parou em Separar</strong><span>{{ deep.funnel.stopped_stage_1 }} · {{ deep.funnel.stopped_stage_1_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-stage-1" style="width: {{ deep.funnel.stopped_stage_1_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="2" data-mx-values="{{ deep.funnel.stopped_stage_2 }}|{{ deep.funnel.stopped_stage_2_pct }}">
                             <div class="bi-bar-head"><strong>Parou até Guardar</strong><span>{{ deep.funnel.stopped_stage_2 }} · {{ deep.funnel.stopped_stage_2_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-stage-2" style="width: {{ deep.funnel.stopped_stage_2_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="3" data-mx-values="{{ deep.funnel.stopped_stage_3 }}|{{ deep.funnel.stopped_stage_3_pct }}">
                             <div class="bi-bar-head"><strong>Parou até Paletizar</strong><span>{{ deep.funnel.stopped_stage_3 }} · {{ deep.funnel.stopped_stage_3_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-stage-3" style="width: {{ deep.funnel.stopped_stage_3_pct }}%"></i></div>
                         </div>
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="4" data-mx-values="{{ deep.funnel.reached_stage_4 }}|{{ deep.funnel.reached_stage_4_pct }}">
                             <div class="bi-bar-head"><strong>Chegou a Carregar</strong><span>{{ deep.funnel.reached_stage_4 }} · {{ deep.funnel.reached_stage_4_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-stage-4" style="width: {{ deep.funnel.reached_stage_4_pct }}%"></i></div>
                         </div>
@@ -195,15 +198,16 @@
                         <h2>Mais dias trabalhados</h2>
                         <span>top 10 do recorte</span>
                     </div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="colaborador" data-mx-label-name="Colaborador" data-mx-columns="Dias:int|Registros:int:sum">
                         {% for item in deep.top_workdays %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.matricula }}" data-mx-label="{% if item.nome %}{{ item.nome }}{% else %}Matrícula {{ item.matricula }}{% endif %}" data-mx-values="{{ item.days }}|{{ item.records }}">
                             <div class="bi-bar-head"><strong>{% if item.nome %}{{ item.nome }}{% else %}Matrícula {{ item.matricula }}{% endif %}</strong><span>{% if item.nome %}Matrícula {{ item.matricula }} · {% endif %}{{ item.days }} dia(s) · {{ item.records_display }} registros</span></div>
                             <div class="bi-bar-track"><i class="is-purple" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
                         {% empty %}<div class="bi-empty-inline">Sem dados.</div>{% endfor %}
                     </div>
                 </section>
+            </div>
             </div>
             {% endwith %}
             {% elif insight_snapshot.ai_error %}
@@ -262,9 +266,9 @@
                     <span>{{ dashboard.scope.period.full_label }} · {{ dashboard.scope.branch.label }}</span>
                 </div>
                 {% if dashboard.series %}
-                <div class="bi-chart">
+                <div class="bi-chart" data-mx-dim="mes" data-mx-label-name="{% if dashboard.scope.series_label == 'por dia' %}Dia{% else %}Mês{% endif %}" data-mx-columns="Registros:int:sum|Separar:int:sum|Guardar:int:sum|Paletizar:int:sum|Carregar:int:sum">
                     {% for item in dashboard.series %}
-                    <div title="{{ item.label }}: {{ item.total }} registro(s)">
+                    <div title="{{ item.label }}: {{ item.total }} registro(s)" data-mx-key="{{ item.competencia }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.stages.1 }}|{{ item.stages.2 }}|{{ item.stages.3 }}|{{ item.stages.4 }}">
                         <div class="bi-chart-bars is-stack" style="height: {{ item.height_pct }}%">
                             <i class="is-stage-4" style="height: {{ item.stage_shares.4 }}%" title="Carregar: {{ item.stages.4 }}"></i>
                             <i class="is-stage-3" style="height: {{ item.stage_shares.3 }}%" title="Paletizar: {{ item.stages.3 }}"></i>
@@ -290,9 +294,9 @@
             <div class="bi-grid is-2">
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Distribuição por etapa</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="etapa" data-mx-label-name="Etapa" data-mx-columns="Registros:int:sum|Participação:pct100|Peso:kg:sum">
                         {% for item in dashboard.by_stage %}
-                        <div class="bi-bar">
+                        <div class="bi-bar"{% if item.code != None %} data-mx-key="{{ item.code }}"{% endif %} data-mx-label="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}|{{ item.peso }}">
                             <div class="bi-bar-head"><strong>{% if item.filterable %}<button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="estagio" data-mx-value="{{ item.code }}">{{ item.label }}</button>{% else %}{{ item.label }}{% endif %}</strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-stage-{{ item.code|default:'outro' }}" style="width: {{ item.share_pct }}%"></i></div>
                             <small class="bi-bar-sub">{{ item.peso_display }}</small>
@@ -303,9 +307,9 @@
 
                 <section class="bi-panel">
                     <div class="bi-panel-head"><h2>Distribuição por filial</h2></div>
-                    <div class="bi-bars">
+                    <div class="bi-bars" data-mx-dim="filial" data-mx-label-name="Filial" data-mx-columns="Registros:int:sum|Participação:pct100">
                         {% for item in dashboard.by_branch %}
-                        <div class="bi-bar">
+                        <div class="bi-bar" data-mx-key="{{ item.key }}" data-mx-label="{{ item.label }}" data-mx-values="{{ item.total }}|{{ item.share_pct }}">
                             <div class="bi-bar-head"><strong><button type="button" class="mx-filter-cell" data-mx-single data-mx-filter="filial" data-mx-value="{{ item.key }}">{{ item.label }}</button></strong><span>{{ item.total_display }} · {{ item.share_pct }}%</span></div>
                             <div class="bi-bar-track"><i class="is-blue" style="width: {{ item.share_pct }}%"></i></div>
                         </div>
@@ -321,7 +325,7 @@
                 </div>
                 {% if dashboard.ranking %}
                 <div class="bi-table-wrap">
-                    <table class="bi-table">
+                    <table class="bi-table" data-mx-dim="colaborador">
                         <thead>
                             <tr>
                                 <th>Matrícula</th><th class="is-num">Registros</th><th class="is-num">Participação</th>
@@ -331,7 +335,7 @@
                         </thead>
                         <tbody>
                         {% for item in dashboard.ranking %}
-                            <tr>
+                            <tr data-mx-key="{{ item.matricula }}" data-mx-label="{% if item.nome %}{{ item.nome }}{% else %}Matrícula {{ item.matricula }}{% endif %}">
                                 <td>
                                     <div class="bi-cell">
                                         {% if item.nome %}

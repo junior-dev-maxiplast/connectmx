@@ -86,17 +86,17 @@
                     </div>
                 </div>
             </div>
-            <div class="mx-hero-facts">
+            <div class="mx-hero-facts" id="mxHeroFacts">
                 <div class="mx-fact"><span>Representante</span>
                     <strong title="{{ c.rep_name }}">{% if shell_can_rep_dna and c.rep_code %}<a href="{{ shell_rep_dna_url }}?representante={{ c.rep_code }}&{{ dashboard.period.query }}">{{ c.rep_name }}</a>{% else %}{{ c.rep_name }}{% endif %}</strong>
                     <small>{{ c.rep_team|default:"-" }}</small></div>
-                <div class="mx-fact"><span>Última compra</span><strong>{{ rel.last_purchase }}</strong><small>{% if rel.days_since != None %}há {{ rel.days_since }} dias{% else %}-{% endif %}</small></div>
-                <div class="mx-fact"><span>Cliente desde</span><strong>{{ rel.first_purchase }}</strong><small>{% if rel.years != None %}{{ rel.years }} anos de relacionamento{% else %}-{% endif %}</small></div>
-                <div class="mx-fact"><span>Prazo médio</span><strong>{{ k.payment_days_display }}</strong><small>Ponderado pelo faturamento</small></div>
+                <div class="mx-fact" data-mx-key="mes:{{ rel.last_purchase_month }}" data-mx-label="Última compra ({{ rel.last_purchase }})"><span>Última compra</span><strong>{{ rel.last_purchase }}</strong><small>{% if rel.days_since != None %}há {{ rel.days_since }} dias{% else %}-{% endif %}</small></div>
+                <div class="mx-fact" data-mx-key="mes:{{ rel.first_purchase_month }}" data-mx-label="Primeira compra ({{ rel.first_purchase }})"><span>Cliente desde</span><strong>{{ rel.first_purchase }}</strong><small>{% if rel.years != None %}{{ rel.years }} anos de relacionamento{% else %}-{% endif %}</small></div>
+                <div class="mx-fact" data-mx-key="foco:prazo" data-mx-label="Prazo médio de pagamento"><span>Prazo médio</span><strong>{{ k.payment_days_display }}</strong><small>Ponderado pelo faturamento</small></div>
             </div>
         </article>
 
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="classificacao">
             <div class="mx-card-head">
                 <span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-star"/></svg></span>
                 <div><p class="mx-card-title">Classificação Geral</p><p class="mx-card-sub">Faturamento · Margem · Lote · Recorrência</p></div>
@@ -127,42 +127,42 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-coin"/></svg>Faturamento<small>Comparação com {{ dashboard.period.previous_label }}</small></h3>
     <div class="mx-grid mx-grid-kpi">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="faturamento">
             <div class="mx-kpi-label">Faturamento líquido de devolução</div>
             <div class="mx-kpi-value">{{ k.net_display }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net.tone }}">{{ k.deltas.net.display }}</span><span>ano anterior {{ k.previous_net_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="sem-impostos">
             <div class="mx-kpi-label">Faturamento sem impostos</div>
             <div class="mx-kpi-value">{{ k.net_of_taxes_display }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.net_of_taxes.tone }}">{{ k.deltas.net_of_taxes.display }}</span><span>base da curva ABC</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="volume">
             <div class="mx-kpi-label">Volume líquido</div>
             <div class="mx-kpi-value">{{ k.weight_display }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.weight.tone }}">{{ k.deltas.weight.display }}</span><span>ano anterior {{ k.previous_weight_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="fator">
             <div class="mx-kpi-label">Fator kg (R$/kg)</div>
             <div class="mx-kpi-value">{{ k.fator_display }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.fator.tone }}">{{ k.deltas.fator.display }}</span><span>limpo {{ k.fator_clean_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="margem">
             <div class="mx-kpi-label">Margem bruta (CPV)</div>
             <div class="mx-kpi-value">{{ k.margin_display }}</div>
             <div class="mx-kpi-foot">{% if k.cost_partial %}<span class="mx-badge is-warn">custo em {{ k.cost_coverage_display }} das vendas</span>{% else %}<span>sobre o faturamento sem impostos</span>{% endif %}</div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="pedidos">
             <div class="mx-kpi-label">Pedidos faturados</div>
             <div class="mx-kpi-value">{{ k.orders }}</div>
             <div class="mx-kpi-foot"><span class="mx-delta is-{{ k.deltas.orders.tone }}">{{ k.deltas.orders.display }}</span><span>{{ k.invoices }} NFs · ticket {{ k.ticket_display }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="devolucoes">
             <div class="mx-kpi-label">Devoluções</div>
             <div class="mx-kpi-value">{{ k.returned_display }}</div>
             <div class="mx-kpi-foot"><span>{{ k.returned_share_display }} do faturamento bruto</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="participacao">
             <div class="mx-kpi-label">Participação na empresa</div>
             <div class="mx-kpi-value">{{ dashboard.ranking.share_display }}</div>
             <div class="mx-kpi-foot"><span>{% if cl.revenue_rank %}{{ cl.revenue_rank.position }}º de {{ dashboard.ranking.customers_count }} clientes{% else %}sem posição no período{% endif %}</span></div>
@@ -189,21 +189,21 @@
 <section class="mx-section">
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-layers"/></svg>Mix e carteira</h3>
     <div class="mx-grid mx-grid-3">
-        <article class="mx-card">
+        <article class="mx-card" id="mxDnaMixCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-layers"/></svg></span><div><p class="mx-card-title">Mix por grupo de produto</p><p class="mx-card-sub">{{ dashboard.mix.groups_count }} grupo(s) no período · clique num grupo para filtrar a página (Ctrl + clique soma)</p></div></div>
             {% for group in dashboard.mix.groups %}
-                <div class="mx-bar-row"><span title="{{ group.name }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ group.key }}">{{ group.name }}</button><small> · {{ group.weight_display }}</small></span><div class="mx-progress"><i style="width: {{ group.share }}%"></i></div><b>{{ group.share_display }}</b></div>
+                <div class="mx-bar-row" data-mx-key="{{ group.key }}" data-mx-label="{{ group.name }}" data-mx-values="{{ group.revenue_display }}|{{ group.weight_display }}|{{ group.fator_display }}|{{ group.share_display }}"><span title="{{ group.name }}"><button type="button" class="mx-filter-cell" data-mx-filter="grupo" data-mx-value="{{ group.key }}">{{ group.name }}</button><small> · {{ group.weight_display }}</small></span><div class="mx-progress"><i style="width: {{ group.share }}%"></i></div><b>{{ group.share_display }}</b></div>
             {% empty %}<div class="mx-empty">Sem vendas no período.</div>{% endfor %}
         </article>
-        <article class="mx-card">
+        <article class="mx-card" id="mxDnaProductsCard">
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-box"/></svg></span><div><p class="mx-card-title">Principais produtos</p><p class="mx-card-sub">{{ k.products }} produto(s) faturado(s)</p></div></div>
             <ul class="mx-list">
                 {% for product in dashboard.mix.products %}
-                    <li><div class="mx-list-main"><strong title="{{ product.name }}">{{ product.name }}</strong><small>{{ product.group }} · {{ product.weight_display }} · {{ product.fator_display }}/kg</small></div><span class="mx-list-value">{{ product.revenue_display }}</span></li>
+                    <li data-mx-key="{{ product.key }}" data-mx-label="{{ product.name }}" data-mx-values="{{ product.group }}|{{ product.revenue_display }}|{{ product.weight_display }}|{{ product.fator_display }}"><div class="mx-list-main"><strong title="{{ product.name }}">{{ product.name }}</strong><small>{{ product.group }} · {{ product.weight_display }} · {{ product.fator_display }}/kg</small></div><span class="mx-list-value">{{ product.revenue_display }}</span></li>
                 {% empty %}<li class="mx-empty">Sem produtos no período.</li>{% endfor %}
             </ul>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-dna-kpi="carteira">
             {% with p=dashboard.portfolio %}
             <div class="mx-card-head"><span class="mx-card-icon"><svg class="mx-ico"><use href="#mx-i-truck"/></svg></span><div><p class="mx-card-title">Carteira a faturar</p><p class="mx-card-sub">{{ p.open_orders }} pedido(s) · {{ p.open_items }} item(ns) em aberto</p></div></div>
             <div class="mx-goal-figure"><strong>{{ p.to_bill_kg_display }}</strong><span>{{ p.to_bill_value_display }}</span></div>
@@ -223,17 +223,17 @@
     <h3 class="mx-section-label"><svg class="mx-ico"><use href="#mx-i-shield"/></svg>Qualidade no período</h3>
     {% with q=dashboard.operational %}
     <div class="mx-grid mx-grid-3">
-        <article class="mx-card">
+        <article class="mx-card" data-mx-quality="complaints">
             <div class="mx-kpi-label">Reclamações</div>
             <div class="mx-kpi-value">{{ q.complaints.count }}</div>
             <div class="mx-kpi-foot"><span>{{ q.complaints.severe_count }} grave(s) · incidência média {{ q.complaints.incidence_pct }}%</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-quality="returns">
             <div class="mx-kpi-label">Devoluções registradas (qualidade)</div>
             <div class="mx-kpi-value">{{ q.returns.total_value_display }}</div>
             <div class="mx-kpi-foot"><span>{{ q.returns.count }} registro(s) · setor principal {{ q.returns.sector_distribution.0.label|default:"-" }}</span></div>
         </article>
-        <article class="mx-card">
+        <article class="mx-card" data-mx-quality="cliches">
             <div class="mx-kpi-label">Clichês</div>
             <div class="mx-kpi-value">{{ q.cliches.total_value_display }}</div>
             <div class="mx-kpi-foot"><span>{{ q.cliches.count }} lançamento(s) · custo Maxiplast {{ q.cliches.maxiplast_cost_value_display }}</span></div>
@@ -264,6 +264,8 @@
 </details>
 
 {{ dashboard.series|json_script:"mxSeriesData" }}
+{{ dashboard.operational|json_script:"mxQualityData" }}
+<script type="application/json" id="mxDnaPeriod">{"inicio": "{{ dashboard.period.start_iso }}", "fim": "{{ dashboard.period.end_iso }}", "label": "{{ dashboard.period.range_label|escapejs }}"}</script>
 {% endwith %}
 {% endif %}
 {% endblock %}
@@ -271,7 +273,7 @@
 {% block scripts %}
 <script src="{% static '/js/maxisysFilterLinks.js' %}?v=2"></script>
 <script src="{% static '/js/dashesFetch.js' %}"></script>
-<script src="{% static '/js/maxisysCharts.js' %}?v=2"></script>
+<script src="{% static '/js/maxisysCharts.js' %}?v=4"></script>
 <script>
 (() => {
     const box = document.getElementById('mxCustomerSearch');
@@ -324,6 +326,12 @@
     if (!node || !window.MXCharts) return;
     const series = JSON.parse(node.textContent);
     const labels = series.map((row) => row.label);
+    // "Expandir dados" (botão direito ou ⋯): as notas do mês vêm do servidor, no mesmo escopo
+    // (cliente, grupo de CNPJs ou unidade) e com o mesmo filtro de grupo de produto da página.
+    const drill = window.MXDrill;
+    const scope = { cliente: '{{ customer_id|default:"" }}', view: '{{ dna_view_mode|default:"" }}', unidade: '{{ dna_member_customer_id|default:"" }}' };
+    const fetchMonth = drill ? (i) => drill.fetchJSON(drill.urlWith('{% url "dashesCustomerDnaDetail" %}', { ...scope, mes: series[i].month }, ['grupo'])) : null;
+    const hasSales = (i) => !!(series[i].revenue || series[i].previous_revenue);
     MXCharts.bars(document.getElementById('mxRevenueChart'), {
         label: 'Faturamento mensal',
         labels,
@@ -331,6 +339,7 @@
         line: { name: 'Ano anterior', values: series.map((row) => row.previous_revenue), color: '--mx-chart-2', dashed: true },
         format: (value, short) => MXCharts.money(value, true),
         extra: (i) => `Pedidos: <b>${series[i].orders}</b>`,
+        valueType: 'money', labelName: 'Mês', drill: fetchMonth, canDrill: hasSales,
     });
     MXCharts.line(document.getElementById('mxVolumeChart'), {
         label: 'Volume e fator kg',
@@ -342,6 +351,106 @@
         ],
         format: (value) => MXCharts.kg(value),
         rightFormat: (value) => `R$ ${value.toFixed(2).replace('.', ',')}`,
+        valueType: 'kg', rightValueType: 'money', labelName: 'Mês', drill: fetchMonth, canDrill: hasSales,
+    });
+    if (!drill) return;
+
+    // Cards do período (faturamento, classificação, participação, carteira) e linhas do mix e dos
+    // produtos: as notas vêm do servidor, no mesmo escopo e recorte da página.
+    const period = JSON.parse(document.getElementById('mxDnaPeriod').textContent);
+    const detail = (params, keep = ['grupo']) => drill.fetchJSON(drill.urlWith('{% url "dashesCustomerDnaDetail" %}', { ...scope, inicio: period.inicio, fim: period.fim, ...params }, keep));
+    document.querySelectorAll('[data-mx-dna-kpi]').forEach((card) => {
+        const kind = card.dataset.mxDnaKpi;
+        drill.kpi(card, {
+            name: kind === 'classificacao' ? 'Classificação Geral' : kind === 'carteira' ? 'Carteira a faturar' : undefined,
+            drill: () => (kind === 'carteira' ? detail({ visual: 'carteira' }, []) : detail({ visual: 'periodo', foco: kind })),
+        });
+    });
+    const attachBars = (container, options) => {
+        if (!container) return;
+        const bars = [...container.querySelectorAll('[data-mx-key]')];
+        if (!bars.length) return;
+        bars.forEach((bar, index) => { bar.setAttribute('data-mx-index', index); bar.title = bar.title ? `${bar.title}\n${drill.hint}` : drill.hint; });
+        drill.attach(container, {
+            name: options.name, tableTitle: options.tableTitle,
+            label: (index) => (bars[index] ? bars[index].dataset.mxLabel : ''),
+            table: () => ({
+                columns: options.columns,
+                rows: bars.map((bar, index) => ({ label: bar.dataset.mxLabel, ...Object.fromEntries((bar.dataset.mxValues || '').split('|').map((value, part) => [`v${part}`, value])), __index: index })),
+            }),
+            drill: (index) => options.drill(bars[index].dataset.mxKey),
+            canDrill: (index) => !!bars[index] && (!options.canDrill || options.canDrill(bars[index].dataset.mxKey)),
+        });
+    };
+    attachBars(document.getElementById('mxDnaMixCard'), {
+        name: 'Mix por grupo de produto', tableTitle: 'Mix por grupo (os maiores)',
+        columns: [{ key: 'label', label: 'Grupo' }, { key: 'v0', label: 'Faturamento' }, { key: 'v1', label: 'Volume' }, { key: 'v2', label: 'R$/kg' }, { key: 'v3', label: 'Participação' }],
+        drill: (key) => detail({ visual: 'mix-grupo', familia: key }, []),
+    });
+    attachBars(document.getElementById('mxDnaProductsCard'), {
+        name: 'Principais produtos', tableTitle: 'Principais produtos',
+        columns: [{ key: 'label', label: 'Produto' }, { key: 'v0', label: 'Grupo' }, { key: 'v1', label: 'Faturamento' }, { key: 'v2', label: 'Volume' }, { key: 'v3', label: 'R$/kg' }],
+        drill: (key) => detail({ visual: 'produto', produto: key }, []),
+    });
+    // Fatos do cabeçalho: última e primeira compra (o mês da nota) e o prazo médio (o período).
+    attachBars(document.getElementById('mxHeroFacts'), {
+        name: 'Relacionamento', tableTitle: 'Relacionamento com o cliente',
+        columns: [{ key: 'label', label: 'Fato' }],
+        drill: (key) => {
+            const [kind, value] = key.split(':');
+            return kind === 'mes' ? drill.fetchJSON(drill.urlWith('{% url "dashesCustomerDnaDetail" %}', { ...scope, mes: value }, [])) : detail({ visual: 'periodo', foco: value });
+        },
+        canDrill: (key) => key !== 'mes:',
+    });
+
+    // Qualidade no período: os registros já vieram na página (reclamações, devoluções e clichês).
+    const quality = JSON.parse(document.getElementById('mxQualityData').textContent || '{}');
+    const qualitySpecs = {
+        complaints: {
+            title: 'Reclamações', columns: [
+                { key: 'date', label: 'Data', type: 'date', nowrap: true }, { key: 'code', label: 'Reclamação' }, { key: 'classification', label: 'Gravidade' },
+                { key: 'problem', label: 'Problema', wrap: true }, { key: 'machine', label: 'Máquina / recurso' }, { key: 'invoice', label: 'Nota' },
+                { key: 'unit', label: 'Unidade do cliente' }, { key: 'nonconforming_volume', label: 'Volume não conforme', type: 'dec', digits: 2, total: true },
+                { key: 'incidence_pct', label: 'Incidência (%)', type: 'dec', digits: 2 },
+            ],
+            rows: (items) => items.map((item) => ({ ...item, __tone: item.classification === 'Grave' ? 'bad' : item.classification === 'Média' ? 'warn' : null })),
+            summary: (block, items) => [{ label: 'Reclamações', value: String(items.length), note: `${block.severe_count || 0} grave(s)`, tone: block.severe_count ? 'bad' : null }, { label: 'Incidência média', value: `${String(block.incidence_pct || 0).replace('.', ',')}%` }],
+            groupBy: ['classification', 'problem', 'machine', 'unit'],
+        },
+        returns: {
+            title: 'Devoluções registradas (qualidade)', columns: [
+                { key: 'date', label: 'Data', type: 'date', nowrap: true }, { key: 'invoice', label: 'Nota' }, { key: 'sector', label: 'Setor' },
+                { key: 'problem', label: 'Problema', wrap: true }, { key: 'branch', label: 'Filial' }, { key: 'observation', label: 'Observação', wrap: true },
+                { key: 'value', label: 'Valor devolvido', type: 'money', total: true, strong: true },
+            ],
+            rows: (items) => items,
+            summary: (block, items) => [{ label: 'Devolvido', value: drill.format(items.reduce((acc, item) => acc + (item.value || 0), 0), { type: 'money' }), note: `${items.length} registro(s)` }, { label: 'Sobre o faturamento', value: `${String(block.revenue_share_pct || 0).replace('.', ',')}%` }],
+            groupBy: ['sector', 'problem', 'branch'],
+        },
+        cliches: {
+            title: 'Clichês', columns: [
+                { key: 'date', label: 'Despacho', type: 'date', nowrap: true }, { key: 'launch', label: 'Lançamento' }, { key: 'order', label: 'Pedido' },
+                { key: 'exchange_cost', label: 'Custo da troca' }, { key: 'area', label: 'Área', type: 'dec', digits: 2, total: true },
+                { key: 'value', label: 'Valor', type: 'money', total: true, strong: true },
+            ],
+            rows: (items) => items,
+            summary: (block, items) => [{ label: 'Clichês', value: drill.format(items.reduce((acc, item) => acc + (item.value || 0), 0), { type: 'money' }), note: `${items.length} lançamento(s)` }, { label: 'Custo Maxiplast', value: block.maxiplast_cost_value_display || '–' }],
+            groupBy: ['exchange_cost', 'order'],
+        },
+    };
+    document.querySelectorAll('[data-mx-quality]').forEach((card) => {
+        const kind = card.dataset.mxQuality;
+        const spec = qualitySpecs[kind];
+        const block = quality[kind] || {};
+        const items = block.items || [];
+        drill.kpi(card, {
+            drill: () => ({
+                title: spec.title, subtitle: `Registros de qualidade do cliente no período · ${period.label}`,
+                summary: spec.summary(block, items),
+                sections: [{ key: kind, label: spec.title, columns: spec.columns, rows: spec.rows(items), sort: { key: 'date', dir: 'desc' }, groupBy: spec.groupBy, empty: 'Nenhum registro no período.' }],
+            }),
+            canDrill: () => items.length > 0,
+        });
     });
 })();
 </script>
